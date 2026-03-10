@@ -1,0 +1,143 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+
+export default defineSchema({
+  users: defineTable({
+    clerkId: v.string(),
+    email: v.string(),
+    name: v.string(),
+    role: v.union(v.literal("primary"), v.literal("partner")),
+    createdAt: v.number(),
+    lastActiveAt: v.number(),
+  })
+    .index("by_clerk_id", ["clerkId"])
+    .index("by_email", ["email"]),
+
+  couples: defineTable({
+    createdAt: v.number(),
+    linkedAt: v.optional(v.number()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("active"),
+      v.literal("revoked")
+    ),
+  }),
+
+  coupleMembers: defineTable({
+    coupleId: v.id("couples"),
+    userId: v.id("users"),
+    role: v.union(v.literal("primary"), v.literal("partner")),
+    sharingPain: v.boolean(),
+    sharingPhase: v.boolean(),
+    joinedAt: v.number(),
+  })
+    .index("by_couple", ["coupleId"])
+    .index("by_user", ["userId"])
+    .index("by_couple_and_role", ["coupleId", "role"]),
+
+  pairingCodes: defineTable({
+    code: v.string(),
+    coupleId: v.id("couples"),
+    createdBy: v.id("users"),
+    expiresAt: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("used"),
+      v.literal("expired")
+    ),
+    usedBy: v.optional(v.id("users")),
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"])
+    .index("by_couple", ["coupleId"])
+    .index("by_status_and_expiry", ["status", "expiresAt"]),
+
+  periodEvents: defineTable({
+    userId: v.id("users"),
+    startDate: v.string(),
+    endDate: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_start", ["userId", "startDate"]),
+
+  painLogs: defineTable({
+    userId: v.id("users"),
+    date: v.string(),
+    painScore: v.number(),
+    tags: v.array(
+      v.union(
+        v.literal("cramps"),
+        v.literal("headache"),
+        v.literal("back"),
+        v.literal("fatigue"),
+        v.literal("other")
+      )
+    ),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_date", ["userId", "date"]),
+
+  cycleSettings: defineTable({
+    userId: v.id("users"),
+    cycleLength: v.number(),
+    periodLength: v.number(),
+    lastUpdatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  painTips: defineTable({
+    phase: v.union(
+      v.literal("menstruation"),
+      v.literal("follicular"),
+      v.literal("ovulation"),
+      v.literal("luteal")
+    ),
+    painSeverity: v.union(
+      v.literal("none"),
+      v.literal("mild"),
+      v.literal("moderate"),
+      v.literal("severe")
+    ),
+    title: v.string(),
+    suggestions: v.array(v.string()),
+    safetyNote: v.string(),
+    isActive: v.boolean(),
+    priority: v.number(),
+  }).index("by_phase_and_severity", ["phase", "painSeverity", "isActive"]),
+
+  nutritionTips: defineTable({
+    phase: v.union(
+      v.literal("menstruation"),
+      v.literal("follicular"),
+      v.literal("ovulation"),
+      v.literal("luteal")
+    ),
+    foodItem: v.string(),
+    reasoning: v.string(),
+    isActive: v.boolean(),
+    priority: v.number(),
+  }).index("by_phase", ["phase", "isActive"]),
+
+  hiddenNutrition: defineTable({
+    userId: v.id("users"),
+    nutritionTipId: v.id("nutritionTips"),
+    hiddenUntil: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_tip", ["userId", "nutritionTipId"]),
+
+  notificationLog: defineTable({
+    userId: v.id("users"),
+    type: v.string(),
+    payload: v.any(),
+    sentAt: v.number(),
+    status: v.union(v.literal("sent"), v.literal("failed")),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_sent_at", ["sentAt"]),
+});
