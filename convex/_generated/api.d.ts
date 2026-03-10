@@ -10,6 +10,9 @@
 
 import type * as _helpers_auth from "../_helpers/auth.js";
 import type * as _helpers_cycleCalculations from "../_helpers/cycleCalculations.js";
+import type * as actions_discord from "../actions/discord.js";
+import type * as actions_notifications from "../actions/notifications.js";
+import type * as crons from "../crons.js";
 import type * as mutations_couples from "../mutations/couples.js";
 import type * as mutations_misc from "../mutations/misc.js";
 import type * as mutations_painLog from "../mutations/painLog.js";
@@ -19,6 +22,7 @@ import type * as queries_couples from "../queries/couples.js";
 import type * as queries_dashboard from "../queries/dashboard.js";
 import type * as queries_history from "../queries/history.js";
 import type * as queries_users from "../queries/users.js";
+import type * as seed from "../seed.js";
 
 import type {
   ApiFromModules,
@@ -29,6 +33,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_helpers/auth": typeof _helpers_auth;
   "_helpers/cycleCalculations": typeof _helpers_cycleCalculations;
+  "actions/discord": typeof actions_discord;
+  "actions/notifications": typeof actions_notifications;
+  crons: typeof crons;
   "mutations/couples": typeof mutations_couples;
   "mutations/misc": typeof mutations_misc;
   "mutations/painLog": typeof mutations_painLog;
@@ -38,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   "queries/dashboard": typeof queries_dashboard;
   "queries/history": typeof queries_history;
   "queries/users": typeof queries_users;
+  seed: typeof seed;
 }>;
 
 /**

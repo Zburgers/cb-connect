@@ -1,3 +1,4 @@
+"use node";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 

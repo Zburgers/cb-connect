@@ -47,7 +47,7 @@ export default function DashboardPage() {
         />
       )}
 
-      <PainLogger currentPain={data.painData} />
+      <PainLogger currentPain={data.painData ?? null} />
 
       {data.painTip && data.painData && data.painData.score >= 4 && (
         <TipsCard tip={data.painTip} />

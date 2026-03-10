@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
+import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 
 export const generatePairingCode = mutation({
@@ -12,7 +13,7 @@ export const generatePairingCode = mutation({
     }
 
     const existingCouple = await getCoupleForUser(ctx, user._id);
-    let coupleId;
+    let coupleId: Id<"couples">;
 
     if (existingCouple) {
       coupleId = existingCouple.membership.coupleId;
