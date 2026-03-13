@@ -5,11 +5,13 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useUser } from "@clerk/nextjs";
-import { User, Heart, Calendar, Check } from "lucide-react";
+import { User, Heart, Calendar, Check, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 type Step = "role" | "period" | "done";
 
 export default function OnboardingFlow() {
+  const router = useRouter();
   const { user: clerkUser, isLoaded } = useUser();
   const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
   const createUser = useMutation(api.mutations.users.createOrUpdateUser);
@@ -72,7 +74,7 @@ export default function OnboardingFlow() {
   if (step === "done") {
     return (
       <div className="text-center py-12 space-y-6 animate-slide-up">
-        <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 dark:bg-primary/20 flex items-center 
+        <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 dark:bg-primary/20 flex items-center
           justify-center">
           <Check className="w-10 h-10 text-primary" />
         </div>
@@ -84,6 +86,23 @@ export default function OnboardingFlow() {
               : "Your dashboard is being prepared..."}
           </p>
         </div>
+        {selectedRole === "partner" && (
+          <div className="pt-4">
+            <button
+              onClick={() => router.push("/dashboard/partner")}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-secondary text-secondary-foreground
+                rounded-2xl font-semibold hover:bg-secondary/90 transition-all press-feedback
+                no-tap-highlight touch-target shadow-lg shadow-secondary/30"
+            >
+              <Heart className="w-5 h-5" />
+              <span>Already have a pairing code?</span>
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            <p className="text-xs text-muted-foreground mt-3">
+              Enter your partner's 6-digit code to link accounts
+            </p>
+          </div>
+        )}
       </div>
     );
   }
