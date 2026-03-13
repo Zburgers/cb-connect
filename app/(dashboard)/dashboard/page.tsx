@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { DashboardSkeleton } from "@/components/common/LoadingSkeleton";
 import CurrentPhase from "@/components/dashboard/CurrentPhase";
+import PartnerStatusCard from "@/components/dashboard/PartnerStatusCard";
 import PainLogger from "@/components/dashboard/PainLogger";
 import TipsCard from "@/components/dashboard/TipsCard";
 import NutritionSuggestions from "@/components/dashboard/NutritionSuggestions";
@@ -51,6 +52,9 @@ export default function DashboardPage() {
           nextPeriodStart={data.cycleInfo.predictedNextPeriodStart}
         />
       )}
+
+      {/* Partner Status Card - Always shown */}
+      <PartnerStatusCard />
 
       <PainLogger currentPain={data.painData ?? null} />
 
