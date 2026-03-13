@@ -5,6 +5,8 @@ import { useQuery, useMutation } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { copyToClipboard, shareText } from "@/lib/utils";
+import { Copy, Share2, Check } from "lucide-react";
 
 export default function PartnerPage() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -22,15 +24,38 @@ export default function PartnerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   if (!isLoaded || me === undefined || coupleStatus === undefined) return <LoadingSpinner />;
+
+  const handleCopyCode = async (codeToCopy: string) => {
+    const success = await copyToClipboard(codeToCopy);
+    if (success) {
+      setCopied(true);
+      setMessage("Code copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      setMessage("Failed to copy. Please copy manually.");
+    }
+  };
+
+  const handleShareCode = async (codeToShare: string) => {
+    const shareMessage = `Join me on CB Connect! Use pairing code: ${codeToShare}`;
+    const success = await shareText(shareMessage, "CB Connect - Partner Linking");
+    if (!success) {
+      setMessage("Share not supported. Code copied instead.");
+      await handleCopyCode(codeToShare);
+    }
+  };
 
   const handleGenerateCode = async () => {
     setIsSubmitting(true);
     try {
       const result = await generateCode();
       setGeneratedCode(result.code);
-      setMessage("Share this code with your partner!");
+      setMessage("Code generated and copied to clipboard!");
+      // Auto-copy after short delay for animation
+      setTimeout(() => handleCopyCode(result.code), 300);
     } catch (error: any) {
       setMessage(error.message || "Failed to generate code");
     } finally {
@@ -134,10 +159,43 @@ export default function PartnerPage() {
           {generatedCode || coupleStatus?.activePairingCode ? (
             <div className="text-center py-4">
               <p className="text-sm text-gray-500 mb-2">Your pairing code:</p>
-              <p className="text-4xl font-mono font-bold tracking-widest text-primary-500">
-                {generatedCode ?? coupleStatus?.activePairingCode?.code}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Valid for 24 hours</p>
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <p className="text-4xl font-mono font-bold tracking-widest text-primary-500">
+                  {generatedCode ?? coupleStatus?.activePairingCode?.code}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => handleCopyCode(generatedCode ?? coupleStatus?.activePairingCode?.code!)}
+                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm
+                    hover:bg-muted/80 transition-colors"
+                  type="button"
+                  aria-label="Copy pairing code"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleShareCode(generatedCode ?? coupleStatus?.activePairingCode?.code!)}
+                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm
+                    hover:bg-muted/80 transition-colors"
+                  type="button"
+                  aria-label="Share pairing code"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Share</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-3">Valid for 24 hours</p>
             </div>
           ) : null}
 
