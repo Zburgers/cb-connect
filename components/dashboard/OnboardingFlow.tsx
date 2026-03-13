@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useUser } from "@clerk/nextjs";
+import { User, Heart, Calendar, Check } from "lucide-react";
 
 type Step = "role" | "period" | "done";
 
@@ -70,40 +71,53 @@ export default function OnboardingFlow() {
 
   if (step === "done") {
     return (
-      <div className="text-center py-12 space-y-4">
-        <span className="text-6xl">🎉</span>
-        <h2 className="text-2xl font-bold text-gray-900">You're all set!</h2>
-        <p className="text-gray-600">
-          {selectedRole === "partner"
-            ? "Ask your partner for their pairing code to link accounts."
-            : "Your dashboard is being prepared..."}
-        </p>
+      <div className="text-center py-12 space-y-6 animate-slide-up">
+        <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 dark:bg-primary/20 flex items-center 
+          justify-center">
+          <Check className="w-10 h-10 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">You're all set!</h2>
+          <p className="text-muted-foreground mt-2 max-w-md mx-auto">
+            {selectedRole === "partner"
+              ? "Ask your partner for their pairing code to link accounts."
+              : "Your dashboard is being prepared..."}
+          </p>
+        </div>
       </div>
     );
   }
 
   if (step === "role") {
     return (
-      <div className="max-w-md mx-auto py-12 space-y-8">
+      <div className="max-w-md mx-auto py-12 space-y-8 animate-slide-up">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Welcome to CB Connect</h2>
-          <p className="text-gray-600 mt-2">How will you be using this app?</p>
+          <h2 className="text-2xl font-bold text-foreground">Welcome to CB Connect</h2>
+          <p className="text-muted-foreground mt-2">How will you be using this app?</p>
         </div>
 
         <div className="space-y-4">
           <button
             onClick={() => setSelectedRole("primary")}
-            className={`w-full p-6 rounded-2xl border-2 text-left transition-all ${
-              selectedRole === "primary"
-                ? "border-primary-500 bg-primary-50"
-                : "border-gray-200 hover:border-gray-300"
-            }`}
+            type="button"
+            className={`w-full p-6 rounded-3xl border-2 text-left transition-all press-feedback 
+              no-tap-highlight touch-target
+              ${selectedRole === "primary"
+                ? "border-primary bg-primary/5 dark:bg-primary/10"
+                : "border-input hover:border-primary/50 hover:bg-muted/30"
+              }`}
           >
             <div className="flex items-center gap-4">
-              <span className="text-3xl">🌸</span>
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center
+                ${selectedRole === "primary" 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-muted text-muted-foreground"
+                }`}>
+                <User className="w-7 h-7" />
+              </div>
               <div>
-                <p className="font-semibold text-gray-900">I'm tracking my cycle</p>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="font-semibold text-foreground">I'm tracking my cycle</p>
+                <p className="text-sm text-muted-foreground mt-1">
                   Log periods, track pain, and get personalized tips
                 </p>
               </div>
@@ -112,17 +126,25 @@ export default function OnboardingFlow() {
 
           <button
             onClick={() => setSelectedRole("partner")}
-            className={`w-full p-6 rounded-2xl border-2 text-left transition-all ${
-              selectedRole === "partner"
-                ? "border-primary-500 bg-primary-50"
-                : "border-gray-200 hover:border-gray-300"
-            }`}
+            type="button"
+            className={`w-full p-6 rounded-3xl border-2 text-left transition-all press-feedback 
+              no-tap-highlight touch-target
+              ${selectedRole === "partner"
+                ? "border-primary bg-primary/5 dark:bg-primary/10"
+                : "border-input hover:border-primary/50 hover:bg-muted/30"
+              }`}
           >
             <div className="flex items-center gap-4">
-              <span className="text-3xl">💕</span>
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center
+                ${selectedRole === "partner" 
+                  ? "bg-secondary text-secondary-foreground" 
+                  : "bg-muted text-muted-foreground"
+                }`}>
+                <Heart className="w-7 h-7" />
+              </div>
               <div>
-                <p className="font-semibold text-gray-900">I'm a supportive partner</p>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="font-semibold text-foreground">I'm a supportive partner</p>
+                <p className="text-sm text-muted-foreground mt-1">
                   Stay informed and know how to support your partner
                 </p>
               </div>
@@ -133,7 +155,9 @@ export default function OnboardingFlow() {
         <button
           onClick={handleRoleSelect}
           disabled={isSubmitting}
-          className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+          className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-semibold 
+            hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all 
+            press-feedback no-tap-highlight touch-target shadow-lg shadow-primary/30"
         >
           {isSubmitting ? "Setting up..." : "Continue"}
         </button>
@@ -143,29 +167,34 @@ export default function OnboardingFlow() {
 
   // Step: period setup (primary only)
   return (
-    <div className="max-w-md mx-auto py-12 space-y-8">
+    <div className="max-w-md mx-auto py-12 space-y-8 animate-slide-up">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Initial Setup</h2>
-        <p className="text-gray-600 mt-2">Let's set up your cycle tracking</p>
+        <h2 className="text-2xl font-bold text-foreground">Initial Setup</h2>
+        <p className="text-muted-foreground mt-2">Let's set up your cycle tracking</p>
       </div>
 
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             When did your last period start?
           </label>
-          <input
-            type="date"
-            value={lastPeriodDate}
-            onChange={(e) => setLastPeriodDate(e.target.value)}
-            max={new Date().toISOString().split("T")[0]}
-            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-          />
+          <div className="relative">
+            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <input
+              type="date"
+              value={lastPeriodDate}
+              onChange={(e) => setLastPeriodDate(e.target.value)}
+              max={new Date().toISOString().split("T")[0]}
+              className="w-full pl-12 pr-4 py-4 bg-muted/50 border border-input rounded-2xl 
+                focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary 
+                transition-all touch-target"
+            />
+          </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Average cycle length: {cycleLength} days
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Average cycle length: <span className="text-primary">{cycleLength}</span> days
           </label>
           <input
             type="range"
@@ -173,9 +202,10 @@ export default function OnboardingFlow() {
             max="40"
             value={cycleLength}
             onChange={(e) => setCycleLength(parseInt(e.target.value))}
-            className="w-full accent-primary-500"
+            className="w-full h-3 bg-muted rounded-full appearance-none cursor-pointer accent-primary 
+              touch-target"
           />
-          <div className="flex justify-between text-xs text-gray-400">
+          <div className="flex justify-between text-xs text-muted-foreground mt-2">
             <span>21</span>
             <span>28</span>
             <span>40</span>
@@ -183,8 +213,8 @@ export default function OnboardingFlow() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Average period length: {periodLength} days
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Average period length: <span className="text-primary">{periodLength}</span> days
           </label>
           <input
             type="range"
@@ -192,9 +222,10 @@ export default function OnboardingFlow() {
             max="8"
             value={periodLength}
             onChange={(e) => setPeriodLength(parseInt(e.target.value))}
-            className="w-full accent-primary-500"
+            className="w-full h-3 bg-muted rounded-full appearance-none cursor-pointer accent-primary 
+              touch-target"
           />
-          <div className="flex justify-between text-xs text-gray-400">
+          <div className="flex justify-between text-xs text-muted-foreground mt-2">
             <span>2</span>
             <span>5</span>
             <span>8</span>
@@ -205,7 +236,9 @@ export default function OnboardingFlow() {
       <button
         onClick={handlePeriodSetup}
         disabled={isSubmitting || !lastPeriodDate}
-        className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+        className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-semibold 
+          hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all 
+          press-feedback no-tap-highlight touch-target shadow-lg shadow-primary/30"
       >
         {isSubmitting ? "Setting up..." : "Start Tracking"}
       </button>

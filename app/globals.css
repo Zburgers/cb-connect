@@ -5,25 +5,47 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 222 47% 2%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 222 47% 2%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 340 82% 52%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 340 82% 52%;
-    --radius: 0.75rem;
+    --popover-foreground: 222 47% 2%;
+    --primary: 251 88% 66%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 330 81% 60%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 163 94% 39%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 251 88% 66%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 222 47% 2%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 3%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 3%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 251 88% 66%;
+    --primary-foreground: 222 47% 2%;
+    --secondary: 330 81% 60%;
+    --secondary-foreground: 222 47% 2%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 163 94% 39%;
+    --accent-foreground: 222 47% 2%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 251 88% 66%;
   }
 }
 
@@ -34,5 +56,90 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* Glass card for light mode */
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-lg;
+  }
+  
+  /* Glass card for dark mode */
+  .dark .glass-card {
+    @apply bg-black/40 backdrop-blur-xl border border-white/5 shadow-lg;
+  }
+  
+  /* Elevated glass (modals, overlays) */
+  .glass-elevated {
+    @apply bg-white/90 backdrop-blur-2xl border border-white/30 shadow-2xl;
+  }
+  
+  .dark .glass-elevated {
+    @apply bg-black/60 backdrop-blur-2xl border border-white/10 shadow-2xl;
+  }
+  
+  /* Phase cards with gradient + glass */
+  .phase-card-menstruation {
+    @apply glass-card bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20;
+  }
+  .phase-card-follicular {
+    @apply glass-card bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20;
+  }
+  .phase-card-ovulation {
+    @apply glass-card bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/30 dark:to-amber-900/20;
+  }
+  .phase-card-luteal {
+    @apply glass-card bg-gradient-to-br from-violet-50 to-violet-100/50 dark:from-violet-950/30 dark:to-violet-900/20;
+  }
+  
+  /* Ambient glow effect for dark mode */
+  .ambient-glow {
+    @apply relative;
+  }
+  .ambient-glow::before {
+    content: '';
+    @apply absolute -inset-4 bg-gradient-to-r from-primary/20 to-secondary/20 blur-3xl -z-10 rounded-full;
+  }
+}
+
+@layer utilities {
+  /* Minimum touch target: 44x44px */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  
+  /* Touch spacing: 8px gap */
+  .touch-spacing {
+    @apply gap-2;
+  }
+  
+  /* Remove tap highlight on mobile */
+  .no-tap-highlight {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Smooth press feedback */
+  .press-feedback {
+    @apply active:scale-95 active:opacity-80 transition-transform duration-150;
+  }
+  
+  /* Animation delay utilities */
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+}
+
+/* Accessibility: Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

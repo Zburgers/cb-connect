@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
-import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { DashboardSkeleton } from "@/components/common/LoadingSkeleton";
 import CurrentPhase from "@/components/dashboard/CurrentPhase";
 import PainLogger from "@/components/dashboard/PainLogger";
 import TipsCard from "@/components/dashboard/TipsCard";
@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
 
   if (!isLoaded || data === undefined || me === undefined) {
-    return <LoadingSpinner />;
+    return <DashboardSkeleton />;
   }
 
   if (!me) {
@@ -36,10 +36,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
-        <p className="text-gray-500 text-sm">Here's your cycle overview for today</p>
+        <h1 className="text-2xl font-bold text-foreground">Welcome back</h1>
+        <p className="text-muted-foreground text-sm">Here's your cycle overview for today</p>
       </div>
 
       {data.cycleInfo && (
