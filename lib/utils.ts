@@ -77,3 +77,51 @@ export function getPhaseIcon(phase: string) {
   };
   return icons[phase] ?? "Circle";
 }
+
+/**
+ * Copy text to clipboard with fallback for older browsers
+ * @param text - Text to copy
+ * @returns true if successful, false otherwise
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    // Fallback for older browsers
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const success = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Share text using Web Share API with fallback to clipboard
+ * @param text - Text to share
+ * @param title - Optional title for share dialog
+ * @returns true if shared successfully, false otherwise
+ */
+export async function shareText(text: string, title?: string): Promise<boolean> {
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: title ?? "CB Connect",
+        text,
+      });
+      return true;
+    }
+    // Fallback: copy to clipboard
+    return await copyToClipboard(text);
+  } catch {
+    return false;
+  }
+}
