@@ -2,11 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 
 export default function SettingsPage() {
-  const cycleSettings = useQuery(api.queries.history.getCycleSettings);
+  const { isLoaded, isSignedIn } = useAuth();
+  const cycleSettings = useQuery(
+    api.queries.history.getCycleSettings,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
   const updateSettings = useMutation(api.mutations.periods.updateCycleSettings);
 
   const [cycleLength, setCycleLength] = useState(28);
@@ -21,7 +26,7 @@ export default function SettingsPage() {
     }
   }, [cycleSettings]);
 
-  if (cycleSettings === undefined) return <LoadingSpinner />;
+  if (!isLoaded || cycleSettings === undefined) return <LoadingSpinner />;
 
   const handleSave = async () => {
     setIsSaving(true);

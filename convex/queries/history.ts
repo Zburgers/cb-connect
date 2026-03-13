@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser } from "../_helpers/auth";
+import { getCurrentUserOrNull } from "../_helpers/auth";
 
 export const getPainHistory = query({
   args: {
@@ -8,7 +8,10 @@ export const getPainHistory = query({
     endDate: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return [];
+    }
 
     const logs = await ctx.db
       .query("painLogs")
@@ -24,7 +27,10 @@ export const getPainHistory = query({
 
 export const getPeriodHistory = query({
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return [];
+    }
 
     const periods = await ctx.db
       .query("periodEvents")
@@ -38,7 +44,10 @@ export const getPeriodHistory = query({
 
 export const getCycleSettings = query({
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return { cycleLength: 28, periodLength: 5 };
+    }
 
     const settings = await ctx.db
       .query("cycleSettings")

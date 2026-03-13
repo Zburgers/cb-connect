@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import CurrentPhase from "@/components/dashboard/CurrentPhase";
@@ -11,10 +12,14 @@ import OnboardingFlow from "@/components/dashboard/OnboardingFlow";
 import PartnerDashboard from "@/components/partner/PartnerDashboard";
 
 export default function DashboardPage() {
-  const data = useQuery(api.queries.dashboard.getDashboardData);
-  const me = useQuery(api.queries.users.getMe);
+  const { isLoaded, isSignedIn } = useAuth();
+  const data = useQuery(
+    api.queries.dashboard.getDashboardData,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
+  const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
 
-  if (data === undefined || me === undefined) {
+  if (!isLoaded || data === undefined || me === undefined) {
     return <LoadingSpinner />;
   }
 

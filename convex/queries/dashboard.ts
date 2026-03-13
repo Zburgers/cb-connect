@@ -1,11 +1,22 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo, getPainSeverityBucket } from "../_helpers/cycleCalculations";
 
 export const getDashboardData = query({
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return {
+        hasData: false,
+        isPartnerView: false,
+        message: "Please sign in to view your dashboard.",
+        cycleInfo: null,
+        painData: null,
+        painTip: null,
+        nutritionTips: [],
+      };
+    }
 
     let targetUserId = user._id;
     let isPartnerView = false;

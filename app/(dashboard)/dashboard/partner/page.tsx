@@ -2,12 +2,17 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 
 export default function PartnerPage() {
-  const me = useQuery(api.queries.users.getMe);
-  const coupleStatus = useQuery(api.queries.couples.getCoupleStatus);
+  const { isLoaded, isSignedIn } = useAuth();
+  const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
+  const coupleStatus = useQuery(
+    api.queries.couples.getCoupleStatus,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
@@ -18,7 +23,7 @@ export default function PartnerPage() {
   const [message, setMessage] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
 
-  if (me === undefined || coupleStatus === undefined) return <LoadingSpinner />;
+  if (!isLoaded || me === undefined || coupleStatus === undefined) return <LoadingSpinner />;
 
   const handleGenerateCode = async () => {
     setIsSubmitting(true);

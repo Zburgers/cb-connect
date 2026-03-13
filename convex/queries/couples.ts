@@ -1,9 +1,12 @@
 import { query } from "../_generated/server";
-import { getCurrentUser } from "../_helpers/auth";
+import { getCurrentUserOrNull } from "../_helpers/auth";
 
 export const getCoupleStatus = query({
   handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return { isLinked: false, partner: null, activePairingCode: null };
+    }
 
     const membership = await ctx.db
       .query("coupleMembers")

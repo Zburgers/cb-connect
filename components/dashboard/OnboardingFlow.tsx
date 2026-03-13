@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useUser } from "@clerk/nextjs";
 
 type Step = "role" | "period" | "done";
 
 export default function OnboardingFlow() {
-  const { user: clerkUser } = useUser();
-  const me = useQuery(api.queries.users.getMe);
+  const { user: clerkUser, isLoaded } = useUser();
+  const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
   const createUser = useMutation(api.mutations.users.createOrUpdateUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
@@ -21,6 +22,10 @@ export default function OnboardingFlow() {
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isLoaded || me === undefined) {
+    return <LoadingSpinner />;
+  }
 
   const handleRoleSelect = async () => {
     setIsSubmitting(true);

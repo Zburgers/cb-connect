@@ -2,12 +2,17 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { formatDate } from "@/lib/utils";
 
 export default function LogPage() {
-  const periodHistory = useQuery(api.queries.history.getPeriodHistory);
+  const { isLoaded, isSignedIn } = useAuth();
+  const periodHistory = useQuery(
+    api.queries.history.getPeriodHistory,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
   const logPeriodEnd = useMutation(api.mutations.periods.logPeriodEnd);
 
@@ -16,7 +21,7 @@ export default function LogPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
-  if (periodHistory === undefined) return <LoadingSpinner />;
+  if (!isLoaded || periodHistory === undefined) return <LoadingSpinner />;
 
   const ongoingPeriod = periodHistory?.find((p: any) => !p.endDate);
 
