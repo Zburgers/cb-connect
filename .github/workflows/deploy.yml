@@ -37,8 +37,9 @@ jobs:
 
       - name: Restart with PM2
         run: |
-          export CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}"
-          export CONVEX_DEPLOYMENT="${{ secrets.CONVEX_DEPLOYMENT }}"
+          # Inject secret key into pm2.config.js
+          sed -i 's|CLERK_SECRET_KEY: ""|CLERK_SECRET_KEY: "${{ secrets.CLERK_SECRET_KEY }}"|g' pm2.config.js
+          sed -i 's|CONVEX_DEPLOYMENT: ""|CONVEX_DEPLOYMENT: "${{ secrets.CONVEX_DEPLOYMENT }}"|g' pm2.config.js
           pm2 delete cb-connect || true
-          pm2 start pm2.config.js --update-env
+          pm2 start pm2.config.js
           pm2 save
