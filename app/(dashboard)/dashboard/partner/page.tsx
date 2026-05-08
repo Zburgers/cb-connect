@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { copyToClipboard, shareText } from "@/lib/utils";
 import { Copy, Share2, Check } from "lucide-react";
 
 export default function PartnerPage() {
-  const { isLoaded, isSignedIn } = useAuth();
-  const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
+  const router = useRouter();
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  const { isLoaded: clerkLoaded, isSignedIn } = useAuth();
+  const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
   const coupleStatus = useQuery(
     api.queries.couples.getCoupleStatus,
-    isLoaded && isSignedIn ? {} : "skip"
+    // Only run once we know the user exists and has a role
+    isAuthenticated && me?.role ? {} : "skip"
   );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
@@ -26,7 +30,34 @@ export default function PartnerPage() {
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  if (!isLoaded || me === undefined || coupleStatus === undefined) return <LoadingSpinner />;
+  // Still loading auth
+  if (isLoading || me === undefined) return <LoadingSpinner />;
+
+  // Convex auth not ready / unauthenticated
+  if (!isAuthenticated) {
+    if (clerkLoaded && isSignedIn) {
+      return (
+        <div className="glass-card rounded-3xl p-6 animate-slide-up space-y-3">
+          <h2 className="text-lg font-semibold text-foreground">Authentication setup issue</h2>
+          <p className="text-sm text-muted-foreground">
+            You are signed in to Clerk, but Convex could not obtain a session token.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            In Clerk Dashboard, create a JWT template named <code>convex</code>, then refresh.
+          </p>
+        </div>
+      );
+    }
+    return <LoadingSpinner />;
+  }
+
+  if (me === null) return <LoadingSpinner />;
+
+  // User exists but hasn't completed onboarding yet — layout will redirect
+  if (!me.role) return <LoadingSpinner />;
+
+  // Waiting for couple status
+  if (coupleStatus === undefined) return <LoadingSpinner />;
 
   const handleCopyCode = async (codeToCopy: string) => {
     const success = await copyToClipboard(codeToCopy);
@@ -78,7 +109,12 @@ export default function PartnerPage() {
   };
 
   const handleRevokeAccess = async () => {
-    if (!confirm("Are you sure you want to revoke partner access?")) return;
+    if (
+      !confirm(
+        "Are you sure you want to revoke partner access? They will no longer be able to see your data."
+      )
+    )
+      return;
     setIsSubmitting(true);
     try {
       await revokeAccess();
@@ -91,55 +127,58 @@ export default function PartnerPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Partner</h1>
-
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+        <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+      </div>
       {message && (
-        <div className="p-3 bg-blue-50 text-blue-800 rounded-xl text-sm">
+        <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
           {message}
         </div>
       )}
-
       {/* Already linked */}
       {coupleStatus?.isLinked && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">💕</span>
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-2xl">💕</span>
+            </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Connected</h2>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+              <p className="text-sm text-muted-foreground">
                 Linked with {coupleStatus.partner?.name ?? "your partner"}
               </p>
             </div>
           </div>
 
-          {me?.role === "primary" && (
+          {me.role === "primary" && (
             <>
-              <div className="border-t pt-4 space-y-3">
-                <h3 className="text-sm font-medium text-gray-700">Sharing Settings</h3>
+              <div className="border-t border-border pt-4 space-y-3">
+                <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
                 <label className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Share cycle phase</span>
+                  <span className="text-sm text-muted-foreground">Share cycle phase</span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.phase ?? true}
                     onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
-                    className="h-5 w-5 rounded accent-primary-500"
+                    className="h-5 w-5 rounded accent-primary"
                   />
                 </label>
                 <label className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Share pain data</span>
+                  <span className="text-sm text-muted-foreground">Share pain data</span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.pain ?? false}
                     onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
-                    className="h-5 w-5 rounded accent-primary-500"
+                    className="h-5 w-5 rounded accent-primary"
                   />
                 </label>
               </div>
 
               <button
                 onClick={handleRevokeAccess}
-                className="w-full py-2 border border-red-200 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors"
+                className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
               >
                 Revoke Partner Access
               </button>
@@ -147,28 +186,30 @@ export default function PartnerPage() {
           )}
         </div>
       )}
-
       {/* Not linked - Primary user */}
-      {!coupleStatus?.isLinked && me?.role === "primary" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Link Your Partner</h2>
-          <p className="text-sm text-gray-600">
+      {!coupleStatus?.isLinked && me.role === "primary" && (
+        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+          <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+          <p className="text-sm text-muted-foreground">
             Generate a pairing code and share it with your partner.
           </p>
 
           {generatedCode || coupleStatus?.activePairingCode ? (
             <div className="text-center py-4">
-              <p className="text-sm text-gray-500 mb-2">Your pairing code:</p>
+              <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
               <div className="flex items-center justify-center gap-2 mb-3">
-                <p className="text-4xl font-mono font-bold tracking-widest text-primary-500">
+                <p className="text-4xl font-mono font-bold tracking-widest text-primary">
                   {generatedCode ?? coupleStatus?.activePairingCode?.code}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2">
                 <button
-                  onClick={() => handleCopyCode(generatedCode ?? coupleStatus?.activePairingCode?.code!)}
-                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm
-                    hover:bg-muted/80 transition-colors"
+                  onClick={() =>
+                    handleCopyCode(
+                      generatedCode ?? coupleStatus?.activePairingCode?.code!
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
                   type="button"
                   aria-label="Copy pairing code"
                 >
@@ -185,9 +226,12 @@ export default function PartnerPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => handleShareCode(generatedCode ?? coupleStatus?.activePairingCode?.code!)}
-                  className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm
-                    hover:bg-muted/80 transition-colors"
+                  onClick={() =>
+                    handleShareCode(
+                      generatedCode ?? coupleStatus?.activePairingCode?.code!
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
                   type="button"
                   aria-label="Share pairing code"
                 >
@@ -195,41 +239,53 @@ export default function PartnerPage() {
                   <span>Share</span>
                 </button>
               </div>
-              <p className="text-xs text-gray-400 mt-3">Valid for 24 hours</p>
+              <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
             </div>
           ) : null}
 
           <button
             onClick={handleGenerateCode}
             disabled={isSubmitting}
-            className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+            className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {isSubmitting ? "Generating..." : generatedCode ? "Generate New Code" : "Generate Pairing Code"}
+            {isSubmitting
+              ? "Generating..."
+              : generatedCode
+                ? "Generate New Code"
+                : "Generate Pairing Code"}
           </button>
         </div>
       )}
-
       {/* Not linked - Partner user */}
-      {!coupleStatus?.isLinked && me?.role === "partner" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Enter Pairing Code</h2>
-          <p className="text-sm text-gray-600">
-            Ask your partner for their 6-digit pairing code.
-          </p>
+      {!coupleStatus?.isLinked && me.role === "partner" && (
+        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-2xl">💕</span>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+              <p className="text-sm text-muted-foreground">
+                Ask your partner for their 6-digit pairing code.
+              </p>
+            </div>
+          </div>
 
           <input
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="Enter 6-digit code"
-            className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+            className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+              bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+              focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
             maxLength={6}
           />
 
           <button
             onClick={handleLinkPartner}
             disabled={isSubmitting || code.length !== 6}
-            className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+            className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
           >
             {isSubmitting ? "Linking..." : "Link Account"}
           </button>

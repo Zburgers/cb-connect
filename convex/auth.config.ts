@@ -1,7 +1,13 @@
+const clerkFrontendApiUrl = process.env.CLERK_FRONTEND_API_URL;
+
+if (!clerkFrontendApiUrl) {
+  throw new Error("Missing CLERK_FRONTEND_API_URL");
+}
+
 export default {
   providers: [
     {
-      domain: "https://holy-clam-29.clerk.accounts.dev",
+      domain: clerkFrontendApiUrl,
       applicationID: "convex",
     },
   ],

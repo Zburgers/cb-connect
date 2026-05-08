@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
+import { api } from "../_generated/api";
 
 export const generatePairingCode = mutation({
   args: {},
@@ -42,6 +43,18 @@ export const generatePairingCode = mutation({
         sharingPhase: true,
         joinedAt: Date.now(),
       });
+    }
+
+    // Rate limit: max 5 pairing codes per hour
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const recentCodes = await ctx.db
+      .query("pairingCodes")
+      .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
+      .filter((q) => q.gte(q.field("_creationTime"), oneHourAgo))
+      .collect();
+
+    if (recentCodes.length >= 5) {
+      throw new Error("Too many pairing codes generated. Please wait before generating another.");
     }
 
     // Generate unique 6-digit code
@@ -134,6 +147,25 @@ export const linkPartnerWithCode = mutation({
       status: "active",
       linkedAt: Date.now(),
     });
+
+    // Find the primary user to notify them
+    const primaryMembership = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary")
+      )
+      .first();
+
+    if (primaryMembership) {
+      const primaryUser = await ctx.db.get(primaryMembership.userId);
+      if (primaryUser) {
+        await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+          userId: primaryMembership.userId,
+          type: "partner_linked",
+          message: `${primaryUser.name ?? "A user"} has successfully linked with their partner!`,
+        });
+      }
+    }
 
     return { success: true, coupleId: pairingCode.coupleId };
   },

@@ -7,14 +7,15 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useUser } from "@clerk/nextjs";
 import { User, Heart, Calendar, Check, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
+// Note: by the time OnboardingFlow renders, ensureUser has already run in the layout,
+// so `me` is guaranteed to exist. createOrUpdateUser is not needed here.
 
 type Step = "role" | "period" | "done";
 
 export default function OnboardingFlow() {
   const router = useRouter();
-  const { user: clerkUser, isLoaded } = useUser();
+  const { isLoaded } = useUser();
   const me = useQuery(api.queries.users.getMe, isLoaded ? {} : "skip");
-  const createUser = useMutation(api.mutations.users.createOrUpdateUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
   const updateCycleSettings = useMutation(api.mutations.periods.updateCycleSettings);
@@ -33,16 +34,7 @@ export default function OnboardingFlow() {
   const handleRoleSelect = async () => {
     setIsSubmitting(true);
     try {
-      if (!me) {
-        await createUser({
-          clerkId: clerkUser?.id ?? "",
-          email: clerkUser?.emailAddresses[0]?.emailAddress ?? "",
-          name: clerkUser?.fullName ?? "User",
-          role: selectedRole,
-        });
-      } else {
-        await updateRole({ role: selectedRole });
-      }
+      await updateRole({ role: selectedRole });
 
       if (selectedRole === "primary") {
         setStep("period");

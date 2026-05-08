@@ -29,7 +29,7 @@ export default function PartnerStatusCard() {
       <div
         onClick={() => router.push("/dashboard/partner")}
         className="glass-card rounded-3xl p-6 cursor-pointer hover:shadow-lg transition-all
-          border border-gray-100 dark:border-gray-800 animate-slide-up"
+          border border-border animate-slide-up"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -71,7 +71,7 @@ export default function PartnerStatusCard() {
       <div
         onClick={() => router.push("/dashboard/partner")}
         className="glass-card rounded-3xl p-6 cursor-pointer hover:shadow-lg transition-all
-          border border-gray-100 dark:border-gray-800 animate-slide-up"
+          border border-border animate-slide-up"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -114,8 +114,7 @@ export default function PartnerStatusCard() {
 
   // Linked - Show connection status
   return (
-    <div className="glass-card rounded-3xl p-6 border border-gray-100 dark:border-gray-800
-      animate-slide-up">
+    <div className="glass-card rounded-3xl p-6 border border-border animate-slide-up">
       <div className="flex items-start gap-4">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20
           flex items-center justify-center flex-shrink-0">

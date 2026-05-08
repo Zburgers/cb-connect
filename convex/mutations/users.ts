@@ -6,7 +6,7 @@ export const createOrUpdateUser = mutation({
     clerkId: v.string(),
     email: v.string(),
     name: v.string(),
-    role: v.union(v.literal("primary"), v.literal("partner")),
+    role: v.optional(v.union(v.literal("primary"), v.literal("partner"))),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -27,7 +27,7 @@ export const createOrUpdateUser = mutation({
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
-      role: args.role,
+      ...(args.role ? { role: args.role } : {}),
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });
@@ -79,7 +79,41 @@ export const syncUser = internalMutation({
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
-      role: "primary",
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Ensures the currently authenticated Clerk user exists in Convex.
+ * Called client-side on first load. Does not set role — that's done in onboarding.
+ */
+export const ensureUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { lastActiveAt: Date.now() });
+      return existing._id;
+    }
+
+    const name =
+      [identity.givenName, identity.familyName].filter(Boolean).join(" ") ||
+      identity.name ||
+      "User";
+
+    return await ctx.db.insert("users", {
+      clerkId: identity.subject,
+      email: identity.email ?? "",
+      name,
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });

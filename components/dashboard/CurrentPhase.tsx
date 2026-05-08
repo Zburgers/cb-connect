@@ -26,7 +26,7 @@ export default function CurrentPhase({
       animate-slide-up border-0 shadow-xl`}>
       <div className="flex items-center gap-4">
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-white/60 dark:bg-black/40 backdrop-blur-md flex items-center 
+          <div className="w-16 h-16 rounded-2xl bg-background/60 backdrop-blur-md flex items-center 
             justify-center shadow-lg">
             <span className="text-3xl filter drop-shadow-lg">
               {phase === "menstruation" && "🌙"}

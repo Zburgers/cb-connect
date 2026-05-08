@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import ThemeToggle from "@/components/common/ThemeToggle";
 import { Home, PenTool, Heart, Settings } from "lucide-react";
+import { api } from "@/convex/_generated/api";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -15,6 +18,26 @@ const navItems = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  const ensureUser = useMutation(api.mutations.users.ensureUser);
+  const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+
+  // Sync Clerk user into Convex on first load — only fires once Convex has a valid token
+  useEffect(() => {
+    if (isAuthenticated) {
+      ensureUser().catch(() => {
+        // Non-fatal — page will still work via getMe
+      });
+    }
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Redirect to onboarding if user exists but has no role yet
+  useEffect(() => {
+    if (me !== undefined && me !== null && !me.role) {
+      router.replace("/onboarding");
+    }
+  }, [me, router]);
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -24,7 +47,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-blob animation-delay-2000" />
         <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-blob animation-delay-4000" />
       </div>
-
       {/* Top nav */}
       <header className="glass-elevated border-b sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -33,16 +55,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <UserButton afterSignOutUrl="/" />
+            <UserButton />
           </div>
         </div>
       </header>
-
       {/* Main content */}
       <main className="max-w-4xl mx-auto px-4 py-6 pb-24 relative z-10">
         {children}
       </main>
-
       {/* Bottom nav (mobile-first) */}
       <nav className="glass-elevated border-t fixed bottom-0 left-0 right-0 z-50">
         <div className="max-w-4xl mx-auto flex justify-around py-2">

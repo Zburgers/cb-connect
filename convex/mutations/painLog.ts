@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
+import { api } from "../_generated/api";
 
 export const createOrUpdatePainLog = mutation({
   args: {
@@ -42,6 +43,16 @@ export const createOrUpdatePainLog = mutation({
         note: args.note,
         updatedAt: Date.now(),
       });
+
+      // Notify for high pain scores (>= 7)
+      if (args.painScore >= 7) {
+        await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+          userId: user._id,
+          type: "high_pain_logged",
+          message: `High pain level (${args.painScore}/10) logged for ${user.name ?? "a user"} on ${args.date}. Tags: ${args.tags.join(", ") || "none"}.`,
+        });
+      }
+
       return { logId: existing._id, created: false };
     }
 
@@ -54,6 +65,15 @@ export const createOrUpdatePainLog = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+
+    // Notify for high pain scores (>= 7) on new entries
+    if (args.painScore >= 7) {
+      await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+        userId: user._id,
+        type: "high_pain_logged",
+        message: `High pain level (${args.painScore}/10) logged for ${user.name ?? "a user"} on ${args.date}. Tags: ${args.tags.join(", ") || "none"}.`,
+      });
+    }
 
     return { logId, created: true };
   },

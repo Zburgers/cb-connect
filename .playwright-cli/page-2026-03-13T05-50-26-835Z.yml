@@ -1,0 +1,62 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "CB Connect" [ref=e5] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e6]:
+          - link "Sign In" [ref=e7] [cursor=pointer]:
+            - /url: /sign-in
+          - link "Get Started" [ref=e8] [cursor=pointer]:
+            - /url: /sign-up
+    - main [ref=e9]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - img [ref=e13]
+          - text: Track together, support better
+        - heading "CB Connect" [level=1] [ref=e15]
+        - paragraph [ref=e16]: Track cycles, manage pain, and stay connected with your partner. Built for couples who care.
+        - generic [ref=e17]:
+          - link "Start Tracking Free" [ref=e18] [cursor=pointer]:
+            - /url: /sign-up
+            - text: Start Tracking Free
+            - img [ref=e19]
+          - link "Sign In" [ref=e21] [cursor=pointer]:
+            - /url: /sign-in
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - heading "Everything you need to track together" [level=2] [ref=e25]
+          - paragraph [ref=e26]: Powerful features designed for couples navigating cycle tracking as a team
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - img [ref=e30]
+            - generic [ref=e32]:
+              - heading "Cycle Tracking" [level=3] [ref=e33]
+              - paragraph [ref=e34]: Track periods and get accurate phase predictions
+          - generic [ref=e35]:
+            - img [ref=e37]
+            - generic [ref=e39]:
+              - heading "Pain Logging" [level=3] [ref=e40]
+              - paragraph [ref=e41]: Log daily pain scores and symptoms with ease
+          - generic [ref=e42]:
+            - img [ref=e44]
+            - generic [ref=e47]:
+              - heading "Smart Notifications" [level=3] [ref=e48]
+              - paragraph [ref=e49]: Get phase-specific tips and reminders
+          - generic [ref=e50]:
+            - img [ref=e52]
+            - generic [ref=e54]:
+              - heading "Privacy First" [level=3] [ref=e55]
+              - paragraph [ref=e56]: Control what data you share with your partner
+      - generic [ref=e59]:
+        - heading "Ready to start tracking together?" [level=2] [ref=e60]
+        - paragraph [ref=e61]: Join couples who are already using CB Connect to understand cycles better and support each other.
+        - link "Get Started for Free" [ref=e62] [cursor=pointer]:
+          - /url: /sign-up
+          - text: Get Started for Free
+          - img [ref=e63]
+    - contentinfo [ref=e65]:
+      - paragraph [ref=e67]: © 2026 CB Connect. Built for couples.
+  - button "Open Next.js Dev Tools" [ref=e73] [cursor=pointer]:
+    - img [ref=e74]
+  - alert [ref=e77]

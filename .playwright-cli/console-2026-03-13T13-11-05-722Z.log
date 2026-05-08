@@ -1,0 +1,981 @@
+[    1507ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[    1990ms] [WARNING] Clerk: The prop "afterSignInUrl" is deprecated and should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[    1991ms] [WARNING] Clerk: The "signInFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignInUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignInUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[ 1721761ms] [ERROR] ./app/(dashboard)/dashboard/partner/page.tsx
+Error:   × Return statement is not allowed here
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:351:1]
+ 348 │         }
+ 349 │       };
+ 350 │     
+ 351 │ ╭─▶   return (
+ 352 │ │       <div className="space-y-6 animate-fade-in">
+ 353 │ │         <div>
+ 354 │ │           <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+ 355 │ │           <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+ 356 │ │         </div>
+ 357 │ │   
+ 358 │ │         {message && (
+ 359 │ │           <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+ 360 │ │             {message}
+ 361 │ │           </div>
+ 362 │ │         )}
+ 363 │ │   
+ 364 │ │         {/* Already linked */}
+ 365 │ │         {coupleStatus?.isLinked && (
+ 366 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 367 │ │             <div className="flex items-center gap-3">
+ 368 │ │               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+ 369 │ │                 <span className="text-2xl">💕</span>
+ 370 │ │               </div>
+ 371 │ │               <div>
+ 372 │ │                 <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+ 373 │ │                 <p className="text-sm text-muted-foreground">
+ 374 │ │                   Linked with {coupleStatus.partner?.name ?? "your partner"}
+ 375 │ │                 </p>
+ 376 │ │               </div>
+ 377 │ │             </div>
+ 378 │ │   
+ 379 │ │             {me?.role === "primary" && (
+ 380 │ │               <>
+ 381 │ │                 <div className="border-t border-border pt-4 space-y-3">
+ 382 │ │                   <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+ 383 │ │                   <label className="flex items-center justify-between">
+ 384 │ │                     <span className="text-sm text-muted-foreground">Share cycle phase</span>
+ 385 │ │                     <input
+ 386 │ │                       type="checkbox"
+ 387 │ │                       checked={coupleStatus.sharingSettings?.phase ?? true}
+ 388 │ │                       onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
+ 389 │ │                       className="h-5 w-5 rounded accent-primary"
+ 390 │ │                     />
+ 391 │ │                   </label>
+ 392 │ │                   <label className="flex items-center justify-between">
+ 393 │ │                     <span className="text-sm text-muted-foreground">Share pain data</span>
+ 394 │ │                     <input
+ 395 │ │                       type="checkbox"
+ 396 │ │                       checked={coupleStatus.sharingSettings?.pain ?? false}
+ 397 │ │                       onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
+ 398 │ │                       className="h-5 w-5 rounded accent-primary"
+ 399 │ │                     />
+ 400 │ │                   </label>
+ 401 │ │                 </div>
+ 402 │ │   
+ 403 │ │                 <button
+ 404 │ │                   onClick={handleRevokeAccess}
+ 405 │ │                   className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+ 406 │ │                 >
+ 407 │ │                   Revoke Partner Access
+ 408 │ │                 </button>
+ 409 │ │               </>
+ 410 │ │             )}
+ 411 │ │           </div>
+ 412 │ │         )}
+ 413 │ │   
+ 414 │ │         {/* Not linked - Primary user */}
+ 415 │ │         {!coupleStatus?.isLinked && me?.role === "primary" && (
+ 416 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 417 │ │             <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+ 418 │ │             <p className="text-sm text-muted-foreground">
+ 419 │ │               Generate a pairing code and share it with your partner.
+ 420 │ │             </p>
+ 421 │ │   
+ 422 │ │             {generatedCode || coupleStatus?.activePairingCode ? (
+ 423 │ │               <div className="text-center py-4">
+ 424 │ │                 <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
+ 425 │ │                 <div className="flex items-center justify-center gap-2 mb-3">
+ 426 │ │                   <p className="text-4xl font-mono font-bold tracking-widest text-primary">
+ 427 │ │                     {generatedCode ?? coupleStatus?.activePairingCode?.code}
+ 428 │ │                   </p>
+ 429 │ │                 </div>
+ 430 │ │                 <div className="flex items-center justify-center gap-2">
+ 431 │ │                   <button
+ 432 │ │                     onClick={() =>
+ 433 │ │                       handleCopyCode(
+ 434 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 435 │ │                       )
+ 436 │ │                     }
+ 437 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 438 │ │                     type="button"
+ 439 │ │                     aria-label="Copy pairing code"
+ 440 │ │                   >
+ 441 │ │                     {copied ? (
+ 442 │ │                       <>
+ 443 │ │                         <Check className="w-4 h-4" />
+ 444 │ │                         <span>Copied!</span>
+ 445 │ │                       </>
+ 446 │ │                     ) : (
+ 447 │ │                       <>
+ 448 │ │                         <Copy className="w-4 h-4" />
+ 449 │ │                         <span>Copy</span>
+ 450 │ │                       </>
+ 451 │ │                     )}
+ 452 │ │                   </button>
+ 453 │ │                   <button
+ 454 │ │                     onClick={() =>
+ 455 │ │                       handleShareCode(
+ 456 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 457 │ │                       )
+ 458 │ │                     }
+ 459 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 460 │ │                     type="button"
+ 461 │ │                     aria-label="Share pairing code"
+ 462 │ │                   >
+ 463 │ │                     <Share2 className="w-4 h-4" />
+ 464 │ │                     <span>Share</span>
+ 465 │ │                   </button>
+ 466 │ │                 </div>
+ 467 │ │                 <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
+ 468 │ │               </div>
+ 469 │ │             ) : null}
+ 470 │ │   
+ 471 │ │             <button
+ 472 │ │               onClick={handleGenerateCode}
+ 473 │ │               disabled={isSubmitting}
+ 474 │ │               className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+ 475 │ │             >
+ 476 │ │               {isSubmitting
+ 477 │ │                 ? "Generating..."
+ 478 │ │                 : generatedCode
+ 479 │ │                   ? "Generate New Code"
+ 480 │ │                   : "Generate Pairing Code"}
+ 481 │ │             </button>
+ 482 │ │           </div>
+ 483 │ │         )}
+ 484 │ │   
+ 485 │ │         {/* Not linked - Partner user */}
+ 486 │ │         {!coupleStatus?.isLinked && me?.role === "partner" && (
+ 487 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 488 │ │             <div className="flex items-center gap-3">
+ 489 │ │               <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+ 490 │ │                 <span className="text-2xl">💕</span>
+ 491 │ │               </div>
+ 492 │ │               <div>
+ 493 │ │                 <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+ 494 │ │                 <p className="text-sm text-muted-foreground">
+ 495 │ │                   Ask your partner for their 6-digit pairing code.
+ 496 │ │                 </p>
+ 497 │ │               </div>
+ 498 │ │             </div>
+ 499 │ │   
+ 500 │ │             <input
+ 501 │ │               type="text"
+ 502 │ │               value={code}
+ 503 │ │               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+ 504 │ │               placeholder="Enter 6-digit code"
+ 505 │ │               className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+ 506 │ │                 bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+ 507 │ │                 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+ 508 │ │               maxLength={6}
+ 509 │ │             />
+ 510 │ │   
+ 511 │ │             <button
+ 512 │ │               onClick={handleLinkPartner}
+ 513 │ │               disabled={isSubmitting || code.length !== 6}
+ 514 │ │               className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+ 515 │ │             >
+ 516 │ │               {isSubmitting ? "Linking..." : "Link Account"}
+ 517 │ │             </button>
+ 518 │ │           </div>
+ 519 │ │         )}
+ 520 │ │       </div>
+ 521 │ ╰─▶   );
+ 522 │     }
+     ╰────
+  × Expression expected
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:522:1]
+ 519 │       )}
+ 520 │     </div>
+ 521 │   );
+ 522 │ }
+     · ─
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/(dashboard)/dashboard/partner/page.tsx @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/userspace/app/errors/intercept-console-error.js:56
+[ 1722108ms] [ERROR] ./app/(dashboard)/dashboard/partner/page.tsx
+Error:   × Return statement is not allowed here
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:351:1]
+ 348 │         }
+ 349 │       };
+ 350 │     
+ 351 │ ╭─▶   return (
+ 352 │ │       <div className="space-y-6 animate-fade-in">
+ 353 │ │         <div>
+ 354 │ │           <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+ 355 │ │           <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+ 356 │ │         </div>
+ 357 │ │   
+ 358 │ │         {message && (
+ 359 │ │           <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+ 360 │ │             {message}
+ 361 │ │           </div>
+ 362 │ │         )}
+ 363 │ │   
+ 364 │ │         {/* Already linked */}
+ 365 │ │         {coupleStatus?.isLinked && (
+ 366 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 367 │ │             <div className="flex items-center gap-3">
+ 368 │ │               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+ 369 │ │                 <span className="text-2xl">💕</span>
+ 370 │ │               </div>
+ 371 │ │               <div>
+ 372 │ │                 <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+ 373 │ │                 <p className="text-sm text-muted-foreground">
+ 374 │ │                   Linked with {coupleStatus.partner?.name ?? "your partner"}
+ 375 │ │                 </p>
+ 376 │ │               </div>
+ 377 │ │             </div>
+ 378 │ │   
+ 379 │ │             {me?.role === "primary" && (
+ 380 │ │               <>
+ 381 │ │                 <div className="border-t border-border pt-4 space-y-3">
+ 382 │ │                   <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+ 383 │ │                   <label className="flex items-center justify-between">
+ 384 │ │                     <span className="text-sm text-muted-foreground">Share cycle phase</span>
+ 385 │ │                     <input
+ 386 │ │                       type="checkbox"
+ 387 │ │                       checked={coupleStatus.sharingSettings?.phase ?? true}
+ 388 │ │                       onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
+ 389 │ │                       className="h-5 w-5 rounded accent-primary"
+ 390 │ │                     />
+ 391 │ │                   </label>
+ 392 │ │                   <label className="flex items-center justify-between">
+ 393 │ │                     <span className="text-sm text-muted-foreground">Share pain data</span>
+ 394 │ │                     <input
+ 395 │ │                       type="checkbox"
+ 396 │ │                       checked={coupleStatus.sharingSettings?.pain ?? false}
+ 397 │ │                       onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
+ 398 │ │                       className="h-5 w-5 rounded accent-primary"
+ 399 │ │                     />
+ 400 │ │                   </label>
+ 401 │ │                 </div>
+ 402 │ │   
+ 403 │ │                 <button
+ 404 │ │                   onClick={handleRevokeAccess}
+ 405 │ │                   className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+ 406 │ │                 >
+ 407 │ │                   Revoke Partner Access
+ 408 │ │                 </button>
+ 409 │ │               </>
+ 410 │ │             )}
+ 411 │ │           </div>
+ 412 │ │         )}
+ 413 │ │   
+ 414 │ │         {/* Not linked - Primary user */}
+ 415 │ │         {!coupleStatus?.isLinked && me?.role === "primary" && (
+ 416 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 417 │ │             <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+ 418 │ │             <p className="text-sm text-muted-foreground">
+ 419 │ │               Generate a pairing code and share it with your partner.
+ 420 │ │             </p>
+ 421 │ │   
+ 422 │ │             {generatedCode || coupleStatus?.activePairingCode ? (
+ 423 │ │               <div className="text-center py-4">
+ 424 │ │                 <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
+ 425 │ │                 <div className="flex items-center justify-center gap-2 mb-3">
+ 426 │ │                   <p className="text-4xl font-mono font-bold tracking-widest text-primary">
+ 427 │ │                     {generatedCode ?? coupleStatus?.activePairingCode?.code}
+ 428 │ │                   </p>
+ 429 │ │                 </div>
+ 430 │ │                 <div className="flex items-center justify-center gap-2">
+ 431 │ │                   <button
+ 432 │ │                     onClick={() =>
+ 433 │ │                       handleCopyCode(
+ 434 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 435 │ │                       )
+ 436 │ │                     }
+ 437 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 438 │ │                     type="button"
+ 439 │ │                     aria-label="Copy pairing code"
+ 440 │ │                   >
+ 441 │ │                     {copied ? (
+ 442 │ │                       <>
+ 443 │ │                         <Check className="w-4 h-4" />
+ 444 │ │                         <span>Copied!</span>
+ 445 │ │                       </>
+ 446 │ │                     ) : (
+ 447 │ │                       <>
+ 448 │ │                         <Copy className="w-4 h-4" />
+ 449 │ │                         <span>Copy</span>
+ 450 │ │                       </>
+ 451 │ │                     )}
+ 452 │ │                   </button>
+ 453 │ │                   <button
+ 454 │ │                     onClick={() =>
+ 455 │ │                       handleShareCode(
+ 456 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 457 │ │                       )
+ 458 │ │                     }
+ 459 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 460 │ │                     type="button"
+ 461 │ │                     aria-label="Share pairing code"
+ 462 │ │                   >
+ 463 │ │                     <Share2 className="w-4 h-4" />
+ 464 │ │                     <span>Share</span>
+ 465 │ │                   </button>
+ 466 │ │                 </div>
+ 467 │ │                 <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
+ 468 │ │               </div>
+ 469 │ │             ) : null}
+ 470 │ │   
+ 471 │ │             <button
+ 472 │ │               onClick={handleGenerateCode}
+ 473 │ │               disabled={isSubmitting}
+ 474 │ │               className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+ 475 │ │             >
+ 476 │ │               {isSubmitting
+ 477 │ │                 ? "Generating..."
+ 478 │ │                 : generatedCode
+ 479 │ │                   ? "Generate New Code"
+ 480 │ │                   : "Generate Pairing Code"}
+ 481 │ │             </button>
+ 482 │ │           </div>
+ 483 │ │         )}
+ 484 │ │   
+ 485 │ │         {/* Not linked - Partner user */}
+ 486 │ │         {!coupleStatus?.isLinked && me?.role === "partner" && (
+ 487 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 488 │ │             <div className="flex items-center gap-3">
+ 489 │ │               <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+ 490 │ │                 <span className="text-2xl">💕</span>
+ 491 │ │               </div>
+ 492 │ │               <div>
+ 493 │ │                 <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+ 494 │ │                 <p className="text-sm text-muted-foreground">
+ 495 │ │                   Ask your partner for their 6-digit pairing code.
+ 496 │ │                 </p>
+ 497 │ │               </div>
+ 498 │ │             </div>
+ 499 │ │   
+ 500 │ │             <input
+ 501 │ │               type="text"
+ 502 │ │               value={code}
+ 503 │ │               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+ 504 │ │               placeholder="Enter 6-digit code"
+ 505 │ │               className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+ 506 │ │                 bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+ 507 │ │                 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+ 508 │ │               maxLength={6}
+ 509 │ │             />
+ 510 │ │   
+ 511 │ │             <button
+ 512 │ │               onClick={handleLinkPartner}
+ 513 │ │               disabled={isSubmitting || code.length !== 6}
+ 514 │ │               className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+ 515 │ │             >
+ 516 │ │               {isSubmitting ? "Linking..." : "Link Account"}
+ 517 │ │             </button>
+ 518 │ │           </div>
+ 519 │ │         )}
+ 520 │ │       </div>
+ 521 │ ╰─▶   );
+ 522 │     }
+     ╰────
+  × Expression expected
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:522:1]
+ 519 │       )}
+ 520 │     </div>
+ 521 │   );
+ 522 │ }
+     · ─
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/(dashboard)/dashboard/partner/page.tsx @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/userspace/app/errors/intercept-console-error.js:56
+[ 1726156ms] [ERROR] ./app/(dashboard)/dashboard/partner/page.tsx
+Error:   × Return statement is not allowed here
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:351:1]
+ 348 │         }
+ 349 │       };
+ 350 │     
+ 351 │ ╭─▶   return (
+ 352 │ │       <div className="space-y-6 animate-fade-in">
+ 353 │ │         <div>
+ 354 │ │           <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+ 355 │ │           <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+ 356 │ │         </div>
+ 357 │ │   
+ 358 │ │         {message && (
+ 359 │ │           <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+ 360 │ │             {message}
+ 361 │ │           </div>
+ 362 │ │         )}
+ 363 │ │   
+ 364 │ │         {/* Already linked */}
+ 365 │ │         {coupleStatus?.isLinked && (
+ 366 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 367 │ │             <div className="flex items-center gap-3">
+ 368 │ │               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+ 369 │ │                 <span className="text-2xl">💕</span>
+ 370 │ │               </div>
+ 371 │ │               <div>
+ 372 │ │                 <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+ 373 │ │                 <p className="text-sm text-muted-foreground">
+ 374 │ │                   Linked with {coupleStatus.partner?.name ?? "your partner"}
+ 375 │ │                 </p>
+ 376 │ │               </div>
+ 377 │ │             </div>
+ 378 │ │   
+ 379 │ │             {me?.role === "primary" && (
+ 380 │ │               <>
+ 381 │ │                 <div className="border-t border-border pt-4 space-y-3">
+ 382 │ │                   <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+ 383 │ │                   <label className="flex items-center justify-between">
+ 384 │ │                     <span className="text-sm text-muted-foreground">Share cycle phase</span>
+ 385 │ │                     <input
+ 386 │ │                       type="checkbox"
+ 387 │ │                       checked={coupleStatus.sharingSettings?.phase ?? true}
+ 388 │ │                       onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
+ 389 │ │                       className="h-5 w-5 rounded accent-primary"
+ 390 │ │                     />
+ 391 │ │                   </label>
+ 392 │ │                   <label className="flex items-center justify-between">
+ 393 │ │                     <span className="text-sm text-muted-foreground">Share pain data</span>
+ 394 │ │                     <input
+ 395 │ │                       type="checkbox"
+ 396 │ │                       checked={coupleStatus.sharingSettings?.pain ?? false}
+ 397 │ │                       onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
+ 398 │ │                       className="h-5 w-5 rounded accent-primary"
+ 399 │ │                     />
+ 400 │ │                   </label>
+ 401 │ │                 </div>
+ 402 │ │   
+ 403 │ │                 <button
+ 404 │ │                   onClick={handleRevokeAccess}
+ 405 │ │                   className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+ 406 │ │                 >
+ 407 │ │                   Revoke Partner Access
+ 408 │ │                 </button>
+ 409 │ │               </>
+ 410 │ │             )}
+ 411 │ │           </div>
+ 412 │ │         )}
+ 413 │ │   
+ 414 │ │         {/* Not linked - Primary user */}
+ 415 │ │         {!coupleStatus?.isLinked && me?.role === "primary" && (
+ 416 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 417 │ │             <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+ 418 │ │             <p className="text-sm text-muted-foreground">
+ 419 │ │               Generate a pairing code and share it with your partner.
+ 420 │ │             </p>
+ 421 │ │   
+ 422 │ │             {generatedCode || coupleStatus?.activePairingCode ? (
+ 423 │ │               <div className="text-center py-4">
+ 424 │ │                 <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
+ 425 │ │                 <div className="flex items-center justify-center gap-2 mb-3">
+ 426 │ │                   <p className="text-4xl font-mono font-bold tracking-widest text-primary">
+ 427 │ │                     {generatedCode ?? coupleStatus?.activePairingCode?.code}
+ 428 │ │                   </p>
+ 429 │ │                 </div>
+ 430 │ │                 <div className="flex items-center justify-center gap-2">
+ 431 │ │                   <button
+ 432 │ │                     onClick={() =>
+ 433 │ │                       handleCopyCode(
+ 434 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 435 │ │                       )
+ 436 │ │                     }
+ 437 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 438 │ │                     type="button"
+ 439 │ │                     aria-label="Copy pairing code"
+ 440 │ │                   >
+ 441 │ │                     {copied ? (
+ 442 │ │                       <>
+ 443 │ │                         <Check className="w-4 h-4" />
+ 444 │ │                         <span>Copied!</span>
+ 445 │ │                       </>
+ 446 │ │                     ) : (
+ 447 │ │                       <>
+ 448 │ │                         <Copy className="w-4 h-4" />
+ 449 │ │                         <span>Copy</span>
+ 450 │ │                       </>
+ 451 │ │                     )}
+ 452 │ │                   </button>
+ 453 │ │                   <button
+ 454 │ │                     onClick={() =>
+ 455 │ │                       handleShareCode(
+ 456 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 457 │ │                       )
+ 458 │ │                     }
+ 459 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 460 │ │                     type="button"
+ 461 │ │                     aria-label="Share pairing code"
+ 462 │ │                   >
+ 463 │ │                     <Share2 className="w-4 h-4" />
+ 464 │ │                     <span>Share</span>
+ 465 │ │                   </button>
+ 466 │ │                 </div>
+ 467 │ │                 <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
+ 468 │ │               </div>
+ 469 │ │             ) : null}
+ 470 │ │   
+ 471 │ │             <button
+ 472 │ │               onClick={handleGenerateCode}
+ 473 │ │               disabled={isSubmitting}
+ 474 │ │               className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+ 475 │ │             >
+ 476 │ │               {isSubmitting
+ 477 │ │                 ? "Generating..."
+ 478 │ │                 : generatedCode
+ 479 │ │                   ? "Generate New Code"
+ 480 │ │                   : "Generate Pairing Code"}
+ 481 │ │             </button>
+ 482 │ │           </div>
+ 483 │ │         )}
+ 484 │ │   
+ 485 │ │         {/* Not linked - Partner user */}
+ 486 │ │         {!coupleStatus?.isLinked && me?.role === "partner" && (
+ 487 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 488 │ │             <div className="flex items-center gap-3">
+ 489 │ │               <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+ 490 │ │                 <span className="text-2xl">💕</span>
+ 491 │ │               </div>
+ 492 │ │               <div>
+ 493 │ │                 <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+ 494 │ │                 <p className="text-sm text-muted-foreground">
+ 495 │ │                   Ask your partner for their 6-digit pairing code.
+ 496 │ │                 </p>
+ 497 │ │               </div>
+ 498 │ │             </div>
+ 499 │ │   
+ 500 │ │             <input
+ 501 │ │               type="text"
+ 502 │ │               value={code}
+ 503 │ │               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+ 504 │ │               placeholder="Enter 6-digit code"
+ 505 │ │               className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+ 506 │ │                 bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+ 507 │ │                 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+ 508 │ │               maxLength={6}
+ 509 │ │             />
+ 510 │ │   
+ 511 │ │             <button
+ 512 │ │               onClick={handleLinkPartner}
+ 513 │ │               disabled={isSubmitting || code.length !== 6}
+ 514 │ │               className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+ 515 │ │             >
+ 516 │ │               {isSubmitting ? "Linking..." : "Link Account"}
+ 517 │ │             </button>
+ 518 │ │           </div>
+ 519 │ │         )}
+ 520 │ │       </div>
+ 521 │ ╰─▶   );
+ 522 │     }
+     ╰────
+  × Expression expected
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:522:1]
+ 519 │       )}
+ 520 │     </div>
+ 521 │   );
+ 522 │ }
+     · ─
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/(dashboard)/dashboard/partner/page.tsx @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/userspace/app/errors/intercept-console-error.js:56
+[ 1726493ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/sign-in?redirect_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard&_rsc=mgar1:0
+[ 1726591ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/sign-in?redirect_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard&_rsc=mgar1:0
+[ 1726719ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/sign-in?redirect_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard&_rsc=mgar1:0
+[ 1726853ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/sign-in?redirect_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard:0
+[ 1727620ms] ModuleBuildError: Module build failed (from ./node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Return statement is not allowed here
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:351:1]
+ 348 │         }
+ 349 │       };
+ 350 │     
+ 351 │ ╭─▶   return (
+ 352 │ │       <div className="space-y-6 animate-fade-in">
+ 353 │ │         <div>
+ 354 │ │           <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+ 355 │ │           <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+ 356 │ │         </div>
+ 357 │ │   
+ 358 │ │         {message && (
+ 359 │ │           <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+ 360 │ │             {message}
+ 361 │ │           </div>
+ 362 │ │         )}
+ 363 │ │   
+ 364 │ │         {/* Already linked */}
+ 365 │ │         {coupleStatus?.isLinked && (
+ 366 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 367 │ │             <div className="flex items-center gap-3">
+ 368 │ │               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+ 369 │ │                 <span className="text-2xl">💕</span>
+ 370 │ │               </div>
+ 371 │ │               <div>
+ 372 │ │                 <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+ 373 │ │                 <p className="text-sm text-muted-foreground">
+ 374 │ │                   Linked with {coupleStatus.partner?.name ?? "your partner"}
+ 375 │ │                 </p>
+ 376 │ │               </div>
+ 377 │ │             </div>
+ 378 │ │   
+ 379 │ │             {me?.role === "primary" && (
+ 380 │ │               <>
+ 381 │ │                 <div className="border-t border-border pt-4 space-y-3">
+ 382 │ │                   <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+ 383 │ │                   <label className="flex items-center justify-between">
+ 384 │ │                     <span className="text-sm text-muted-foreground">Share cycle phase</span>
+ 385 │ │                     <input
+ 386 │ │                       type="checkbox"
+ 387 │ │                       checked={coupleStatus.sharingSettings?.phase ?? true}
+ 388 │ │                       onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
+ 389 │ │                       className="h-5 w-5 rounded accent-primary"
+ 390 │ │                     />
+ 391 │ │                   </label>
+ 392 │ │                   <label className="flex items-center justify-between">
+ 393 │ │                     <span className="text-sm text-muted-foreground">Share pain data</span>
+ 394 │ │                     <input
+ 395 │ │                       type="checkbox"
+ 396 │ │                       checked={coupleStatus.sharingSettings?.pain ?? false}
+ 397 │ │                       onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
+ 398 │ │                       className="h-5 w-5 rounded accent-primary"
+ 399 │ │                     />
+ 400 │ │                   </label>
+ 401 │ │                 </div>
+ 402 │ │   
+ 403 │ │                 <button
+ 404 │ │                   onClick={handleRevokeAccess}
+ 405 │ │                   className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+ 406 │ │                 >
+ 407 │ │                   Revoke Partner Access
+ 408 │ │                 </button>
+ 409 │ │               </>
+ 410 │ │             )}
+ 411 │ │           </div>
+ 412 │ │         )}
+ 413 │ │   
+ 414 │ │         {/* Not linked - Primary user */}
+ 415 │ │         {!coupleStatus?.isLinked && me?.role === "primary" && (
+ 416 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 417 │ │             <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+ 418 │ │             <p className="text-sm text-muted-foreground">
+ 419 │ │               Generate a pairing code and share it with your partner.
+ 420 │ │             </p>
+ 421 │ │   
+ 422 │ │             {generatedCode || coupleStatus?.activePairingCode ? (
+ 423 │ │               <div className="text-center py-4">
+ 424 │ │                 <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
+ 425 │ │                 <div className="flex items-center justify-center gap-2 mb-3">
+ 426 │ │                   <p className="text-4xl font-mono font-bold tracking-widest text-primary">
+ 427 │ │                     {generatedCode ?? coupleStatus?.activePairingCode?.code}
+ 428 │ │                   </p>
+ 429 │ │                 </div>
+ 430 │ │                 <div className="flex items-center justify-center gap-2">
+ 431 │ │                   <button
+ 432 │ │                     onClick={() =>
+ 433 │ │                       handleCopyCode(
+ 434 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 435 │ │                       )
+ 436 │ │                     }
+ 437 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 438 │ │                     type="button"
+ 439 │ │                     aria-label="Copy pairing code"
+ 440 │ │                   >
+ 441 │ │                     {copied ? (
+ 442 │ │                       <>
+ 443 │ │                         <Check className="w-4 h-4" />
+ 444 │ │                         <span>Copied!</span>
+ 445 │ │                       </>
+ 446 │ │                     ) : (
+ 447 │ │                       <>
+ 448 │ │                         <Copy className="w-4 h-4" />
+ 449 │ │                         <span>Copy</span>
+ 450 │ │                       </>
+ 451 │ │                     )}
+ 452 │ │                   </button>
+ 453 │ │                   <button
+ 454 │ │                     onClick={() =>
+ 455 │ │                       handleShareCode(
+ 456 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 457 │ │                       )
+ 458 │ │                     }
+ 459 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 460 │ │                     type="button"
+ 461 │ │                     aria-label="Share pairing code"
+ 462 │ │                   >
+ 463 │ │                     <Share2 className="w-4 h-4" />
+ 464 │ │                     <span>Share</span>
+ 465 │ │                   </button>
+ 466 │ │                 </div>
+ 467 │ │                 <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
+ 468 │ │               </div>
+ 469 │ │             ) : null}
+ 470 │ │   
+ 471 │ │             <button
+ 472 │ │               onClick={handleGenerateCode}
+ 473 │ │               disabled={isSubmitting}
+ 474 │ │               className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+ 475 │ │             >
+ 476 │ │               {isSubmitting
+ 477 │ │                 ? "Generating..."
+ 478 │ │                 : generatedCode
+ 479 │ │                   ? "Generate New Code"
+ 480 │ │                   : "Generate Pairing Code"}
+ 481 │ │             </button>
+ 482 │ │           </div>
+ 483 │ │         )}
+ 484 │ │   
+ 485 │ │         {/* Not linked - Partner user */}
+ 486 │ │         {!coupleStatus?.isLinked && me?.role === "partner" && (
+ 487 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 488 │ │             <div className="flex items-center gap-3">
+ 489 │ │               <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+ 490 │ │                 <span className="text-2xl">💕</span>
+ 491 │ │               </div>
+ 492 │ │               <div>
+ 493 │ │                 <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+ 494 │ │                 <p className="text-sm text-muted-foreground">
+ 495 │ │                   Ask your partner for their 6-digit pairing code.
+ 496 │ │                 </p>
+ 497 │ │               </div>
+ 498 │ │             </div>
+ 499 │ │   
+ 500 │ │             <input
+ 501 │ │               type="text"
+ 502 │ │               value={code}
+ 503 │ │               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+ 504 │ │               placeholder="Enter 6-digit code"
+ 505 │ │               className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+ 506 │ │                 bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+ 507 │ │                 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+ 508 │ │               maxLength={6}
+ 509 │ │             />
+ 510 │ │   
+ 511 │ │             <button
+ 512 │ │               onClick={handleLinkPartner}
+ 513 │ │               disabled={isSubmitting || code.length !== 6}
+ 514 │ │               className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+ 515 │ │             >
+ 516 │ │               {isSubmitting ? "Linking..." : "Link Account"}
+ 517 │ │             </button>
+ 518 │ │           </div>
+ 519 │ │         )}
+ 520 │ │       </div>
+ 521 │ ╰─▶   );
+ 522 │     }
+     ╰────
+  × Expression expected
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:522:1]
+ 519 │       )}
+ 520 │     </div>
+ 521 │   );
+ 522 │ }
+     · ─
+     ╰────
+
+
+Caused by:
+    Syntax Error
+    at processResult (file:///home/naki/Desktop/itsthatnewshit/cb connect/node_modules/next/dist/compiled/webpack/bundle5.js:29:407086)
+    at <unknown> (file:///home/naki/Desktop/itsthatnewshit/cb connect/node_modules/next/dist/compiled/webpack/bundle5.js:29:408881)
+    at <unknown> (file:///home/naki/Desktop/itsthatnewshit/cb connect/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:8645)
+    at <unknown> (file:///home/naki/Desktop/itsthatnewshit/cb connect/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:5019)
+    at r.callback (file:///home/naki/Desktop/itsthatnewshit/cb connect/node_modules/next/dist/compiled/loader-runner/LoaderRunner.js:1:4039)
+[ 1727622ms] [ERROR] ./app/(dashboard)/dashboard/partner/page.tsx
+Error:   × Return statement is not allowed here
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:351:1]
+ 348 │         }
+ 349 │       };
+ 350 │     
+ 351 │ ╭─▶   return (
+ 352 │ │       <div className="space-y-6 animate-fade-in">
+ 353 │ │         <div>
+ 354 │ │           <h1 className="text-2xl font-bold text-foreground">Partner</h1>
+ 355 │ │           <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+ 356 │ │         </div>
+ 357 │ │   
+ 358 │ │         {message && (
+ 359 │ │           <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+ 360 │ │             {message}
+ 361 │ │           </div>
+ 362 │ │         )}
+ 363 │ │   
+ 364 │ │         {/* Already linked */}
+ 365 │ │         {coupleStatus?.isLinked && (
+ 366 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 367 │ │             <div className="flex items-center gap-3">
+ 368 │ │               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
+ 369 │ │                 <span className="text-2xl">💕</span>
+ 370 │ │               </div>
+ 371 │ │               <div>
+ 372 │ │                 <h2 className="text-lg font-semibold text-foreground">Connected</h2>
+ 373 │ │                 <p className="text-sm text-muted-foreground">
+ 374 │ │                   Linked with {coupleStatus.partner?.name ?? "your partner"}
+ 375 │ │                 </p>
+ 376 │ │               </div>
+ 377 │ │             </div>
+ 378 │ │   
+ 379 │ │             {me?.role === "primary" && (
+ 380 │ │               <>
+ 381 │ │                 <div className="border-t border-border pt-4 space-y-3">
+ 382 │ │                   <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+ 383 │ │                   <label className="flex items-center justify-between">
+ 384 │ │                     <span className="text-sm text-muted-foreground">Share cycle phase</span>
+ 385 │ │                     <input
+ 386 │ │                       type="checkbox"
+ 387 │ │                       checked={coupleStatus.sharingSettings?.phase ?? true}
+ 388 │ │                       onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
+ 389 │ │                       className="h-5 w-5 rounded accent-primary"
+ 390 │ │                     />
+ 391 │ │                   </label>
+ 392 │ │                   <label className="flex items-center justify-between">
+ 393 │ │                     <span className="text-sm text-muted-foreground">Share pain data</span>
+ 394 │ │                     <input
+ 395 │ │                       type="checkbox"
+ 396 │ │                       checked={coupleStatus.sharingSettings?.pain ?? false}
+ 397 │ │                       onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
+ 398 │ │                       className="h-5 w-5 rounded accent-primary"
+ 399 │ │                     />
+ 400 │ │                   </label>
+ 401 │ │                 </div>
+ 402 │ │   
+ 403 │ │                 <button
+ 404 │ │                   onClick={handleRevokeAccess}
+ 405 │ │                   className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+ 406 │ │                 >
+ 407 │ │                   Revoke Partner Access
+ 408 │ │                 </button>
+ 409 │ │               </>
+ 410 │ │             )}
+ 411 │ │           </div>
+ 412 │ │         )}
+ 413 │ │   
+ 414 │ │         {/* Not linked - Primary user */}
+ 415 │ │         {!coupleStatus?.isLinked && me?.role === "primary" && (
+ 416 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 417 │ │             <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
+ 418 │ │             <p className="text-sm text-muted-foreground">
+ 419 │ │               Generate a pairing code and share it with your partner.
+ 420 │ │             </p>
+ 421 │ │   
+ 422 │ │             {generatedCode || coupleStatus?.activePairingCode ? (
+ 423 │ │               <div className="text-center py-4">
+ 424 │ │                 <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
+ 425 │ │                 <div className="flex items-center justify-center gap-2 mb-3">
+ 426 │ │                   <p className="text-4xl font-mono font-bold tracking-widest text-primary">
+ 427 │ │                     {generatedCode ?? coupleStatus?.activePairingCode?.code}
+ 428 │ │                   </p>
+ 429 │ │                 </div>
+ 430 │ │                 <div className="flex items-center justify-center gap-2">
+ 431 │ │                   <button
+ 432 │ │                     onClick={() =>
+ 433 │ │                       handleCopyCode(
+ 434 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 435 │ │                       )
+ 436 │ │                     }
+ 437 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 438 │ │                     type="button"
+ 439 │ │                     aria-label="Copy pairing code"
+ 440 │ │                   >
+ 441 │ │                     {copied ? (
+ 442 │ │                       <>
+ 443 │ │                         <Check className="w-4 h-4" />
+ 444 │ │                         <span>Copied!</span>
+ 445 │ │                       </>
+ 446 │ │                     ) : (
+ 447 │ │                       <>
+ 448 │ │                         <Copy className="w-4 h-4" />
+ 449 │ │                         <span>Copy</span>
+ 450 │ │                       </>
+ 451 │ │                     )}
+ 452 │ │                   </button>
+ 453 │ │                   <button
+ 454 │ │                     onClick={() =>
+ 455 │ │                       handleShareCode(
+ 456 │ │                         generatedCode ?? coupleStatus?.activePairingCode?.code!
+ 457 │ │                       )
+ 458 │ │                     }
+ 459 │ │                     className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+ 460 │ │                     type="button"
+ 461 │ │                     aria-label="Share pairing code"
+ 462 │ │                   >
+ 463 │ │                     <Share2 className="w-4 h-4" />
+ 464 │ │                     <span>Share</span>
+ 465 │ │                   </button>
+ 466 │ │                 </div>
+ 467 │ │                 <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
+ 468 │ │               </div>
+ 469 │ │             ) : null}
+ 470 │ │   
+ 471 │ │             <button
+ 472 │ │               onClick={handleGenerateCode}
+ 473 │ │               disabled={isSubmitting}
+ 474 │ │               className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+ 475 │ │             >
+ 476 │ │               {isSubmitting
+ 477 │ │                 ? "Generating..."
+ 478 │ │                 : generatedCode
+ 479 │ │                   ? "Generate New Code"
+ 480 │ │                   : "Generate Pairing Code"}
+ 481 │ │             </button>
+ 482 │ │           </div>
+ 483 │ │         )}
+ 484 │ │   
+ 485 │ │         {/* Not linked - Partner user */}
+ 486 │ │         {!coupleStatus?.isLinked && me?.role === "partner" && (
+ 487 │ │           <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
+ 488 │ │             <div className="flex items-center gap-3">
+ 489 │ │               <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
+ 490 │ │                 <span className="text-2xl">💕</span>
+ 491 │ │               </div>
+ 492 │ │               <div>
+ 493 │ │                 <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
+ 494 │ │                 <p className="text-sm text-muted-foreground">
+ 495 │ │                   Ask your partner for their 6-digit pairing code.
+ 496 │ │                 </p>
+ 497 │ │               </div>
+ 498 │ │             </div>
+ 499 │ │   
+ 500 │ │             <input
+ 501 │ │               type="text"
+ 502 │ │               value={code}
+ 503 │ │               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+ 504 │ │               placeholder="Enter 6-digit code"
+ 505 │ │               className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
+ 506 │ │                 bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
+ 507 │ │                 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+ 508 │ │               maxLength={6}
+ 509 │ │             />
+ 510 │ │   
+ 511 │ │             <button
+ 512 │ │               onClick={handleLinkPartner}
+ 513 │ │               disabled={isSubmitting || code.length !== 6}
+ 514 │ │               className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+ 515 │ │             >
+ 516 │ │               {isSubmitting ? "Linking..." : "Link Account"}
+ 517 │ │             </button>
+ 518 │ │           </div>
+ 519 │ │         )}
+ 520 │ │       </div>
+ 521 │ ╰─▶   );
+ 522 │     }
+     ╰────
+  × Expression expected
+     ╭─[/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx:522:1]
+ 519 │       )}
+ 520 │     </div>
+ 521 │   );
+ 522 │ }
+     · ─
+     ╰────
+
+Caused by:
+    Syntax Error @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/next-devtools/userspace/pages/pages-dev-overlay-setup.js:76
+[ 1776255ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/_next/static/webpack/c2f3f420574f95ae.webpack.hot-update.json:0
+[ 1776255ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[ 1776930ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/_next/static/webpack/c2f3f420574f95ae.webpack.hot-update.json:0
+[ 1776931ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[ 1781948ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/_next/static/webpack/c2f3f420574f95ae.webpack.hot-update.json:0
+[ 1781958ms] [WARNING] [Fast Refresh] performing full reload because your application had an unrecoverable error @ webpack-internal:///(pages-dir-browser)/./node_modules/next/dist/client/dev/hot-reloader/pages/hot-reloader-pages.js:347
+[ 1788526ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[ 1789266ms] [WARNING] Clerk: The prop "afterSignInUrl" is deprecated and should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[ 1789268ms] [WARNING] Clerk: The "signInFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignInUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignInUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ https://growing-puma-16.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18

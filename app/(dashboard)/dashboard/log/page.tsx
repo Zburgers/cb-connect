@@ -56,24 +56,27 @@ export default function LogPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Period Log</h1>
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Period Log</h1>
+        <p className="text-muted-foreground text-sm">Track your cycle history</p>
+      </div>
 
       {message && (
-        <div className="p-3 bg-green-50 text-green-800 rounded-xl text-sm">
+        <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
           {message}
         </div>
       )}
 
       {/* Log period start/end */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+      <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
         {ongoingPeriod ? (
           <>
-            <div className="p-3 bg-pink-50 text-pink-800 rounded-xl text-sm">
+            <div className="p-3 bg-secondary/10 text-secondary rounded-xl text-sm border border-secondary/20">
               Period in progress since {formatDate(ongoingPeriod.startDate)}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 When did your period end?
               </label>
               <input
@@ -82,13 +85,14 @@ export default function LogPage() {
                 onChange={(e) => setEndDate(e.target.value)}
                 min={ongoingPeriod.startDate}
                 max={new Date().toISOString().split("T")[0]}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground
+                  focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
               />
             </div>
             <button
               onClick={handleEndPeriod}
               disabled={isSubmitting || !endDate}
-              className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+              className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {isSubmitting ? "Saving..." : "End Period"}
             </button>
@@ -96,7 +100,7 @@ export default function LogPage() {
         ) : (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 When did your period start?
               </label>
               <input
@@ -104,13 +108,14 @@ export default function LogPage() {
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 max={new Date().toISOString().split("T")[0]}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-foreground
+                  focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
               />
             </div>
             <button
               onClick={handleStartPeriod}
               disabled={isSubmitting || !startDate}
-              className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+              className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {isSubmitting ? "Saving..." : "Start Period"}
             </button>
@@ -119,27 +124,27 @@ export default function LogPage() {
       </div>
 
       {/* Period history */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Period History</h2>
+      <div className="glass-card rounded-3xl p-6 animate-slide-up">
+        <h2 className="text-lg font-semibold text-foreground mb-4">Period History</h2>
         {periodHistory && periodHistory.length > 0 ? (
           <div className="space-y-3">
             {periodHistory.slice(0, 12).map((period: any) => (
               <div
                 key={period._id}
-                className="flex justify-between items-center p-3 bg-gray-50 rounded-xl"
+                className="flex justify-between items-center p-3 bg-muted rounded-xl"
               >
                 <div>
-                  <p className="font-medium text-sm text-gray-900">
+                  <p className="font-medium text-sm text-foreground">
                     {formatDate(period.startDate)}
                   </p>
                   {period.endDate && (
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       to {formatDate(period.endDate)}
                     </p>
                   )}
                 </div>
                 {!period.endDate && (
-                  <span className="text-xs bg-pink-100 text-pink-700 px-2 py-1 rounded-full">
+                  <span className="text-xs bg-secondary/10 text-secondary px-2 py-1 rounded-full border border-secondary/20">
                     Ongoing
                   </span>
                 )}
@@ -147,7 +152,7 @@ export default function LogPage() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-400 text-center py-4">No periods logged yet.</p>
+          <p className="text-sm text-muted-foreground text-center py-4">No periods logged yet.</p>
         )}
       </div>
     </div>

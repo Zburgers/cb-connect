@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { mutation, internalMutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
 
 export const logPeriodStart = mutation({
@@ -64,6 +64,49 @@ export const logPeriodEnd = mutation({
     });
 
     return { eventId: ongoingPeriod._id };
+  },
+});
+
+export const autoEndPeriods = internalMutation({
+  handler: async (ctx) => {
+    // Find all ongoing (open) periods
+    const openPeriods = await ctx.db
+      .query("periodEvents")
+      .filter((q) => q.eq(q.field("endDate"), undefined))
+      .collect();
+
+    let endedCount = 0;
+
+    for (const period of openPeriods) {
+      // Get the user's cycle settings
+      const settings = await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", period.userId))
+        .unique();
+
+      const periodLength = settings?.periodLength ?? 5;
+
+      // Calculate expected end date
+      const startDate = new Date(period.startDate + "T00:00:00");
+      const expectedEndDate = new Date(startDate);
+      expectedEndDate.setDate(expectedEndDate.getDate() + periodLength - 1);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // If past the expected end date, auto-close it
+      if (expectedEndDate < today) {
+        const endDateStr = expectedEndDate.toISOString().split("T")[0];
+        await ctx.db.patch(period._id, {
+          endDate: endDateStr,
+          updatedAt: Date.now(),
+        });
+        endedCount++;
+      }
+    }
+
+    console.log(`autoEndPeriods: closed ${endedCount} open period(s)`);
+    return { endedCount };
   },
 });
 

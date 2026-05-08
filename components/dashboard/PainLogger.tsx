@@ -114,7 +114,7 @@ export default function PainLogger({ currentPain }: PainLoggerProps) {
                 className={`px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 
                   press-feedback no-tap-highlight touch-target
                   ${selectedTags.includes(tag)
-                    ? "bg-primary text-white shadow-lg shadow-primary/30"
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
                     : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
               >

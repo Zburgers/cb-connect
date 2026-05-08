@@ -51,7 +51,6 @@ export async function POST(req: Request) {
       clerkId: id,
       email,
       name,
-      role: "primary",
     });
   }
 

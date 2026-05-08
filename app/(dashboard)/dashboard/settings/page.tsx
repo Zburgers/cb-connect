@@ -43,14 +43,17 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="text-muted-foreground text-sm">Manage your cycle preferences</p>
+      </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-        <h2 className="text-lg font-semibold text-gray-900">Cycle Settings</h2>
+      <div className="glass-card rounded-3xl p-6 space-y-6 animate-slide-up">
+        <h2 className="text-lg font-semibold text-foreground">Cycle Settings</h2>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Average cycle length: {cycleLength} days
           </label>
           <input
@@ -59,9 +62,9 @@ export default function SettingsPage() {
             max="40"
             value={cycleLength}
             onChange={(e) => setCycleLength(parseInt(e.target.value))}
-            className="w-full accent-primary-500"
+            className="w-full accent-primary"
           />
-          <div className="flex justify-between text-xs text-gray-400">
+          <div className="flex justify-between text-xs text-muted-foreground mt-1">
             <span>21 days</span>
             <span>28 days</span>
             <span>40 days</span>
@@ -69,7 +72,7 @@ export default function SettingsPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Average period length: {periodLength} days
           </label>
           <input
@@ -78,9 +81,9 @@ export default function SettingsPage() {
             max="8"
             value={periodLength}
             onChange={(e) => setPeriodLength(parseInt(e.target.value))}
-            className="w-full accent-primary-500"
+            className="w-full accent-primary"
           />
-          <div className="flex justify-between text-xs text-gray-400">
+          <div className="flex justify-between text-xs text-muted-foreground mt-1">
             <span>2 days</span>
             <span>5 days</span>
             <span>8 days</span>
@@ -90,7 +93,7 @@ export default function SettingsPage() {
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full py-3 bg-primary-500 text-white rounded-xl font-semibold hover:bg-primary-600 disabled:opacity-50 transition-colors"
+          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {isSaving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
         </button>
