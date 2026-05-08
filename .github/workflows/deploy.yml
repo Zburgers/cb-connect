@@ -8,7 +8,7 @@ on:
 
 env:
   NODE_VERSION: 20
-  PORT: 6000
+  PORT: 6050
 
 jobs:
   build:

@@ -5,11 +5,9 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start -p 6000",
-    "start:prod": "NODE_ENV=production next start -p 6000",
-    "lint": "next lint",
-    "deploy": "npm run build",
-    "serve": "next start -p 6000"
+"start": "next start -p 6050",
+    "start:prod": "NODE_ENV=production next start -p 6050",
+    "serve": "next start -p 6050"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.2",
