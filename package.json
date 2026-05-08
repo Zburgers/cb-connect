@@ -5,12 +5,12 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "NODE_ENV=production next build",
-"start": "next start -p 6050",
+    "start": "next start -p 6050",
     "start:prod": "NODE_ENV=production next start -p 6050",
     "serve": "next start -p 6050"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.3.2",
+    "@clerk/nextjs": "^7.3.3",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
     "@radix-ui/react-select": "^2.1.6",
