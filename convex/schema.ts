@@ -9,6 +9,8 @@ export default defineSchema({
     role: v.optional(v.union(v.literal("primary"), v.literal("partner"))),
     createdAt: v.number(),
     lastActiveAt: v.number(),
+    gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
+    partnerType: v.optional(v.union(v.literal("boyfriend"), v.literal("girlfriend"), v.literal("spouse"), v.literal("partner"), v.literal("other"))),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"]),
