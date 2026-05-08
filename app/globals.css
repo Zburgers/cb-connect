@@ -143,3 +143,21 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Added Microinteractions */
+.glass-card {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.btn-micro {
+  transition: all 0.2s ease-out;
+}
+.btn-micro:hover {
+  transform: scale(1.02);
+}
+.btn-micro:active {
+  transform: scale(0.98);
+}
