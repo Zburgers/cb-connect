@@ -32,5 +32,5 @@ jobs:
 
       - name: Restart with PM2
         run: |
-          pm2 restart cb-connect || pm2 start npm --name cb-connect -- run start
+          pm2 restart cb-connect || pm2 start pm2.config.js
           pm2 save
