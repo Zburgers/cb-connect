@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "NODE_ENV=production next build",
 "start": "next start -p 6050",
     "start:prod": "NODE_ENV=production next start -p 6050",
     "serve": "next start -p 6050"

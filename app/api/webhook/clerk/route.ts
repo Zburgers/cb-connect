@@ -4,7 +4,11 @@ import { WebhookEvent } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+if (!convexUrl) {
+  throw new Error("NEXT_PUBLIC_CONVEX_URL is not set. Ensure .env.production is loaded.");
+}
+const convex = new ConvexHttpClient(convexUrl);
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
