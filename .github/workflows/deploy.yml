@@ -37,14 +37,8 @@ jobs:
 
       - name: Restart with PM2
         run: |
+          export CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}"
+          export CONVEX_DEPLOYMENT="${{ secrets.CONVEX_DEPLOYMENT }}"
           pm2 delete cb-connect || true
-          pm2 start npm --name cb-connect -- run start \
-            --env NEXT_PUBLIC_CONVEX_URL=${{ secrets.NEXT_PUBLIC_CONVEX_URL }} \
-            --env CONVEX_DEPLOYMENT=${{ secrets.CONVEX_DEPLOYMENT }} \
-            --env NEXT_PUBLIC_CONVEX_SITE_URL=${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }} \
-            --env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }} \
-            --env CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }} \
-            --env CLERK_FRONTEND_API_URL=${{ secrets.CLERK_FRONTEND_API_URL }} \
-            --env NEXT_PUBLIC_CLERK_SIGN_IN_URL=${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }} \
-            --env NEXT_PUBLIC_CLERK_SIGN_UP_URL=${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
+          pm2 start pm2.config.js --update-env
           pm2 save
