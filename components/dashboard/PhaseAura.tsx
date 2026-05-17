@@ -50,6 +50,10 @@ function painPhrase(score?: number | null) {
   return { label: "Rough day", help: "Practical care beats big speeches right now." };
 }
 
+function phaseLabel(phase: string) {
+  return `${phase.charAt(0).toUpperCase()}${phase.slice(1)} phase`;
+}
+
 export default function PhaseAura({
   phase,
   cycleDay,
@@ -86,6 +90,9 @@ export default function PhaseAura({
           </div>
 
           <div className="space-y-3">
+            <p className="inline-flex w-fit rounded-full border border-white/50 bg-white/50 px-4 py-2 text-sm font-semibold text-foreground backdrop-blur-xl dark:border-white/10 dark:bg-white/8">
+              {phaseLabel(phase)}
+            </p>
             <p className="text-6xl leading-none md:text-7xl" aria-hidden="true">
               {getPhaseEmoji(phase)}
             </p>

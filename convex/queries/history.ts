@@ -1,6 +1,6 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 export const getPainHistory = query({
   args: {
@@ -13,10 +13,27 @@ export const getPainHistory = query({
       return [];
     }
 
+    let targetUserId = user._id;
+    if (user.role === "partner") {
+      const coupleData = await getCoupleForUser(ctx, user._id);
+      if (coupleData) {
+        const primaryMembership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role", (q) =>
+            q.eq("coupleId", coupleData.membership.coupleId).eq("role", "primary")
+          )
+          .first();
+
+        if (primaryMembership?.sharingPain) {
+          targetUserId = primaryMembership.userId;
+        }
+      }
+    }
+
     const logs = await ctx.db
       .query("painLogs")
       .withIndex("by_user_and_date", (q) =>
-        q.eq("userId", user._id).gte("date", args.startDate)
+        q.eq("userId", targetUserId).gte("date", args.startDate)
       )
       .filter((q) => q.lte(q.field("date"), args.endDate))
       .collect();
@@ -32,9 +49,26 @@ export const getPeriodHistory = query({
       return [];
     }
 
+    let targetUserId = user._id;
+    if (user.role === "partner") {
+      const coupleData = await getCoupleForUser(ctx, user._id);
+      if (coupleData) {
+        const primaryMembership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role", (q) =>
+            q.eq("coupleId", coupleData.membership.coupleId).eq("role", "primary")
+          )
+          .first();
+
+        if (primaryMembership?.sharingPhase) {
+          targetUserId = primaryMembership.userId;
+        }
+      }
+    }
+
     const periods = await ctx.db
       .query("periodEvents")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", targetUserId))
       .order("desc")
       .collect();
 

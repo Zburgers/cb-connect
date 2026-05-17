@@ -50,7 +50,7 @@ export default function PartnerStatusCard() {
               Connect with your partner now
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Stay informed and support her journey
+              Stay informed and support their journey
             </p>
             <button
               className="mt-3 px-4 py-2 bg-secondary text-secondary-foreground rounded-xl
@@ -134,7 +134,7 @@ export default function PartnerStatusCard() {
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             {isPartner
-              ? "Check in on her current phase and pain levels"
+              ? "Check in on their current phase and pain levels"
               : "Your partner is here to support you"}
           </p>
           <button
