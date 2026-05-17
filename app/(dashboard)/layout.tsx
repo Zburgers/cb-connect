@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import ThemeToggle from "@/components/common/ThemeToggle";
+import SanctuaryShell from "@/components/common/SanctuaryShell";
 import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 
@@ -40,17 +41,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [me, router]);
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Ambient background blobs (dark mode only) */}
-      <div className="fixed inset-0 dark:block hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-blob" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-blob animation-delay-2000" />
-        <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-blob animation-delay-4000" />
-      </div>
+    <SanctuaryShell phase="follicular" intensity="medium">
       {/* Top nav */}
-      <header className="glass-elevated border-b sticky top-0 z-50">
+      <header className="glass-elevated sticky top-0 z-50 border-b">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/dashboard" className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <Link href="/dashboard" className="font-display text-2xl font-semibold tracking-tight text-foreground">
             CB Connect
           </Link>
           <div className="flex items-center gap-2">
@@ -86,6 +81,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </div>
       </nav>
-    </div>
+    </SanctuaryShell>
   );
 }

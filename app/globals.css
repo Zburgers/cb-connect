@@ -4,48 +4,85 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 2%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 2%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 2%;
-    --primary: 251 88% 66%;
+    --background: 32 45% 96%;
+    --foreground: 238 28% 12%;
+    --card: 32 45% 98%;
+    --card-foreground: 238 28% 12%;
+    --popover: 32 45% 98%;
+    --popover-foreground: 238 28% 12%;
+    --primary: 8 74% 61%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 330 81% 60%;
+    --secondary: 342 58% 54%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 163 94% 39%;
-    --accent-foreground: 0 0% 100%;
+    --muted: 30 31% 90%;
+    --muted-foreground: 236 13% 42%;
+    --accent: 35 91% 64%;
+    --accent-foreground: 238 28% 12%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 251 88% 66%;
-    --radius: 1rem;
+    --border: 24 30% 84%;
+    --input: 24 30% 84%;
+    --ring: 8 74% 61%;
+    --radius: 1.6rem;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-ui: "Avenir Next", Avenir, "Helvetica Neue", Helvetica, sans-serif;
+    --font-data: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", monospace;
+    --phase-1: 8 74% 61%;
+    --phase-2: 342 58% 54%;
+    --phase-3: 35 91% 64%;
+    --phase-ink: 238 28% 12%;
+    --shadow-warm: 18 42% 52%;
   }
 
   .dark {
-    --background: 222 47% 2%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 3%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 3%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 251 88% 66%;
-    --primary-foreground: 222 47% 2%;
-    --secondary: 330 81% 60%;
-    --secondary-foreground: 222 47% 2%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 163 94% 39%;
-    --accent-foreground: 222 47% 2%;
+    --background: 238 31% 8%;
+    --foreground: 31 37% 94%;
+    --card: 238 28% 12%;
+    --card-foreground: 31 37% 94%;
+    --popover: 238 28% 12%;
+    --popover-foreground: 31 37% 94%;
+    --primary: 10 84% 69%;
+    --primary-foreground: 238 31% 8%;
+    --secondary: 342 70% 68%;
+    --secondary-foreground: 238 31% 8%;
+    --muted: 238 18% 18%;
+    --muted-foreground: 31 20% 72%;
+    --accent: 35 95% 70%;
+    --accent-foreground: 238 31% 8%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 251 88% 66%;
+    --border: 238 17% 23%;
+    --input: 238 17% 23%;
+    --ring: 10 84% 69%;
+    --phase-ink: 31 37% 94%;
+  }
+
+  [data-phase="menstruation"] {
+    --phase-1: 8 70% 58%;
+    --phase-2: 352 56% 42%;
+    --phase-3: 24 75% 76%;
+    --shadow-warm: 4 48% 42%;
+  }
+
+  [data-phase="follicular"] {
+    --phase-1: 22 93% 74%;
+    --phase-2: 343 81% 78%;
+    --phase-3: 93 42% 68%;
+    --shadow-warm: 21 54% 52%;
+  }
+
+  [data-phase="ovulation"] {
+    --phase-1: 10 89% 68%;
+    --phase-2: 39 95% 62%;
+    --phase-3: 334 80% 70%;
+    --shadow-warm: 16 61% 52%;
+  }
+
+  [data-phase="luteal"] {
+    --phase-1: 268 44% 58%;
+    --phase-2: 226 41% 42%;
+    --phase-3: 340 44% 70%;
+    --shadow-warm: 262 34% 38%;
   }
 }
 
@@ -55,28 +92,56 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-ui);
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
   }
 }
 
 @layer components {
+  .sanctuary-surface {
+    background:
+      radial-gradient(circle at 18% 12%, hsl(var(--phase-1) / 0.22), transparent 34rem),
+      radial-gradient(circle at 82% 16%, hsl(var(--phase-2) / 0.16), transparent 28rem),
+      radial-gradient(circle at 48% 88%, hsl(var(--phase-3) / 0.18), transparent 32rem),
+      linear-gradient(135deg, hsl(var(--background)), hsl(var(--muted) / 0.58));
+  }
+
+  .phase-aura-field {
+    background:
+      radial-gradient(circle at 35% 30%, hsl(var(--phase-3) / 0.92), transparent 24%),
+      radial-gradient(circle at 68% 34%, hsl(var(--phase-1) / 0.92), transparent 31%),
+      radial-gradient(circle at 48% 70%, hsl(var(--phase-2) / 0.82), transparent 38%);
+    filter: blur(20px) saturate(1.12);
+  }
+
   /* Glass card for light mode */
   .glass-card {
-    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-lg;
+    @apply border border-white/[0.45] bg-white/[0.55] shadow-lg backdrop-blur-xl;
+    box-shadow: 0 24px 80px hsl(var(--shadow-warm) / 0.16);
   }
   
   /* Glass card for dark mode */
   .dark .glass-card {
-    @apply bg-black/40 backdrop-blur-xl border border-white/5 shadow-lg;
+    @apply border-white/10 bg-black/[0.28] shadow-lg backdrop-blur-xl;
+    box-shadow: 0 28px 90px hsl(var(--shadow-warm) / 0.24);
   }
   
   /* Elevated glass (modals, overlays) */
   .glass-elevated {
-    @apply bg-white/90 backdrop-blur-2xl border border-white/30 shadow-2xl;
+    @apply border border-white/[0.55] bg-white/[0.72] shadow-2xl backdrop-blur-2xl;
+    box-shadow: 0 30px 100px hsl(var(--shadow-warm) / 0.22);
   }
   
   .dark .glass-elevated {
-    @apply bg-black/60 backdrop-blur-2xl border border-white/10 shadow-2xl;
+    @apply border-white/[0.12] bg-black/40 shadow-2xl backdrop-blur-2xl;
+    box-shadow: 0 30px 110px hsl(var(--shadow-warm) / 0.28);
   }
   
   /* Phase cards with gradient + glass */
@@ -101,6 +166,10 @@
     content: '';
     @apply absolute -inset-4 bg-gradient-to-r from-primary/20 to-secondary/20 blur-3xl -z-10 rounded-full;
   }
+
+  .locket-shape {
+    border-radius: 44% 56% 52% 48% / 42% 38% 62% 58%;
+  }
 }
 
 @layer utilities {
@@ -123,6 +192,10 @@
   .press-feedback {
     @apply active:scale-95 active:opacity-80 transition-transform duration-150;
   }
+
+  .text-balance {
+    text-wrap: balance;
+  }
   
   /* Animation delay utilities */
   .animation-delay-2000 {
@@ -133,6 +206,22 @@
   }
 }
 
+@keyframes auraDrift {
+  0%, 100% {
+    transform: translate3d(-2%, 1%, 0) rotate(0deg) scale(1);
+  }
+  35% {
+    transform: translate3d(3%, -2%, 0) rotate(10deg) scale(1.05);
+  }
+  70% {
+    transform: translate3d(1%, 3%, 0) rotate(-8deg) scale(0.96);
+  }
+}
+
+.animate-aura-drift {
+  animation: auraDrift 14s ease-in-out infinite;
+}
+
 /* Accessibility: Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -141,6 +230,10 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .animate-aura-drift {
+    animation: none !important;
   }
 }
 

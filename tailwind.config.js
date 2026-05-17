@@ -113,7 +113,9 @@ module.exports = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["var(--font-ui)"],
+        display: ["var(--font-display)"],
+        data: ["var(--font-data)"],
       },
       animation: {
         'blob': 'blob 10s infinite',

@@ -58,10 +58,20 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div
+      data-phase={data.cycleInfo?.phase ?? "follicular"}
+      className="space-y-6 animate-fade-in"
+    >
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Welcome back</h1>
-        <p className="text-muted-foreground text-sm">Here's your cycle overview for today</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          Private observatory
+        </p>
+        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight text-foreground">
+          Welcome back
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Today’s rhythm, translated into support.
+        </p>
       </div>
 
       {data.cycleInfo && (
@@ -71,6 +81,7 @@ export default function DashboardPage() {
           description={data.cycleInfo.phaseDescription}
           daysUntilNextPeriod={data.cycleInfo.daysUntilNextPeriod}
           nextPeriodStart={data.cycleInfo.predictedNextPeriodStart}
+          painScore={data.painData?.score ?? null}
         />
       )}
 

@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { copyToClipboard, shareText } from "@/lib/utils";
 import { Copy, Share2, Check } from "lucide-react";
+import DigitalLocket from "@/components/partner/DigitalLocket";
 
 export default function PartnerPage() {
-  const router = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
@@ -129,33 +128,33 @@ export default function PartnerPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Partner</h1>
-        <p className="text-muted-foreground text-sm">Manage your partner connection</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          Shared space
+        </p>
+        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight text-foreground">
+          Partner connection
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Invite, consent, and sharing settings live here.
+        </p>
       </div>
       {message && (
-        <div className="p-3 bg-primary/10 text-primary rounded-xl text-sm border border-primary/20">
+        <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">
           {message}
         </div>
       )}
       {/* Already linked */}
       {coupleStatus?.isLinked && (
-        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-2xl">💕</span>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Connected</h2>
-              <p className="text-sm text-muted-foreground">
-                Linked with {coupleStatus.partner?.name ?? "your partner"}
-              </p>
-            </div>
-          </div>
-
+        <DigitalLocket
+          title="Your locket is connected"
+          description={`Linked with ${coupleStatus.partner?.name ?? "your partner"}. Keep sharing specific, consensual, and easy to change.`}
+          status="connected"
+          className="space-y-4 animate-slide-up"
+        >
           {me.role === "primary" && (
             <>
-              <div className="border-t border-border pt-4 space-y-3">
-                <h3 className="text-sm font-medium text-foreground">Sharing Settings</h3>
+              <div className="space-y-3 rounded-[1.6rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+                <h3 className="text-sm font-semibold text-foreground">Visible to your partner</h3>
                 <label className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Share cycle phase</span>
                   <input
@@ -178,30 +177,25 @@ export default function PartnerPage() {
 
               <button
                 onClick={handleRevokeAccess}
-                className="w-full py-2 border border-red-400/50 text-red-500 dark:text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/10 transition-colors"
+                className="w-full rounded-2xl border border-red-400/50 py-3 text-sm font-semibold text-red-500 transition-colors hover:bg-red-500/10 dark:text-red-400"
               >
-                Revoke Partner Access
+                Close partner access
               </button>
             </>
           )}
-        </div>
+        </DigitalLocket>
       )}
       {/* Not linked - Primary user */}
       {!coupleStatus?.isLinked && me.role === "primary" && (
-        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
-          <h2 className="text-lg font-semibold text-foreground">Link Your Partner</h2>
-          <p className="text-sm text-muted-foreground">
-            Generate a pairing code and share it with your partner.
-          </p>
-
+        <DigitalLocket
+          title="Invite your partner into this space"
+          description="Generate a private code. It creates the bridge, but you still control what crosses it."
+          code={generatedCode ?? coupleStatus?.activePairingCode?.code}
+          status={generatedCode || coupleStatus?.activePairingCode ? "ready" : "waiting"}
+          className="animate-slide-up"
+        >
           {generatedCode || coupleStatus?.activePairingCode ? (
-            <div className="text-center py-4">
-              <p className="text-sm text-muted-foreground mb-2">Your pairing code:</p>
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <p className="text-4xl font-mono font-bold tracking-widest text-primary">
-                  {generatedCode ?? coupleStatus?.activePairingCode?.code}
-                </p>
-              </div>
+            <div className="text-center">
               <div className="flex items-center justify-center gap-2">
                 <button
                   onClick={() =>
@@ -209,7 +203,7 @@ export default function PartnerPage() {
                       generatedCode ?? coupleStatus?.activePairingCode?.code!
                     )
                   }
-                  className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+                  className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted/80"
                   type="button"
                   aria-label="Copy pairing code"
                 >
@@ -231,7 +225,7 @@ export default function PartnerPage() {
                       generatedCode ?? coupleStatus?.activePairingCode?.code!
                     )
                   }
-                  className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+                  className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted/80"
                   type="button"
                   aria-label="Share pairing code"
                 >
@@ -239,14 +233,13 @@ export default function PartnerPage() {
                   <span>Share</span>
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground mt-3">Valid for 24 hours</p>
             </div>
           ) : null}
 
           <button
             onClick={handleGenerateCode}
             disabled={isSubmitting}
-            className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="w-full rounded-[1.4rem] bg-foreground py-4 font-semibold text-background transition-all press-feedback disabled:opacity-50 dark:bg-white dark:text-slate-950"
           >
             {isSubmitting
               ? "Generating..."
@@ -254,42 +247,36 @@ export default function PartnerPage() {
                 ? "Generate New Code"
                 : "Generate Pairing Code"}
           </button>
-        </div>
+        </DigitalLocket>
       )}
       {/* Not linked - Partner user */}
       {!coupleStatus?.isLinked && me.role === "partner" && (
-        <div className="glass-card rounded-3xl p-6 space-y-4 animate-slide-up">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-secondary/10 dark:bg-secondary/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-2xl">💕</span>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Enter Pairing Code</h2>
-              <p className="text-sm text-muted-foreground">
-                Ask your partner for their 6-digit pairing code.
-              </p>
-            </div>
-          </div>
-
+        <DigitalLocket
+          title="Unlock the shared space"
+          description="Enter the 6-digit code your partner generated. You will only see what they choose to share."
+          className="animate-slide-up"
+        >
+          <label className="text-sm font-semibold text-foreground" htmlFor="partner-code">
+            Partner pairing code
+          </label>
           <input
+            id="partner-code"
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="Enter 6-digit code"
-            className="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest
-              bg-muted border border-border rounded-xl text-foreground placeholder:text-muted-foreground
-              focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+            className="w-full rounded-[1.4rem] border border-white/50 bg-white/50 px-4 py-4 text-center font-data text-3xl tracking-widest text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-4 focus:ring-primary/15 dark:border-white/10 dark:bg-white/7"
             maxLength={6}
           />
 
           <button
             onClick={handleLinkPartner}
             disabled={isSubmitting || code.length !== 6}
-            className="w-full py-3 bg-secondary text-secondary-foreground rounded-xl font-semibold hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+            className="w-full rounded-[1.4rem] bg-secondary py-4 font-semibold text-secondary-foreground transition-all press-feedback disabled:opacity-50"
           >
             {isSubmitting ? "Linking..." : "Link Account"}
           </button>
-        </div>
+        </DigitalLocket>
       )}
     </div>
   );

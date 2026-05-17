@@ -1,7 +1,8 @@
 "use client";
 
-import { getPhaseGradient } from "@/lib/utils";
 import { Heart, Shield, Info } from "lucide-react";
+import GlassPanel from "@/components/common/GlassPanel";
+import PartnerPulse from "./PartnerPulse";
 
 interface PartnerDashboardProps {
   data: any;
@@ -33,71 +34,53 @@ function getPainClasses(score: number): { container: string; icon: string; text:
 export default function PartnerDashboard({ data }: PartnerDashboardProps) {
   if (!data.hasData) {
     return (
-      <div className="text-center py-12 space-y-6 animate-slide-up">
-        <div className="w-20 h-20 mx-auto rounded-full bg-secondary/10 flex items-center justify-center">
+      <GlassPanel variant="warm" className="space-y-6 p-8 text-center animate-slide-up">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2rem] bg-secondary/10">
           <Heart className="w-10 h-10 text-secondary" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Partner Dashboard</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            Partner mode
+          </p>
+          <h2 className="mt-2 font-display text-4xl font-semibold text-foreground">
+            The shared space is not ready yet
+          </h2>
           <p className="text-muted-foreground mt-2 max-w-md mx-auto">
             {data.message || "Waiting for your partner to set up their account."}
           </p>
         </div>
-      </div>
+      </GlassPanel>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header card — semantic primary/secondary gradient */}
-      <div className="glass-card rounded-3xl p-6 bg-gradient-to-r from-primary/10 to-secondary/10
-        border-0 shadow-lg animate-slide-up">
-        <div className="flex items-center gap-3 mb-2">
-          <Heart className="w-6 h-6 text-secondary" />
-          <h1 className="text-2xl font-bold text-foreground">Partner Dashboard</h1>
-        </div>
-        <p className="text-muted-foreground">Here's how you can support today</p>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          Partner mode
+        </p>
+        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight text-foreground">
+          What today asks from you
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Support signals are shown only when your partner has shared them.
+        </p>
       </div>
 
-      {/* Cycle phase card */}
-      {data.cycleInfo && (
-        <div className={`glass-card rounded-3xl p-6 bg-gradient-to-br ${getPhaseGradient(data.cycleInfo.phase)}
-          border-0 shadow-lg animate-slide-up`}>
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-background/60 backdrop-blur-md flex
-              items-center justify-center shadow-lg">
-              <span className="text-3xl filter drop-shadow-lg">
-                {data.cycleInfo.phase === "menstruation" && "🌙"}
-                {data.cycleInfo.phase === "follicular" && "🌱"}
-                {data.cycleInfo.phase === "ovulation" && "🌸"}
-                {data.cycleInfo.phase === "luteal" && "🍂"}
-              </span>
-            </div>
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-foreground capitalize">
-                {data.cycleInfo.phase} Phase
-              </h2>
-              <p className="text-sm text-muted-foreground">{data.cycleInfo.phaseDescription}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Day {data.cycleInfo.cycleDay} of cycle
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <PartnerPulse cycleInfo={data.cycleInfo} painData={data.painData} />
 
       {/* Pain status card */}
       {data.painData && (() => {
         const painClasses = getPainClasses(data.painData.score);
         return (
-          <div className="glass-card rounded-3xl p-6 animate-slide-up">
+          <GlassPanel variant="quiet" className="p-6 animate-slide-up">
             <div className="flex items-center gap-3 mb-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center ${painClasses.container}`}>
                 <Heart className={`w-6 h-6 ${painClasses.icon}`} />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Pain Status</h3>
-                <p className="text-xs text-muted-foreground">Current pain level</p>
+                <h3 className="text-lg font-semibold text-foreground">How today feels</h3>
+                <p className="text-xs text-muted-foreground">Shared pain signal</p>
               </div>
             </div>
 
@@ -110,32 +93,31 @@ export default function PartnerDashboard({ data }: PartnerDashboardProps) {
                 <p className="text-sm text-muted-foreground">Severity level</p>
               </div>
             </div>
-          </div>
+          </GlassPanel>
         );
       })()}
 
       {/* No pain data */}
       {!data.painData && (
-        <div className="glass-card rounded-3xl p-6 animate-slide-up">
+        <GlassPanel variant="quiet" className="p-6 animate-slide-up">
           <div className="flex items-center gap-3 mb-3">
             <Shield className="w-6 h-6 text-muted-foreground" />
-            <h3 className="text-lg font-semibold text-foreground">Pain Status</h3>
+            <h3 className="text-lg font-semibold text-foreground">Pain signal is private</h3>
           </div>
           <p className="text-sm text-muted-foreground">
-            No pain data shared today. Pain sharing may be disabled by your partner.
+            No pain data is shared today. That may mean nothing was logged, or that your partner chose not to share it.
           </p>
-        </div>
+        </GlassPanel>
       )}
 
       {/* How to help tip — mirrors TipsCard semantics */}
       {data.painTip && (
-        <div className="glass-card rounded-3xl p-6 bg-gradient-to-br from-primary/5 to-secondary/5
-          border-0 shadow-lg animate-slide-up">
+        <GlassPanel variant="warm" className="p-6 animate-slide-up">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Info className="w-5 h-5 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground">How to Help</h3>
+            <h3 className="text-lg font-semibold text-foreground">How to help without making it weird</h3>
           </div>
           <ul className="space-y-3">
             {data.painTip.suggestions.map((s: string, i: number) => (
@@ -148,7 +130,7 @@ export default function PartnerDashboard({ data }: PartnerDashboardProps) {
               </li>
             ))}
           </ul>
-        </div>
+        </GlassPanel>
       )}
     </div>
   );
