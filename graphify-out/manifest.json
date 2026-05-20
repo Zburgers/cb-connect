@@ -1,0 +1,342 @@
+{
+  "/home/naki/Desktop/itsthatnewshit/cb connect/next.config.js": {
+    "mtime": 1778248961.1827908,
+    "hash": "d9517aef53498228300d52b26bc2be4e"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/tailwind.config.js": {
+    "mtime": 1779046811.5222409,
+    "hash": "2bc0c463d75cb1092b48a136041e0543"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/postcss.config.js": {
+    "mtime": 1773177569.5882323,
+    "hash": "8640f9b2e6475cc3f5b1ff4548925765"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/next-env.d.ts": {
+    "mtime": 1773178560.4385452,
+    "hash": "ba64ff7d54714a8f64db89b1003207d8"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/playwright.config.ts": {
+    "mtime": 1773407317.3891165,
+    "hash": "8340925dc06c53117d62cf3934e84f37"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/empty-module.js": {
+    "mtime": 1778248885.3722122,
+    "hash": "ead47f00870ad0a7203680e26c9222b9"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/pm2.config.js": {
+    "mtime": 1778271186.2971225,
+    "hash": "5fff02eec7d27972b443455b24576b80"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/middleware.ts": {
+    "mtime": 1778271186.3083355,
+    "hash": "8b1a3ad88563ed8a9aadf7a26dd99595"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/playwright.local.config.ts": {
+    "mtime": 1779290585.5401785,
+    "hash": "e5074e0c9c162d35584b407245427776"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/crons.ts": {
+    "mtime": 1773409980.1530547,
+    "hash": "5156b3b474db23714b68a813c5b85ea1"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/seed.ts": {
+    "mtime": 1773178147.9837608,
+    "hash": "08958feba088b503cb71a5a7dd78793c"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/auth.config.ts": {
+    "mtime": 1778271186.3081229,
+    "hash": "e592760fb7aa3810fc779243c9233595"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/schema.ts": {
+    "mtime": 1778272765.3213797,
+    "hash": "9fedcfb2bcc30d218442d65d8b7826c3"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/dataModel.d.ts": {
+    "mtime": 1773177676.3853247,
+    "hash": "af87bff09394971f8debeb5b8e9f8a70"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/server.js": {
+    "mtime": 1771414549.1282153,
+    "hash": "cfc7a4ed084119abac0e51d79f525f4f"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/server.d.ts": {
+    "mtime": 1771414549.1430783,
+    "hash": "a6d3e29e1cd98c6a0ebcf82d5074009e"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/api.js": {
+    "mtime": 1771414549.149662,
+    "hash": "ea14005171d3e17b1b28a7139ad36d62"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/api.d.ts": {
+    "mtime": 1773178466.3928583,
+    "hash": "fa2be6b70249d5c093e1e8969220d1b7"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_helpers/auth.ts": {
+    "mtime": 1773177693.8187826,
+    "hash": "0d333af9bf1e7d8ae9db3d9769c07d84"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_helpers/cycleCalculations.ts": {
+    "mtime": 1773177702.543032,
+    "hash": "ea3eaa2d21f9e79ab440035bf6c29e2b"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/dashboard.ts": {
+    "mtime": 1773179409.101803,
+    "hash": "9eb8bad9179c6ae8f60238c2aa168a2f"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/couples.ts": {
+    "mtime": 1773179814.9964116,
+    "hash": "f7b17a58286b901be982ad03ae3b23ea"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/users.ts": {
+    "mtime": 1773178076.793727,
+    "hash": "b039f485bde2355600a5b083995dd485"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/history.ts": {
+    "mtime": 1779048294.1096811,
+    "hash": "66e34afb682ebc58c0870d32a4697b36"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/users.ts": {
+    "mtime": 1773409033.3570309,
+    "hash": "6657ac49f49a7cf2f3720436f0781e83"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/painLog.ts": {
+    "mtime": 1773409944.6116285,
+    "hash": "cf3ede6858a0dbe9975f192bb230d9e1"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/periods.ts": {
+    "mtime": 1773409971.0537584,
+    "hash": "b07dffc554151114af1a95b6a3f6be01"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/couples.ts": {
+    "mtime": 1773409927.0934184,
+    "hash": "0c13433cdfc549d32896807cd4e3a400"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/misc.ts": {
+    "mtime": 1773177751.9934452,
+    "hash": "69f5a5e8ed7f333e7b4be4c7a02e4e8b"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/actions/discord.ts": {
+    "mtime": 1773178451.9454453,
+    "hash": "5e41c827340da77b99f463eb4fb678a9"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/convex/actions/notifications.ts": {
+    "mtime": 1773178452.7174675,
+    "hash": "b94a77d68fe75a5850e3bb66a5e3535f"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/page.tsx": {
+    "mtime": 1779048376.5427067,
+    "hash": "8f00052b4b5a0ed3fc1aefe36a9e649f"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/layout.tsx": {
+    "mtime": 1778249335.5205634,
+    "hash": "3115937ea62054f0ef2d381de3e3b90e"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(auth)/sign-in/[[...sign-in]]/page.tsx": {
+    "mtime": 1779046978.69932,
+    "hash": "3599ef836cefa3103f8c9f049dbc521d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(auth)/sign-up/[[...sign-up]]/page.tsx": {
+    "mtime": 1779046979.1143253,
+    "hash": "08edd7508b8699a44c9d4b19b620002c"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/layout.tsx": {
+    "mtime": 1779046979.4133291,
+    "hash": "0975361915e8983c0b8dc906e404520c"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/page.tsx": {
+    "mtime": 1779046894.6462748,
+    "hash": "3252a2a11c77bf8a4659576f1192e81d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/log/page.tsx": {
+    "mtime": 1779048294.3846846,
+    "hash": "aedd6b391201079b4bb6203d16a0f89d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx": {
+    "mtime": 1779047372.261215,
+    "hash": "dd46022aa68bed5737b2e44ce8222fc5"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/settings/page.tsx": {
+    "mtime": 1773408091.079232,
+    "hash": "0d562ef0ed2eb46df868744d96f8eb55"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/api/webhook/clerk/route.ts": {
+    "mtime": 1778257548.276862,
+    "hash": "bf5dd1ed3d981f95242e5c7db91b135f"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/api/health/route.ts": {
+    "mtime": 1773410032.3774245,
+    "hash": "fd915db1b84c22e41476420ca69f3187"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/onboarding/page.tsx": {
+    "mtime": 1773409634.4149084,
+    "hash": "542dfaae81f38cd1710426a134cc23ee"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/lib/utils.ts": {
+    "mtime": 1773406257.2492313,
+    "hash": "5b3485b879cdac1ccfd0deb9ca947e45"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/lib/ConvexClientProvider.tsx": {
+    "mtime": 1773178114.9398167,
+    "hash": "aeac7a17d7d1ad2b6dd741c662f596e2"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/LoadingSpinner.tsx": {
+    "mtime": 1773380499.7574916,
+    "hash": "a9822b880d99ca6db69b96bb8115525d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/ErrorBoundary.tsx": {
+    "mtime": 1773408239.5031803,
+    "hash": "8083c74c398efd324dc982b5d38748fa"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/ThemeProvider.tsx": {
+    "mtime": 1773380671.1715357,
+    "hash": "9e3e4c4db94390f823627c6d0f724874"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/ThemeToggle.tsx": {
+    "mtime": 1773380210.9010823,
+    "hash": "0885a6628dba828d60c23d96edddff78"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/LoadingSkeleton.tsx": {
+    "mtime": 1773380527.368821,
+    "hash": "9a7dcf09e70e336ae0d3becb2273882c"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/GlassPanel.tsx": {
+    "mtime": 1779047195.0810113,
+    "hash": "8b4333455d93921faf2f4718c1bbe787"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/common/SanctuaryShell.tsx": {
+    "mtime": 1779047194.5390046,
+    "hash": "863a4e4cb4a68f5566b4111f400cfc46"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/CurrentPhase.tsx": {
+    "mtime": 1779046812.7392561,
+    "hash": "50a62710c54c6a846ea975cbf520a827"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/PainLogger.tsx": {
+    "mtime": 1779046894.4202719,
+    "hash": "942e4d1ffb7522962521489ff02b9462"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/TipsCard.tsx": {
+    "mtime": 1773410599.1553397,
+    "hash": "b2bb24b050a5b93e39a52f74a586a0fe"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/NutritionSuggestions.tsx": {
+    "mtime": 1773380380.3120673,
+    "hash": "b14bac665d82b8bf2d16803695511944"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/OnboardingFlow.tsx": {
+    "mtime": 1773410690.262554,
+    "hash": "1d6b6a2a5194297cad967882a7a0691a"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/PartnerStatusCard.tsx": {
+    "mtime": 1779048294.728689,
+    "hash": "34b22c712ad815c989398cd8c8f32dcb"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/PhaseAura.tsx": {
+    "mtime": 1779047919.7600243,
+    "hash": "e180a1cbb8ba723462c3c6bd191590a1"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/TactilePainLogger.tsx": {
+    "mtime": 1779047371.4872053,
+    "hash": "b284c5264482bda1d07827815c508d3b"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/partner/PartnerDashboard.tsx": {
+    "mtime": 1779046949.9609628,
+    "hash": "81ba8662bda692263c8d380f10083e22"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/partner/PartnerPulse.tsx": {
+    "mtime": 1779047371.9042106,
+    "hash": "a39eca28391d43e8da7bf21d60952a48"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/components/partner/DigitalLocket.tsx": {
+    "mtime": 1779047196.171025,
+    "hash": "94445abecd8ccc135e098f8c3f60c039"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/fixtures.ts": {
+    "mtime": 1773407341.1304052,
+    "hash": "8c4fa7062f1f1136e9556022119c1a39"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/partner-linking.spec.ts": {
+    "mtime": 1773407386.4019494,
+    "hash": "e4d75867d69dbacb645dca73096e389d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/onboarding.spec.ts": {
+    "mtime": 1773407398.12309,
+    "hash": "69a4c6bd644b32b0756694a7a008f8a9"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/manual-test-script.ts": {
+    "mtime": 1773407446.1126657,
+    "hash": "c46a3a68d1651fe653d916c9ad7a926c"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/signup-repro.spec.ts": {
+    "mtime": 1779290575.174046,
+    "hash": "dc707ecdfcf8c9d8884195a4f923682d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/README.md": {
+    "mtime": 1771563311.7517517,
+    "hash": "0ee68b6a0ae76250bbb1019e5cd6f1ec"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/QWEN.md": {
+    "mtime": 1773317858.966315,
+    "hash": "f73d7cd238371a7d7a578ccdf79bf765"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/issues.md": {
+    "mtime": 1773407158.477185,
+    "hash": "e9ad58f98f27a9efe121600c04f1f024"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/DEPLOYMENT.md": {
+    "mtime": 1778244944.8771617,
+    "hash": "1a0e7c58c018b61d0044a6ec3612b1c0"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/CLAUDE.md": {
+    "mtime": 1779290752.478452,
+    "hash": "4f5167905f35024f589cdfd4ea0a46ac"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/AGENTS.md": {
+    "mtime": 1779045759.5081594,
+    "hash": "0357f90367f6ad14539e556ba47e1834"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/cb-connect-technical-prd.md": {
+    "mtime": 1769861007.8706505,
+    "hash": "db28ae4fdf5643741bb5837b5714ae2d"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/cb-connect-design-guidelines.md": {
+    "mtime": 1779046687.6357002,
+    "hash": "48352f35719da5c5ba0cbd64a51d1efa"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/cb-connect-design-audit.md": {
+    "mtime": 1779047279.546062,
+    "hash": "242575df9bfa9d1ae5a7a4827f3831c0"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/plans/2026-03-13-partner-linking-ux-design.md": {
+    "mtime": 1773405874.2565773,
+    "hash": "3eeee0e2ea94add88d78a5b4ddfb8c38"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/plans/2026-03-13-partner-linking-ux-implementation.md": {
+    "mtime": 1773405992.8400183,
+    "hash": "5cf694fa7ccc465c1467e2427a079ad6"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/docs/plans/2026-05-18-cb-connect-design-overhaul.md": {
+    "mtime": 1779046687.9037035,
+    "hash": "5eb8ab78788fb47c1acd146730b6afba"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/TEST-RESULTS.md": {
+    "mtime": 1773407538.856778,
+    "hash": "60ed6d06fa804a9cb5db1c5107dc3581"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/error-context.md": {
+    "mtime": 1779290619.8306172,
+    "hash": "efa9e3c3aaedce70decad120554786f4"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/app/icon.svg": {
+    "mtime": 1778272649.3991044,
+    "hash": "7d4103debc6e5e1f6f09c282738d9dd8"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/test-failed-1.png": {
+    "mtime": 1779290619.2496097,
+    "hash": "fb104b5fd49f2bc00c5499566cb87451"
+  },
+  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/video.webm": {
+    "mtime": 1779290619.826617,
+    "hash": "33b323fbc2ee9cd8085232ad21e82749"
+  }
+}
