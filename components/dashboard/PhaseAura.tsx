@@ -2,7 +2,6 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { CalendarDays, HeartPulse, Sparkles } from "lucide-react";
-import GlassPanel from "@/components/common/GlassPanel";
 import { getPainSeverityBucket, getPhaseEmoji } from "@/lib/utils";
 
 interface PhaseAuraProps {
@@ -39,19 +38,13 @@ const phaseCopy: Record<string, { title: string; tone: string; action: string }>
 };
 
 function painPhrase(score?: number | null) {
-  if (score === null || score === undefined) {
-    return { label: "No pain check-in yet", help: "A quick check-in will tune today’s support." };
-  }
-
+  if (score === null || score === undefined)
+    return { label: "No check-in yet", help: "A quick signal will tune today's support." };
   const bucket = getPainSeverityBucket(score);
-  if (bucket === "none") return { label: "Body feels clear", help: "Keep the day easy and steady." };
-  if (bucket === "mild") return { label: "A little tender", help: "Light support is probably enough." };
-  if (bucket === "moderate") return { label: "Needs softness", help: "Lower the load and add comfort." };
-  return { label: "Rough day", help: "Practical care beats big speeches right now." };
-}
-
-function phaseLabel(phase: string) {
-  return `${phase.charAt(0).toUpperCase()}${phase.slice(1)} phase`;
+  if (bucket === "none")     return { label: "Body feels clear",   help: "Keep the day easy and steady." };
+  if (bucket === "mild")     return { label: "A little tender",    help: "Light support is probably enough." };
+  if (bucket === "moderate") return { label: "Needs softness",     help: "Lower the load, add comfort." };
+  return                            { label: "Rough day",          help: "Practical care beats big speeches." };
 }
 
 export default function PhaseAura({
@@ -64,75 +57,134 @@ export default function PhaseAura({
   perspective = "primary",
 }: PhaseAuraProps) {
   const shouldReduceMotion = useReducedMotion();
-  const copy = phaseCopy[phase] ?? phaseCopy.follicular;
-  const pain = painPhrase(painScore);
-  const pulseDuration = painScore !== null && painScore !== undefined && painScore >= 7 ? 8 : 13;
+  const copy  = phaseCopy[phase] ?? phaseCopy.follicular;
+  const pain  = painPhrase(painScore);
+  const pulseDuration = painScore != null && painScore >= 7 ? 8 : 13;
 
   return (
-    <GlassPanel
-      variant="warm"
+    <div
       data-phase={phase}
-      className="relative isolate overflow-hidden p-6 md:p-8"
+      className="bento-cell-warm relative isolate overflow-hidden"
+      style={{ padding: "2rem", borderRadius: "var(--radius-xl)" }}
     >
-      <div className="pointer-events-none absolute -right-16 -top-20 h-80 w-80 opacity-80" aria-hidden="true">
-        <motion.div
+      {/* ── Background orb ── */}
+      <motion.div
+        className="pointer-events-none absolute right-[-3rem] top-[-3rem] h-80 w-80 rounded-full"
+        animate={shouldReduceMotion ? undefined : { scale: [1, 1.08, 0.97, 1], rotate: [0, 8, -5, 0] }}
+        transition={shouldReduceMotion ? undefined : { duration: pulseDuration, repeat: Infinity, ease: "easeInOut" }}
+        aria-hidden="true"
+      >
+        <div
           className="phase-aura-field h-full w-full rounded-full"
-          animate={shouldReduceMotion ? undefined : { scale: [1, 1.08, 0.98, 1], rotate: [0, 8, -6, 0] }}
-          transition={shouldReduceMotion ? undefined : { duration: pulseDuration, repeat: Infinity, ease: "easeInOut" }}
+          style={{ filter: "blur(32px) saturate(1.3)", opacity: 0.85 }}
         />
-      </div>
+      </motion.div>
 
-      <div className="relative grid gap-6 md:grid-cols-[1.08fr_0.92fr] md:items-end">
-        <div className="space-y-5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/[0.46] px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground backdrop-blur-xl dark:border-white/10 dark:bg-white/8">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Today’s shared signal
+      <div className="relative grid gap-6 md:grid-cols-[1.1fr_0.9fr] md:items-start">
+
+        {/* ── Left column — editorial hero ── */}
+        <div className="space-y-3">
+
+          {/* Badge on its own row */}
+          <div>
+            <span className="phase-badge">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              Today's shared signal
+            </span>
           </div>
 
-          <div className="space-y-3">
-            <p className="inline-flex w-fit rounded-full border border-white/50 bg-white/50 px-4 py-2 text-sm font-semibold text-foreground backdrop-blur-xl dark:border-white/10 dark:bg-white/8">
-              {phaseLabel(phase)}
-            </p>
-            <p className="text-6xl leading-none md:text-7xl" aria-hidden="true">
+          {/* Phase label pill — own row, below badge */}
+          <div>
+            <span
+              className="inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold capitalize"
+              style={{
+                background: "rgba(255,255,255,0.55)",
+                backdropFilter: "blur(10px)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5)",
+                color: "hsl(var(--foreground))",
+              }}
+            >
+              {phase.charAt(0).toUpperCase() + phase.slice(1)} Phase
+            </span>
+          </div>
+
+          {/* Emoji + huge phase title */}
+          <div className="pt-1">
+            <p className="text-5xl leading-none md:text-6xl" aria-hidden="true">
               {getPhaseEmoji(phase)}
             </p>
-            <h2 className="max-w-2xl text-balance font-display text-5xl font-semibold leading-[0.95] tracking-tight text-foreground md:text-7xl">
+
+            <motion.h2
+              key={copy.title}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              className="font-display text-balance overflow-wrap-anywhere mt-3"
+              style={{
+                fontSize: "clamp(2.8rem, 7vw + 0.5rem, 5rem)",
+                fontStyle: "italic",
+                lineHeight: 0.94,
+                letterSpacing: "-0.03em",
+                color: "hsl(var(--foreground))",
+                position: "relative",
+                zIndex: 2,
+              }}
+            >
               {copy.title}
-            </h2>
-            <p className="max-w-xl text-base leading-7 text-muted-foreground md:text-lg">
-              {perspective === "partner" ? copy.action : copy.tone}
-            </p>
+            </motion.h2>
           </div>
+
+          <p
+            className="max-w-sm text-sm leading-6"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          >
+            {perspective === "partner" ? copy.action : copy.tone}
+          </p>
         </div>
 
+        {/* ── Right column — data satellites ── */}
         <div className="grid gap-3">
-          <div className="rounded-[1.6rem] border border-white/50 bg-white/50 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-white/8">
+          {/* Cycle day */}
+          <div className="rounded-[1.4rem] bg-white/60 dark:bg-white/10 backdrop-blur-xl p-4">
             <div className="flex items-start gap-3">
-              <CalendarDays className="mt-1 h-5 w-5 text-primary" />
+              <CalendarDays className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
               <div>
                 <p className="font-semibold text-foreground">Cycle day {cycleDay}</p>
-                <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-[1.6rem] border border-white/50 bg-white/50 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-white/8">
+          {/* Pain signal */}
+          <div className="rounded-[1.4rem] bg-white/60 dark:bg-white/10 backdrop-blur-xl p-4">
             <div className="flex items-start gap-3">
-              <HeartPulse className="mt-1 h-5 w-5 text-secondary" />
+              <HeartPulse className="mt-0.5 h-5 w-5 flex-shrink-0 text-secondary" />
               <div>
                 <p className="font-semibold text-foreground">{pain.label}</p>
-                <p className="text-sm leading-6 text-muted-foreground">{pain.help}</p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">{pain.help}</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-[1.6rem] bg-foreground/90 p-4 text-background shadow-2xl shadow-foreground/10 dark:bg-white/[0.86] dark:text-slate-950">
-            <p className="font-data text-3xl font-semibold">{daysUntilNextPeriod}</p>
-            <p className="text-sm opacity-80">days until predicted period</p>
-            <p className="mt-2 text-xs opacity-70">Estimated start: {nextPeriodStart}</p>
-          </div>
+          {/* Countdown — high-contrast tile */}
+          <motion.div
+            key={daysUntilNextPeriod}
+            className="rounded-[1.4rem] p-4 bg-foreground text-background"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4 }}
+          >
+            <p
+              className="font-data font-semibold leading-none"
+              style={{ fontSize: "2.5rem", letterSpacing: "-0.04em" }}
+            >
+              {daysUntilNextPeriod}
+            </p>
+            <p className="mt-1 text-sm opacity-80">days until predicted period</p>
+            <p className="mt-2 text-xs opacity-60">Estimated: {nextPeriodStart}</p>
+          </motion.div>
         </div>
       </div>
-    </GlassPanel>
+    </div>
   );
 }

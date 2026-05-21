@@ -1,51 +1,60 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
+import { motion, AnimatePresence } from "framer-motion";
 import ThemeToggle from "@/components/common/ThemeToggle";
 import SanctuaryShell from "@/components/common/SanctuaryShell";
 import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: Home },
-  { href: "/dashboard/log", label: "Log", icon: PenTool },
-  { href: "/dashboard/partner", label: "Partner", icon: Heart },
+  { href: "/dashboard",          label: "Home",     icon: Home    },
+  { href: "/dashboard/log",      label: "Log",      icon: PenTool },
+  { href: "/dashboard/partner",  label: "Partner",  icon: Heart   },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathname  = usePathname();
+  const router    = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
 
-  // Sync Clerk user into Convex on first load — only fires once Convex has a valid token
+  // Presence glow — simulated: in production wire to a Convex presence table
+  const [partnerPresent, setPartnerPresent] = useState(false);
+
   useEffect(() => {
     if (isAuthenticated) {
-      ensureUser().catch(() => {
-        // Non-fatal — page will still work via getMe
-      });
+      ensureUser().catch(() => {});
     }
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redirect to onboarding if user exists but has no role yet
   useEffect(() => {
     if (me !== undefined && me !== null && !me.role) {
       router.replace("/onboarding");
     }
   }, [me, router]);
 
+  // Derive current phase from pathname (dashboard page sets data-phase on its wrapper)
+  // The SanctuaryShell defaults to follicular, actual phase is set by page
+  const phase = "follicular";
+
   return (
-    <SanctuaryShell phase="follicular" intensity="medium">
-      {/* Top nav */}
-      <header className="glass-elevated sticky top-0 z-50 border-b">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/dashboard" className="font-display text-2xl font-semibold tracking-tight text-foreground">
+    <SanctuaryShell phase={phase} intensity="medium" showPresenceGlow={partnerPresent}>
+
+      {/* ── Top bar ─────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 px-4 py-3 bg-white/70 dark:bg-zinc-950/60 backdrop-blur-2xl border-b border-black/[0.04] dark:border-white/[0.06]">
+        <div className="mx-auto flex h-12 max-w-4xl items-center justify-between">
+          <Link
+            href="/dashboard"
+            className="font-display text-xl font-semibold tracking-tight"
+            style={{ fontStyle: "italic", color: "hsl(var(--foreground))" }}
+          >
             CB Connect
           </Link>
           <div className="flex items-center gap-2">
@@ -54,13 +63,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      {/* Main content */}
-      <main className="max-w-4xl mx-auto px-4 py-6 pb-24 relative z-10">
+
+      {/* ── Page content ─────────────────────────────────────────── */}
+      <main className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28">
         {children}
       </main>
-      {/* Bottom nav (mobile-first) */}
-      <nav className="glass-elevated border-t fixed bottom-0 left-0 right-0 z-50">
-        <div className="max-w-4xl mx-auto flex justify-around py-2">
+
+      {/* ── Bottom nav ───────────────────────────────────────────── */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-safe"
+        aria-label="Bottom navigation"
+      >
+        <div
+          className="mx-auto mb-4 flex max-w-sm items-center justify-around rounded-[2rem] px-2 py-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl"
+          style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5), 0 8px 32px rgba(0,0,0,0.14)" }}
+        >
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -68,14 +85,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center py-3 px-4 rounded-2xl transition-all duration-200 press-feedback no-tap-highlight touch-target
-                  ${isActive
-                    ? "text-primary bg-primary/10 dark:bg-primary/20"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
+                className="relative flex flex-col items-center py-2 px-4 no-tap-highlight"
+                aria-current={isActive ? "page" : undefined}
               >
-                <Icon className="w-6 h-6" />
-                <span className="text-xs mt-1 font-medium">{item.label}</span>
+                <motion.div
+                  whileTap={{ scale: 0.88 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                  className="flex flex-col items-center gap-1"
+                >
+                  {/* Active pill background */}
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-active-pill"
+                      className="absolute inset-0 rounded-2xl"
+                      style={{ background: "oklch(from var(--color-accent) l c h / 0.12)" }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                      aria-hidden="true"
+                    />
+                  )}
+
+                  <Icon
+                    className="relative h-5 w-5 transition-colors"
+                    style={{ color: isActive ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}
+                  />
+                  <span
+                    className="relative text-[10px] font-semibold transition-colors"
+                    style={{ color: isActive ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}
+                  >
+                    {item.label}
+                  </span>
+                </motion.div>
               </Link>
             );
           })}

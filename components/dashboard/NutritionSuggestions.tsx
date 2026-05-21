@@ -1,9 +1,9 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { getPhaseGradient } from "@/lib/utils";
-import { Utensils, EyeOff } from "lucide-react";
+import { X } from "lucide-react";
 
 interface NutritionTip {
   _id: any;
@@ -16,54 +16,98 @@ interface NutritionSuggestionsProps {
   phase: string;
 }
 
+const phaseWhisper: Record<string, string> = {
+  menstruation: "Your body is asking for warmth.",
+  follicular:   "Light and nourishing suits you right now.",
+  ovulation:    "Energy is high — feed it well.",
+  luteal:       "Comfort and steadiness, not stimulation.",
+};
+
 export default function NutritionSuggestions({ tips, phase }: NutritionSuggestionsProps) {
   const hideTip = useMutation(api.mutations.misc.hideNutritionTip);
 
+  if (tips.length === 0) return null;
+
   return (
-    <div className={`glass-card rounded-3xl p-6 bg-gradient-to-br ${getPhaseGradient(phase)} 
-      animate-slide-up border-0 shadow-lg`}>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-accent/10 dark:bg-accent/20 flex items-center 
-          justify-center">
-          <Utensils className="w-5 h-5 text-accent" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground capitalize">
-          Nutrition for {phase} Phase
-        </h3>
-      </div>
-      
-      <div className="space-y-3">
-        {tips.map((tip) => (
-          <div
-            key={tip._id}
-            className="flex items-start justify-between gap-3 p-4 bg-muted/50 dark:bg-muted/30 
-              rounded-2xl backdrop-blur-sm transition-all hover:bg-muted/80"
+    <div
+      className="bento-cell overflow-hidden"
+      style={{ borderRadius: "var(--radius-xl)" }}
+    >
+      <div className="p-6">
+        {/* Phase whisper header */}
+        <div className="mb-5">
+          <p
+            className="text-xs font-semibold uppercase tracking-[0.22em]"
+            style={{ color: "hsl(var(--muted-foreground))" }}
           >
-            <div className="flex-1">
-              <p className="font-medium text-foreground text-sm">{tip.foodItem}</p>
-              <p className="text-xs text-muted-foreground mt-1">{tip.reasoning}</p>
-            </div>
-            <button
-              onClick={() => hideTip({ nutritionTipId: tip._id })}
-              type="button"
-              className="text-muted-foreground hover:text-foreground p-2 rounded-full 
-                hover:bg-muted/50 transition-all press-feedback no-tap-highlight touch-target"
-              title="Hide for 30 days"
-            >
-              <EyeOff className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-      
-      {tips.length === 0 && (
-        <div className="text-center py-8">
-          <Utensils className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">
-            No nutrition tips available for this phase right now.
+            A quiet suggestion
+          </p>
+          <p
+            className="mt-2 font-display"
+            style={{
+              fontSize: "var(--text-2xl)",
+              fontStyle: "italic",
+              lineHeight: 1.2,
+              color: "hsl(var(--foreground))",
+            }}
+          >
+            {phaseWhisper[phase] ?? "Nourish what's asking for care."}
           </p>
         </div>
-      )}
+
+        {/* Tips — whispered, not listed */}
+        <div className="space-y-3">
+          {tips.map((tip, i) => (
+            <motion.div
+              key={tip._id}
+              className="group flex items-start justify-between gap-3 rounded-[1.2rem] p-4"
+              style={{
+                background: "oklch(100% 0 0 / 0.45)",
+                backdropFilter: "blur(8px)",
+                boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
+              }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08, type: "spring", stiffness: 300, damping: 22 }}
+              whileHover={{ y: -2 }}
+            >
+              <div className="flex-1">
+                {/* Food item — high-contrast serif, the star */}
+                <p
+                  className="font-display font-semibold"
+                  style={{
+                    fontSize: "var(--text-lg)",
+                    fontStyle: "italic",
+                    color: "hsl(var(--foreground))",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {tip.foodItem}
+                </p>
+                {/* Reasoning — small and whispered */}
+                <p
+                  className="mt-1 text-xs leading-5"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
+                  {tip.reasoning}
+                </p>
+              </div>
+
+              <motion.button
+                onClick={() => hideTip({ nutritionTipId: tip._id })}
+                whileTap={{ scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 no-tap-highlight"
+                style={{ color: "hsl(var(--muted-foreground))" }}
+                title="Dismiss for 30 days"
+                aria-label={`Dismiss ${tip.foodItem}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </motion.button>
+            </motion.div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

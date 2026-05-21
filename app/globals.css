@@ -1,256 +1,563 @@
+/* Hallmark · macrostructure: Split Studio · genre: atmospheric-warm · theme: Bloom
+ * tone: soft, luminous, intimate · anchor hue: coral-amber · nav: N5 · footer: Ft5
+ * pre-emit critique: P5 H5 E5 S5 R5 V5
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 32 45% 96%;
-    --foreground: 238 28% 12%;
-    --card: 32 45% 98%;
-    --card-foreground: 238 28% 12%;
-    --popover: 32 45% 98%;
-    --popover-foreground: 238 28% 12%;
-    --primary: 8 74% 61%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 342 58% 54%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 30 31% 90%;
-    --muted-foreground: 236 13% 42%;
-    --accent: 35 91% 64%;
-    --accent-foreground: 238 28% 12%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 24 30% 84%;
-    --input: 24 30% 84%;
-    --ring: 8 74% 61%;
-    --radius: 1.6rem;
-    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-    --font-ui: "Avenir Next", Avenir, "Helvetica Neue", Helvetica, sans-serif;
-    --font-data: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", monospace;
-    --phase-1: 8 74% 61%;
-    --phase-2: 342 58% 54%;
-    --phase-3: 35 91% 64%;
-    --phase-ink: 238 28% 12%;
-    --shadow-warm: 18 42% 52%;
-  }
+/* ── Token system ───────────────────────────────────────────────── */
+:root {
+  /* Paper */
+  --color-paper:       oklch(97% 0.012 55);
+  --color-paper-2:     oklch(94% 0.016 52);
+  --color-paper-3:     oklch(90% 0.022 50);
 
-  .dark {
-    --background: 238 31% 8%;
-    --foreground: 31 37% 94%;
-    --card: 238 28% 12%;
-    --card-foreground: 31 37% 94%;
-    --popover: 238 28% 12%;
-    --popover-foreground: 31 37% 94%;
-    --primary: 10 84% 69%;
-    --primary-foreground: 238 31% 8%;
-    --secondary: 342 70% 68%;
-    --secondary-foreground: 238 31% 8%;
-    --muted: 238 18% 18%;
-    --muted-foreground: 31 20% 72%;
-    --accent: 35 95% 70%;
-    --accent-foreground: 238 31% 8%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 238 17% 23%;
-    --input: 238 17% 23%;
-    --ring: 10 84% 69%;
-    --phase-ink: 31 37% 94%;
-  }
+  /* Ink */
+  --color-ink:         oklch(18% 0.028 255);
+  --color-ink-2:       oklch(42% 0.022 255);
+  --color-ink-3:       oklch(62% 0.016 255);
 
-  [data-phase="menstruation"] {
-    --phase-1: 8 70% 58%;
-    --phase-2: 352 56% 42%;
-    --phase-3: 24 75% 76%;
-    --shadow-warm: 4 48% 42%;
-  }
+  /* Accent — warm coral */
+  --color-accent:      oklch(64% 0.18 32);
+  --color-accent-2:    oklch(70% 0.14 42);
+  --color-accent-3:    oklch(78% 0.10 48);
 
-  [data-phase="follicular"] {
-    --phase-1: 22 93% 74%;
-    --phase-2: 343 81% 78%;
-    --phase-3: 93 42% 68%;
-    --shadow-warm: 21 54% 52%;
-  }
+  /* Secondary — lavender */
+  --color-secondary:   oklch(58% 0.14 305);
+  --color-secondary-2: oklch(66% 0.10 305);
 
-  [data-phase="ovulation"] {
-    --phase-1: 10 89% 68%;
-    --phase-2: 39 95% 62%;
-    --phase-3: 334 80% 70%;
-    --shadow-warm: 16 61% 52%;
-  }
+  /* Phase-specific (overridden by [data-phase=*]) */
+  --color-phase-1:     oklch(66% 0.18 32);
+  --color-phase-2:     oklch(60% 0.14 350);
+  --color-phase-3:     oklch(78% 0.12 58);
 
-  [data-phase="luteal"] {
-    --phase-1: 268 44% 58%;
-    --phase-2: 226 41% 42%;
-    --phase-3: 340 44% 70%;
-    --shadow-warm: 262 34% 38%;
-  }
+  /* Glass surfaces */
+  --color-glass:       oklch(100% 0 0 / 0.55);
+  --color-glass-2:     oklch(100% 0 0 / 0.72);
+  --color-glass-border:oklch(100% 0 0 / 0.45);
+
+  /* Functional */
+  --color-focus:       oklch(64% 0.18 32);
+  --color-error:       oklch(58% 0.19 22);
+  --color-success:     oklch(58% 0.16 145);
+  --color-warning:     oklch(72% 0.14 70);
+
+  /* Shadows */
+  --shadow-warm:       oklch(52% 0.12 42 / 0.18);
+  --shadow-deep:       oklch(18% 0.028 255 / 0.12);
+
+  /* Typography */
+  --font-display:      'DM Serif Display', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --font-ui:           'DM Sans', 'Avenir Next', Avenir, 'Helvetica Neue', Helvetica, sans-serif;
+  --font-data:         'DM Sans', 'SFMono-Regular', 'Cascadia Mono', 'Roboto Mono', monospace;
+
+  /* Spacing (4pt) */
+  --space-xs:   0.25rem;
+  --space-sm:   0.5rem;
+  --space-md:   1rem;
+  --space-lg:   1.5rem;
+  --space-xl:   2rem;
+  --space-2xl:  3rem;
+  --space-3xl:  4.5rem;
+  --space-4xl:  6rem;
+
+  /* Type scale */
+  --text-xs:       0.75rem;
+  --text-sm:       0.875rem;
+  --text-base:     1rem;
+  --text-lg:       1.125rem;
+  --text-xl:       1.25rem;
+  --text-2xl:      1.5rem;
+  --text-3xl:      1.875rem;
+  --text-4xl:      2.25rem;
+  --text-display-s:clamp(2.5rem, 4vw + 1rem, 3.75rem);
+  --text-display:  clamp(3.5rem, 7vw + 1rem, 6rem);
+
+  /* Motion */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --dur-fast:    120ms;
+  --dur-base:    240ms;
+  --dur-slow:    400ms;
+  --dur-xslow:   640ms;
+
+  /* Radius */
+  --radius-sm:  0.75rem;
+  --radius-md:  1.25rem;
+  --radius-lg:  1.75rem;
+  --radius-xl:  2rem;
+  --radius-pill:9999px;
+
+  /* Tailwind CSS variable bridge (kept for Radix/shadcn compat) */
+  --background:         32 45% 96%;
+  --foreground:         238 28% 12%;
+  --card:               32 45% 98%;
+  --card-foreground:    238 28% 12%;
+  --popover:            32 45% 98%;
+  --popover-foreground: 238 28% 12%;
+  --primary:            8 74% 61%;
+  --primary-foreground: 0 0% 100%;
+  --secondary:          268 44% 58%;
+  --secondary-foreground: 0 0% 100%;
+  --muted:              30 31% 90%;
+  --muted-foreground:   236 13% 42%;
+  --accent:             35 91% 64%;
+  --accent-foreground:  238 28% 12%;
+  --destructive:        0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border:             24 30% 84%;
+  --input:              24 30% 84%;
+  --ring:               8 74% 61%;
+  --radius:             1.6rem;
+
+  /* Phase colors */
+  --phase-1:     oklch(66% 0.18 32);
+  --phase-2:     oklch(60% 0.14 350);
+  --phase-3:     oklch(78% 0.12 58);
+  --phase-ink:   oklch(18% 0.028 255);
+  --shadow-warm-hsl: 18 42% 52%;
 }
 
+/* ── Dark mode ──────────────────────────────────────────────────── */
+.dark {
+  --color-paper:        oklch(14% 0.022 255);
+  --color-paper-2:      oklch(18% 0.026 255);
+  --color-paper-3:      oklch(22% 0.028 255);
+  --color-ink:          oklch(94% 0.012 55);
+  --color-ink-2:        oklch(74% 0.014 55);
+  --color-ink-3:        oklch(54% 0.012 55);
+  --color-glass:        oklch(100% 0 0 / 0.08);
+  --color-glass-2:      oklch(100% 0 0 / 0.14);
+  --color-glass-border: oklch(100% 0 0 / 0.10);
+  --shadow-warm:        oklch(52% 0.12 42 / 0.28);
+
+  --background:         238 31% 8%;
+  --foreground:         31 37% 94%;
+  --card:               238 28% 12%;
+  --card-foreground:    31 37% 94%;
+  --popover:            238 28% 12%;
+  --popover-foreground: 31 37% 94%;
+  --primary:            10 84% 69%;
+  --primary-foreground: 238 31% 8%;
+  --secondary:          268 50% 66%;
+  --secondary-foreground: 238 31% 8%;
+  --muted:              238 18% 18%;
+  --muted-foreground:   31 20% 72%;
+  --accent:             35 95% 70%;
+  --accent-foreground:  238 31% 8%;
+  --destructive:        0 63% 48%;
+  --destructive-foreground: 210 40% 98%;
+  --border:             238 17% 23%;
+  --input:              238 17% 23%;
+  --ring:               10 84% 69%;
+  --phase-ink:          31 37% 94%;
+}
+
+/* ── Phase overrides ────────────────────────────────────────────── */
+[data-phase="menstruation"] {
+  --phase-1:       oklch(60% 0.18 22);
+  --phase-2:       oklch(46% 0.14 355);
+  --phase-3:       oklch(80% 0.10 28);
+  --color-phase-1: oklch(60% 0.18 22);
+  --color-phase-2: oklch(46% 0.14 355);
+  --color-phase-3: oklch(80% 0.10 28);
+  --shadow-warm:   oklch(48% 0.14 22 / 0.2);
+  --primary:       8 70% 58%;
+}
+
+[data-phase="follicular"] {
+  --phase-1:       oklch(76% 0.14 58);
+  --phase-2:       oklch(78% 0.12 340);
+  --phase-3:       oklch(72% 0.12 140);
+  --color-phase-1: oklch(76% 0.14 58);
+  --color-phase-2: oklch(78% 0.12 340);
+  --color-phase-3: oklch(72% 0.12 140);
+  --shadow-warm:   oklch(60% 0.12 58 / 0.18);
+}
+
+[data-phase="ovulation"] {
+  --phase-1:       oklch(70% 0.20 32);
+  --phase-2:       oklch(76% 0.18 55);
+  --phase-3:       oklch(72% 0.16 335);
+  --color-phase-1: oklch(70% 0.20 32);
+  --color-phase-2: oklch(76% 0.18 55);
+  --color-phase-3: oklch(72% 0.16 335);
+  --shadow-warm:   oklch(60% 0.16 42 / 0.22);
+}
+
+[data-phase="luteal"] {
+  --phase-1:       oklch(56% 0.14 295);
+  --phase-2:       oklch(44% 0.12 248);
+  --phase-3:       oklch(66% 0.10 340);
+  --color-phase-1: oklch(56% 0.14 295);
+  --color-phase-2: oklch(44% 0.12 248);
+  --color-phase-3: oklch(66% 0.10 340);
+  --shadow-warm:   oklch(44% 0.12 295 / 0.2);
+}
+
+/* ── Base ───────────────────────────────────────────────────────── */
 @layer base {
+  html, body {
+    overflow-x: clip;
+  }
+
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-ui);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  h1,
-  h2,
-  h3,
-  .font-display {
+  h1, h2, h3, .font-display {
     font-family: var(--font-display);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
   }
 }
 
+/* ── Components ─────────────────────────────────────────────────── */
 @layer components {
+
+  /* Sanctuary background */
   .sanctuary-surface {
     background:
-      radial-gradient(circle at 18% 12%, hsl(var(--phase-1) / 0.22), transparent 34rem),
-      radial-gradient(circle at 82% 16%, hsl(var(--phase-2) / 0.16), transparent 28rem),
-      radial-gradient(circle at 48% 88%, hsl(var(--phase-3) / 0.18), transparent 32rem),
+      radial-gradient(circle at 18% 12%, oklch(from var(--color-phase-1) l c h / 0.22), transparent 34rem),
+      radial-gradient(circle at 82% 16%, oklch(from var(--color-phase-2) l c h / 0.16), transparent 28rem),
+      radial-gradient(circle at 48% 88%, oklch(from var(--color-phase-3) l c h / 0.18), transparent 32rem),
       linear-gradient(135deg, hsl(var(--background)), hsl(var(--muted) / 0.58));
   }
 
+  /* Ambient noise texture overlay */
+  .noise-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.028;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 200px 200px;
+    mix-blend-mode: overlay;
+  }
+
+  /* Phase aura orb */
   .phase-aura-field {
     background:
-      radial-gradient(circle at 35% 30%, hsl(var(--phase-3) / 0.92), transparent 24%),
-      radial-gradient(circle at 68% 34%, hsl(var(--phase-1) / 0.92), transparent 31%),
-      radial-gradient(circle at 48% 70%, hsl(var(--phase-2) / 0.82), transparent 38%);
-    filter: blur(20px) saturate(1.12);
+      radial-gradient(circle at 35% 30%, oklch(from var(--color-phase-3) l c h / 0.92), transparent 24%),
+      radial-gradient(circle at 68% 34%, oklch(from var(--color-phase-1) l c h / 0.92), transparent 31%),
+      radial-gradient(circle at 48% 70%, oklch(from var(--color-phase-2) l c h / 0.82), transparent 38%);
+    filter: blur(22px) saturate(1.15);
   }
 
-  /* Glass card for light mode */
+  /* ── Borderless Bento cells ── */
+  .bento-cell {
+    border-radius: var(--radius-xl);
+    background: var(--color-glass);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      inset 0 -1px 0 oklch(0% 0 0 / 0.04),
+      0 8px 32px var(--shadow-warm);
+    border: none;
+  }
+
+  .bento-cell-warm {
+    background: linear-gradient(
+      135deg,
+      oklch(from var(--color-phase-1) l c h / 0.22),
+      var(--color-glass)
+    );
+    backdrop-filter: blur(28px) saturate(1.5);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 16px 48px var(--shadow-warm);
+    border: none;
+  }
+
+  .dark .bento-cell {
+    background: rgba(255,255,255,0.07);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      0 8px 32px rgba(0,0,0,0.30);
+  }
+
+  .dark .bento-cell-warm {
+    background: linear-gradient(
+      135deg,
+      oklch(from var(--color-phase-1) l c h / 0.16),
+      rgba(255,255,255,0.07)
+    );
+  }
+
+  /* Legacy glass (preserved for existing components) */
   .glass-card {
-    @apply border border-white/[0.45] bg-white/[0.55] shadow-lg backdrop-blur-xl;
-    box-shadow: 0 24px 80px hsl(var(--shadow-warm) / 0.16);
+    @apply backdrop-blur-xl;
+    background: var(--color-glass);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 8px 32px var(--shadow-warm);
+    border: none;
   }
-  
-  /* Glass card for dark mode */
+
   .dark .glass-card {
-    @apply border-white/10 bg-black/[0.28] shadow-lg backdrop-blur-xl;
-    box-shadow: 0 28px 90px hsl(var(--shadow-warm) / 0.24);
+    background: rgba(255,255,255,0.07);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      0 8px 32px rgba(0,0,0,0.28);
   }
-  
-  /* Elevated glass (modals, overlays) */
+
   .glass-elevated {
-    @apply border border-white/[0.55] bg-white/[0.72] shadow-2xl backdrop-blur-2xl;
-    box-shadow: 0 30px 100px hsl(var(--shadow-warm) / 0.22);
+    @apply backdrop-blur-2xl;
+    background: var(--color-glass-2);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 24px 64px var(--shadow-warm);
+    border: none;
   }
-  
+
   .dark .glass-elevated {
-    @apply border-white/[0.12] bg-black/40 shadow-2xl backdrop-blur-2xl;
-    box-shadow: 0 30px 110px hsl(var(--shadow-warm) / 0.28);
+    background: oklch(100% 0 0 / 0.12);
+    box-shadow:
+      inset 0 1px 0 oklch(100% 0 0 / 0.12),
+      0 24px 64px oklch(0% 0 0 / 0.36);
   }
-  
-  /* Phase cards with gradient + glass */
+
+  /* ── Presence glow ── */
+  .presence-glow {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--color-phase-1) 30%,
+      var(--color-phase-2) 70%,
+      transparent
+    );
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .presence-glow::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: inherit;
+    filter: blur(8px);
+    opacity: 0.6;
+    height: 24px;
+  }
+
+  /* ── Phase pill badge ── */
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 1rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-glass-2);
+    backdrop-filter: blur(12px);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    box-shadow: inset 0 1px 0 var(--color-glass-border);
+  }
+
+  /* ── Floating nav pill ── */
+  .nav-pill {
+    background: var(--color-glass-2);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 4px 24px var(--shadow-warm),
+      0 1px 3px oklch(0% 0 0 / 0.08);
+    border-radius: var(--radius-pill);
+    border: none;
+  }
+
+  .dark .nav-pill {
+    background: oklch(100% 0 0 / 0.10);
+  }
+
+  /* ── Phase band for timeline ── */
+  .phase-band {
+    width: 4px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(
+      180deg,
+      var(--color-phase-1),
+      var(--color-phase-2) 50%,
+      var(--color-phase-3)
+    );
+    filter: blur(0.5px);
+  }
+
+  /* ── Phase-specific card tints ── */
   .phase-card-menstruation {
-    @apply glass-card bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20;
+    background: linear-gradient(135deg, oklch(90% 0.06 22 / 0.6), var(--color-glass));
   }
   .phase-card-follicular {
-    @apply glass-card bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20;
+    background: linear-gradient(135deg, oklch(92% 0.06 58 / 0.6), var(--color-glass));
   }
   .phase-card-ovulation {
-    @apply glass-card bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/30 dark:to-amber-900/20;
+    background: linear-gradient(135deg, oklch(92% 0.08 50 / 0.6), var(--color-glass));
   }
   .phase-card-luteal {
-    @apply glass-card bg-gradient-to-br from-violet-50 to-violet-100/50 dark:from-violet-950/30 dark:to-violet-900/20;
-  }
-  
-  /* Ambient glow effect for dark mode */
-  .ambient-glow {
-    @apply relative;
-  }
-  .ambient-glow::before {
-    content: '';
-    @apply absolute -inset-4 bg-gradient-to-r from-primary/20 to-secondary/20 blur-3xl -z-10 rounded-full;
-  }
-
-  .locket-shape {
-    border-radius: 44% 56% 52% 48% / 42% 38% 62% 58%;
+    background: linear-gradient(135deg, oklch(88% 0.06 295 / 0.6), var(--color-glass));
   }
 }
 
+/* ── Utilities ──────────────────────────────────────────────────── */
 @layer utilities {
-  /* Minimum touch target: 44x44px */
   .touch-target {
-    @apply min-h-[44px] min-w-[44px];
+    min-height: 44px;
+    min-width: 44px;
   }
-  
-  /* Touch spacing: 8px gap */
-  .touch-spacing {
-    @apply gap-2;
-  }
-  
-  /* Remove tap highlight on mobile */
+
   .no-tap-highlight {
     -webkit-tap-highlight-color: transparent;
   }
-  
-  /* Smooth press feedback */
+
+  /* Tactile spring press — upgraded from CSS to be Framer-ready */
   .press-feedback {
-    @apply active:scale-95 active:opacity-80 transition-transform duration-150;
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out);
+  }
+  .press-feedback:active {
+    transform: scale(0.97);
+    opacity: 0.88;
   }
 
   .text-balance {
     text-wrap: balance;
   }
-  
-  /* Animation delay utilities */
-  .animation-delay-2000 {
-    animation-delay: 2s;
-  }
-  .animation-delay-4000 {
-    animation-delay: 4s;
+
+  .overflow-wrap-anywhere {
+    overflow-wrap: anywhere;
+    min-width: 0;
   }
 }
 
+/* ── Animations ─────────────────────────────────────────────────── */
+
+/* Aura orb drift */
 @keyframes auraDrift {
-  0%, 100% {
-    transform: translate3d(-2%, 1%, 0) rotate(0deg) scale(1);
-  }
-  35% {
-    transform: translate3d(3%, -2%, 0) rotate(10deg) scale(1.05);
-  }
-  70% {
-    transform: translate3d(1%, 3%, 0) rotate(-8deg) scale(0.96);
-  }
+  0%, 100% { transform: translate3d(-2%, 1%, 0) rotate(0deg) scale(1); }
+  35%       { transform: translate3d(3%, -2%, 0) rotate(10deg) scale(1.06); }
+  70%       { transform: translate3d(1%, 3%, 0) rotate(-8deg) scale(0.96); }
 }
-
 .animate-aura-drift {
-  animation: auraDrift 14s ease-in-out infinite;
+  animation: auraDrift 14s var(--ease-in-out) infinite;
 }
 
-/* Accessibility: Reduced motion */
+/* Fade + rise */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fadeUp var(--dur-slow) var(--ease-out) both;
+}
+
+/* Staggered delay helpers */
+.delay-1 { animation-delay: 80ms; }
+.delay-2 { animation-delay: 160ms; }
+.delay-3 { animation-delay: 240ms; }
+.delay-4 { animation-delay: 340ms; }
+
+/* Slide-up (kept for existing usages) */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slideUp var(--dur-slow) var(--ease-out) both; }
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fadeIn var(--dur-slow) var(--ease-out) both; }
+
+/* Presence pulse */
+@keyframes presencePulse {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+.animate-presence {
+  animation: presencePulse 3s var(--ease-in-out) forwards;
+}
+
+/* Orb breathe (dashboard phase aura) */
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  33%       { transform: scale(1.04) rotate(4deg); }
+  66%       { transform: scale(0.97) rotate(-3deg); }
+}
+.animate-orb-breathe {
+  animation: orbBreathe 12s var(--ease-in-out) infinite;
+}
+
+/* Snap draw (for timeline rail) */
+@keyframes drawDown {
+  from { clip-path: inset(0 0 100% 0); opacity: 0; }
+  to   { clip-path: inset(0 0 0% 0); opacity: 1; }
+}
+.animate-draw-down {
+  animation: drawDown var(--dur-xslow) var(--ease-out) both;
+}
+
+/* Counter tick */
+@keyframes counterTick {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-counter {
+  animation: counterTick var(--dur-base) var(--ease-out) both;
+}
+
+/* ── Accessibility ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-
-  .animate-aura-drift {
+  .animate-aura-drift,
+  .animate-orb-breathe,
+  .animate-presence {
     animation: none !important;
   }
 }
 
-/* Added Microinteractions */
-.glass-card {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.glass-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-}
-.btn-micro {
-  transition: all 0.2s ease-out;
-}
-.btn-micro:hover {
-  transform: scale(1.02);
-}
-.btn-micro:active {
-  transform: scale(0.98);
+/* ── Responsive safety ──────────────────────────────────────────── */
+@media (max-width: 375px) {
+  :root {
+    --text-display: clamp(2.5rem, 12vw, 3.5rem);
+  }
 }

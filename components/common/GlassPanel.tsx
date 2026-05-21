@@ -13,11 +13,9 @@ export default function GlassPanel({
   return (
     <div
       className={cn(
-        "rounded-[2rem] border backdrop-blur-2xl",
-        variant === "quiet" && "glass-card",
-        variant === "elevated" && "glass-elevated",
-        variant === "warm" &&
-          "border-white/50 bg-gradient-to-br from-white/70 via-white/[0.42] to-primary/10 shadow-2xl shadow-primary/10 dark:border-white/10 dark:from-white/10 dark:via-white/5 dark:to-primary/10",
+        variant === "quiet"    && "bento-cell rounded-[var(--radius-xl)]",
+        variant === "elevated" && "glass-elevated rounded-[var(--radius-xl)]",
+        variant === "warm"     && "bento-cell-warm rounded-[var(--radius-xl)]",
         className
       )}
       {...props}

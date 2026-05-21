@@ -1,0 +1,28 @@
+[
+  {
+    "date": "2026-05-22",
+    "macrostructure": "Split Studio",
+    "theme": "Bloom (custom warm-atmospheric)",
+    "enrichment": "Tier-A CSS phase-aura orb",
+    "brief": "CB Connect · landing page · couples cycle tracker",
+    "nav": "N5 floating pill",
+    "footer": "Ft5 statement",
+    "theme_axes": "mid / italic-serif / warm-coral"
+  },
+  {
+    "date": "2026-05-22",
+    "macrostructure": "Bento Grid",
+    "theme": "Bloom (continuous system)",
+    "enrichment": "Tier-A CSS phase-reactive gradient orb",
+    "brief": "CB Connect · dashboard · borderless bento with magazine phase hero",
+    "theme_axes": "mid / italic-serif / warm-coral"
+  },
+  {
+    "date": "2026-05-22",
+    "macrostructure": "Workbench (Timeline River variant)",
+    "theme": "Bloom (continuous system)",
+    "enrichment": "none (timeline river is the artifact)",
+    "brief": "CB Connect · log page · phase-rail timeline with snap-to-today",
+    "theme_axes": "mid / italic-serif / warm-coral"
+  }
+]
