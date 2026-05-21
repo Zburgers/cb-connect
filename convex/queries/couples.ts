@@ -29,12 +29,26 @@ export const getCoupleStatus = query({
       .first();
 
     let partnerInfo = null;
+    let sharingMembership = membership;
     if (partnerMembership) {
       const partnerUser = await ctx.db.get(partnerMembership.userId);
       partnerInfo = {
         name: partnerUser?.name,
         email: partnerUser?.email,
       };
+    }
+
+    if (membership.role === "partner") {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role", (q) =>
+          q.eq("coupleId", membership.coupleId).eq("role", "primary")
+        )
+        .first();
+
+      if (primaryMembership) {
+        sharingMembership = primaryMembership;
+      }
     }
 
     // Get active pairing code if pending
@@ -55,8 +69,8 @@ export const getCoupleStatus = query({
       status: couple.status,
       role: membership.role,
       sharingSettings: {
-        pain: membership.sharingPain,
-        phase: membership.sharingPhase,
+        pain: sharingMembership.sharingPain,
+        phase: sharingMembership.sharingPhase,
       },
       partner: partnerInfo,
       activePairingCode,

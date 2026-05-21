@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
-import { api } from "../_generated/api";
+import { internal } from "../_generated/api";
 
 export const createOrUpdatePainLog = mutation({
   args: {
@@ -44,12 +44,11 @@ export const createOrUpdatePainLog = mutation({
         updatedAt: Date.now(),
       });
 
-      // Notify for high pain scores (>= 7)
-      if (args.painScore >= 7) {
-        await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+      if (args.painScore >= 7 && user.externalNotificationConsent) {
+        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
           userId: user._id,
           type: "high_pain_logged",
-          message: `High pain level (${args.painScore}/10) logged for ${user.name ?? "a user"} on ${args.date}. Tags: ${args.tags.join(", ") || "none"}.`,
+          message: `High pain check-in logged on ${args.date}.`,
         });
       }
 
@@ -66,12 +65,11 @@ export const createOrUpdatePainLog = mutation({
       updatedAt: Date.now(),
     });
 
-    // Notify for high pain scores (>= 7) on new entries
-    if (args.painScore >= 7) {
-      await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+    if (args.painScore >= 7 && user.externalNotificationConsent) {
+      await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
         userId: user._id,
         type: "high_pain_logged",
-        message: `High pain level (${args.painScore}/10) logged for ${user.name ?? "a user"} on ${args.date}. Tags: ${args.tags.join(", ") || "none"}.`,
+        message: `High pain check-in logged on ${args.date}.`,
       });
     }
 

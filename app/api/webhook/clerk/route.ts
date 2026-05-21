@@ -51,10 +51,11 @@ export async function POST(req: Request) {
     const email = email_addresses?.[0]?.email_address ?? "";
     const name = [first_name, last_name].filter(Boolean).join(" ") || "User";
 
-    await convex.mutation(api.mutations.users.createOrUpdateUser, {
+    await convex.mutation(api.mutations.users.syncUserFromWebhook, {
       clerkId: id,
       email,
       name,
+      webhookSecret: WEBHOOK_SECRET,
     });
   }
 

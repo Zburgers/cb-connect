@@ -9,18 +9,47 @@ export interface CycleInfo {
   phaseDescription: string;
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export function toCalendarDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function addCalendarDays(dateString: string, days: number): string {
+  const date = parseCalendarDate(dateString);
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatCalendarDate(date);
+}
+
+function daysBetweenCalendarDates(startDate: string, endDate: string): number {
+  return Math.floor(
+    (parseCalendarDate(endDate).getTime() - parseCalendarDate(startDate).getTime()) /
+      MS_PER_DAY
+  );
+}
+
+function parseCalendarDate(dateString: string): Date {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatCalendarDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function calculateCycleInfo(
   lastPeriodStart: string,
   cycleLength: number,
   periodLength: number,
-  today: string = new Date().toISOString().split("T")[0]
+  today: string = toCalendarDateString()
 ): CycleInfo {
-  const lastPeriodDate = new Date(lastPeriodStart + "T00:00:00");
-  const currentDate = new Date(today + "T00:00:00");
-
-  const daysSinceLastPeriod = Math.floor(
-    (currentDate.getTime() - lastPeriodDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const daysSinceLastPeriod = daysBetweenCalendarDates(lastPeriodStart, today);
   const cycleDay = (daysSinceLastPeriod % cycleLength) + 1;
 
   let phase: CyclePhase;
@@ -41,18 +70,17 @@ export function calculateCycleInfo(
   }
 
   const daysUntilNextPeriod = cycleLength - cycleDay + 1;
-  const nextPeriodDate = new Date(currentDate);
-  nextPeriodDate.setDate(nextPeriodDate.getDate() + daysUntilNextPeriod);
-
-  const nextPeriodEndDate = new Date(nextPeriodDate);
-  nextPeriodEndDate.setDate(nextPeriodEndDate.getDate() + periodLength - 1);
+  const predictedNextPeriodStart = addCalendarDays(today, daysUntilNextPeriod);
 
   return {
     phase,
     cycleDay,
     daysUntilNextPeriod,
-    predictedNextPeriodStart: nextPeriodDate.toISOString().split("T")[0],
-    predictedNextPeriodEnd: nextPeriodEndDate.toISOString().split("T")[0],
+    predictedNextPeriodStart,
+    predictedNextPeriodEnd: addCalendarDays(
+      predictedNextPeriodStart,
+      periodLength - 1
+    ),
     phaseDescription,
   };
 }

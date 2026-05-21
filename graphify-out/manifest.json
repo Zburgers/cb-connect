@@ -1,7 +1,7 @@
 {
   "/home/naki/Desktop/itsthatnewshit/cb connect/next.config.js": {
-    "mtime": 1778248961.1827908,
-    "hash": "d9517aef53498228300d52b26bc2be4e"
+    "mtime": 1779298133.2812548,
+    "hash": "154a9a8a23ded1891914fe277824575d"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/tailwind.config.js": {
     "mtime": 1779046811.5222409,
@@ -28,12 +28,12 @@
     "hash": "5fff02eec7d27972b443455b24576b80"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/middleware.ts": {
-    "mtime": 1778271186.3083355,
-    "hash": "8b1a3ad88563ed8a9aadf7a26dd99595"
+    "mtime": 1779298149.8414636,
+    "hash": "a5ea0730acbfc4fa23e484e7f224f732"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/playwright.local.config.ts": {
-    "mtime": 1779290585.5401785,
-    "hash": "e5074e0c9c162d35584b407245427776"
+    "mtime": 1779345594.961127,
+    "hash": "24d892fef55b291afd7610d7bcbf274e"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/crons.ts": {
     "mtime": 1773409980.1530547,
@@ -48,8 +48,8 @@
     "hash": "e592760fb7aa3810fc779243c9233595"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/schema.ts": {
-    "mtime": 1778272765.3213797,
-    "hash": "9fedcfb2bcc30d218442d65d8b7826c3"
+    "mtime": 1779345513.8970594,
+    "hash": "be325b7691da4a502f1291f3bb143281"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_generated/dataModel.d.ts": {
     "mtime": 1773177676.3853247,
@@ -76,52 +76,52 @@
     "hash": "0d333af9bf1e7d8ae9db3d9769c07d84"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/_helpers/cycleCalculations.ts": {
-    "mtime": 1773177702.543032,
-    "hash": "ea3eaa2d21f9e79ab440035bf6c29e2b"
+    "mtime": 1779345476.8216023,
+    "hash": "7b37232fb19bcc093828e64d63f04dfc"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/dashboard.ts": {
-    "mtime": 1773179409.101803,
-    "hash": "9eb8bad9179c6ae8f60238c2aa168a2f"
+    "mtime": 1779345477.1666067,
+    "hash": "d49e01abc07a17c1961b4c92dd239b20"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/couples.ts": {
-    "mtime": 1773179814.9964116,
-    "hash": "f7b17a58286b901be982ad03ae3b23ea"
+    "mtime": 1779345436.4221041,
+    "hash": "2d5d817e7b11b4134333852eebd746d5"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/users.ts": {
-    "mtime": 1773178076.793727,
-    "hash": "b039f485bde2355600a5b083995dd485"
+    "mtime": 1779345514.917072,
+    "hash": "fea98b8bdd814d19b965013bf35a73f9"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/queries/history.ts": {
-    "mtime": 1779048294.1096811,
-    "hash": "66e34afb682ebc58c0870d32a4697b36"
+    "mtime": 1779345436.2171016,
+    "hash": "07737dead362ca2e683c925fcf55dcc0"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/users.ts": {
-    "mtime": 1773409033.3570309,
-    "hash": "6657ac49f49a7cf2f3720436f0781e83"
+    "mtime": 1779345627.5414462,
+    "hash": "09dfab289db54ede8c8f861cee5ab72d"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/painLog.ts": {
-    "mtime": 1773409944.6116285,
-    "hash": "cf3ede6858a0dbe9975f192bb230d9e1"
+    "mtime": 1779345514.2760642,
+    "hash": "430320aa0bb3317e76d29e74e9cbb097"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/periods.ts": {
-    "mtime": 1773409971.0537584,
-    "hash": "b07dffc554151114af1a95b6a3f6be01"
+    "mtime": 1779345477.0036047,
+    "hash": "815a7acb9d4d723573dcfeff12dcb88d"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/couples.ts": {
-    "mtime": 1773409927.0934184,
-    "hash": "0c13433cdfc549d32896807cd4e3a400"
+    "mtime": 1779345514.4680665,
+    "hash": "6f15ed43cf131bc1ce75de17da780832"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/mutations/misc.ts": {
-    "mtime": 1773177751.9934452,
-    "hash": "69f5a5e8ed7f333e7b4be4c7a02e4e8b"
+    "mtime": 1779298221.3413641,
+    "hash": "7a4c13b9733785201ea967d5e36cf7e3"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/actions/discord.ts": {
-    "mtime": 1773178451.9454453,
-    "hash": "5e41c827340da77b99f463eb4fb678a9"
+    "mtime": 1779298333.7547774,
+    "hash": "d98fa5c10478866d66715a5c93ab13f4"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/convex/actions/notifications.ts": {
-    "mtime": 1773178452.7174675,
-    "hash": "b94a77d68fe75a5850e3bb66a5e3535f"
+    "mtime": 1779345514.676069,
+    "hash": "39bdd4cbfffed8ed12c5d70c651be99d"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/page.tsx": {
     "mtime": 1779048376.5427067,
@@ -144,36 +144,36 @@
     "hash": "0975361915e8983c0b8dc906e404520c"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/page.tsx": {
-    "mtime": 1779046894.6462748,
-    "hash": "3252a2a11c77bf8a4659576f1192e81d"
+    "mtime": 1779298375.8753068,
+    "hash": "72d15a89b70909eb53233ecd0957f799"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/log/page.tsx": {
-    "mtime": 1779048294.3846846,
-    "hash": "aedd6b391201079b4bb6203d16a0f89d"
+    "mtime": 1779345584.2319207,
+    "hash": "6f2c178e74296d64c550043d5e581942"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/partner/page.tsx": {
     "mtime": 1779047372.261215,
     "hash": "dd46022aa68bed5737b2e44ce8222fc5"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/(dashboard)/dashboard/settings/page.tsx": {
-    "mtime": 1773408091.079232,
-    "hash": "0d562ef0ed2eb46df868744d96f8eb55"
+    "mtime": 1779345557.1265905,
+    "hash": "046907926b15dc1907956f7350d78f7c"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/api/webhook/clerk/route.ts": {
-    "mtime": 1778257548.276862,
-    "hash": "bf5dd1ed3d981f95242e5c7db91b135f"
+    "mtime": 1779345627.2995508,
+    "hash": "3c871d59e2ca9310d5baa19bae01900f"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/api/health/route.ts": {
     "mtime": 1773410032.3774245,
     "hash": "fd915db1b84c22e41476420ca69f3187"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/onboarding/page.tsx": {
-    "mtime": 1773409634.4149084,
-    "hash": "542dfaae81f38cd1710426a134cc23ee"
+    "mtime": 1779298384.9994216,
+    "hash": "9cc382ba6147e7f158430229690c30d7"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/lib/utils.ts": {
-    "mtime": 1773406257.2492313,
-    "hash": "5b3485b879cdac1ccfd0deb9ca947e45"
+    "mtime": 1779345477.5006106,
+    "hash": "620f96abf99c20a1ae6759e692b80166"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/lib/ConvexClientProvider.tsx": {
     "mtime": 1773178114.9398167,
@@ -224,20 +224,20 @@
     "hash": "b14bac665d82b8bf2d16803695511944"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/OnboardingFlow.tsx": {
-    "mtime": 1773410690.262554,
-    "hash": "1d6b6a2a5194297cad967882a7a0691a"
+    "mtime": 1779345477.3306086,
+    "hash": "6b4e368c5513a83d33482619b5508662"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/PartnerStatusCard.tsx": {
-    "mtime": 1779048294.728689,
-    "hash": "34b22c712ad815c989398cd8c8f32dcb"
+    "mtime": 1779345567.7167196,
+    "hash": "2e003d15c984525142622c719e13862f"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/PhaseAura.tsx": {
     "mtime": 1779047919.7600243,
     "hash": "e180a1cbb8ba723462c3c6bd191590a1"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/components/dashboard/TactilePainLogger.tsx": {
-    "mtime": 1779047371.4872053,
-    "hash": "b284c5264482bda1d07827815c508d3b"
+    "mtime": 1779298381.363376,
+    "hash": "7d42f26bec51906991c49af20630d7a6"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/components/partner/PartnerDashboard.tsx": {
     "mtime": 1779046949.9609628,
@@ -268,8 +268,8 @@
     "hash": "c46a3a68d1651fe653d916c9ad7a926c"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/e2e/signup-repro.spec.ts": {
-    "mtime": 1779290575.174046,
-    "hash": "dc707ecdfcf8c9d8884195a4f923682d"
+    "mtime": 1779345594.755049,
+    "hash": "26def82f95b36b6ac096d0f34b12c2fc"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/README.md": {
     "mtime": 1771563311.7517517,
@@ -280,12 +280,12 @@
     "hash": "f73d7cd238371a7d7a578ccdf79bf765"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/issues.md": {
-    "mtime": 1773407158.477185,
-    "hash": "e9ad58f98f27a9efe121600c04f1f024"
+    "mtime": 1779345744.270686,
+    "hash": "a0fb3c490fdc2725fb9360295a3e0670"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/DEPLOYMENT.md": {
-    "mtime": 1778244944.8771617,
-    "hash": "1a0e7c58c018b61d0044a6ec3612b1c0"
+    "mtime": 1779298212.339251,
+    "hash": "897a833e03c1e74519dd004aaa33fc19"
   },
   "/home/naki/Desktop/itsthatnewshit/cb connect/CLAUDE.md": {
     "mtime": 1779290752.478452,
@@ -323,20 +323,8 @@
     "mtime": 1773407538.856778,
     "hash": "60ed6d06fa804a9cb5db1c5107dc3581"
   },
-  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/error-context.md": {
-    "mtime": 1779290619.8306172,
-    "hash": "efa9e3c3aaedce70decad120554786f4"
-  },
   "/home/naki/Desktop/itsthatnewshit/cb connect/app/icon.svg": {
     "mtime": 1778272649.3991044,
     "hash": "7d4103debc6e5e1f6f09c282738d9dd8"
-  },
-  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/test-failed-1.png": {
-    "mtime": 1779290619.2496097,
-    "hash": "fb104b5fd49f2bc00c5499566cb87451"
-  },
-  "/home/naki/Desktop/itsthatnewshit/cb connect/test-results/signup-repro-clerk-signup--35f85-credentials-reaches-the-app-chromium/video.webm": {
-    "mtime": 1779290619.826617,
-    "hash": "33b323fbc2ee9cd8085232ad21e82749"
   }
 }

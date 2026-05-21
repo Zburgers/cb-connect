@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { internalMutation, mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
 
 export const hideNutritionTip = mutation({
@@ -33,7 +33,7 @@ export const hideNutritionTip = mutation({
   },
 });
 
-export const logNotification = mutation({
+export const logNotification = internalMutation({
   args: {
     userId: v.id("users"),
     type: v.string(),

@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
+import { toLocalDateString } from "@/lib/utils";
 import { DashboardSkeleton } from "@/components/common/LoadingSkeleton";
 import CurrentPhase from "@/components/dashboard/CurrentPhase";
 import PartnerStatusCard from "@/components/dashboard/PartnerStatusCard";
@@ -18,7 +19,7 @@ export default function DashboardPage() {
   const { isLoaded: clerkLoaded, isSignedIn } = useAuth();
   const data = useQuery(
     api.queries.dashboard.getDashboardData,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
   );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
 

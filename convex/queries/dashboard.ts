@@ -1,10 +1,17 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
-import { calculateCycleInfo, getPainSeverityBucket } from "../_helpers/cycleCalculations";
+import {
+  calculateCycleInfo,
+  getPainSeverityBucket,
+  toCalendarDateString,
+} from "../_helpers/cycleCalculations";
 
 export const getDashboardData = query({
-  handler: async (ctx) => {
+  args: {
+    todayDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const user = await getCurrentUserOrNull(ctx);
     if (!user) {
       return {
@@ -70,11 +77,12 @@ export const getDashboardData = query({
     const cycleInfo = calculateCycleInfo(
       recentPeriod.startDate,
       cycleLength,
-      periodLength
+      periodLength,
+      args.todayDate
     );
 
     // Get today's pain log
-    const today = new Date().toISOString().split("T")[0];
+    const today = args.todayDate ?? toCalendarDateString();
     const todayPainLog = await ctx.db
       .query("painLogs")
       .withIndex("by_user_and_date", (q) =>

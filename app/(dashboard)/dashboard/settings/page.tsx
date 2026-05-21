@@ -5,6 +5,23 @@ import { useQuery, useMutation } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import GlassPanel from "@/components/common/GlassPanel";
+import { Bell, BellOff, Eye, EyeOff, Lock, Shield } from "lucide-react";
+
+const GENDER_OPTIONS = [
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "other", label: "Other" },
+] as const;
+
+const PARTNER_TYPE_OPTIONS = [
+  { value: "partner", label: "Partner" },
+  { value: "boyfriend", label: "Boyfriend" },
+  { value: "girlfriend", label: "Girlfriend" },
+  { value: "spouse", label: "Spouse" },
+  { value: "other", label: "Other" },
+] as const;
 
 export default function SettingsPage() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -12,10 +29,25 @@ export default function SettingsPage() {
     api.queries.history.getCycleSettings,
     isLoaded && isSignedIn ? {} : "skip"
   );
+  const coupleStatus = useQuery(
+    api.queries.couples.getCoupleStatus,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
+  const me = useQuery(api.queries.users.getMe, isLoaded && isSignedIn ? {} : "skip");
+  const notificationLog = useQuery(
+    api.queries.users.getMyNotificationLog,
+    isLoaded && isSignedIn ? { limit: 5 } : "skip"
+  );
   const updateSettings = useMutation(api.mutations.periods.updateCycleSettings);
+  const updatePreferences = useMutation(api.mutations.users.updateUserPreferences);
 
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
+  const [gender, setGender] =
+    useState<(typeof GENDER_OPTIONS)[number]["value"]>("prefer_not_to_say");
+  const [partnerType, setPartnerType] =
+    useState<(typeof PARTNER_TYPE_OPTIONS)[number]["value"]>("partner");
+  const [externalNotificationConsent, setExternalNotificationConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -26,13 +58,38 @@ export default function SettingsPage() {
     }
   }, [cycleSettings]);
 
-  if (!isLoaded || cycleSettings === undefined) return <LoadingSpinner />;
+  useEffect(() => {
+    if (me) {
+      setGender(me.gender ?? "prefer_not_to_say");
+      setPartnerType(me.partnerType ?? "partner");
+      setExternalNotificationConsent(me.externalNotificationConsent ?? false);
+    }
+  }, [me]);
+
+  if (
+    !isLoaded ||
+    cycleSettings === undefined ||
+    coupleStatus === undefined ||
+    me === undefined ||
+    notificationLog === undefined
+  ) {
+    return <LoadingSpinner />;
+  }
+
+  const isLinked = Boolean(coupleStatus?.isLinked);
+  const phaseShared = Boolean(isLinked && coupleStatus?.sharingSettings?.phase);
+  const painShared = Boolean(isLinked && coupleStatus?.sharingSettings?.pain);
 
   const handleSave = async () => {
     setIsSaving(true);
     setSaved(false);
     try {
       await updateSettings({ cycleLength, periodLength });
+      await updatePreferences({
+        gender,
+        partnerType,
+        externalNotificationConsent,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
@@ -46,10 +103,69 @@ export default function SettingsPage() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground text-sm">Manage your cycle preferences</p>
+        <p className="text-sm text-muted-foreground">Manage your cycle preferences and sharing states</p>
       </div>
 
-      <div className="glass-card rounded-3xl p-6 space-y-6 animate-slide-up">
+      <GlassPanel variant="quiet" className="p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              Privacy snapshot
+            </p>
+            <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-foreground">
+              Partner visibility
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              These states mirror the sharing toggles in the partner screen. They are shown
+              here so you can quickly tell what is private and what is visible.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/[0.42] px-3 py-2 text-xs font-semibold text-foreground dark:border-white/10 dark:bg-white/[0.07]">
+            <Shield className="h-4 w-4 text-primary" />
+            {isLinked ? "Linked couple" : "Not linked"}
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-2">
+          <div className="rounded-[1.4rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+            <div className="flex items-center gap-2">
+              {phaseShared ? (
+                <Eye className="h-4 w-4 text-primary" />
+              ) : (
+                <Lock className="h-4 w-4 text-muted-foreground" />
+              )}
+              <p className="text-sm font-semibold text-foreground">Period history</p>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {phaseShared
+                ? "Visible to your partner on the log page."
+                : isLinked
+                  ? "Kept private until sharing is turned on."
+                  : "No partner is linked yet."}
+            </p>
+          </div>
+
+          <div className="rounded-[1.4rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+            <div className="flex items-center gap-2">
+              {painShared ? (
+                <Eye className="h-4 w-4 text-primary" />
+              ) : (
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              )}
+              <p className="text-sm font-semibold text-foreground">Pain history</p>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {painShared
+                ? "Visible to your partner on the log page."
+                : isLinked
+                  ? "Kept private until sharing is turned on."
+                  : "No partner is linked yet."}
+            </p>
+          </div>
+        </div>
+      </GlassPanel>
+
+      <GlassPanel variant="quiet" className="space-y-6 p-6">
         <h2 className="text-lg font-semibold text-foreground">Cycle Settings</h2>
 
         <div>
@@ -93,11 +209,126 @@ export default function SettingsPage() {
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          className="w-full rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
           {isSaving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
         </button>
-      </div>
+      </GlassPanel>
+
+      <GlassPanel variant="quiet" className="space-y-6 p-6">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Personalization</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            These optional fields keep partner copy inclusive and avoid assumptions.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-foreground">Gender</span>
+            <select
+              value={gender}
+              onChange={(event) => setGender(event.target.value as typeof gender)}
+              className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              {GENDER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-foreground">
+              Relationship term
+            </span>
+            <select
+              value={partnerType}
+              onChange={(event) => setPartnerType(event.target.value as typeof partnerType)}
+              className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              {PARTNER_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="flex items-start gap-3 rounded-2xl border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+          <input
+            type="checkbox"
+            checked={externalNotificationConsent}
+            onChange={(event) => setExternalNotificationConsent(event.target.checked)}
+            className="mt-1 h-4 w-4 accent-primary"
+          />
+          <span>
+            <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              {externalNotificationConsent ? (
+                <Bell className="h-4 w-4 text-primary" />
+              ) : (
+                <BellOff className="h-4 w-4 text-muted-foreground" />
+              )}
+              Allow external notification delivery
+            </span>
+            <span className="mt-1 block text-sm leading-6 text-muted-foreground">
+              When enabled, CB Connect may send redacted care-event alerts through the configured external webhook.
+            </span>
+          </span>
+        </label>
+
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          {isSaving ? "Saving..." : saved ? "Saved!" : "Save Preferences"}
+        </button>
+      </GlassPanel>
+
+      <GlassPanel variant="quiet" className="p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Notification history</h2>
+            <p className="text-sm text-muted-foreground">
+              Recent external delivery attempts, with sensitive payloads redacted.
+            </p>
+          </div>
+          <Bell className="h-5 w-5 text-muted-foreground" />
+        </div>
+
+        {notificationLog.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {notificationLog.map((entry) => (
+              <div
+                key={entry._id}
+                className="rounded-2xl border border-white/50 bg-white/[0.42] p-4 text-sm dark:border-white/10 dark:bg-white/[0.07]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-foreground">
+                    {entry.type.replace(/_/g, " ")}
+                  </span>
+                  <span className={entry.status === "sent" ? "text-primary" : "text-destructive"}>
+                    {entry.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {new Date(entry.sentAt).toLocaleString()}
+                </p>
+                {entry.errorMessage && (
+                  <p className="mt-2 text-xs text-destructive">{entry.errorMessage}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No external notification attempts yet.
+          </p>
+        )}
+      </GlassPanel>
     </div>
   );
 }

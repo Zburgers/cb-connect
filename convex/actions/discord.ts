@@ -1,9 +1,9 @@
 "use node";
 import { v } from "convex/values";
-import { action } from "../_generated/server";
-import { api } from "../_generated/api";
+import { internalAction } from "../_generated/server";
+import { internal } from "../_generated/api";
 
-export const sendDiscordNotification = action({
+export const sendDiscordNotification = internalAction({
   args: {
     userId: v.id("users"),
     type: v.string(),
@@ -14,7 +14,7 @@ export const sendDiscordNotification = action({
 
     if (!webhookUrl) {
       console.log("Discord webhook URL not configured, skipping notification");
-      await ctx.runMutation(api.mutations.misc.logNotification, {
+      await ctx.runMutation(internal.mutations.misc.logNotification, {
         userId: args.userId,
         type: args.type,
         payload: { message: args.message },
@@ -51,7 +51,7 @@ export const sendDiscordNotification = action({
         throw new Error(`Discord webhook failed: ${response.status}`);
       }
 
-      await ctx.runMutation(api.mutations.misc.logNotification, {
+      await ctx.runMutation(internal.mutations.misc.logNotification, {
         userId: args.userId,
         type: args.type,
         payload: { message: args.message },
@@ -59,7 +59,7 @@ export const sendDiscordNotification = action({
       });
     } catch (error: any) {
       console.error("Discord notification error:", error);
-      await ctx.runMutation(api.mutations.misc.logNotification, {
+      await ctx.runMutation(internal.mutations.misc.logNotification, {
         userId: args.userId,
         type: args.type,
         payload: { message: args.message },

@@ -1,8 +1,11 @@
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { mutation, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
-import { api } from "../_generated/api";
+import { internal } from "../_generated/api";
+
+const PAIRING_CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILED_PAIRING_CODE_ATTEMPTS = 10;
 
 export const generatePairingCode = mutation({
   args: {},
@@ -100,18 +103,79 @@ export const linkPartnerWithCode = mutation({
       throw new Error("Only partner users can use pairing codes");
     }
 
+    const enteredCode = args.code.trim();
+    const now = Date.now();
+    const failedAttemptWindowStart = now - PAIRING_CODE_ATTEMPT_WINDOW_MS;
+
+    const recentFailedByUser = await countRecentFailedPairingAttemptsByUser(
+      ctx,
+      user._id,
+      failedAttemptWindowStart
+    );
+    if (recentFailedByUser >= MAX_FAILED_PAIRING_CODE_ATTEMPTS) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "throttled",
+      });
+      throw new Error("Too many failed pairing attempts. Please wait before trying again.");
+    }
+
+    const recentFailedByCode = await countRecentFailedPairingAttemptsByCode(
+      ctx,
+      enteredCode,
+      failedAttemptWindowStart
+    );
+    if (recentFailedByCode >= MAX_FAILED_PAIRING_CODE_ATTEMPTS) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "throttled",
+      });
+      throw new Error("Too many failed pairing attempts. Please wait before trying again.");
+    }
+
+    if (!/^\d{6}$/.test(enteredCode)) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "invalid_format",
+      });
+      throw new Error("Invalid or expired pairing code");
+    }
+
     const pairingCode = await ctx.db
       .query("pairingCodes")
-      .withIndex("by_code", (q) => q.eq("code", args.code))
+      .withIndex("by_code", (q) => q.eq("code", enteredCode))
       .filter((q) => q.eq(q.field("status"), "active"))
       .first();
 
     if (!pairingCode) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "not_found",
+      });
       throw new Error("Invalid or expired pairing code");
     }
 
     if (pairingCode.expiresAt < Date.now()) {
       await ctx.db.patch(pairingCode._id, { status: "expired" });
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "expired",
+      });
       throw new Error("Pairing code has expired");
     }
 
@@ -122,6 +186,13 @@ export const linkPartnerWithCode = mutation({
       .first();
 
     if (existingMembership) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "already_linked",
+      });
       throw new Error("You are already linked to a couple");
     }
 
@@ -148,6 +219,13 @@ export const linkPartnerWithCode = mutation({
       linkedAt: Date.now(),
     });
 
+    await recordPairingCodeAttempt(ctx, {
+      userId: user._id,
+      enteredCode,
+      attemptedAt: Date.now(),
+      success: true,
+    });
+
     // Find the primary user to notify them
     const primaryMembership = await ctx.db
       .query("coupleMembers")
@@ -158,11 +236,11 @@ export const linkPartnerWithCode = mutation({
 
     if (primaryMembership) {
       const primaryUser = await ctx.db.get(primaryMembership.userId);
-      if (primaryUser) {
-        await ctx.scheduler.runAfter(0, api.actions.discord.sendDiscordNotification, {
+      if (primaryUser?.externalNotificationConsent) {
+        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
           userId: primaryMembership.userId,
           type: "partner_linked",
-          message: `${primaryUser.name ?? "A user"} has successfully linked with their partner!`,
+          message: "Partner link completed.",
         });
       }
     }
@@ -205,6 +283,51 @@ export const revokePartnerAccess = mutation({
     return { success: true };
   },
 });
+
+async function countRecentFailedPairingAttemptsByUser(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  since: number
+) {
+  const attempts = await ctx.db
+    .query("pairingCodeAttempts")
+    .withIndex("by_user_and_attempted_at", (q) =>
+      q.eq("userId", userId).gte("attemptedAt", since)
+    )
+    .filter((q) => q.eq(q.field("success"), false))
+    .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
+
+  return attempts.length;
+}
+
+async function countRecentFailedPairingAttemptsByCode(
+  ctx: MutationCtx,
+  enteredCode: string,
+  since: number
+) {
+  const attempts = await ctx.db
+    .query("pairingCodeAttempts")
+    .withIndex("by_entered_code_and_attempted_at", (q) =>
+      q.eq("enteredCode", enteredCode).gte("attemptedAt", since)
+    )
+    .filter((q) => q.eq(q.field("success"), false))
+    .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
+
+  return attempts.length;
+}
+
+async function recordPairingCodeAttempt(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    enteredCode: string;
+    attemptedAt: number;
+    success: boolean;
+    failureReason?: string;
+  }
+) {
+  await ctx.db.insert("pairingCodeAttempts", args);
+}
 
 export const updateSharingSettings = mutation({
   args: {

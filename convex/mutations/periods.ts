@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, internalMutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
+import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
 
 export const logPeriodStart = mutation({
   args: {
@@ -18,10 +19,8 @@ export const logPeriodStart = mutation({
 
     if (ongoingPeriod) {
       // Auto-end the ongoing period the day before new one starts
-      const endDate = new Date(args.startDate + "T00:00:00");
-      endDate.setDate(endDate.getDate() - 1);
       await ctx.db.patch(ongoingPeriod._id, {
-        endDate: endDate.toISOString().split("T")[0],
+        endDate: addCalendarDays(args.startDate, -1),
         updatedAt: Date.now(),
       });
     }
@@ -87,18 +86,13 @@ export const autoEndPeriods = internalMutation({
       const periodLength = settings?.periodLength ?? 5;
 
       // Calculate expected end date
-      const startDate = new Date(period.startDate + "T00:00:00");
-      const expectedEndDate = new Date(startDate);
-      expectedEndDate.setDate(expectedEndDate.getDate() + periodLength - 1);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const expectedEndDate = addCalendarDays(period.startDate, periodLength - 1);
+      const today = toCalendarDateString();
 
       // If past the expected end date, auto-close it
       if (expectedEndDate < today) {
-        const endDateStr = expectedEndDate.toISOString().split("T")[0];
         await ctx.db.patch(period._id, {
-          endDate: endDateStr,
+          endDate: expectedEndDate,
           updatedAt: Date.now(),
         });
         endedCount++;

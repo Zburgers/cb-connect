@@ -1,14 +1,85 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
 
-export const createOrUpdateUser = mutation({
+export const updateUserRole = mutation({
+  args: {
+    role: v.union(v.literal("primary"), v.literal("partner")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) throw new Error("User not found");
+
+    await ctx.db.patch(user._id, { role: args.role });
+    return user._id;
+  },
+});
+
+export const updateUserPreferences = mutation({
+  args: {
+    gender: v.optional(
+      v.union(
+        v.literal("male"),
+        v.literal("female"),
+        v.literal("other"),
+        v.literal("prefer_not_to_say")
+      )
+    ),
+    partnerType: v.optional(
+      v.union(
+        v.literal("boyfriend"),
+        v.literal("girlfriend"),
+        v.literal("spouse"),
+        v.literal("partner"),
+        v.literal("other")
+      )
+    ),
+    externalNotificationConsent: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) throw new Error("User not found");
+
+    await ctx.db.patch(user._id, {
+      ...(args.gender !== undefined && { gender: args.gender }),
+      ...(args.partnerType !== undefined && { partnerType: args.partnerType }),
+      ...(args.externalNotificationConsent !== undefined && {
+        externalNotificationConsent: args.externalNotificationConsent,
+      }),
+    });
+
+    return user._id;
+  },
+});
+
+export const syncUserFromWebhook = mutation({
   args: {
     clerkId: v.string(),
     email: v.string(),
     name: v.string(),
-    role: v.optional(v.union(v.literal("primary"), v.literal("partner"))),
+    webhookSecret: v.string(),
   },
   handler: async (ctx, args) => {
+    if (
+      !process.env.CLERK_WEBHOOK_SECRET ||
+      args.webhookSecret !== process.env.CLERK_WEBHOOK_SECRET
+    ) {
+      throw new Error("Unauthorized");
+    }
+
     const existing = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
@@ -27,30 +98,9 @@ export const createOrUpdateUser = mutation({
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
-      ...(args.role ? { role: args.role } : {}),
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });
-  },
-});
-
-export const updateUserRole = mutation({
-  args: {
-    role: v.union(v.literal("primary"), v.literal("partner")),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
-
-    await ctx.db.patch(user._id, { role: args.role });
-    return user._id;
   },
 });
 

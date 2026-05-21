@@ -10,3 +10,10 @@ out/
 build/
 *.tsbuildinfo
 next-env.d.ts
+test-results/
+playwright-report/
+graphify-out/cache/
+graphify-out/.graphify_root
+.antigravitycli/
+.claude/
+.codex/

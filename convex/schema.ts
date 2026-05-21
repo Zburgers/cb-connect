@@ -11,6 +11,7 @@ export default defineSchema({
     lastActiveAt: v.number(),
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
     partnerType: v.optional(v.union(v.literal("boyfriend"), v.literal("girlfriend"), v.literal("spouse"), v.literal("partner"), v.literal("other"))),
+    externalNotificationConsent: v.optional(v.boolean()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"]),
@@ -53,6 +54,18 @@ export default defineSchema({
     .index("by_code", ["code"])
     .index("by_couple", ["coupleId"])
     .index("by_status_and_expiry", ["status", "expiresAt"]),
+
+  pairingCodeAttempts: defineTable({
+    userId: v.id("users"),
+    enteredCode: v.string(),
+    attemptedAt: v.number(),
+    success: v.boolean(),
+    failureReason: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_attempted_at", ["userId", "attemptedAt"])
+    .index("by_entered_code", ["enteredCode"])
+    .index("by_entered_code_and_attempted_at", ["enteredCode", "attemptedAt"]),
 
   periodEvents: defineTable({
     userId: v.id("users"),
@@ -141,5 +154,6 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_sent_at", ["userId", "sentAt"])
     .index("by_sent_at", ["sentAt"]),
 });

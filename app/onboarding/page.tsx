@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import { toLocalDateString } from "@/lib/utils";
 import { Calendar, ArrowRight, Heart } from "lucide-react";
 
 type Step = "role" | "period" | "done";
@@ -170,7 +171,7 @@ export default function OnboardingPage() {
                     type="date"
                     value={lastPeriodDate}
                     onChange={(e) => setLastPeriodDate(e.target.value)}
-                    max={new Date().toISOString().split("T")[0]}
+                    max={toLocalDateString()}
                     className="w-full pl-12 pr-4 py-4 bg-muted border border-border rounded-2xl text-foreground
                       focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
                       transition-all touch-target"

@@ -1,6 +1,6 @@
 # Deployment Guide - CB Connect
 
-## Quick Start (localhost:6000)
+## Quick Start (localhost:6050)
 
 ### On your server machine:
 
@@ -19,13 +19,13 @@ npm run build
 cp .env.production .env
 # Edit .env with your actual Convex and Clerk credentials
 
-# 5. Start the server on port 6000
+# 5. Start the server on port 6050
 npm run serve
 # OR
-PORT=6000 npm run start
+PORT=6050 npm run start
 ```
 
-The app will be available at: **http://localhost:6000**
+The app will be available at: **http://localhost:6050**
 
 ---
 
@@ -76,18 +76,21 @@ Create a `.env` file in the root directory with the following:
 
 ```env
 # Server Configuration
-PORT=6000
+PORT=6050
 NODE_ENV=production
 
 # Convex Backend (Production)
 CONVEX_DEPLOYMENT=prod:your-deployment-name
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
-NEXT_PUBLIC_CONVEX_SITE_URL=http://localhost:6000
+NEXT_PUBLIC_CONVEX_SITE_URL=http://localhost:6050
 
 # Clerk Authentication (Production)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_your-key
 CLERK_SECRET_KEY=sk_live_your-key
-CLERK_FRONTEND_API_URL=http://localhost:6000
+CLERK_FRONTEND_API_URL=http://localhost:6050
+
+# Optional comma-separated list for preflight requests.
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:6050
 
 # Clerk Paths
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
@@ -121,18 +124,15 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 ## CORS Configuration
 
-CORS is automatically configured for:
-- All origins (`*`) - Adjust in `next.config.js` if needed
-- Methods: GET, POST, PUT, DELETE, OPTIONS
-- Headers: Content-Type, Authorization
-
-To customize CORS settings, edit `next.config.js` and `middleware.ts`.
+CORS preflight responses are restricted to `CORS_ALLOWED_ORIGINS`.
+Set this to the exact development and production origins that should call API routes cross-origin.
+Do not use `*` for this app because Clerk, Convex, and webhook routes can handle sensitive data.
 
 ---
 
 ## Port Configuration
 
-The app is configured to run on **port 6000**. 
+The app is configured to run on **port 6050**.
 
 To change the port:
 1. Update `PORT` in `.env`
@@ -146,7 +146,7 @@ To change the port:
 ### "Port already in use"
 ```bash
 # Find and kill the process
-lsof -i :6000
+lsof -i :6050
 kill -9 <PID>
 ```
 
@@ -174,4 +174,7 @@ npm run dev
 # Production-like build
 npm run build
 npm run start
+
+# Health check after start
+curl http://localhost:6050/api/health
 ```

@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
-import { Heart } from "lucide-react";
+import { Heart, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function PartnerStatusCard() {
@@ -22,6 +22,17 @@ export default function PartnerStatusCard() {
   const isLinked = coupleStatus?.isLinked;
   const isPartner = me?.role === "partner";
   const partnerName = coupleStatus?.partner?.name ?? "your partner";
+  const relationshipTerm = me?.partnerType ?? "partner";
+  const primaryInviteTitle =
+    me?.gender === "male"
+      ? "Invite your partner into your rhythm"
+      : "Let your special one take care of you";
+  const linkedPrimaryCopy =
+    relationshipTerm === "boyfriend"
+      ? `Show ${partnerName} some love`
+      : relationshipTerm === "girlfriend"
+        ? `Let ${partnerName} know how you're feeling today`
+        : "Your partner is here to support you";
 
   // Not linked - Partner user
   if (!isLinked && isPartner) {
@@ -89,7 +100,7 @@ export default function PartnerStatusCard() {
           </div>
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-foreground">
-              Let your special one take care of you
+              {primaryInviteTitle}
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
               Share your cycle journey with your partner
@@ -126,16 +137,42 @@ export default function PartnerStatusCard() {
               Connected with {partnerName}
             </h3>
           </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-muted-foreground">
-              Sharing: {coupleStatus.sharingSettings?.phase ? "✓ Phase" : ""}{" "}
-              {coupleStatus.sharingSettings?.pain ? "✓ Pain" : ""}
-            </span>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/50 bg-white/[0.42] px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.07]">
+              <div className="flex items-center gap-2 font-semibold text-foreground">
+                {coupleStatus.sharingSettings?.phase ? (
+                  <Eye className="h-4 w-4 text-primary" />
+                ) : (
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                Period history
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                {coupleStatus.sharingSettings?.phase
+                  ? "Shared with your partner"
+                  : "Kept private from your partner"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/50 bg-white/[0.42] px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.07]">
+              <div className="flex items-center gap-2 font-semibold text-foreground">
+                {coupleStatus.sharingSettings?.pain ? (
+                  <Eye className="h-4 w-4 text-primary" />
+                ) : (
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                Pain history
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                {coupleStatus.sharingSettings?.pain
+                  ? "Shared with your partner"
+                  : "Kept private from your partner"}
+              </p>
+            </div>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             {isPartner
               ? "Check in on their current phase and pain levels"
-              : "Your partner is here to support you"}
+              : linkedPrimaryCopy}
           </p>
           <button
             onClick={(e) => {
