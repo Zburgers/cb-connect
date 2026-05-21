@@ -25,7 +25,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
 
-  // Presence glow — simulated: in production wire to a Convex presence table
+  // TODO: Connect partnerPresent to a real-time Convex presence query (see issues.md - "Simulated partner presence indicator in dashboard layout")
+  // Currently, partnerPresent is initialized to false as a placeholder to ensure out-of-the-box stability.
   const [partnerPresent, setPartnerPresent] = useState(false);
 
   useEffect(() => {

@@ -413,6 +413,20 @@ Discord delivery attempts are stored in `notificationLog`, but there is no user-
 
 ---
 
+### Simulated partner presence indicator in dashboard layout
+**Priority:** Low
+**Status:** Open
+**Detected:** May 22, 2026
+**Files:** `app/(dashboard)/layout.tsx`
+
+Currently, `partnerPresent` is initialized to `false` as a placeholder. This ensures the app is completely stable out-of-the-box. When you build your presence tracking Convex table, you can easily wire this state to a real-time presence subscription query (e.g., checking if the partner has had a session heartbeat in the last 60 seconds).
+
+- [ ] Design and implement a Convex `presence` table/schema tracking last-seen heartbeats for couples.
+- [ ] Implement an internal cron or automatic session status mutation.
+- [ ] Connect the `partnerPresent` state in `app/(dashboard)/layout.tsx` to a real-time Convex subscription query.
+
+---
+
 ### Duplicate onboarding surfaces can drift
 **Priority:** Medium
 **Status:** Open
