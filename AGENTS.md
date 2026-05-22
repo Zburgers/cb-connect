@@ -40,6 +40,8 @@ This repository is a Next.js App Router application for CB Connect, a couples cy
 - Prefer updating the existing App Router structure instead of introducing parallel routing patterns.
 - Keep Clerk and Convex integration consistent with the current providers in `app/layout.tsx` and `lib/ConvexClientProvider.tsx`.
 - Treat `docs/cb-connect-technical-prd.md` as product background, not as guaranteed current implementation truth.
+- Always use variable-driven theme glass (`var(--color-glass)` and `var(--color-glass-border)`) for components with dynamic text instead of hardcoded white oklch values (like `oklch(100% 0 0 / 0.55)`). This prevents contrast-mismatch bugs where light text overlays light backgrounds in dark mode.
+- Use `color: hsl(var(--foreground))` instead of `hsl(var(--muted-foreground))` for `.phase-badge` to guarantee badge readability on atmospheric-warm cards.
 - The repo currently has minimal root documentation beyond this file and `README.md`, so project-specific instructions should live here.
 
 ## Available Skills

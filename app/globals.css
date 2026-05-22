@@ -380,7 +380,7 @@
     font-weight: 600;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: hsl(var(--muted-foreground));
+    color: hsl(var(--foreground));
     box-shadow: inset 0 1px 0 var(--color-glass-border);
   }
 

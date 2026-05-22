@@ -113,13 +113,12 @@ function TimelineEntry({
         )}
       </div>
 
-      {/* Card */}
       <div
         className="mb-4 flex-1 rounded-[1.4rem] p-4"
         style={{
-          background: "oklch(100% 0 0 / 0.55)",
+          background: "var(--color-glass)",
           backdropFilter: "blur(12px)",
-          boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.55)",
+          boxShadow: "inset 0 1px 0 var(--color-glass-border)",
         }}
       >
         <div className="flex items-start justify-between gap-3">
@@ -328,9 +327,9 @@ export default function LogPage() {
           <span
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold"
             style={{
-              background: "oklch(100% 0 0 / 0.55)",
+              background: "var(--color-glass)",
               backdropFilter: "blur(8px)",
-              boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
+              boxShadow: "inset 0 1px 0 var(--color-glass-border)",
               color: "hsl(var(--foreground))",
             }}
           >
@@ -399,7 +398,7 @@ export default function LogPage() {
               animate={{ rotate: showLogger ? 45 : 0 }}
               transition={{ duration: 0.2 }}
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
-              style={{ background: "oklch(100% 0 0 / 0.55)", backdropFilter: "blur(8px)" }}
+              style={{ background: "var(--color-glass)", backdropFilter: "blur(8px)", boxShadow: "inset 0 1px 0 var(--color-glass-border)" }}
             >
               <Plus className="h-4 w-4" style={{ color: "hsl(var(--foreground))" }} />
             </motion.div>
@@ -443,9 +442,9 @@ export default function LogPage() {
                           max={toLocalDateString()}
                           className="w-full rounded-[1.2rem] px-4 py-3 text-sm transition-all"
                           style={{
-                            background: "oklch(100% 0 0 / 0.55)",
+                            background: "var(--color-glass)",
                             backdropFilter: "blur(8px)",
-                            boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
+                            boxShadow: "inset 0 1px 0 var(--color-glass-border)",
                             color: "hsl(var(--foreground))",
                             border: "none",
                             outline: "none",
@@ -481,9 +480,9 @@ export default function LogPage() {
                           max={toLocalDateString()}
                           className="w-full rounded-[1.2rem] px-4 py-3 text-sm transition-all"
                           style={{
-                            background: "oklch(100% 0 0 / 0.55)",
+                            background: "var(--color-glass)",
                             backdropFilter: "blur(8px)",
-                            boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
+                            boxShadow: "inset 0 1px 0 var(--color-glass-border)",
                             color: "hsl(var(--foreground))",
                             border: "none",
                             outline: "none",

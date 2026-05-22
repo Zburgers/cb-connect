@@ -83,7 +83,7 @@ function PhaseCard() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-[1.4rem] p-4"
-            style={{ background: "oklch(100% 0 0 / 0.55)", backdropFilter: "blur(12px)", boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)" }}>
+            style={{ background: "var(--color-glass)", backdropFilter: "blur(12px)", boxShadow: "inset 0 1px 0 var(--color-glass-border)" }}>
             <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>For her</p>
             <p className="mt-1 text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Log a quick body check-in.</p>
           </div>
@@ -166,7 +166,7 @@ export default function LandingClient() {
                 <motion.div whileTap={{ scale: 0.97 }} transition={{ type: "spring", stiffness: 400, damping: 15 }}>
                   <Link href="/sign-in" id="hero-cta-secondary"
                     className="inline-flex items-center justify-center rounded-full px-8 py-4 text-base font-semibold no-tap-highlight"
-                    style={{ background: "oklch(100% 0 0 / 0.45)", color: "hsl(var(--foreground))", backdropFilter: "blur(12px)", boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)" }}>
+                    style={{ background: "var(--color-glass)", color: "hsl(var(--foreground))", backdropFilter: "blur(12px)", boxShadow: "inset 0 1px 0 var(--color-glass-border)" }}>
                     Sign in
                   </Link>
                 </motion.div>

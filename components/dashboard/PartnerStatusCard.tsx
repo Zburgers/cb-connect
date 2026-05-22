@@ -65,9 +65,9 @@ function CareChip({
     <motion.div
       className="rounded-[1.4rem] p-4"
       style={{
-        background: "oklch(100% 0 0 / 0.55)",
+        background: "var(--color-glass)",
         backdropFilter: "blur(12px)",
-        boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
+        boxShadow: "inset 0 1px 0 var(--color-glass-border)",
       }}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
