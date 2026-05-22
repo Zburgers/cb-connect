@@ -82,16 +82,35 @@ function PhaseCard() {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-[1.4rem] p-4"
-            style={{ background: "var(--color-glass)", backdropFilter: "blur(12px)", boxShadow: "inset 0 1px 0 var(--color-glass-border)" }}>
+          <motion.button
+            whileHover={{ y: -4, scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            className="w-full text-left rounded-[1.4rem] p-4 no-tap-highlight outline-none focus-visible:ring-2 focus-visible:ring-primary transition-shadow duration-200"
+            style={{
+              background: "var(--color-glass)",
+              backdropFilter: "blur(12px)",
+              boxShadow: "inset 0 1px 0 var(--color-glass-border)",
+              cursor: "pointer",
+            }}
+          >
             <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>For her</p>
             <p className="mt-1 text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Log a quick body check-in.</p>
-          </div>
-          <div className="rounded-[1.4rem] p-4"
-            style={{ background: "hsl(var(--foreground))", color: "hsl(var(--background))" }}>
+          </motion.button>
+          <motion.button
+            whileHover={{ y: -4, scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            className="w-full text-left rounded-[1.4rem] p-4 no-tap-highlight outline-none focus-visible:ring-2 focus-visible:ring-primary transition-shadow duration-200"
+            style={{
+              background: "hsl(var(--foreground))",
+              color: "hsl(var(--background))",
+              cursor: "pointer",
+            }}
+          >
             <p className="text-sm font-semibold">For partner</p>
             <p className="mt-1 text-xs opacity-75">Handle dinner, keep it soft.</p>
-          </div>
+          </motion.button>
         </div>
       </div>
     </motion.div>
