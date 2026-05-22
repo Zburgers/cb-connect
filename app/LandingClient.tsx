@@ -219,11 +219,11 @@ export default function LandingClient() {
               {features.map((f, i) => {
                 const Icon = f.icon;
                 return (
-                  <motion.div key={i} className="bento-cell space-y-4 p-6"
+                  <motion.button key={i} className="bento-cell w-full text-left space-y-4 p-6 cursor-pointer select-none outline-none no-tap-highlight"
                     initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, margin: "-60px" }}
                     transition={{ duration: 0.5, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] }}
-                    whileHover={{ y: -4 }} whileTap={{ scale: 0.97 }}>
+                    whileHover={{ y: -6, scale: 1.02 }} whileTap={{ scale: 0.96 }}>
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
                       style={{ background: "oklch(from var(--color-accent) l c h / 0.12)" }}>
                       <Icon className="h-6 w-6 text-primary" />
@@ -232,7 +232,7 @@ export default function LandingClient() {
                       <h3 className="text-lg font-semibold" style={{ color: "hsl(var(--foreground))" }}>{f.title}</h3>
                       <p className="mt-2 text-sm leading-6" style={{ color: "hsl(var(--muted-foreground))" }}>{f.description}</p>
                     </div>
-                  </motion.div>
+                  </motion.button>
                 );
               })}
             </div>
