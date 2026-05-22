@@ -22,16 +22,18 @@ export default function SignInPage() {
             appearance={{
               variables: {
                 colorPrimary: "hsl(var(--primary))",
-                colorBackground: "rgba(255, 255, 255, 0.72)",
+                colorBackground: "var(--color-glass)",
                 colorText: "hsl(var(--foreground))",
+                colorTextSecondary: "hsl(var(--muted-foreground))",
                 borderRadius: "24px",
                 fontFamily: "var(--font-ui)",
               },
               elements: {
                 cardBox: "shadow-2xl shadow-primary/10",
-                card: "backdrop-blur-2xl border border-white/40",
+                card: "backdrop-blur-2xl border border-glass-border",
                 headerTitle: "font-display text-3xl",
                 formButtonPrimary: "rounded-2xl",
+                footer: "bg-transparent",
               },
             }}
           />

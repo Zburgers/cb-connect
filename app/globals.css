@@ -278,6 +278,7 @@
   }
 
   .bento-cell-warm {
+    border-radius: var(--radius-xl);
     background: linear-gradient(
       135deg,
       oklch(from var(--color-phase-1) l c h / 0.22),
@@ -561,3 +562,69 @@
     --text-display: clamp(2.5rem, 12vw, 3.5rem);
   }
 }
+
+/* ── Clerk Custom Theme Overrides ────────────────────────────────── */
+.cl-card {
+  background: var(--color-glass) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--color-glass-border) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 var(--color-glass-border) !important;
+}
+
+.cl-footer {
+  background: transparent !important;
+  background-image: none !important;
+  border-top: 1px solid var(--color-glass-border) !important;
+}
+
+.cl-headerTitle,
+.cl-headerSubtitle,
+.cl-dividerText,
+.cl-formLabelText,
+.cl-footerActionText,
+.cl-socialButtonsBlockButtonText {
+  color: hsl(var(--foreground)) !important;
+}
+
+.cl-socialButtonsBlockButton {
+  background: var(--color-glass) !important;
+  border: 1px solid var(--color-glass-border) !important;
+  transition: all var(--dur-base) var(--ease-out) !important;
+}
+
+.cl-socialButtonsBlockButton:hover {
+  background: var(--color-glass-2) !important;
+}
+
+.cl-formFieldInput {
+  background: var(--color-paper-2) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid var(--color-glass-border) !important;
+}
+
+.cl-formFieldInput:focus {
+  border-color: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2) !important;
+}
+
+.cl-formButtonPrimary {
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  transition: all var(--dur-base) var(--ease-out) !important;
+}
+
+.cl-formButtonPrimary:hover {
+  opacity: 0.9 !important;
+  transform: translateY(-1px) !important;
+}
+
+.cl-footerActionLink {
+  color: hsl(var(--primary)) !important;
+  transition: color var(--dur-fast) var(--ease-out) !important;
+}
+
+.cl-footerActionLink:hover {
+  color: hsl(var(--primary) / 0.8) !important;
+}
+
