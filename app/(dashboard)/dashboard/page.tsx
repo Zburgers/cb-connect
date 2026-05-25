@@ -13,6 +13,7 @@ import TipsCard from "@/components/dashboard/TipsCard";
 import NutritionSuggestions from "@/components/dashboard/NutritionSuggestions";
 import OnboardingFlow from "@/components/dashboard/OnboardingFlow";
 import PartnerDashboard from "@/components/partner/PartnerDashboard";
+import { usePartnerPresence } from "@/lib/usePartnerPresence";
 
 export default function DashboardPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -22,10 +23,7 @@ export default function DashboardPage() {
     isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
   );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
-  const partnerPresent = useQuery(
-    api.queries.presence.isPartnerPresent,
-    isAuthenticated ? {} : "skip"
-  ) ?? false;
+  const partnerPresent = usePartnerPresence(isAuthenticated).isPresent;
 
   if (isLoading || data === undefined || me === undefined) {
     return <DashboardSkeleton />;

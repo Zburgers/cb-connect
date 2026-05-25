@@ -10,6 +10,8 @@ import ThemeToggle from "@/components/common/ThemeToggle";
 import SanctuaryShell from "@/components/common/SanctuaryShell";
 import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { HEARTBEAT_INTERVAL_MS } from "@/lib/presence.mjs";
+import { usePartnerPresence } from "@/lib/usePartnerPresence";
 
 const navItems = [
   { href: "/dashboard",          label: "Home",     icon: Home    },
@@ -25,28 +27,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
 
-  // Query whether the partner is currently online via Convex presence. If not authenticated,
-  // skip the query and default to false. useQuery returns undefined before the first
-  // response, so we coalesce to false.
-  const partnerPresent = useQuery(
-    api.queries.presence.isPartnerPresent,
-    isAuthenticated ? {} : "skip"
-  ) ?? false;
+  const partnerPresence = usePartnerPresence(isAuthenticated);
+  const partnerPresent = partnerPresence.isPresent;
 
   // Send periodic heartbeat to indicate this user is online.
   const heartbeat = useMutation(api.mutations.presence.heartbeat);
+  const goOffline = useMutation(api.mutations.presence.goOffline);
 
   // When authenticated, send an immediate heartbeat and then continue sending
   // every 30 seconds. Cleanup the interval on unmount.
   useEffect(() => {
     if (!isAuthenticated) return;
-    // Fire initial heartbeat.
     heartbeat().catch(() => {});
     const interval = setInterval(() => {
       heartbeat().catch(() => {});
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated, heartbeat]);
+    }, HEARTBEAT_INTERVAL_MS);
+
+    const markOffline = () => {
+      goOffline().catch(() => {});
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        markOffline();
+      } else {
+        heartbeat().catch(() => {});
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", markOffline);
+    window.addEventListener("beforeunload", markOffline);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", markOffline);
+      window.removeEventListener("beforeunload", markOffline);
+      markOffline();
+    };
+  }, [goOffline, heartbeat, isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {

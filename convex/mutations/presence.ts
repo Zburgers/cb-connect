@@ -4,7 +4,7 @@ import { getCurrentUserOrNull } from "../_helpers/auth";
 /**
  * Record a heartbeat for the currently authenticated user.
  * Each heartbeat updates or inserts a presence record for the user's couple.
- * A heartbeat should be sent periodically from the client (e.g. every 30 seconds)
+ * A heartbeat should be sent periodically from the client
  * to indicate the user is actively online.
  */
 export const heartbeat = mutation({
@@ -42,5 +42,35 @@ export const heartbeat = mutation({
         lastSeen: now,
       });
     }
+  },
+});
+
+export const goOffline = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return;
+    }
+
+    const membership = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!membership) {
+      return;
+    }
+
+    const existing = await ctx.db
+      .query("presence")
+      .withIndex("by_couple_user", (q) =>
+        q.eq("coupleId", membership.coupleId).eq("userId", user._id)
+      )
+      .unique();
+    if (!existing) {
+      return;
+    }
+
+    await ctx.db.patch(existing._id, { lastSeen: 0 });
   },
 });

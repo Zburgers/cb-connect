@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, useReducedMotion } from "framer-motion";
 import { BellRing, CalendarDays, HeartPulse, Radio, Sparkles, X } from "lucide-react";
@@ -75,7 +75,7 @@ export default function PhaseAura({
   const markNudgeSeen = useMutation(api.mutations.nudges.markSeen);
 
   const handleNudge = async (emoji: string) => {
-    if (sendingEmoji) return;
+    if (sendingEmoji || !partnerPresent) return;
     setSendingEmoji(emoji);
     setSentEmoji(null);
     try {
@@ -86,15 +86,24 @@ export default function PhaseAura({
     }
   };
 
+  useEffect(() => {
+    if (!partnerPresent) {
+      setSentEmoji(null);
+    }
+  }, [partnerPresent]);
+
   return (
     <div
       data-phase={phase}
-      className={`bento-cell-warm relative isolate overflow-hidden ${partnerPresent ? "ring-2 ring-sky-300/80 dark:ring-sky-200/70" : ""}`}
+      className="bento-cell-warm relative isolate overflow-hidden"
       style={{
         padding: "2rem",
         borderRadius: "var(--radius-xl)",
+        border: partnerPresent
+          ? "1px solid oklch(from var(--color-phase-1) l c h / 0.72)"
+          : undefined,
         boxShadow: partnerPresent
-          ? "inset 0 1px 0 var(--color-glass-border), 0 0 0 1px color-mix(in oklch, hsl(var(--primary)) 42%, transparent), 0 24px 90px color-mix(in oklch, hsl(var(--primary)) 24%, transparent)"
+          ? "inset 0 1px 0 var(--color-glass-border), 0 0 0 1px oklch(from var(--color-phase-2) l c h / 0.42), 0 24px 90px oklch(from var(--color-phase-1) l c h / 0.24)"
           : undefined,
       }}
     >
@@ -127,7 +136,7 @@ export default function PhaseAura({
             transition={shouldReduceMotion ? undefined : { duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
             style={{
               background:
-                "radial-gradient(circle at 78% 18%, color-mix(in oklch, hsl(var(--primary)) 32%, transparent) 0%, transparent 44%), radial-gradient(circle at 8% 92%, color-mix(in oklch, hsl(var(--secondary)) 24%, transparent) 0%, transparent 42%)",
+                "radial-gradient(circle at 78% 18%, oklch(from var(--color-phase-1) l c h / 0.34) 0%, transparent 44%), radial-gradient(circle at 8% 92%, oklch(from var(--color-phase-2) l c h / 0.26) 0%, transparent 42%)",
               pointerEvents: "none",
             }}
             aria-hidden="true"
@@ -136,29 +145,32 @@ export default function PhaseAura({
             className="absolute inset-0 rounded-[inherit] border-2"
             animate={shouldReduceMotion ? undefined : {
               borderColor: [
-                "color-mix(in oklch, hsl(var(--primary)) 46%, transparent)",
-                "color-mix(in oklch, hsl(var(--primary)) 88%, transparent)",
-                "color-mix(in oklch, hsl(var(--primary)) 46%, transparent)",
+                "oklch(from var(--color-phase-1) l c h / 0.46)",
+                "oklch(from var(--color-phase-1) l c h / 0.88)",
+                "oklch(from var(--color-phase-1) l c h / 0.46)",
               ],
             }}
             transition={shouldReduceMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              borderColor: "color-mix(in oklch, hsl(var(--primary)) 64%, transparent)",
+              borderColor: "oklch(from var(--color-phase-1) l c h / 0.64)",
             }}
             aria-hidden="true"
           />
           <motion.div
-            className="absolute right-0 top-8 h-24 w-1 rounded-l-full bg-primary"
+            className="absolute right-0 top-8 h-24 w-1 rounded-l-full"
             animate={shouldReduceMotion ? undefined : { opacity: [0.45, 1, 0.45] }}
             transition={shouldReduceMotion ? undefined : { duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-            style={{ boxShadow: "0 0 30px hsl(var(--primary))" }}
+            style={{
+              background: "var(--color-phase-1)",
+              boxShadow: "0 0 30px var(--color-phase-1)",
+            }}
             aria-hidden="true"
           />
           <div
             className="absolute left-8 right-8 top-0 h-px"
             style={{
               background:
-                "linear-gradient(90deg, transparent, hsl(var(--primary)), hsl(var(--secondary)), transparent)",
+                "linear-gradient(90deg, transparent, var(--color-phase-1), var(--color-phase-2), transparent)",
             }}
             aria-hidden="true"
           />
