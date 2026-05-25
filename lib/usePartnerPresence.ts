@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { isPresentAt, PRESENCE_REFRESH_MS } from "@/lib/presence.mjs";
+import { getPresenceExpiryDelay, isPresentAt } from "@/lib/presence.mjs";
 
 export function usePartnerPresence(isAuthenticated: boolean) {
   const presence = useQuery(
@@ -13,11 +13,19 @@ export function usePartnerPresence(isAuthenticated: boolean) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    if (!presence) return;
+
+    const delay = getPresenceExpiryDelay(presence.lastSeen);
+    if (delay === 0) {
       setNow(Date.now());
-    }, PRESENCE_REFRESH_MS);
-    return () => window.clearInterval(interval);
-  }, []);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setNow(Date.now());
+    }, delay + 50);
+    return () => window.clearTimeout(timeout);
+  }, [presence]);
 
   if (!presence) {
     return {

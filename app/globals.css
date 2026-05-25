@@ -256,12 +256,42 @@
   }
 
   /* Phase aura orb */
+  .phase-aura-card {
+    --phase-title-size: clamp(2.35rem, 9vw, 4.75rem);
+    padding: clamp(1.25rem, 4vw, 2rem);
+  }
+
+  .phase-aura-orb {
+    right: -3rem;
+    top: -3rem;
+    height: 20rem;
+    width: 20rem;
+    animation: orbBreathe 16s var(--ease-in-out) infinite;
+  }
+
   .phase-aura-field {
     background:
       radial-gradient(circle at 35% 30%, oklch(from var(--color-phase-3) l c h / 0.92), transparent 24%),
       radial-gradient(circle at 68% 34%, oklch(from var(--color-phase-1) l c h / 0.92), transparent 31%),
       radial-gradient(circle at 48% 70%, oklch(from var(--color-phase-2) l c h / 0.82), transparent 38%);
-    filter: blur(22px) saturate(1.15);
+    filter: blur(24px) saturate(1.18);
+    opacity: 0.82;
+  }
+
+  .phase-presence-wash {
+    animation: presenceWash 5.5s var(--ease-in-out) infinite;
+  }
+
+  .phase-presence-border {
+    animation: presenceBorder 4.8s var(--ease-in-out) infinite;
+  }
+
+  .phase-presence-rail {
+    animation: presenceRail 4.2s var(--ease-in-out) infinite;
+  }
+
+  .phase-online-ping {
+    animation: presencePing 2.8s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 
   /* ── Borderless Bento cells ── */
@@ -514,6 +544,28 @@
   animation: presencePulse 3s var(--ease-in-out) forwards;
 }
 
+@keyframes presenceWash {
+  0%, 100% { opacity: 0.28; }
+  50%      { opacity: 0.52; }
+}
+
+@keyframes presenceBorder {
+  0%, 100% { border-color: oklch(from var(--color-phase-1) l c h / 0.42); }
+  50%      { border-color: oklch(from var(--color-phase-1) l c h / 0.76); }
+}
+
+@keyframes presenceRail {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 0.92; }
+}
+
+@keyframes presencePing {
+  75%, 100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
 /* Orb breathe (dashboard phase aura) */
 @keyframes orbBreathe {
   0%, 100% { transform: scale(1) rotate(0deg); }
@@ -551,12 +603,101 @@
   }
   .animate-aura-drift,
   .animate-orb-breathe,
-  .animate-presence {
+  .animate-presence,
+  .phase-aura-orb,
+  .phase-presence-wash,
+  .phase-presence-border,
+  .phase-presence-rail,
+  .phase-online-ping {
     animation: none !important;
   }
 }
 
 /* ── Responsive safety ──────────────────────────────────────────── */
+@media (max-width: 640px), (pointer: coarse) {
+  .noise-overlay {
+    opacity: 0.018;
+  }
+
+  .bento-cell {
+    backdrop-filter: blur(14px) saturate(1.18);
+    -webkit-backdrop-filter: blur(14px) saturate(1.18);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 6px 22px var(--shadow-warm);
+  }
+
+  .bento-cell-warm {
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 10px 30px var(--shadow-warm);
+  }
+
+  .phase-aura-card {
+    --phase-title-size: clamp(2.2rem, 12vw, 3.5rem);
+    padding: 1.05rem;
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 10px 30px oklch(from var(--color-phase-1) l c h / 0.16) !important;
+  }
+
+  .phase-aura-orb {
+    right: -4rem;
+    top: -4rem;
+    height: 15rem;
+    width: 15rem;
+    animation: none;
+  }
+
+  .phase-aura-field {
+    filter: blur(18px) saturate(1.05);
+    opacity: 0.62;
+  }
+
+  .phase-presence-wash,
+  .phase-presence-border,
+  .phase-presence-rail,
+  .phase-online-ping {
+    animation: none;
+  }
+
+  .phase-presence-wash {
+    opacity: 0.3;
+  }
+
+  .phase-presence-border {
+    border-width: 1px;
+  }
+
+  .phase-presence-rail {
+    height: 4rem;
+    opacity: 0.78;
+    box-shadow: 0 0 18px var(--color-phase-1) !important;
+  }
+
+  .phase-nudge-panel {
+    padding: 0.625rem;
+  }
+
+  .phase-nudge-button {
+    height: 2.25rem;
+    width: 2.25rem;
+    font-size: 1rem;
+  }
+
+  .phase-nudge-alert {
+    padding: 0.75rem;
+  }
+
+  .phase-nudge-emoji {
+    height: 2.5rem;
+    width: 2.5rem;
+    font-size: 1.25rem;
+  }
+}
+
 @media (max-width: 375px) {
   :root {
     --text-display: clamp(2.5rem, 12vw, 3.5rem);
@@ -627,4 +768,3 @@
 .cl-footerActionLink:hover {
   color: hsl(var(--primary) / 0.8) !important;
 }
-

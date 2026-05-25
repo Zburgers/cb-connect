@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { BellRing, CalendarDays, HeartPulse, Radio, Sparkles, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { getPainSeverityBucket, getPhaseEmoji } from "@/lib/utils";
@@ -62,10 +62,8 @@ export default function PhaseAura({
   perspective = "primary",
   partnerPresent = false,
 }: PhaseAuraProps) {
-  const shouldReduceMotion = useReducedMotion();
   const copy  = phaseCopy[phase] ?? phaseCopy.follicular;
   const pain  = painPhrase(painScore);
-  const pulseDuration = painScore != null && painScore >= 7 ? 8 : 13;
   const presenceLabel = perspective === "partner" ? "Both online now" : "Partner online now";
   const nudgeTarget = perspective === "partner" ? "your partner" : "partner";
   const [sendingEmoji, setSendingEmoji] = useState<string | null>(null);
@@ -95,9 +93,8 @@ export default function PhaseAura({
   return (
     <div
       data-phase={phase}
-      className="bento-cell-warm relative isolate overflow-hidden"
+      className="phase-aura-card bento-cell-warm relative isolate overflow-hidden"
       style={{
-        padding: "2rem",
         borderRadius: "var(--radius-xl)",
         border: partnerPresent
           ? "1px solid oklch(from var(--color-phase-1) l c h / 0.72)"
@@ -108,32 +105,20 @@ export default function PhaseAura({
       }}
     >
       {/* ── Background orb ── */}
-      <motion.div
-        className="pointer-events-none absolute right-[-3rem] top-[-3rem] h-80 w-80 rounded-full"
-        animate={shouldReduceMotion ? undefined : { scale: [1, 1.08, 0.97, 1], rotate: [0, 8, -5, 0] }}
-        transition={shouldReduceMotion ? undefined : { duration: pulseDuration, repeat: Infinity, ease: "easeInOut" }}
-        aria-hidden="true"
-      >
+      <div className="phase-aura-orb pointer-events-none absolute rounded-full" aria-hidden="true">
         <div
           className="phase-aura-field h-full w-full rounded-full"
-          style={{ filter: "blur(32px) saturate(1.3)", opacity: 0.85 }}
         />
-      </motion.div>
+      </div>
 
       {/* ── Partner presence glow indicator ── */}
       {partnerPresent && (
-        <motion.div
+        <div
           className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.6, ease: "easeInOut" }}
           aria-hidden="true"
         >
-          <motion.div
-            className="absolute inset-0 rounded-[inherit]"
-            animate={shouldReduceMotion ? undefined : { opacity: [0.28, 0.58, 0.28] }}
-            transition={shouldReduceMotion ? undefined : { duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+          <div
+            className="phase-presence-wash absolute inset-0 rounded-[inherit]"
             style={{
               background:
                 "radial-gradient(circle at 78% 18%, oklch(from var(--color-phase-1) l c h / 0.34) 0%, transparent 44%), radial-gradient(circle at 8% 92%, oklch(from var(--color-phase-2) l c h / 0.26) 0%, transparent 42%)",
@@ -141,25 +126,15 @@ export default function PhaseAura({
             }}
             aria-hidden="true"
           />
-          <motion.div
-            className="absolute inset-0 rounded-[inherit] border-2"
-            animate={shouldReduceMotion ? undefined : {
-              borderColor: [
-                "oklch(from var(--color-phase-1) l c h / 0.46)",
-                "oklch(from var(--color-phase-1) l c h / 0.88)",
-                "oklch(from var(--color-phase-1) l c h / 0.46)",
-              ],
-            }}
-            transition={shouldReduceMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+          <div
+            className="phase-presence-border absolute inset-0 rounded-[inherit] border-2"
             style={{
               borderColor: "oklch(from var(--color-phase-1) l c h / 0.64)",
             }}
             aria-hidden="true"
           />
-          <motion.div
-            className="absolute right-0 top-8 h-24 w-1 rounded-l-full"
-            animate={shouldReduceMotion ? undefined : { opacity: [0.45, 1, 0.45] }}
-            transition={shouldReduceMotion ? undefined : { duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          <div
+            className="phase-presence-rail absolute right-0 top-8 h-24 w-1 rounded-l-full"
             style={{
               background: "var(--color-phase-1)",
               boxShadow: "0 0 30px var(--color-phase-1)",
@@ -174,7 +149,7 @@ export default function PhaseAura({
             }}
             aria-hidden="true"
           />
-        </motion.div>
+        </div>
       )}
 
       <div className="relative grid gap-6 md:grid-cols-[1.1fr_0.9fr] md:items-start">
@@ -204,7 +179,7 @@ export default function PhaseAura({
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               >
                 <span className="relative flex h-3 w-3" aria-hidden="true">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-65" />
+                  <span className="phase-online-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-65" />
                   <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
                 </span>
                 <Radio className="h-4 w-4 text-primary" aria-hidden="true" />
@@ -212,7 +187,7 @@ export default function PhaseAura({
               </motion.div>
 
               <motion.div
-                className="w-fit rounded-[1.5rem] p-3"
+                className="phase-nudge-panel w-fit rounded-[1.5rem] p-3"
                 style={{
                   background: "var(--color-glass)",
                   border: "1px solid var(--color-glass-border)",
@@ -233,7 +208,7 @@ export default function PhaseAura({
                       type="button"
                       onClick={() => handleNudge(emoji)}
                       disabled={Boolean(sendingEmoji)}
-                      className="grid h-11 w-11 place-items-center rounded-full text-xl transition hover:-translate-y-0.5 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-60 dark:hover:bg-white/15"
+                      className="phase-nudge-button grid h-11 w-11 place-items-center rounded-full text-xl transition hover:-translate-y-0.5 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-60 dark:hover:bg-white/15"
                       style={{
                         background:
                           sentEmoji === emoji
@@ -258,7 +233,7 @@ export default function PhaseAura({
 
           {latestNudge && (
             <motion.div
-              className="max-w-sm rounded-[1.5rem] p-4 text-foreground"
+            className="phase-nudge-alert max-w-sm rounded-[1.5rem] p-4 text-foreground"
               style={{
                 background: "color-mix(in oklch, hsl(var(--primary)) 18%, var(--color-glass))",
                 border: "1px solid color-mix(in oklch, hsl(var(--primary)) 62%, var(--color-glass-border))",
@@ -270,7 +245,7 @@ export default function PhaseAura({
               role="status"
             >
               <div className="flex items-start gap-3">
-                <div className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-white/70 text-2xl dark:bg-white/15">
+                <div className="phase-nudge-emoji grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-white/70 text-2xl dark:bg-white/15">
                   {latestNudge.emoji}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -319,7 +294,7 @@ export default function PhaseAura({
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="font-display text-balance overflow-wrap-anywhere mt-3"
               style={{
-                fontSize: "clamp(2.8rem, 7vw + 0.5rem, 5rem)",
+                fontSize: "var(--phase-title-size)",
                 fontStyle: "italic",
                 lineHeight: 0.94,
                 letterSpacing: "-0.03em",
