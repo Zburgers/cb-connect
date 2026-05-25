@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { motion, useReducedMotion } from "framer-motion";
-import { CalendarDays, HeartPulse, Sparkles } from "lucide-react";
+import { BellRing, CalendarDays, HeartPulse, Radio, Sparkles, X } from "lucide-react";
+import { api } from "@/convex/_generated/api";
 import { getPainSeverityBucket, getPhaseEmoji } from "@/lib/utils";
+import { getNudgeMessage, NUDGE_EMOJIS } from "@/lib/nudges.mjs";
 
 interface PhaseAuraProps {
   phase: string;
@@ -62,12 +66,37 @@ export default function PhaseAura({
   const copy  = phaseCopy[phase] ?? phaseCopy.follicular;
   const pain  = painPhrase(painScore);
   const pulseDuration = painScore != null && painScore >= 7 ? 8 : 13;
+  const presenceLabel = perspective === "partner" ? "Both online now" : "Partner online now";
+  const nudgeTarget = perspective === "partner" ? "your partner" : "partner";
+  const [sendingEmoji, setSendingEmoji] = useState<string | null>(null);
+  const [sentEmoji, setSentEmoji] = useState<string | null>(null);
+  const latestNudge = useQuery(api.queries.nudges.latestReceived, {});
+  const sendNudge = useMutation(api.mutations.nudges.send);
+  const markNudgeSeen = useMutation(api.mutations.nudges.markSeen);
+
+  const handleNudge = async (emoji: string) => {
+    if (sendingEmoji) return;
+    setSendingEmoji(emoji);
+    setSentEmoji(null);
+    try {
+      await sendNudge({ emoji });
+      setSentEmoji(emoji);
+    } finally {
+      setSendingEmoji(null);
+    }
+  };
 
   return (
     <div
       data-phase={phase}
-      className="bento-cell-warm relative isolate overflow-hidden"
-      style={{ padding: "2rem", borderRadius: "var(--radius-xl)" }}
+      className={`bento-cell-warm relative isolate overflow-hidden ${partnerPresent ? "ring-2 ring-sky-300/80 dark:ring-sky-200/70" : ""}`}
+      style={{
+        padding: "2rem",
+        borderRadius: "var(--radius-xl)",
+        boxShadow: partnerPresent
+          ? "inset 0 1px 0 var(--color-glass-border), 0 0 0 1px color-mix(in oklch, hsl(var(--primary)) 42%, transparent), 0 24px 90px color-mix(in oklch, hsl(var(--primary)) 24%, transparent)"
+          : undefined,
+      }}
     >
       {/* ── Background orb ── */}
       <motion.div
@@ -94,28 +123,43 @@ export default function PhaseAura({
         >
           <motion.div
             className="absolute inset-0 rounded-[inherit]"
-            animate={{ opacity: [0.15, 0.35, 0.15] }}
-            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+            animate={shouldReduceMotion ? undefined : { opacity: [0.28, 0.58, 0.28] }}
+            transition={shouldReduceMotion ? undefined : { duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              background: "radial-gradient(circle at center, rgba(59, 130, 246, 0.2) 0%, transparent 70%)",
+              background:
+                "radial-gradient(circle at 78% 18%, color-mix(in oklch, hsl(var(--primary)) 32%, transparent) 0%, transparent 44%), radial-gradient(circle at 8% 92%, color-mix(in oklch, hsl(var(--secondary)) 24%, transparent) 0%, transparent 42%)",
               pointerEvents: "none",
             }}
             aria-hidden="true"
           />
           <motion.div
             className="absolute inset-0 rounded-[inherit] border-2"
-            animate={{ borderColor: ["rgba(59, 130, 246, 0.3)", "rgba(59, 130, 246, 0.6)", "rgba(59, 130, 246, 0.3)"] }}
-            transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+            animate={shouldReduceMotion ? undefined : {
+              borderColor: [
+                "color-mix(in oklch, hsl(var(--primary)) 46%, transparent)",
+                "color-mix(in oklch, hsl(var(--primary)) 88%, transparent)",
+                "color-mix(in oklch, hsl(var(--primary)) 46%, transparent)",
+              ],
+            }}
+            transition={shouldReduceMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              borderColor: "rgba(59, 130, 246, 0.4)",
+              borderColor: "color-mix(in oklch, hsl(var(--primary)) 64%, transparent)",
             }}
             aria-hidden="true"
           />
-          {/* Dot indicator in the top-right */}
           <motion.div
-            className="absolute top-4 right-4 h-3 w-3 rounded-full bg-blue-500"
-            animate={{ scale: [1, 1.3, 1], boxShadow: ["0 0 8px rgba(59, 130, 246, 0.5)", "0 0 16px rgba(59, 130, 246, 0.8)", "0 0 8px rgba(59, 130, 246, 0.5)"] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute right-0 top-8 h-24 w-1 rounded-l-full bg-primary"
+            animate={shouldReduceMotion ? undefined : { opacity: [0.45, 1, 0.45] }}
+            transition={shouldReduceMotion ? undefined : { duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            style={{ boxShadow: "0 0 30px hsl(var(--primary))" }}
+            aria-hidden="true"
+          />
+          <div
+            className="absolute left-8 right-8 top-0 h-px"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, hsl(var(--primary)), hsl(var(--secondary)), transparent)",
+            }}
             aria-hidden="true"
           />
         </motion.div>
@@ -133,6 +177,107 @@ export default function PhaseAura({
               Today's shared signal
             </span>
           </div>
+
+          {partnerPresent && (
+            <div className="space-y-3">
+              <motion.div
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-foreground"
+                style={{
+                  background: "var(--color-glass)",
+                  border: "1px solid color-mix(in oklch, hsl(var(--primary)) 58%, var(--color-glass-border))",
+                  boxShadow: "0 12px 34px color-mix(in oklch, hsl(var(--primary)) 20%, transparent)",
+                }}
+                initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <span className="relative flex h-3 w-3" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-65" />
+                  <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+                </span>
+                <Radio className="h-4 w-4 text-primary" aria-hidden="true" />
+                {presenceLabel}
+              </motion.div>
+
+              <motion.div
+                className="w-fit rounded-[1.5rem] p-3"
+                style={{
+                  background: "var(--color-glass)",
+                  border: "1px solid var(--color-glass-border)",
+                  boxShadow: "inset 0 1px 0 var(--color-glass-border)",
+                }}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08, duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-foreground">
+                  <BellRing className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  Nudge {nudgeTarget}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {NUDGE_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => handleNudge(emoji)}
+                      disabled={Boolean(sendingEmoji)}
+                      className="grid h-11 w-11 place-items-center rounded-full text-xl transition hover:-translate-y-0.5 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-60 dark:hover:bg-white/15"
+                      style={{
+                        background:
+                          sentEmoji === emoji
+                            ? "color-mix(in oklch, hsl(var(--primary)) 18%, var(--color-glass))"
+                            : "var(--color-glass)",
+                        border: "1px solid var(--color-glass-border)",
+                      }}
+                      aria-label={`Send nudge: ${getNudgeMessage(emoji)}`}
+                    >
+                      {sendingEmoji === emoji ? "…" : emoji}
+                    </button>
+                  ))}
+                </div>
+                {sentEmoji && (
+                  <p className="mt-2 text-xs font-semibold text-foreground">
+                    Sent {sentEmoji} to {nudgeTarget}.
+                  </p>
+                )}
+              </motion.div>
+            </div>
+          )}
+
+          {latestNudge && (
+            <motion.div
+              className="max-w-sm rounded-[1.5rem] p-4 text-foreground"
+              style={{
+                background: "color-mix(in oklch, hsl(var(--primary)) 18%, var(--color-glass))",
+                border: "1px solid color-mix(in oklch, hsl(var(--primary)) 62%, var(--color-glass-border))",
+                boxShadow: "0 18px 48px color-mix(in oklch, hsl(var(--primary)) 22%, transparent)",
+              }}
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+              role="status"
+            >
+              <div className="flex items-start gap-3">
+                <div className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-white/70 text-2xl dark:bg-white/15">
+                  {latestNudge.emoji}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em]">
+                    {latestNudge.senderName} nudged you
+                  </p>
+                  <p className="mt-1 text-sm font-semibold">{latestNudge.message}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => markNudgeSeen({ nudgeId: latestNudge._id })}
+                  className="rounded-full p-1.5 text-foreground/70 transition hover:bg-white/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:hover:bg-white/15"
+                  aria-label="Dismiss nudge"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            </motion.div>
+          )}
 
           {/* Phase label pill — own row, below badge */}
           <div>

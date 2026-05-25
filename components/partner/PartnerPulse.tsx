@@ -16,6 +16,7 @@ interface PartnerPulseProps {
     score: number;
     severity: string;
   } | null;
+  partnerPresent?: boolean;
 }
 
 function supportCopy(score?: number) {
@@ -50,7 +51,11 @@ const careActions = [
   { icon: HeartHandshake,     label: "Ask what support means today" },
 ];
 
-export default function PartnerPulse({ cycleInfo, painData }: PartnerPulseProps) {
+export default function PartnerPulse({
+  cycleInfo,
+  painData,
+  partnerPresent = false,
+}: PartnerPulseProps) {
   const care = supportCopy(painData?.score);
 
   if (!cycleInfo) {
@@ -92,6 +97,7 @@ export default function PartnerPulse({ cycleInfo, painData }: PartnerPulseProps)
         nextPeriodStart={cycleInfo.predictedNextPeriodStart}
         painScore={painData?.score ?? null}
         perspective="partner"
+        partnerPresent={partnerPresent}
       />
 
       {/* Care actions card */}

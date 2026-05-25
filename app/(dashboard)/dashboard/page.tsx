@@ -54,7 +54,7 @@ export default function DashboardPage() {
   }
 
   if (me.role === "partner" && data?.isPartnerView) {
-    return <PartnerDashboard data={data} />;
+    return <PartnerDashboard data={data} partnerPresent={partnerPresent} />;
   }
 
   // Primary user who skipped period setup during onboarding

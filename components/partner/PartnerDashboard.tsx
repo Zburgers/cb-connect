@@ -6,6 +6,7 @@ import PartnerPulse from "./PartnerPulse";
 
 interface PartnerDashboardProps {
   data: any;
+  partnerPresent?: boolean;
 }
 
 function getPainConfig(score: number) {
@@ -14,7 +15,7 @@ function getPainConfig(score: number) {
   return             { bg: "bg-destructive/10", icon: "text-destructive", text: "text-destructive" };
 }
 
-export default function PartnerDashboard({ data }: PartnerDashboardProps) {
+export default function PartnerDashboard({ data, partnerPresent = false }: PartnerDashboardProps) {
   if (!data.hasData) {
     return (
       <motion.div
@@ -63,7 +64,11 @@ export default function PartnerDashboard({ data }: PartnerDashboardProps) {
         </p>
       </div>
 
-      <PartnerPulse cycleInfo={data.cycleInfo} painData={data.painData} />
+      <PartnerPulse
+        cycleInfo={data.cycleInfo}
+        painData={data.painData}
+        partnerPresent={partnerPresent}
+      />
 
       {/* Pain status card */}
       {data.painData && (() => {

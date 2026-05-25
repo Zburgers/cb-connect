@@ -165,4 +165,16 @@ export default defineSchema({
   })
     .index("by_couple_user", ["coupleId", "userId"])
     .index("by_couple", ["coupleId"]),
+
+  nudges: defineTable({
+    coupleId: v.id("couples"),
+    senderId: v.id("users"),
+    receiverId: v.id("users"),
+    emoji: v.string(),
+    message: v.string(),
+    createdAt: v.number(),
+    seenAt: v.optional(v.number()),
+  })
+    .index("by_receiver_created", ["receiverId", "createdAt"])
+    .index("by_couple_created", ["coupleId", "createdAt"]),
 });
