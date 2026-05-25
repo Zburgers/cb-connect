@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -25,9 +25,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
 
-  // TODO: Connect partnerPresent to a real-time Convex presence query (see issues.md - "Simulated partner presence indicator in dashboard layout")
-  // Currently, partnerPresent is initialized to false as a placeholder to ensure out-of-the-box stability.
-  const [partnerPresent, setPartnerPresent] = useState(false);
+  // Query whether the partner is currently online via Convex presence. If not authenticated,
+  // skip the query and default to false. useQuery returns undefined before the first
+  // response, so we coalesce to false.
+  const partnerPresent = useQuery(
+    api.queries.presence.isPartnerPresent,
+    isAuthenticated ? {} : "skip"
+  ) ?? false;
+
+  // Send periodic heartbeat to indicate this user is online.
+  const heartbeat = useMutation(api.mutations.presence.heartbeat);
+
+  // When authenticated, send an immediate heartbeat and then continue sending
+  // every 30 seconds. Cleanup the interval on unmount.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    // Fire initial heartbeat.
+    heartbeat().catch(() => {});
+    const interval = setInterval(() => {
+      heartbeat().catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, heartbeat]);
 
   useEffect(() => {
     if (isAuthenticated) {

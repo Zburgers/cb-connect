@@ -9,6 +9,7 @@ interface CurrentPhaseProps {
   daysUntilNextPeriod: number;
   nextPeriodStart: string;
   painScore?: number | null;
+  partnerPresent?: boolean;
 }
 
 export default function CurrentPhase({
@@ -18,6 +19,7 @@ export default function CurrentPhase({
   daysUntilNextPeriod,
   nextPeriodStart,
   painScore,
+  partnerPresent = false,
 }: CurrentPhaseProps) {
   return (
     <PhaseAura
@@ -27,6 +29,7 @@ export default function CurrentPhase({
       daysUntilNextPeriod={daysUntilNextPeriod}
       nextPeriodStart={nextPeriodStart}
       painScore={painScore}
+      partnerPresent={partnerPresent}
     />
   );
 }

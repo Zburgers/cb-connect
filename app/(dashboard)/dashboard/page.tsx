@@ -22,6 +22,10 @@ export default function DashboardPage() {
     isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
   );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+  const partnerPresent = useQuery(
+    api.queries.presence.isPartnerPresent,
+    isAuthenticated ? {} : "skip"
+  ) ?? false;
 
   if (isLoading || data === undefined || me === undefined) {
     return <DashboardSkeleton />;
@@ -83,6 +87,7 @@ export default function DashboardPage() {
           daysUntilNextPeriod={data.cycleInfo.daysUntilNextPeriod}
           nextPeriodStart={data.cycleInfo.predictedNextPeriodStart}
           painScore={data.painData?.score ?? null}
+          partnerPresent={partnerPresent}
         />
       )}
 

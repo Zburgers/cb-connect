@@ -207,8 +207,12 @@ export default function LogPage() {
   const isPartnerView = coupleStatus?.role === "partner";
   const canWrite      = !isPartnerView;
   const isLinked      = Boolean(coupleStatus?.isLinked);
-  const phaseShared   = Boolean(isLinked && coupleStatus?.sharingSettings?.phase);
-  const painShared    = Boolean(isLinked && coupleStatus?.sharingSettings?.pain);
+  // Sharing flags should rely solely on the primary member's sharing settings.
+  // Previously these were gated by isLinked, which prevented the timeline
+  // from showing shared history even when sharing was enabled. We now read
+  // the flags directly.
+  const phaseShared   = Boolean(coupleStatus?.sharingSettings?.phase);
+  const painShared    = Boolean(coupleStatus?.sharingSettings?.pain);
   const ongoingPeriod = periodHistory?.find((p: any) => !p.endDate);
   const visiblePainHistory = (painShared || !isPartnerView) ? painHistory ?? [] : [];
 

@@ -415,15 +415,25 @@ Discord delivery attempts are stored in `notificationLog`, but there is no user-
 
 ### Simulated partner presence indicator in dashboard layout
 **Priority:** Low
-**Status:** Open
-**Detected:** May 22, 2026
-**Files:** `app/(dashboard)/layout.tsx`
+**Status:** ✅ Completed (May 26, 2026)
+**Files:** `app/(dashboard)/layout.tsx`, `components/dashboard/PhaseAura.tsx`, `app/(dashboard)/dashboard/page.tsx`
 
-Currently, `partnerPresent` is initialized to `false` as a placeholder. This ensures the app is completely stable out-of-the-box. When you build your presence tracking Convex table, you can easily wire this state to a real-time presence subscription query (e.g., checking if the partner has had a session heartbeat in the last 60 seconds).
+**Completed:** Implemented real-time presence tracking via Convex.
 
-- [ ] Design and implement a Convex `presence` table/schema tracking last-seen heartbeats for couples.
-- [ ] Implement an internal cron or automatic session status mutation.
-- [ ] Connect the `partnerPresent` state in `app/(dashboard)/layout.tsx` to a real-time Convex subscription query.
+**Implementation:**
+- [x] Designed and implemented a Convex `presence` table/schema tracking last-seen heartbeats for couples.
+- [x] Created `convex/mutations/presence.ts` with `heartbeat()` mutation that upserts presence records every 30s.
+- [x] Created `convex/queries/presence.ts` with `isPartnerPresent()` query checking if partner heartbeat within 60s.
+- [x] Connected `app/(dashboard)/layout.tsx` to real-time Convex presence query with automatic heartbeat.
+- [x] Implemented animated presence indicator (glow, pulsing border, live dot) on `PhaseAura` card when `partnerPresent === true`.
+- [x] Fixed log page sharing flags by removing `isLinked` gate (now reads sharingSettings directly).
+
+**Features:**
+- Automatic 30-second heartbeat from authenticated users
+- Real-time presence query with 60-second timeout
+- Animated phase card with blue glow and pulsing border when partner online
+- Live indicator dot in top-right corner of phase card
+- Framer Motion animations with reduced-motion support
 
 ---
 

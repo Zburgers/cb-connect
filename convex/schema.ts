@@ -156,4 +156,13 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_and_sent_at", ["userId", "sentAt"])
     .index("by_sent_at", ["sentAt"]),
+
+  // Presence records track when each user last sent a heartbeat within their couple.
+  presence: defineTable({
+    coupleId: v.id("couples"),
+    userId: v.id("users"),
+    lastSeen: v.number(),
+  })
+    .index("by_couple_user", ["coupleId", "userId"])
+    .index("by_couple", ["coupleId"]),
 });

@@ -12,6 +12,7 @@ interface PhaseAuraProps {
   nextPeriodStart: string;
   painScore?: number | null;
   perspective?: "primary" | "partner";
+  partnerPresent?: boolean;
 }
 
 const phaseCopy: Record<string, { title: string; tone: string; action: string }> = {
@@ -55,6 +56,7 @@ export default function PhaseAura({
   nextPeriodStart,
   painScore,
   perspective = "primary",
+  partnerPresent = false,
 }: PhaseAuraProps) {
   const shouldReduceMotion = useReducedMotion();
   const copy  = phaseCopy[phase] ?? phaseCopy.follicular;
@@ -79,6 +81,45 @@ export default function PhaseAura({
           style={{ filter: "blur(32px) saturate(1.3)", opacity: 0.85 }}
         />
       </motion.div>
+
+      {/* ── Partner presence glow indicator ── */}
+      {partnerPresent && (
+        <motion.div
+          className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.6, ease: "easeInOut" }}
+          aria-hidden="true"
+        >
+          <motion.div
+            className="absolute inset-0 rounded-[inherit]"
+            animate={{ opacity: [0.15, 0.35, 0.15] }}
+            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              background: "radial-gradient(circle at center, rgba(59, 130, 246, 0.2) 0%, transparent 70%)",
+              pointerEvents: "none",
+            }}
+            aria-hidden="true"
+          />
+          <motion.div
+            className="absolute inset-0 rounded-[inherit] border-2"
+            animate={{ borderColor: ["rgba(59, 130, 246, 0.3)", "rgba(59, 130, 246, 0.6)", "rgba(59, 130, 246, 0.3)"] }}
+            transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              borderColor: "rgba(59, 130, 246, 0.4)",
+            }}
+            aria-hidden="true"
+          />
+          {/* Dot indicator in the top-right */}
+          <motion.div
+            className="absolute top-4 right-4 h-3 w-3 rounded-full bg-blue-500"
+            animate={{ scale: [1, 1.3, 1], boxShadow: ["0 0 8px rgba(59, 130, 246, 0.5)", "0 0 16px rgba(59, 130, 246, 0.8)", "0 0 8px rgba(59, 130, 246, 0.5)"] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            aria-hidden="true"
+          />
+        </motion.div>
+      )}
 
       <div className="relative grid gap-6 md:grid-cols-[1.1fr_0.9fr] md:items-start">
 

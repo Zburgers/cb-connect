@@ -17,10 +17,12 @@ import type * as mutations_couples from "../mutations/couples.js";
 import type * as mutations_misc from "../mutations/misc.js";
 import type * as mutations_painLog from "../mutations/painLog.js";
 import type * as mutations_periods from "../mutations/periods.js";
+import type * as mutations_presence from "../mutations/presence.js";
 import type * as mutations_users from "../mutations/users.js";
 import type * as queries_couples from "../queries/couples.js";
 import type * as queries_dashboard from "../queries/dashboard.js";
 import type * as queries_history from "../queries/history.js";
+import type * as queries_presence from "../queries/presence.js";
 import type * as queries_users from "../queries/users.js";
 import type * as seed from "../seed.js";
 
@@ -40,10 +42,12 @@ declare const fullApi: ApiFromModules<{
   "mutations/misc": typeof mutations_misc;
   "mutations/painLog": typeof mutations_painLog;
   "mutations/periods": typeof mutations_periods;
+  "mutations/presence": typeof mutations_presence;
   "mutations/users": typeof mutations_users;
   "queries/couples": typeof queries_couples;
   "queries/dashboard": typeof queries_dashboard;
   "queries/history": typeof queries_history;
+  "queries/presence": typeof queries_presence;
   "queries/users": typeof queries_users;
   seed: typeof seed;
 }>;
