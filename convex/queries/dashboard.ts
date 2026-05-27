@@ -61,7 +61,7 @@ export const getDashboardData = query({
     // Get most recent period event
     const recentPeriod = await ctx.db
       .query("periodEvents")
-      .withIndex("by_user", (q) => q.eq("userId", targetUserId))
+      .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
       .order("desc")
       .first();
 

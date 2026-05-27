@@ -11,6 +11,7 @@ import {
   CalendarDays, Download, HeartPulse, Lock, Shield, Sparkles,
   ArrowUp, Plus, X,
 } from "lucide-react";
+import type { TimelinePhase } from "@/convex/_helpers/timelinePhases";
 
 /* ── Types ── */
 const PAIN_TAG_LABELS: Record<string, string> = {
@@ -34,17 +35,14 @@ const PHASE_BAND_COLORS: Record<string, string> = {
   follicular:   "oklch(76% 0.14 58)",
   ovulation:    "oklch(70% 0.20 42)",
   luteal:       "oklch(56% 0.14 295)",
+  private: "oklch(62% 0.02 255)",
+  unknown: "oklch(72% 0.03 95)",
 };
 
-function getPhaseForDate(startDate: string, allPeriods: any[]): string {
-  // Simple heuristic: if within any period range → menstruation, else follicular by default
-  for (const period of allPeriods) {
-    const s = new Date(period.startDate);
-    const e = period.endDate ? new Date(period.endDate) : new Date(s.getTime() + 5 * 86400000);
-    const d = new Date(startDate);
-    if (d >= s && d <= e) return "menstruation";
-  }
-  return "follicular";
+function phaseLabel(phase: TimelinePhase) {
+  if (phase === "private") return "Phase hidden";
+  if (phase === "unknown") return "Phase unavailable";
+  return phase;
 }
 
 /* ── Privacy visibility helpers ── */
@@ -81,7 +79,7 @@ function TimelineEntry({
   isFirst,
 }: {
   date: string;
-  phase: string;
+  phase: TimelinePhase;
   pain?: { score: number; tags?: string[]; note?: string };
   isOngoing?: boolean;
   isFirst?: boolean;
@@ -127,7 +125,7 @@ function TimelineEntry({
               {formatDate(date)}
             </p>
             <p className="mt-0.5 text-xs capitalize" style={{ color: "hsl(var(--muted-foreground))" }}>
-              {phase} {isOngoing ? "· ongoing" : ""}
+              {phaseLabel(phase)} {isOngoing ? "· ongoing" : ""}
             </p>
           </div>
           {isOngoing && (
@@ -182,6 +180,10 @@ export default function LogPage() {
     api.queries.history.getPainHistory,
     isLoaded && isSignedIn ? { startDate: localDateDaysAgo(90), endDate: toLocalDateString() } : "skip"
   );
+  const timelineHistory = useQuery(
+    api.queries.history.getTimelineHistory,
+    isLoaded && isSignedIn ? { startDate: localDateDaysAgo(90), endDate: toLocalDateString() } : "skip"
+  );
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
   const logPeriodEnd   = useMutation(api.mutations.periods.logPeriodEnd);
 
@@ -200,7 +202,14 @@ export default function LogPage() {
 
   const { scrollY } = useScroll();
 
-  if (!isLoaded || me === undefined || coupleStatus === undefined || periodHistory === undefined || painHistory === undefined) {
+  if (
+    !isLoaded ||
+    me === undefined ||
+    coupleStatus === undefined ||
+    periodHistory === undefined ||
+    painHistory === undefined ||
+    timelineHistory === undefined
+  ) {
     return <LoadingSpinner />;
   }
 
@@ -251,38 +260,7 @@ export default function LogPage() {
     downloadCsv(`cb-connect-history-${toLocalDateString()}.csv`, rows);
   };
 
-  /* ── Build unified timeline entries ── */
-  const timelineEntries: Array<{
-    date: string;
-    phase: string;
-    type: "period" | "pain";
-    isOngoing?: boolean;
-    pain?: { score: number; tags?: string[]; note?: string };
-  }> = [];
-
-  if (canWrite || phaseShared) {
-    (periodHistory ?? []).forEach((period: any) => {
-      const phase = "menstruation";
-      timelineEntries.push({
-        date: period.startDate,
-        phase,
-        type: "period",
-        isOngoing: !period.endDate,
-      });
-    });
-  }
-
-  visiblePainHistory.forEach((pain: any) => {
-    const phase = getPhaseForDate(pain.date, periodHistory ?? []);
-    timelineEntries.push({
-      date: pain.date,
-      phase,
-      type: "pain",
-      pain: { score: pain.painScore, tags: pain.tags, note: pain.note },
-    });
-  });
-
-  timelineEntries.sort((a, b) => b.date.localeCompare(a.date));
+  const timelineEntries = timelineHistory ?? [];
 
   return (
     <div className="space-y-6 animate-fade-in" ref={topRef}>

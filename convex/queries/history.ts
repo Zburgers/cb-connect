@@ -2,6 +2,10 @@ import { internalQuery, query } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
+import {
+  getTimelinePhaseForDate,
+  type TimelinePhase,
+} from "../_helpers/timelinePhases";
 
 export const getPainHistory = query({
   args: {
@@ -77,7 +81,7 @@ export const getPeriodHistory = query({
 
     const periods = await ctx.db
       .query("periodEvents")
-      .withIndex("by_user", (q) => q.eq("userId", targetUserId))
+      .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
       .order("desc")
       .collect();
 
@@ -113,7 +117,7 @@ export const getPredictionInputsForUser = internalQuery({
 
     const recentPeriod = await ctx.db
       .query("periodEvents")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
       .order("desc")
       .first();
 
@@ -134,5 +138,112 @@ export const getPredictionInputsForUser = internalQuery({
         periodLength
       ),
     };
+  },
+});
+
+export const getTimelineHistory = query({
+  args: {
+    startDate: v.string(),
+    endDate: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      return [];
+    }
+
+    let targetUserId = user._id;
+    let canViewPain = true;
+    let canViewPhase = true;
+
+    if (user.role === "partner") {
+      const coupleData = await getCoupleForUser(ctx, user._id);
+      if (!coupleData) {
+        return [];
+      }
+
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role", (q) =>
+          q.eq("coupleId", coupleData.membership.coupleId).eq("role", "primary")
+        )
+        .first();
+
+      if (!primaryMembership) {
+        return [];
+      }
+
+      targetUserId = primaryMembership.userId;
+      canViewPain = primaryMembership.sharingPain;
+      canViewPhase = primaryMembership.sharingPhase;
+    }
+
+    if (!canViewPain && !canViewPhase) {
+      return [];
+    }
+
+    const periods = canViewPhase
+      ? await ctx.db
+          .query("periodEvents")
+          .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
+          .order("desc")
+          .collect()
+      : [];
+
+    const painLogs = canViewPain
+      ? await ctx.db
+          .query("painLogs")
+          .withIndex("by_user_and_date", (q) =>
+            q.eq("userId", targetUserId).gte("date", args.startDate)
+          )
+          .filter((q) => q.lte(q.field("date"), args.endDate))
+          .collect()
+      : [];
+
+    const cycleSettings = canViewPhase
+      ? await ctx.db
+          .query("cycleSettings")
+          .withIndex("by_user", (q) => q.eq("userId", targetUserId))
+          .unique()
+      : null;
+
+    const cycleLength = cycleSettings?.cycleLength ?? 28;
+    const periodLength = cycleSettings?.periodLength ?? 5;
+
+    const timelineEntries: Array<{
+      date: string;
+      phase: TimelinePhase;
+      type: "period" | "pain";
+      isOngoing?: boolean;
+      pain?: { score: number; tags?: string[]; note?: string };
+    }> = [];
+
+    for (const period of periods) {
+      timelineEntries.push({
+        date: period.startDate,
+        phase: "menstruation",
+        type: "period",
+        isOngoing: !period.endDate,
+      });
+    }
+
+    for (const pain of painLogs) {
+      timelineEntries.push({
+        date: pain.date,
+        phase: canViewPhase
+          ? getTimelinePhaseForDate(
+              pain.date,
+              periods,
+              cycleLength,
+              periodLength
+            )
+          : "private",
+        type: "pain",
+        pain: { score: pain.painScore, tags: pain.tags, note: pain.note },
+      });
+    }
+
+    timelineEntries.sort((a, b) => b.date.localeCompare(a.date));
+    return timelineEntries;
   },
 });

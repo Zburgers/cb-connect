@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  findLatestPeriodStartDate,
+  getTimelinePhaseForDate,
+} from "./timelinePhases.ts";
+
+test("pain log on day 25 of a 28-day cycle resolves to luteal", () => {
+  const phase = getTimelinePhaseForDate(
+    "2026-05-25",
+    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    28,
+    5
+  );
+
+  assert.equal(phase, "luteal");
+});
+
+test("dates inside a logged period stay menstruation", () => {
+  const phase = getTimelinePhaseForDate(
+    "2026-05-03",
+    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    28,
+    5
+  );
+
+  assert.equal(phase, "menstruation");
+});
+
+test("mid-cycle dates resolve to ovulation", () => {
+  const phase = getTimelinePhaseForDate(
+    "2026-05-15",
+    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    28,
+    5
+  );
+
+  assert.equal(phase, "ovulation");
+});
+
+test("post-period pre-ovulation dates resolve to follicular", () => {
+  const phase = getTimelinePhaseForDate(
+    "2026-05-10",
+    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    28,
+    5
+  );
+
+  assert.equal(phase, "follicular");
+});
+
+test("explicit short end dates stop menstruation fallback from overrunning", () => {
+  const phase = getTimelinePhaseForDate(
+    "2026-05-05",
+    [{ startDate: "2026-05-01", endDate: "2026-05-03" }],
+    28,
+    5
+  );
+
+  assert.equal(phase, "follicular");
+});
+
+test("latest period selection uses max startDate, not insertion order", () => {
+  const latest = findLatestPeriodStartDate([
+    { startDate: "2026-04-01", endDate: "2026-04-05" },
+    { startDate: "2026-05-01", endDate: "2026-05-05" },
+    { startDate: "2026-03-01", endDate: "2026-03-05" },
+  ]);
+
+  assert.equal(latest, "2026-05-01");
+});
