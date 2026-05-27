@@ -267,6 +267,22 @@ export const revokePartnerAccess = mutation({
       status: "revoked",
     });
 
+    const chatReactions = await ctx.db
+      .query("coupleMessageReactions")
+      .withIndex("by_couple", (q) => q.eq("coupleId", coupleData.membership.coupleId))
+      .collect();
+    for (const reaction of chatReactions) {
+      await ctx.db.delete(reaction._id);
+    }
+
+    const chatMessages = await ctx.db
+      .query("coupleMessages")
+      .withIndex("by_couple_created", (q) => q.eq("coupleId", coupleData.membership.coupleId))
+      .collect();
+    for (const message of chatMessages) {
+      await ctx.db.delete(message._id);
+    }
+
     const partnerMembership = await ctx.db
       .query("coupleMembers")
       .withIndex("by_couple_and_role", (q) =>
@@ -351,6 +367,80 @@ export const updateSharingSettings = mutation({
       ...(args.sharingPhase !== undefined && {
         sharingPhase: args.sharingPhase,
       }),
+    });
+
+    return { success: true };
+  },
+});
+
+export const updateConnectedSinceDate = mutation({
+  args: {
+    connectedSinceDate: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData || coupleData.couple.status !== "active") {
+      throw new Error("You are not part of an active couple");
+    }
+
+    const connectedSinceDate = args.connectedSinceDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(connectedSinceDate)) {
+      throw new Error("Use a valid date");
+    }
+
+    const parsed = new Date(`${connectedSinceDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== connectedSinceDate) {
+      throw new Error("Use a valid date");
+    }
+
+    await ctx.db.patch(coupleData.membership.coupleId, {
+      connectedSinceDate,
+      connectedSinceUpdatedAt: Date.now(),
+      connectedSinceUpdatedBy: user._id,
+    });
+
+    const partnerMembership = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple", (q) => q.eq("coupleId", coupleData.membership.coupleId))
+      .filter((q) => q.neq(q.field("userId"), user._id))
+      .first();
+
+    if (partnerMembership) {
+      await ctx.db.insert("notificationLog", {
+        userId: partnerMembership.userId,
+        type: "connected_since_updated",
+        payload: {
+          connectedSinceDate,
+          updatedBy: user.preferredName || user.name,
+        },
+        sentAt: Date.now(),
+        status: "sent",
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+export const updatePartnerNickname = mutation({
+  args: {
+    nickname: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData || coupleData.couple.status !== "active") {
+      throw new Error("You are not part of an active couple");
+    }
+
+    const nickname = args.nickname.trim().replace(/\s+/g, " ");
+    if (nickname.length > 40) {
+      throw new Error("Nickname must be 40 characters or fewer");
+    }
+
+    await ctx.db.patch(coupleData.membership._id, {
+      partnerNickname: nickname || undefined,
     });
 
     return { success: true };

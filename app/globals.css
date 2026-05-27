@@ -278,6 +278,71 @@
     opacity: 0.82;
   }
 
+  .phase-art-frame {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: clamp(4.5rem, 12vw, 7rem);
+    width: clamp(4.5rem, 12vw, 7rem);
+    border-radius: 2rem;
+    background:
+      radial-gradient(circle at 42% 30%, oklch(from var(--color-phase-3) l c h / 0.26), transparent 58%),
+      linear-gradient(135deg, var(--color-glass-2), oklch(from var(--color-phase-1) l c h / 0.14));
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 18px 52px oklch(from var(--color-phase-1) l c h / 0.22);
+    overflow: visible;
+  }
+
+  .phase-art-image {
+    height: 112%;
+    width: 112%;
+    object-fit: contain;
+    filter: drop-shadow(0 22px 28px oklch(0% 0 0 / 0.18));
+    transform: translateY(-2%);
+  }
+
+  .contrast-glass {
+    background: color-mix(in oklch, var(--color-glass-2) 76%, hsl(var(--background)) 24%);
+    border: 1px solid color-mix(in oklch, var(--color-glass-border) 70%, hsl(var(--foreground)) 12%);
+    color: hsl(var(--foreground));
+    box-shadow:
+      inset 0 1px 0 var(--color-glass-border),
+      0 14px 34px oklch(0% 0 0 / 0.08);
+  }
+
+  .dark .contrast-glass {
+    background: color-mix(in oklch, var(--color-glass-2) 82%, hsl(var(--background)) 18%);
+    border-color: color-mix(in oklch, var(--color-glass-border) 70%, hsl(var(--foreground)) 18%);
+  }
+
+  .phase-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-pill);
+    padding: 0.375rem 1rem;
+    background: color-mix(in oklch, var(--color-glass-2) 68%, hsl(var(--foreground)) 8%);
+    border: 1px solid color-mix(in oklch, var(--color-glass-border) 72%, hsl(var(--foreground)) 14%);
+    color: hsl(var(--foreground));
+    font-size: var(--text-sm);
+    font-weight: 700;
+    box-shadow: inset 0 1px 0 var(--color-glass-border);
+  }
+
+  .dark .phase-chip {
+    background: color-mix(in oklch, var(--color-glass-2) 74%, hsl(var(--foreground)) 10%);
+  }
+
+  .phase-data-tile {
+    border-radius: 1.4rem;
+    padding: 1rem;
+    background: color-mix(in oklch, var(--color-glass-2) 72%, oklch(from var(--color-phase-2) l c h / 0.16));
+    border: 1px solid color-mix(in oklch, var(--color-glass-border) 70%, hsl(var(--foreground)) 12%);
+    backdrop-filter: blur(18px) saturate(1.28);
+    -webkit-backdrop-filter: blur(18px) saturate(1.28);
+    box-shadow: inset 0 1px 0 var(--color-glass-border);
+  }
+
   .phase-presence-wash {
     animation: presenceWash 5.5s var(--ease-in-out) infinite;
   }

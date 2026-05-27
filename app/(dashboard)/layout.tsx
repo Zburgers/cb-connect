@@ -8,6 +8,7 @@ import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import ThemeToggle from "@/components/common/ThemeToggle";
 import SanctuaryShell from "@/components/common/SanctuaryShell";
+import PartnerChat from "@/components/partner/PartnerChat";
 import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { HEARTBEAT_INTERVAL_MS } from "@/lib/presence.mjs";
@@ -26,6 +27,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { isLoading, isAuthenticated } = useConvexAuth();
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+  const coupleStatus = useQuery(
+    api.queries.couples.getCoupleStatus,
+    isAuthenticated && me?.role ? {} : "skip"
+  );
 
   const partnerPresence = usePartnerPresence(isAuthenticated);
   const partnerPresent = partnerPresence.isPresent;
@@ -107,6 +112,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28">
         {children}
       </main>
+
+      {coupleStatus?.isLinked && (
+        <PartnerChat
+          partnerName={coupleStatus.partner?.displayName ?? coupleStatus.partner?.name}
+          partnerImageUrl={coupleStatus.partner?.imageUrl}
+        />
+      )}
 
       {/* ── Bottom nav ───────────────────────────────────────────── */}
       <nav

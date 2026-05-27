@@ -43,6 +43,7 @@ export default function SettingsPage() {
 
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
+  const [preferredName, setPreferredName] = useState("");
   const [gender, setGender] =
     useState<(typeof GENDER_OPTIONS)[number]["value"]>("prefer_not_to_say");
   const [partnerType, setPartnerType] =
@@ -60,6 +61,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (me) {
+      setPreferredName(me.preferredName ?? "");
       setGender(me.gender ?? "prefer_not_to_say");
       setPartnerType(me.partnerType ?? "partner");
       setExternalNotificationConsent(me.externalNotificationConsent ?? false);
@@ -86,6 +88,7 @@ export default function SettingsPage() {
     try {
       await updateSettings({ cycleLength, periodLength });
       await updatePreferences({
+        preferredName,
         gender,
         partnerType,
         externalNotificationConsent,
@@ -224,6 +227,22 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <label className="block md:col-span-2">
+            <span className="mb-2 block text-sm font-medium text-foreground">
+              Preferred name
+            </span>
+            <input
+              type="text"
+              value={preferredName}
+              onChange={(event) => setPreferredName(event.target.value.slice(0, 40))}
+              placeholder={me?.name || "What should your partner see?"}
+              className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+            <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+              Your partner sees this name in chat if they have not set a private nickname for you.
+            </span>
+          </label>
+
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-foreground">Gender</span>
             <select

@@ -5,7 +5,8 @@ import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { BellRing, CalendarDays, HeartPulse, Radio, Sparkles, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import { getPainSeverityBucket, getPhaseEmoji } from "@/lib/utils";
+import { getPainSeverityBucket } from "@/lib/utils";
+import { getPhaseAsset } from "@/lib/phaseAssets";
 import { getNudgeMessage, NUDGE_EMOJIS } from "@/lib/nudges.mjs";
 
 interface PhaseAuraProps {
@@ -268,24 +269,20 @@ export default function PhaseAura({
 
           {/* Phase label pill — own row, below badge */}
           <div>
-            <span
-              className="inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold capitalize"
-              style={{
-                background: "rgba(255,255,255,0.55)",
-                backdropFilter: "blur(10px)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5)",
-                color: "hsl(var(--foreground))",
-              }}
-            >
+            <span className="phase-chip capitalize">
               {phase.charAt(0).toUpperCase() + phase.slice(1)} Phase
             </span>
           </div>
 
-          {/* Emoji + huge phase title */}
+          {/* Generated phase asset + huge phase title */}
           <div className="pt-1">
-            <p className="text-5xl leading-none md:text-6xl" aria-hidden="true">
-              {getPhaseEmoji(phase)}
-            </p>
+            <div className="phase-art-frame" aria-hidden="true">
+              <img
+                src={getPhaseAsset(phase)}
+                alt=""
+                className="phase-art-image"
+              />
+            </div>
 
             <motion.h2
               key={copy.title}
@@ -318,7 +315,7 @@ export default function PhaseAura({
         {/* ── Right column — data satellites ── */}
         <div className="grid gap-3">
           {/* Cycle day */}
-          <div className="rounded-[1.4rem] bg-white/60 dark:bg-white/10 backdrop-blur-xl p-4">
+          <div className="phase-data-tile">
             <div className="flex items-start gap-3">
               <CalendarDays className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
               <div>
@@ -329,7 +326,7 @@ export default function PhaseAura({
           </div>
 
           {/* Pain signal */}
-          <div className="rounded-[1.4rem] bg-white/60 dark:bg-white/10 backdrop-blur-xl p-4">
+          <div className="phase-data-tile">
             <div className="flex items-start gap-3">
               <HeartPulse className="mt-0.5 h-5 w-5 flex-shrink-0 text-secondary" />
               <div>

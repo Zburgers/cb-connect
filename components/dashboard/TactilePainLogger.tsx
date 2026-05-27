@@ -112,11 +112,11 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
                 "touch-target rounded-[1.4rem] border p-4 text-left transition-all press-feedback",
                 selected
                   ? "border-primary/50 bg-primary text-primary-foreground shadow-xl shadow-primary/20"
-                  : "border-white/50 bg-white/[0.42] text-foreground hover:bg-white/[0.64] dark:border-white/10 dark:bg-white/[0.07] dark:hover:bg-white/[0.12]"
+                  : "contrast-glass text-foreground hover:brightness-105"
               )}
             >
               <span className="block font-semibold">{band.label}</span>
-              <span className={cn("mt-1 block text-xs leading-5", selected ? "text-primary-foreground/80" : "text-muted-foreground")}>
+              <span className={cn("mt-1 block text-xs leading-5", selected ? "text-primary-foreground/90" : "text-foreground/80")}>
                 {band.help}
               </span>
             </button>
@@ -124,17 +124,17 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
         })}
       </div>
 
-      <div className="mt-6 rounded-[1.6rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+      <div className="contrast-glass mt-6 rounded-[1.6rem] p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-foreground">Fine tune intensity</p>
-            <p className="text-xs text-muted-foreground">Saved as {painScore}/10 for your history.</p>
+            <p className="text-xs text-foreground/75">Saved as {painScore}/10 for your history.</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setPainScore((score) => Math.max(0, score - 1))}
-              className="touch-target rounded-full bg-muted text-foreground press-feedback"
+              className="touch-target rounded-full bg-foreground text-background press-feedback"
               aria-label="Decrease pain intensity"
             >
               <Minus className="mx-auto h-4 w-4" />
@@ -150,7 +150,7 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
             <button
               type="button"
               onClick={() => setPainScore((score) => Math.min(10, score + 1))}
-              className="touch-target rounded-full bg-muted text-foreground press-feedback"
+              className="touch-target rounded-full bg-foreground text-background press-feedback"
               aria-label="Increase pain intensity"
             >
               <Plus className="mx-auto h-4 w-4" />
@@ -171,7 +171,7 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
                 "touch-target rounded-full px-4 py-2 text-sm font-medium transition-all press-feedback",
                 selectedTags.includes(tag.value)
                   ? "bg-foreground text-background dark:bg-white dark:text-slate-950"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
+                  : "contrast-glass text-foreground hover:brightness-105"
               )}
             >
               {tag.label}
@@ -190,7 +190,7 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
           onChange={(event) => setNote(event.target.value.slice(0, 140))}
           placeholder="e.g. I can function, but I need a slower evening."
           rows={3}
-          className="mt-3 w-full resize-none rounded-[1.4rem] border border-white/50 bg-white/50 px-4 py-3 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground focus:border-primary focus:ring-4 focus:ring-primary/15 dark:border-white/10 dark:bg-white/7"
+          className="contrast-glass mt-3 w-full resize-none rounded-[1.4rem] px-4 py-3 text-sm text-foreground outline-none transition-all placeholder:text-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/15"
         />
         <p className="mt-2 text-right text-xs text-muted-foreground">{note.length}/140</p>
       </div>

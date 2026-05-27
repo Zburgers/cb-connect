@@ -126,7 +126,7 @@ export default function PartnerPulse({
               return (
                 <motion.div
                   key={action.label}
-                  className="rounded-[1.2rem] bg-white/50 dark:bg-white/8 backdrop-blur-sm p-4 text-sm font-semibold text-foreground"
+                  className="contrast-glass rounded-[1.2rem] p-4 text-sm font-semibold text-foreground"
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.06, type: "spring", stiffness: 300, damping: 22 }}

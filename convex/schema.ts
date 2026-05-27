@@ -6,6 +6,8 @@ export default defineSchema({
     clerkId: v.string(),
     email: v.string(),
     name: v.string(),
+    preferredName: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     role: v.optional(v.union(v.literal("primary"), v.literal("partner"))),
     createdAt: v.number(),
     lastActiveAt: v.number(),
@@ -19,6 +21,9 @@ export default defineSchema({
   couples: defineTable({
     createdAt: v.number(),
     linkedAt: v.optional(v.number()),
+    connectedSinceDate: v.optional(v.string()),
+    connectedSinceUpdatedAt: v.optional(v.number()),
+    connectedSinceUpdatedBy: v.optional(v.id("users")),
     status: v.union(
       v.literal("pending"),
       v.literal("active"),
@@ -32,6 +37,7 @@ export default defineSchema({
     role: v.union(v.literal("primary"), v.literal("partner")),
     sharingPain: v.boolean(),
     sharingPhase: v.boolean(),
+    partnerNickname: v.optional(v.string()),
     joinedAt: v.number(),
   })
     .index("by_couple", ["coupleId"])
@@ -177,4 +183,25 @@ export default defineSchema({
   })
     .index("by_receiver_created", ["receiverId", "createdAt"])
     .index("by_couple_created", ["coupleId", "createdAt"]),
+
+  coupleMessages: defineTable({
+    coupleId: v.id("couples"),
+    senderId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+    editedAt: v.optional(v.number()),
+  })
+    .index("by_couple_created", ["coupleId", "createdAt"])
+    .index("by_sender_created", ["senderId", "createdAt"]),
+
+  coupleMessageReactions: defineTable({
+    coupleId: v.id("couples"),
+    messageId: v.id("coupleMessages"),
+    userId: v.id("users"),
+    emoji: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_couple", ["coupleId"])
+    .index("by_message", ["messageId"])
+    .index("by_message_and_user", ["messageId", "userId"]),
 });

@@ -111,14 +111,7 @@ function TimelineEntry({
         )}
       </div>
 
-      <div
-        className="mb-4 flex-1 rounded-[1.4rem] p-4"
-        style={{
-          background: "var(--color-glass)",
-          backdropFilter: "blur(12px)",
-          boxShadow: "inset 0 1px 0 var(--color-glass-border)",
-        }}
-      >
+      <div className="contrast-glass mb-4 flex-1 rounded-[1.4rem] p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-semibold text-sm" style={{ color: "hsl(var(--foreground))" }}>
@@ -149,11 +142,7 @@ function TimelineEntry({
             {pain.tags?.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full px-2.5 py-1 text-xs"
-                style={{
-                  background: "oklch(0% 0 0 / 0.05)",
-                  color: "hsl(var(--muted-foreground))",
-                }}
+                className="rounded-full bg-foreground/10 px-2.5 py-1 text-xs font-medium text-foreground"
               >
                 {PAIN_TAG_LABELS[tag] ?? tag}
               </span>
@@ -307,13 +296,7 @@ export default function LogPage() {
             </h2>
           </div>
           <span
-            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold"
-            style={{
-              background: "var(--color-glass)",
-              backdropFilter: "blur(8px)",
-              boxShadow: "inset 0 1px 0 var(--color-glass-border)",
-              color: "hsl(var(--foreground))",
-            }}
+            className="phase-chip gap-2 text-xs"
           >
             <Shield className="h-3.5 w-3.5 text-primary" />
             {isLinked ? "Linked couple" : "Not linked"}
@@ -327,12 +310,7 @@ export default function LogPage() {
           ].map((item) => (
             <div
               key={item.label}
-              className="rounded-[1.2rem] p-4"
-              style={{
-                background: "oklch(100% 0 0 / 0.45)",
-                backdropFilter: "blur(8px)",
-                boxShadow: "inset 0 1px 0 oklch(100% 0 0 / 0.5)",
-              }}
+              className="contrast-glass rounded-[1.2rem] p-4"
             >
               <div className="flex items-center gap-2">
                 {item.shared
@@ -340,7 +318,7 @@ export default function LogPage() {
                   : <Lock className="h-4 w-4" style={{ color: "hsl(var(--muted-foreground))" }} />}
                 <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>{item.label}</p>
               </div>
-              <p className="mt-1.5 text-xs leading-5" style={{ color: "hsl(var(--muted-foreground))" }}>
+              <p className="mt-1.5 text-xs leading-5 text-foreground/75">
                 {item.description}
               </p>
             </div>

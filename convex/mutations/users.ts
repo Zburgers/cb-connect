@@ -23,6 +23,7 @@ export const updateUserRole = mutation({
 
 export const updateUserPreferences = mutation({
   args: {
+    preferredName: v.optional(v.string()),
     gender: v.optional(
       v.union(
         v.literal("male"),
@@ -54,6 +55,9 @@ export const updateUserPreferences = mutation({
     if (!user) throw new Error("User not found");
 
     await ctx.db.patch(user._id, {
+      ...(args.preferredName !== undefined && {
+        preferredName: sanitizePreferredName(args.preferredName),
+      }),
       ...(args.gender !== undefined && { gender: args.gender }),
       ...(args.partnerType !== undefined && { partnerType: args.partnerType }),
       ...(args.externalNotificationConsent !== undefined && {
@@ -65,11 +69,20 @@ export const updateUserPreferences = mutation({
   },
 });
 
+function sanitizePreferredName(preferredName: string) {
+  const normalized = preferredName.trim().replace(/\s+/g, " ");
+  if (normalized.length > 40) {
+    throw new Error("Preferred name must be 40 characters or fewer");
+  }
+  return normalized || undefined;
+}
+
 export const syncUserFromWebhook = mutation({
   args: {
     clerkId: v.string(),
     email: v.string(),
     name: v.string(),
+    imageUrl: v.optional(v.string()),
     webhookSecret: v.string(),
   },
   handler: async (ctx, args) => {
@@ -89,6 +102,7 @@ export const syncUserFromWebhook = mutation({
       await ctx.db.patch(existing._id, {
         email: args.email,
         name: args.name,
+        ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
         lastActiveAt: Date.now(),
       });
       return existing._id;
@@ -98,6 +112,7 @@ export const syncUserFromWebhook = mutation({
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
+      ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });
@@ -109,6 +124,7 @@ export const syncUser = internalMutation({
     clerkId: v.string(),
     email: v.string(),
     name: v.string(),
+    imageUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -120,6 +136,7 @@ export const syncUser = internalMutation({
       await ctx.db.patch(existing._id, {
         email: args.email,
         name: args.name,
+        ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
         lastActiveAt: Date.now(),
       });
       return existing._id;
@@ -129,6 +146,7 @@ export const syncUser = internalMutation({
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
+      ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });
@@ -151,7 +169,10 @@ export const ensureUser = mutation({
       .unique();
 
     if (existing) {
-      await ctx.db.patch(existing._id, { lastActiveAt: Date.now() });
+      await ctx.db.patch(existing._id, {
+        ...(identity.pictureUrl !== undefined && { imageUrl: identity.pictureUrl }),
+        lastActiveAt: Date.now(),
+      });
       return existing._id;
     }
 
@@ -164,6 +185,7 @@ export const ensureUser = mutation({
       clerkId: identity.subject,
       email: identity.email ?? "",
       name,
+      ...(identity.pictureUrl !== undefined && { imageUrl: identity.pictureUrl }),
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });

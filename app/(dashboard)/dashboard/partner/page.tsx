@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { copyToClipboard, shareText } from "@/lib/utils";
-import { Copy, Share2, Check } from "lucide-react";
+import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
 
 export default function PartnerPage() {
@@ -22,12 +22,28 @@ export default function PartnerPage() {
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
   const revokeAccess = useMutation(api.mutations.couples.revokePartnerAccess);
+  const updateConnectedSinceDate = useMutation(api.mutations.couples.updateConnectedSinceDate);
+  const updatePartnerNickname = useMutation(api.mutations.couples.updatePartnerNickname);
 
   const [code, setCode] = useState("");
+  const [connectedSinceDate, setConnectedSinceDate] = useState("");
+  const [partnerNickname, setPartnerNickname] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingDate, setIsSavingDate] = useState(false);
+  const [isSavingNickname, setIsSavingNickname] = useState(false);
   const [message, setMessage] = useState("");
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (coupleStatus?.connectedSinceDate) {
+      setConnectedSinceDate(coupleStatus.connectedSinceDate);
+    }
+  }, [coupleStatus?.connectedSinceDate]);
+
+  useEffect(() => {
+    setPartnerNickname(coupleStatus?.partner?.nickname ?? "");
+  }, [coupleStatus?.partner?.nickname]);
 
   // Still loading auth
   if (isLoading || me === undefined) return <LoadingSpinner />;
@@ -125,6 +141,31 @@ export default function PartnerPage() {
     }
   };
 
+  const handleConnectedSinceSave = async () => {
+    if (!connectedSinceDate) return;
+    setIsSavingDate(true);
+    try {
+      await updateConnectedSinceDate({ connectedSinceDate });
+      setMessage("Connected-since date saved.");
+    } catch (error: any) {
+      setMessage(error.message || "Failed to save connected-since date");
+    } finally {
+      setIsSavingDate(false);
+    }
+  };
+
+  const handleNicknameSave = async () => {
+    setIsSavingNickname(true);
+    try {
+      await updatePartnerNickname({ nickname: partnerNickname });
+      setMessage(partnerNickname.trim() ? "Partner nickname saved." : "Partner nickname cleared.");
+    } catch (error: any) {
+      setMessage(error.message || "Failed to save partner nickname");
+    } finally {
+      setIsSavingNickname(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -147,16 +188,100 @@ export default function PartnerPage() {
       {coupleStatus?.isLinked && (
         <DigitalLocket
           title="Your locket is connected"
-          description={`Linked with ${coupleStatus.partner?.name ?? "your partner"}. Keep sharing specific, consensual, and easy to change.`}
+          description={`Linked with ${coupleStatus.partner?.displayName ?? coupleStatus.partner?.name ?? "Partner"}. Keep sharing specific, consensual, and easy to change.`}
           status="connected"
+          connectedSinceDate={coupleStatus.connectedSinceDate}
           className="space-y-4 animate-slide-up"
         >
+          {coupleStatus.anniversary && (
+            <div className="relative overflow-hidden rounded-[1.7rem] bg-foreground p-5 text-background">
+              <div
+                className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full opacity-40"
+                style={{
+                  background:
+                    "radial-gradient(circle, oklch(from var(--color-phase-1) l c h / 0.9), transparent 66%)",
+                }}
+                aria-hidden="true"
+              />
+              <div className="relative flex items-start gap-3">
+                <div className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-full bg-background text-foreground">
+                  <Gift className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-background/70">
+                    Anniversary signal
+                  </p>
+                  <h3 className="mt-1 font-display text-3xl italic leading-none">
+                    {coupleStatus.anniversary.headline}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-background/78">
+                    {coupleStatus.anniversary.body} Send a note, make a small plan, or leave a soft reminder in the thread below.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="contrast-glass space-y-3 rounded-[1.6rem] p-4">
+            <div className="flex items-start gap-3">
+              <CalendarHeart className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Relationship date</h3>
+                <p className="mt-1 text-sm leading-6 text-foreground/75">
+                  Used for monthly and yearly locket moments like “Happy 6 months.”
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="date"
+                value={connectedSinceDate}
+                onChange={(event) => setConnectedSinceDate(event.target.value)}
+                className="contrast-glass min-h-11 flex-1 rounded-2xl px-4 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={handleConnectedSinceSave}
+                disabled={isSavingDate || !connectedSinceDate}
+                className="touch-target rounded-2xl bg-foreground px-5 text-sm font-bold text-background press-feedback disabled:opacity-50"
+              >
+                {isSavingDate ? "Saving..." : "Save date"}
+              </button>
+            </div>
+          </div>
+
+          <div className="contrast-glass space-y-3 rounded-[1.6rem] p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Partner nickname</h3>
+              <p className="mt-1 text-sm leading-6 text-foreground/75">
+                This only changes how their name appears for you in the locket and DM.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                value={partnerNickname}
+                onChange={(event) => setPartnerNickname(event.target.value.slice(0, 40))}
+                placeholder={coupleStatus.partner?.name ?? "Partner name"}
+                className="contrast-glass min-h-11 flex-1 rounded-2xl px-4 text-sm font-semibold text-foreground outline-none placeholder:text-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={handleNicknameSave}
+                disabled={isSavingNickname}
+                className="touch-target rounded-2xl bg-foreground px-5 text-sm font-bold text-background press-feedback disabled:opacity-50"
+              >
+                {isSavingNickname ? "Saving..." : "Save name"}
+              </button>
+            </div>
+          </div>
+
           {me.role === "primary" && (
             <>
-              <div className="space-y-3 rounded-[1.6rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+              <div className="contrast-glass space-y-3 rounded-[1.6rem] p-4">
                 <h3 className="text-sm font-semibold text-foreground">Visible to your partner</h3>
                 <label className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Share cycle phase</span>
+                  <span className="text-sm text-foreground/75">Share cycle phase</span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.phase ?? true}
@@ -165,7 +290,7 @@ export default function PartnerPage() {
                   />
                 </label>
                 <label className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Share pain data</span>
+                  <span className="text-sm text-foreground/75">Share pain data</span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.pain ?? false}
@@ -265,7 +390,7 @@ export default function PartnerPage() {
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="Enter 6-digit code"
-            className="w-full rounded-[1.4rem] border border-white/50 bg-white/50 px-4 py-4 text-center font-data text-3xl tracking-widest text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-4 focus:ring-primary/15 dark:border-white/10 dark:bg-white/7"
+            className="contrast-glass w-full rounded-[1.4rem] px-4 py-4 text-center font-data text-3xl tracking-widest text-foreground outline-none transition-colors placeholder:text-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/15"
             maxLength={6}
           />
 

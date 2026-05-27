@@ -1,4 +1,4 @@
-import { HeartHandshake, LockKeyhole } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DigitalLocketProps {
@@ -7,6 +7,7 @@ interface DigitalLocketProps {
   description: string;
   code?: string | null;
   status?: "waiting" | "ready" | "connected";
+  connectedSinceDate?: string | null;
   children?: React.ReactNode;
   className?: string;
 }
@@ -17,6 +18,7 @@ export default function DigitalLocket({
   description,
   code,
   status = "waiting",
+  connectedSinceDate,
   children,
   className,
 }: DigitalLocketProps) {
@@ -37,15 +39,19 @@ export default function DigitalLocket({
         <div className="flex items-start gap-5">
           {/* Locket icon — seamless glass circle, no square border */}
           <div
-            className="relative flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full"
+            className="relative flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-[2rem]"
             style={{
-              background: "linear-gradient(135deg, oklch(from var(--color-phase-1) l c h / 0.28), oklch(from var(--color-phase-2) l c h / 0.20))",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 16px rgba(0,0,0,0.08)",
+              background: "linear-gradient(135deg, var(--color-glass-2), oklch(from var(--color-phase-1) l c h / 0.16))",
+              boxShadow: "inset 0 1px 0 var(--color-glass-border), 0 18px 44px var(--shadow-warm)",
               backdropFilter: "blur(12px)",
             }}
           >
             {status === "connected" ? (
-              <HeartHandshake className="h-7 w-7 text-primary" />
+              <img
+                src="/assets/partner/digital-locket.png"
+                alt=""
+                className="h-20 w-20 object-contain drop-shadow-2xl"
+              />
             ) : (
               <LockKeyhole className="h-7 w-7 text-primary" />
             )}
@@ -62,11 +68,16 @@ export default function DigitalLocket({
               {title}
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+            {connectedSinceDate && (
+              <p className="mt-3 inline-flex rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background">
+                Locket connected since {formatConnectedSince(connectedSinceDate)}
+              </p>
+            )}
           </div>
         </div>
 
         {code && (
-          <div className="rounded-[1.6rem] bg-white/50 dark:bg-white/8 backdrop-blur-xl p-5 text-center">
+          <div className="contrast-glass rounded-[1.6rem] p-5 text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               Pairing code
             </p>
@@ -86,4 +97,13 @@ export default function DigitalLocket({
       </div>
     </div>
   );
+}
+
+function formatConnectedSince(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
