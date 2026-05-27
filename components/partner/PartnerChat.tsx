@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useRouter } from "next/navigation";
 import { Lock, MessageCircleHeart, MoreVertical, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
@@ -19,24 +18,19 @@ interface PartnerChatProps {
   partnerName?: string | null;
   partnerImageUrl?: string | null;
   showLauncher?: boolean;
-  defaultOpen?: boolean;
-  launcherHref?: string;
 }
 
 export default function PartnerChat({
   partnerName,
   partnerImageUrl,
   showLauncher = true,
-  defaultOpen = false,
-  launcherHref,
 }: PartnerChatProps) {
-  const router = useRouter();
   const messages = useQuery(api.queries.messages.listForCouple, { limit: 80 });
   const sendMessage = useMutation(api.mutations.messages.send);
   const reactToMessage = useMutation(api.mutations.messages.react);
   const clearChat = useMutation(api.mutations.messages.clear);
   const [body, setBody] = useState("");
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isOpen, setIsOpen] = useState(false);
   const [emojiTrayOpen, setEmojiTrayOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -49,6 +43,12 @@ export default function PartnerChat({
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [messages?.length, isOpen]);
+
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener("cbconnect:open-dm", handleOpen);
+    return () => window.removeEventListener("cbconnect:open-dm", handleOpen);
+  }, []);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -79,17 +79,11 @@ export default function PartnerChat({
     }
   };
 
-  const openThread = () => {
-    if (launcherHref) {
-      router.push(launcherHref);
-      return;
-    }
-    setIsOpen(true);
-  };
+  const openThread = () => setIsOpen(true);
 
   return (
     <>
-      {showLauncher && (
+      {showLauncher && !isOpen && (
         <button
           type="button"
           onClick={openThread}

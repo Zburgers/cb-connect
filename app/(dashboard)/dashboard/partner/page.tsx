@@ -8,7 +8,6 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { copyToClipboard, shareText } from "@/lib/utils";
 import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
-import PartnerChat from "@/components/partner/PartnerChat";
 
 export default function PartnerPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -376,12 +375,28 @@ export default function PartnerPage() {
         </DigitalLocket>
       )}
       {coupleStatus?.isLinked && (
-        <PartnerChat
-          partnerName={coupleStatus.partner?.displayName ?? coupleStatus.partner?.name}
-          partnerImageUrl={coupleStatus.partner?.imageUrl}
-          showLauncher={false}
-          defaultOpen
-        />
+        <section className="bento-cell p-5 md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                Private DM
+              </p>
+              <h2 className="mt-2 font-display text-3xl font-semibold italic tracking-tight text-foreground">
+                Message {coupleStatus.partner?.displayName ?? coupleStatus.partner?.name ?? "Partner"}.
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                Open your couple-only thread for quick notes, reactions, and direct messages.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("cbconnect:open-dm"))}
+              className="touch-target rounded-full bg-foreground px-5 text-sm font-bold text-background shadow-2xl shadow-foreground/10 press-feedback"
+            >
+              Open DM
+            </button>
+          </div>
+        </section>
       )}
       {/* Not linked - Partner user */}
       {!coupleStatus?.isLinked && me.role === "partner" && (
