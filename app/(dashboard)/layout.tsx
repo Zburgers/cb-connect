@@ -117,6 +117,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <PartnerChat
           partnerName={coupleStatus.partner?.displayName ?? coupleStatus.partner?.name}
           partnerImageUrl={coupleStatus.partner?.imageUrl}
+          showLauncher
+          launcherHref="/dashboard/partner"
         />
       )}
 

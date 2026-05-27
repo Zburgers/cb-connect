@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Lock, MessageCircleHeart, MoreVertical, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
@@ -17,15 +18,25 @@ const QUICK_LINES = [
 interface PartnerChatProps {
   partnerName?: string | null;
   partnerImageUrl?: string | null;
+  showLauncher?: boolean;
+  defaultOpen?: boolean;
+  launcherHref?: string;
 }
 
-export default function PartnerChat({ partnerName, partnerImageUrl }: PartnerChatProps) {
+export default function PartnerChat({
+  partnerName,
+  partnerImageUrl,
+  showLauncher = true,
+  defaultOpen = false,
+  launcherHref,
+}: PartnerChatProps) {
+  const router = useRouter();
   const messages = useQuery(api.queries.messages.listForCouple, { limit: 80 });
   const sendMessage = useMutation(api.mutations.messages.send);
   const reactToMessage = useMutation(api.mutations.messages.react);
   const clearChat = useMutation(api.mutations.messages.clear);
   const [body, setBody] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [emojiTrayOpen, setEmojiTrayOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -68,45 +79,31 @@ export default function PartnerChat({ partnerName, partnerImageUrl }: PartnerCha
     }
   };
 
+  const openThread = () => {
+    if (launcherHref) {
+      router.push(launcherHref);
+      return;
+    }
+    setIsOpen(true);
+  };
+
   return (
     <>
-      <section className="bento-cell relative isolate overflow-hidden p-5 md:p-6">
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-muted-foreground">
-              Private DM
-            </p>
-            <h2 className="mt-2 font-display text-3xl font-semibold italic tracking-tight text-foreground">
-              Message {displayName}.
-            </h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              A couple-only thread with reactions, emoji, quick notes, and a dedicated chat window.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="touch-target rounded-full bg-foreground px-5 text-sm font-bold text-background shadow-2xl shadow-foreground/10 press-feedback"
-          >
-            <MessageCircleHeart className="mr-2 inline h-4 w-4" aria-hidden="true" />
-            Open DM
-          </button>
-        </div>
-      </section>
-
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 right-5 z-[60] grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-foreground shadow-2xl shadow-primary/30 press-feedback md:bottom-8 md:right-8"
-        aria-label={`Open private message thread with ${displayName}`}
-      >
-        <MessageCircleHeart className="h-7 w-7" aria-hidden="true" />
-        {messages && messages.length > 0 && (
-          <span className="absolute -right-1 -top-1 grid h-6 min-w-6 place-items-center rounded-full bg-foreground px-1.5 text-xs font-bold text-background">
-            {Math.min(messages.length, 99)}
-          </span>
-        )}
-      </button>
+      {showLauncher && (
+        <button
+          type="button"
+          onClick={openThread}
+          className="fixed bottom-24 right-5 z-[60] grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-foreground shadow-2xl shadow-primary/30 press-feedback md:bottom-8 md:right-8"
+          aria-label={`Open private message thread with ${displayName}`}
+        >
+          <MessageCircleHeart className="h-7 w-7" aria-hidden="true" />
+          {messages && messages.length > 0 && (
+            <span className="absolute -right-1 -top-1 grid h-6 min-w-6 place-items-center rounded-full bg-foreground px-1.5 text-xs font-bold text-background">
+              {Math.min(messages.length, 99)}
+            </span>
+          )}
+        </button>
+      )}
 
       <AnimatePresence>
         {isOpen && (

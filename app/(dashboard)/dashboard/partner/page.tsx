@@ -8,6 +8,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { copyToClipboard, shareText } from "@/lib/utils";
 import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
+import PartnerChat from "@/components/partner/PartnerChat";
 
 export default function PartnerPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -373,6 +374,14 @@ export default function PartnerPage() {
                 : "Generate Pairing Code"}
           </button>
         </DigitalLocket>
+      )}
+      {coupleStatus?.isLinked && (
+        <PartnerChat
+          partnerName={coupleStatus.partner?.displayName ?? coupleStatus.partner?.name}
+          partnerImageUrl={coupleStatus.partner?.imageUrl}
+          showLauncher={false}
+          defaultOpen
+        />
       )}
       {/* Not linked - Partner user */}
       {!coupleStatus?.isLinked && me.role === "partner" && (
