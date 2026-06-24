@@ -166,6 +166,45 @@ export default function PartnerPage() {
     }
   };
 
+  const handlePhaseSharingChange = async (sharingPhase: boolean) => {
+    setIsSubmitting(true);
+    try {
+      await updateSharing({
+        sharingPhase,
+        ...(sharingPhase ? {} : { sharingPeriodWrite: false }),
+      });
+      setMessage(
+        sharingPhase
+          ? "Period visibility is on."
+          : "Period visibility and assisted logging are off."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not update sharing."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePeriodWriteChange = async (sharingPeriodWrite: boolean) => {
+    setIsSubmitting(true);
+    try {
+      await updateSharing({ sharingPeriodWrite });
+      setMessage(
+        sharingPeriodWrite
+          ? "Your partner can now help update period dates."
+          : "Only you can log period dates now."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not update sharing."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -280,22 +319,66 @@ export default function PartnerPage() {
             <>
               <div className="contrast-glass space-y-3 rounded-[1.6rem] p-4">
                 <h3 className="text-sm font-semibold text-foreground">Visible to your partner</h3>
-                <label className="flex items-center justify-between">
-                  <span className="text-sm text-foreground/75">Share cycle phase</span>
+                <label className="flex min-h-14 items-start justify-between gap-4 rounded-2xl p-2">
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
+                      Share period / cycle phase
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-foreground/65">
+                      Let your partner see period dates and cycle phase.
+                    </span>
+                  </span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.phase ?? true}
-                    onChange={(e) => updateSharing({ sharingPhase: e.target.checked })}
-                    className="h-5 w-5 rounded accent-primary"
+                    onChange={(event) => handlePhaseSharingChange(event.target.checked)}
+                    disabled={isSubmitting}
+                    className="mt-1 h-5 w-5 flex-shrink-0 rounded accent-primary focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </label>
-                <label className="flex items-center justify-between">
-                  <span className="text-sm text-foreground/75">Share pain data</span>
+                <label
+                  className={`flex min-h-14 items-start justify-between gap-4 rounded-2xl p-2 ${
+                    coupleStatus.sharingSettings?.phase
+                      ? ""
+                      : "cursor-not-allowed opacity-60"
+                  }`}
+                >
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
+                      Allow partner to help log period dates
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-foreground/65">
+                      They can add period start/end dates if you forget. You can edit or remove their entries anytime.
+                    </span>
+                    {!coupleStatus.sharingSettings?.phase && (
+                      <span className="mt-1 block text-xs font-semibold text-primary">
+                        Turn on period visibility first.
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={coupleStatus.sharingSettings?.periodWrite ?? false}
+                    onChange={(event) => handlePeriodWriteChange(event.target.checked)}
+                    disabled={isSubmitting || !coupleStatus.sharingSettings?.phase}
+                    className="mt-1 h-5 w-5 flex-shrink-0 rounded accent-primary focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </label>
+                <label className="flex min-h-14 items-start justify-between gap-4 rounded-2xl p-2">
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
+                      Share pain data
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-foreground/65">
+                      Let your partner see pain score and history when you choose.
+                    </span>
+                  </span>
                   <input
                     type="checkbox"
                     checked={coupleStatus.sharingSettings?.pain ?? false}
                     onChange={(e) => updateSharing({ sharingPain: e.target.checked })}
-                    className="h-5 w-5 rounded accent-primary"
+                    disabled={isSubmitting}
+                    className="mt-1 h-5 w-5 flex-shrink-0 rounded accent-primary focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </label>
               </div>

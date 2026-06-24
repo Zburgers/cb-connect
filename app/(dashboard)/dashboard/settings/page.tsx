@@ -6,7 +6,7 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import GlassPanel from "@/components/common/GlassPanel";
-import { Bell, BellOff, Eye, EyeOff, Lock, Shield } from "lucide-react";
+import { Bell, BellOff, Eye, EyeOff, HandHeart, Lock, Shield } from "lucide-react";
 
 const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
@@ -73,6 +73,7 @@ export default function SettingsPage() {
     cycleSettings === undefined ||
     coupleStatus === undefined ||
     me === undefined ||
+    me === null ||
     notificationLog === undefined
   ) {
     return <LoadingSpinner />;
@@ -81,12 +82,17 @@ export default function SettingsPage() {
   const isLinked = Boolean(coupleStatus?.isLinked);
   const phaseShared = Boolean(isLinked && coupleStatus?.sharingSettings?.phase);
   const painShared = Boolean(isLinked && coupleStatus?.sharingSettings?.pain);
+  const periodWriteAllowed = Boolean(
+    isLinked && coupleStatus?.sharingSettings?.periodWrite
+  );
 
   const handleSave = async () => {
     setIsSaving(true);
     setSaved(false);
     try {
-      await updateSettings({ cycleLength, periodLength });
+      if (me.role === "primary") {
+        await updateSettings({ cycleLength, periodLength });
+      }
       await updatePreferences({
         preferredName,
         gender,
@@ -129,8 +135,8 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-2">
-          <div className="rounded-[1.4rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="contrast-glass rounded-[1.4rem] p-4">
             <div className="flex items-center gap-2">
               {phaseShared ? (
                 <Eye className="h-4 w-4 text-primary" />
@@ -148,7 +154,31 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <div className="rounded-[1.4rem] border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+          <div className="contrast-glass rounded-[1.4rem] p-4">
+            <div className="flex items-center gap-2">
+              {periodWriteAllowed ? (
+                <HandHeart className="h-4 w-4 text-primary" />
+              ) : (
+                <Lock className="h-4 w-4 text-muted-foreground" />
+              )}
+              <p className="text-sm font-semibold text-foreground">
+                Partner-assisted logging
+              </p>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {periodWriteAllowed
+                ? me.role === "primary"
+                  ? "Your partner can help add period start/end dates."
+                  : "You can help add period start/end dates for your partner."
+                : isLinked
+                  ? me.role === "primary"
+                    ? "Only you can log period dates."
+                    : "Only your partner can log period dates."
+                  : "No partner is linked yet."}
+            </p>
+          </div>
+
+          <div className="contrast-glass rounded-[1.4rem] p-4">
             <div className="flex items-center gap-2">
               {painShared ? (
                 <Eye className="h-4 w-4 text-primary" />
@@ -168,55 +198,57 @@ export default function SettingsPage() {
         </div>
       </GlassPanel>
 
-      <GlassPanel variant="quiet" className="space-y-6 p-6">
-        <h2 className="text-lg font-semibold text-foreground">Cycle Settings</h2>
+      {me.role === "primary" && (
+        <GlassPanel variant="quiet" className="space-y-6 p-6">
+          <h2 className="text-lg font-semibold text-foreground">Cycle Settings</h2>
 
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Average cycle length: {cycleLength} days
-          </label>
-          <input
-            type="range"
-            min="21"
-            max="40"
-            value={cycleLength}
-            onChange={(e) => setCycleLength(parseInt(e.target.value))}
-            className="w-full accent-primary"
-          />
-          <div className="flex justify-between text-xs text-muted-foreground mt-1">
-            <span>21 days</span>
-            <span>28 days</span>
-            <span>40 days</span>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Average cycle length: {cycleLength} days
+            </label>
+            <input
+              type="range"
+              min="21"
+              max="40"
+              value={cycleLength}
+              onChange={(e) => setCycleLength(parseInt(e.target.value))}
+              className="w-full accent-primary"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>21 days</span>
+              <span>28 days</span>
+              <span>40 days</span>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Average period length: {periodLength} days
-          </label>
-          <input
-            type="range"
-            min="2"
-            max="8"
-            value={periodLength}
-            onChange={(e) => setPeriodLength(parseInt(e.target.value))}
-            className="w-full accent-primary"
-          />
-          <div className="flex justify-between text-xs text-muted-foreground mt-1">
-            <span>2 days</span>
-            <span>5 days</span>
-            <span>8 days</span>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Average period length: {periodLength} days
+            </label>
+            <input
+              type="range"
+              min="2"
+              max="8"
+              value={periodLength}
+              onChange={(e) => setPeriodLength(parseInt(e.target.value))}
+              className="w-full accent-primary"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>2 days</span>
+              <span>5 days</span>
+              <span>8 days</span>
+            </div>
           </div>
-        </div>
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="w-full rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          {isSaving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
-        </button>
-      </GlassPanel>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
+          </button>
+        </GlassPanel>
+      )}
 
       <GlassPanel variant="quiet" className="space-y-6 p-6">
         <div>
@@ -312,7 +344,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-semibold text-foreground">Notification history</h2>
             <p className="text-sm text-muted-foreground">
-              Recent external delivery attempts, with sensitive payloads redacted.
+              Recent in-app and external notification activity, with sensitive payloads redacted.
             </p>
           </div>
           <Bell className="h-5 w-5 text-muted-foreground" />
@@ -344,7 +376,7 @@ export default function SettingsPage() {
           </div>
         ) : (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No external notification attempts yet.
+            No notification activity yet.
           </p>
         )}
       </GlassPanel>

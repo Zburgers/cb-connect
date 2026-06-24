@@ -4,14 +4,23 @@ import { useState, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
-import { motion, useScroll, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
-import { formatDate, cn, localDateDaysAgo, toLocalDateString } from "@/lib/utils";
+import { formatDate, localDateDaysAgo, toLocalDateString } from "@/lib/utils";
 import {
-  CalendarDays, Download, HeartPulse, Lock, Shield, Sparkles,
-  ArrowUp, Plus, X,
+  ArrowUp,
+  CalendarCheck2,
+  CalendarDays,
+  CheckCircle2,
+  Download,
+  Lock,
+  Pencil,
+  Shield,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
 import type { TimelinePhase } from "@/convex/_helpers/timelinePhases";
+import type { Id } from "@/convex/_generated/dataModel";
 
 /* ── Types ── */
 const PAIN_TAG_LABELS: Record<string, string> = {
@@ -70,21 +79,107 @@ function downloadCsv(filename: string, rows: unknown[][]) {
   document.body.removeChild(link); URL.revokeObjectURL(url);
 }
 
+type PeriodTimelineMetadata = {
+  id: Id<"periodEvents">;
+  startDate: string;
+  endDate?: string;
+  source: "self" | "partner_assist" | "system";
+  confirmationStatus: "confirmed" | "unreviewed";
+  createdByUserId: Id<"users">;
+  updatedByUserId: Id<"users">;
+  createdByName: string;
+  updatedByName: string;
+  canCorrect: boolean;
+};
+
+function attributionCopy(
+  period: PeriodTimelineMetadata,
+  viewerId: Id<"users">,
+  partnerView: boolean
+) {
+  if (period.source === "system") return "Auto-ended by CB Connect";
+  if (period.source === "partner_assist") {
+    if (period.updatedByUserId === viewerId && period.createdByUserId !== viewerId) {
+      return `Added by ${period.createdByName} · Corrected by you`;
+    }
+    if (partnerView && period.createdByUserId === viewerId) {
+      return "Added by you for your partner";
+    }
+    return `Added by ${period.createdByName}`;
+  }
+  return partnerView ? `Logged by ${period.createdByName}` : "Logged by you";
+}
+
 /* ── Timeline River entry ── */
 function TimelineEntry({
   date,
   phase,
   pain,
+  period,
   isOngoing,
   isFirst,
+  viewerId,
+  partnerView,
+  onSaveCorrection,
+  onDelete,
 }: {
   date: string;
   phase: TimelinePhase;
   pain?: { score: number; tags?: string[]; note?: string };
+  period?: PeriodTimelineMetadata;
   isOngoing?: boolean;
   isFirst?: boolean;
+  viewerId: Id<"users">;
+  partnerView: boolean;
+  onSaveCorrection: (
+    periodEventId: Id<"periodEvents">,
+    startDate: string,
+    endDate?: string
+  ) => Promise<void>;
+  onDelete: (periodEventId: Id<"periodEvents">) => Promise<void>;
 }) {
   const bandColor = PHASE_BAND_COLORS[phase] ?? PHASE_BAND_COLORS.follicular;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editStartDate, setEditStartDate] = useState(period?.startDate ?? "");
+  const [editEndDate, setEditEndDate] = useState(period?.endDate ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [editorMessage, setEditorMessage] = useState("");
+
+  const saveCorrection = async () => {
+    if (!period || !editStartDate) return;
+    setIsSaving(true);
+    setEditorMessage("");
+    try {
+      await onSaveCorrection(
+        period.id,
+        editStartDate,
+        editEndDate || undefined
+      );
+      setIsEditing(false);
+    } catch (error) {
+      setEditorMessage(
+        error instanceof Error ? error.message : "Could not save that correction."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteEntry = async () => {
+    if (!period) return;
+    setIsSaving(true);
+    setEditorMessage("");
+    try {
+      await onDelete(period.id);
+      setIsEditing(false);
+    } catch (error) {
+      setEditorMessage(
+        error instanceof Error ? error.message : "Could not delete that entry."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <motion.div
@@ -154,6 +249,108 @@ function TimelineEntry({
             )}
           </div>
         )}
+
+        {period && (
+          <div className="mt-3 border-t border-foreground/10 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-foreground/75">
+                  {attributionCopy(period, viewerId, partnerView)}
+                </p>
+                {period.source === "partner_assist" && period.canCorrect && (
+                  <p className="mt-1 text-xs text-foreground/60">
+                    Added with your permission. You can correct this anytime.
+                  </p>
+                )}
+              </div>
+              {period.canCorrect && !isEditing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditStartDate(period.startDate);
+                    setEditEndDate(period.endDate ?? "");
+                    setEditorMessage("");
+                    setIsEditing(true);
+                  }}
+                  className="touch-target inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {isEditing && (
+              <div className="contrast-glass mt-3 space-y-3 rounded-[1.2rem] p-4">
+                <p className="text-sm font-semibold text-foreground">Wrong date?</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-foreground">
+                      Start date
+                    </span>
+                    <input
+                      type="date"
+                      value={editStartDate}
+                      max={toLocalDateString()}
+                      onChange={(event) => setEditStartDate(event.target.value)}
+                      className="min-h-11 w-full rounded-xl border border-foreground/15 bg-[var(--color-glass)] px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-foreground">
+                      End date, optional
+                    </span>
+                    <input
+                      type="date"
+                      value={editEndDate}
+                      min={editStartDate}
+                      max={toLocalDateString()}
+                      onChange={(event) => setEditEndDate(event.target.value)}
+                      className="min-h-11 w-full rounded-xl border border-foreground/15 bg-[var(--color-glass)] px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    />
+                  </label>
+                </div>
+                {editorMessage && (
+                  <p className="text-xs font-medium text-destructive" role="alert">
+                    {editorMessage}
+                  </p>
+                )}
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <button
+                    type="button"
+                    onClick={saveCorrection}
+                    disabled={isSaving || !editStartDate}
+                    className="touch-target whitespace-nowrap rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSaving ? "Saving…" : "Save correction"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditStartDate(period.startDate);
+                      setEditEndDate(period.endDate ?? "");
+                      setEditorMessage("");
+                    }}
+                    disabled={isSaving}
+                    className="touch-target whitespace-nowrap rounded-full px-4 text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteEntry}
+                    disabled={isSaving}
+                    className="touch-target inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold text-destructive outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Delete entry
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -175,12 +372,15 @@ export default function LogPage() {
   );
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
   const logPeriodEnd   = useMutation(api.mutations.periods.logPeriodEnd);
+  const assistLogPeriodStart = useMutation(api.mutations.periods.assistLogPeriodStart);
+  const assistLogPeriodEnd = useMutation(api.mutations.periods.assistLogPeriodEnd);
+  const updatePeriodEvent = useMutation(api.mutations.periods.updatePeriodEvent);
+  const deletePeriodEvent = useMutation(api.mutations.periods.deletePeriodEvent);
 
-  const [startDate,    setStartDate]    = useState("");
-  const [endDate,      setEndDate]      = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message,      setMessage]      = useState("");
-  const [showLogger,   setShowLogger]   = useState(false);
 
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -189,11 +389,10 @@ export default function LogPage() {
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const { scrollY } = useScroll();
-
   if (
     !isLoaded ||
     me === undefined ||
+    me === null ||
     coupleStatus === undefined ||
     periodHistory === undefined ||
     painHistory === undefined ||
@@ -211,39 +410,109 @@ export default function LogPage() {
   // the flags directly.
   const phaseShared   = Boolean(coupleStatus?.sharingSettings?.phase);
   const painShared    = Boolean(coupleStatus?.sharingSettings?.pain);
+  const periodWriteAllowed = Boolean(coupleStatus?.sharingSettings?.periodWrite);
+  const canAssist = isPartnerView && phaseShared && periodWriteAllowed && isLinked;
   const ongoingPeriod = periodHistory?.find((p: any) => !p.endDate);
   const visiblePainHistory = (painShared || !isPartnerView) ? painHistory ?? [] : [];
 
-  const handleStartPeriod = async () => {
-    if (!startDate) return;
-    setIsSubmitting(true);
-    try {
-      await logPeriodStart({ startDate });
-      setStartDate(""); setMessage("Period started."); setTimeout(() => setMessage(""), 3000);
-    } catch (error: any) {
-      setMessage(error.message || "Could not log period start.");
-    } finally { setIsSubmitting(false); }
+  const chooseDate = (date: string) => {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+    setMessage("");
   };
 
-  const handleEndPeriod = async () => {
-    if (!endDate) return;
+  const handlePeriodUpdate = async () => {
+    if (!selectedDate) return;
     setIsSubmitting(true);
+    setMessage("");
     try {
-      await logPeriodEnd({ endDate });
-      setEndDate(""); setMessage("Period marked as ended."); setTimeout(() => setMessage(""), 3000);
-    } catch (error: any) {
-      setMessage(error.message || "Could not log period end.");
-    } finally { setIsSubmitting(false); }
+      if (ongoingPeriod) {
+        if (isPartnerView) {
+          await assistLogPeriodEnd({ endDate: selectedDate });
+        } else {
+          await logPeriodEnd({ endDate: selectedDate });
+        }
+      } else if (isPartnerView) {
+        await assistLogPeriodStart({ startDate: selectedDate });
+      } else {
+        await logPeriodStart({ startDate: selectedDate });
+      }
+      setSelectedDate("");
+      setShowDatePicker(false);
+      setMessage(
+        isPartnerView
+          ? "Saved. This was added as partner-assisted and your partner can correct it anytime."
+          : ongoingPeriod
+            ? "Period marked as ended."
+            : "Period started."
+      );
+      setTimeout(() => setMessage(""), 5000);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not save that period update."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveCorrection = async (
+    periodEventId: Id<"periodEvents">,
+    correctedStartDate: string,
+    correctedEndDate?: string
+  ) => {
+    await updatePeriodEvent({
+      periodEventId,
+      startDate: correctedStartDate,
+      endDate: correctedEndDate,
+    });
+    setMessage("Correction saved.");
+  };
+
+  const handleDeletePeriod = async (periodEventId: Id<"periodEvents">) => {
+    await deletePeriodEvent({ periodEventId });
+    setMessage("Period entry removed.");
   };
 
   const handleExportCsv = () => {
     const rows: unknown[][] = [
-      ["section", "date", "endDate", "painScore", "tags", "note", "status"],
+      [
+        "section",
+        "date",
+        "endDate",
+        "painScore",
+        "tags",
+        "note",
+        "status",
+        "source",
+        "createdBy",
+        "updatedBy",
+      ],
       ...((canWrite || phaseShared) ? periodHistory ?? [] : []).map((p: any) => [
-        "period", p.startDate, p.endDate ?? "", "", "", "", p.endDate ? "closed" : "open",
+        "period",
+        p.startDate,
+        p.endDate ?? "",
+        "",
+        "",
+        "",
+        p.endDate ? "closed" : "open",
+        p.source,
+        p.createdByName,
+        p.updatedByName,
       ]),
       ...visiblePainHistory.map((p: any) => [
-        "pain", p.date, "", p.painScore, p.tags?.join("; ") ?? "", p.note ?? "", "",
+        "pain",
+        p.date,
+        "",
+        p.painScore,
+        p.tags?.join("; ") ?? "",
+        p.note ?? "",
+        "",
+        "",
+        "",
+        "",
       ]),
     ];
     downloadCsv(`cb-connect-history-${toLocalDateString()}.csv`, rows);
@@ -303,9 +572,20 @@ export default function LogPage() {
           </span>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
           {[
             { label: "Period history", shared: phaseShared, description: describePeriodVisibility(phaseShared, isPartnerView) },
+            {
+              label: "Assisted logging",
+              shared: periodWriteAllowed,
+              description: periodWriteAllowed
+                ? isPartnerView
+                  ? "You can help update period start and end dates."
+                  : "Your partner can help update period start and end dates."
+                : isLinked
+                  ? "Only the primary user can log period dates."
+                  : "No partner is linked yet.",
+            },
             { label: "Pain history",   shared: painShared,  description: describePainVisibility(painShared, isPartnerView)   },
           ].map((item) => (
             <div
@@ -338,133 +618,122 @@ export default function LogPage() {
         </motion.button>
       </div>
 
-      {/* ── Period logger (primary only) ── */}
-      {canWrite && (
-        <div className="bento-cell overflow-hidden">
-          <button
-            onClick={() => setShowLogger((v) => !v)}
-            className="flex w-full items-center justify-between p-6 text-left no-tap-highlight"
-            aria-expanded={showLogger}
-          >
-            <div>
-              <p className="font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-                {ongoingPeriod ? `Period in progress since ${formatDate(ongoingPeriod.startDate)}` : "Log a period"}
+      {/* ── Role-aware period check-in ── */}
+      {(canWrite || canAssist) && (
+        <div className="bento-cell p-6">
+          <div className="flex items-start gap-3">
+            <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-primary/12 text-primary">
+              <CalendarCheck2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground/60">
+                {isPartnerView ? "Shared care" : "Today's check-in"}
               </p>
-              <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>
-                {ongoingPeriod ? "Tap to mark it as ended." : "Tap to open the logger."}
+              <h2 className="mt-1 font-display text-2xl italic text-foreground">
+                {isPartnerView
+                  ? "Help update period dates"
+                  : ongoingPeriod
+                    ? `Period in progress since ${formatDate(ongoingPeriod.startDate)}`
+                    : "Did your period start?"}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-foreground/75">
+                {isPartnerView
+                  ? "You can help keep the timeline accurate because your partner allowed this. They can edit or remove anything you add anytime."
+                  : ongoingPeriod
+                    ? "Choose when it ended. You can correct the date from the timeline later."
+                    : "A quick date is enough. Pain logging stays separate and optional."}
               </p>
             </div>
-            <motion.div
-              animate={{ rotate: showLogger ? 45 : 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
-              style={{ background: "var(--color-glass)", backdropFilter: "blur(8px)", boxShadow: "inset 0 1px 0 var(--color-glass-border)" }}
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <button
+              type="button"
+              onClick={() => chooseDate(toLocalDateString())}
+              className="touch-target whitespace-nowrap rounded-full border border-foreground/15 bg-[var(--color-glass)] px-4 text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
-              <Plus className="h-4 w-4" style={{ color: "hsl(var(--foreground))" }} />
-            </motion.div>
-          </button>
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => chooseDate(localDateDaysAgo(1))}
+              className="touch-target whitespace-nowrap rounded-full border border-foreground/15 bg-[var(--color-glass)] px-4 text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              Yesterday
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDatePicker((visible) => !visible)}
+              className="touch-target col-span-2 whitespace-nowrap rounded-full border border-foreground/15 bg-[var(--color-glass)] px-4 text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:col-span-1"
+              aria-expanded={showDatePicker}
+            >
+              Choose date
+            </button>
+          </div>
 
-          <AnimatePresence>
-            {showLogger && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 260, damping: 28 }}
-                style={{ overflow: "hidden" }}
+          {showDatePicker && (
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-medium text-foreground">
+                {ongoingPeriod ? "Period end date" : "Period start date"}
+              </span>
+              <input
+                type="date"
+                value={selectedDate}
+                min={ongoingPeriod?.startDate}
+                max={toLocalDateString()}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="min-h-11 w-full rounded-[1.2rem] border border-foreground/15 bg-[var(--color-glass)] px-4 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              />
+            </label>
+          )}
+
+          {selectedDate && (
+            <div className="contrast-glass mt-4 rounded-[1.3rem] p-4">
+              <p className="text-sm font-semibold text-foreground">
+                {isPartnerView
+                  ? `${ongoingPeriod ? "Add period end" : "Add period start"} for ${formatDate(selectedDate)}?`
+                  : `${ongoingPeriod ? "Mark period ended" : "Start period"} on ${formatDate(selectedDate)}?`}
+              </p>
+              <button
+                type="button"
+                onClick={handlePeriodUpdate}
+                disabled={isSubmitting}
+                className="touch-target mt-3 w-full whitespace-nowrap rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
-                <div className="space-y-4 px-6 pb-6">
-                  {message && (
-                    <div
-                      className="rounded-2xl p-3 text-sm font-medium"
-                      style={{ background: "oklch(64% 0.18 145 / 0.12)", color: "oklch(42% 0.18 145)" }}
-                    >
-                      {message}
-                    </div>
-                  )}
+                {isSubmitting
+                  ? "Saving…"
+                  : isPartnerView
+                    ? "Save update"
+                    : ongoingPeriod
+                      ? "Mark as ended"
+                      : "Start period"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-                  {ongoingPeriod ? (
-                    <>
-                      <div>
-                        <label
-                          className="mb-2 block text-sm font-medium"
-                          style={{ color: "hsl(var(--foreground))" }}
-                          htmlFor="period-end-date"
-                        >
-                          When did your period end?
-                        </label>
-                        <input
-                          id="period-end-date"
-                          type="date"
-                          value={endDate}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          min={ongoingPeriod.startDate}
-                          max={toLocalDateString()}
-                          className="w-full rounded-[1.2rem] px-4 py-3 text-sm transition-all"
-                          style={{
-                            background: "var(--color-glass)",
-                            backdropFilter: "blur(8px)",
-                            boxShadow: "inset 0 1px 0 var(--color-glass-border)",
-                            color: "hsl(var(--foreground))",
-                            border: "none",
-                            outline: "none",
-                          }}
-                        />
-                      </div>
-                      <motion.button
-                        onClick={handleEndPeriod}
-                        disabled={isSubmitting || !endDate}
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                        className="w-full rounded-full py-3.5 font-semibold no-tap-highlight disabled:opacity-50"
-                        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }}
-                      >
-                        {isSubmitting ? "Saving…" : "Mark as ended"}
-                      </motion.button>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <label
-                          className="mb-2 block text-sm font-medium"
-                          style={{ color: "hsl(var(--foreground))" }}
-                          htmlFor="period-start-date"
-                        >
-                          When did your period start?
-                        </label>
-                        <input
-                          id="period-start-date"
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          max={toLocalDateString()}
-                          className="w-full rounded-[1.2rem] px-4 py-3 text-sm transition-all"
-                          style={{
-                            background: "var(--color-glass)",
-                            backdropFilter: "blur(8px)",
-                            boxShadow: "inset 0 1px 0 var(--color-glass-border)",
-                            color: "hsl(var(--foreground))",
-                            border: "none",
-                            outline: "none",
-                          }}
-                        />
-                      </div>
-                      <motion.button
-                        onClick={handleStartPeriod}
-                        disabled={isSubmitting || !startDate}
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                        className="w-full rounded-full py-3.5 font-semibold no-tap-highlight disabled:opacity-50"
-                        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))" }}
-                      >
-                        {isSubmitting ? "Saving…" : "Start period"}
-                      </motion.button>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {isPartnerView && phaseShared && !periodWriteAllowed && (
+        <div className="bento-cell p-6">
+          <div className="flex items-start gap-3">
+            <Lock className="mt-0.5 h-5 w-5 flex-shrink-0 text-foreground/60" aria-hidden="true" />
+            <div>
+              <h2 className="font-semibold text-foreground">Period history is visible</h2>
+              <p className="mt-1 text-sm leading-6 text-foreground/75">
+                Your partner has not enabled assisted logging, so this stays read-only.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {message && (
+        <div
+          className="contrast-glass flex items-start gap-2 rounded-[1.2rem] p-4 text-sm font-medium text-foreground"
+          role="status"
+        >
+          <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" aria-hidden="true" />
+          {message}
         </div>
       )}
 
@@ -522,8 +791,13 @@ export default function LogPage() {
                 date={entry.date}
                 phase={entry.phase}
                 pain={entry.pain}
+                period={entry.period}
                 isOngoing={entry.isOngoing}
                 isFirst={i > 0}
+                viewerId={me._id}
+                partnerView={isPartnerView}
+                onSaveCorrection={handleSaveCorrection}
+                onDelete={handleDeletePeriod}
               />
             ))}
           </div>
