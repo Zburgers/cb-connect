@@ -80,6 +80,7 @@ export const getCoupleStatus = query({
       sharingSettings: {
         pain: sharingMembership.sharingPain,
         phase: sharingMembership.sharingPhase,
+        periodWrite: sharingMembership.sharingPeriodWrite ?? false,
       },
       partner: partnerInfo,
       activePairingCode,

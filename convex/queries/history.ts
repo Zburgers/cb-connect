@@ -1,5 +1,6 @@
-import { internalQuery, query } from "../_generated/server";
+import { internalQuery, query, type QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import {
@@ -85,7 +86,7 @@ export const getPeriodHistory = query({
       .order("desc")
       .collect();
 
-    return periods;
+    return await enrichPeriodEvents(ctx, periods, user._id);
   },
 });
 
@@ -216,14 +217,39 @@ export const getTimelineHistory = query({
       type: "period" | "pain";
       isOngoing?: boolean;
       pain?: { score: number; tags?: string[]; note?: string };
+      period?: {
+        id: Id<"periodEvents">;
+        startDate: string;
+        endDate?: string;
+        source: "self" | "partner_assist" | "system";
+        confirmationStatus: "confirmed" | "unreviewed";
+        createdByUserId: Id<"users">;
+        updatedByUserId: Id<"users">;
+        createdByName: string;
+        updatedByName: string;
+        canCorrect: boolean;
+      };
     }> = [];
 
-    for (const period of periods) {
+    const enrichedPeriods = await enrichPeriodEvents(ctx, periods, user._id);
+    for (const period of enrichedPeriods) {
       timelineEntries.push({
         date: period.startDate,
         phase: "menstruation",
         type: "period",
         isOngoing: !period.endDate,
+        period: {
+          id: period._id,
+          startDate: period.startDate,
+          endDate: period.endDate,
+          source: period.source,
+          confirmationStatus: period.confirmationStatus,
+          createdByUserId: period.createdByUserId,
+          updatedByUserId: period.updatedByUserId,
+          createdByName: period.createdByName,
+          updatedByName: period.updatedByName,
+          canCorrect: period.canCorrect,
+        },
       });
     }
 
@@ -247,3 +273,44 @@ export const getTimelineHistory = query({
     return timelineEntries;
   },
 });
+
+async function enrichPeriodEvents(
+  ctx: QueryCtx,
+  periods: Doc<"periodEvents">[],
+  viewerId: Id<"users">
+) {
+  const userIds = new Set<Id<"users">>();
+  for (const period of periods) {
+    userIds.add(period.userId);
+    if (period.createdByUserId) userIds.add(period.createdByUserId);
+    if (period.updatedByUserId) userIds.add(period.updatedByUserId);
+  }
+
+  const users = await Promise.all(
+    Array.from(userIds, async (userId) => {
+      return [userId, await ctx.db.get("users", userId)] as const;
+    })
+  );
+  const names = new Map(
+    users.map(([userId, user]) => [
+      userId,
+      user?.preferredName || user?.name || "Partner",
+    ])
+  );
+
+  return periods.map((period) => {
+    const createdByUserId = period.createdByUserId ?? period.userId;
+    const updatedByUserId = period.updatedByUserId ?? period.userId;
+    return {
+      ...period,
+      source: period.source ?? ("self" as const),
+      confirmationStatus:
+        period.confirmationStatus ?? ("confirmed" as const),
+      createdByUserId,
+      updatedByUserId,
+      createdByName: names.get(createdByUserId) ?? "Partner",
+      updatedByName: names.get(updatedByUserId) ?? "Partner",
+      canCorrect: period.userId === viewerId,
+    };
+  });
+}

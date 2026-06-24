@@ -37,6 +37,7 @@ export default defineSchema({
     role: v.union(v.literal("primary"), v.literal("partner")),
     sharingPain: v.boolean(),
     sharingPhase: v.boolean(),
+    sharingPeriodWrite: v.optional(v.boolean()),
     partnerNickname: v.optional(v.string()),
     joinedAt: v.number(),
   })
@@ -77,6 +78,18 @@ export default defineSchema({
     userId: v.id("users"),
     startDate: v.string(),
     endDate: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    source: v.optional(
+      v.union(
+        v.literal("self"),
+        v.literal("partner_assist"),
+        v.literal("system")
+      )
+    ),
+    confirmationStatus: v.optional(
+      v.union(v.literal("confirmed"), v.literal("unreviewed"))
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 
 import {
   findLatestPeriodStartDate,
@@ -14,7 +13,7 @@ test("pain log on day 25 of a 28-day cycle resolves to luteal", () => {
     5
   );
 
-  assert.equal(phase, "luteal");
+  expect(phase).toBe("luteal");
 });
 
 test("dates inside a logged period stay menstruation", () => {
@@ -25,7 +24,7 @@ test("dates inside a logged period stay menstruation", () => {
     5
   );
 
-  assert.equal(phase, "menstruation");
+  expect(phase).toBe("menstruation");
 });
 
 test("mid-cycle dates resolve to ovulation", () => {
@@ -36,7 +35,7 @@ test("mid-cycle dates resolve to ovulation", () => {
     5
   );
 
-  assert.equal(phase, "ovulation");
+  expect(phase).toBe("ovulation");
 });
 
 test("post-period pre-ovulation dates resolve to follicular", () => {
@@ -47,7 +46,7 @@ test("post-period pre-ovulation dates resolve to follicular", () => {
     5
   );
 
-  assert.equal(phase, "follicular");
+  expect(phase).toBe("follicular");
 });
 
 test("explicit short end dates stop menstruation fallback from overrunning", () => {
@@ -58,7 +57,7 @@ test("explicit short end dates stop menstruation fallback from overrunning", () 
     5
   );
 
-  assert.equal(phase, "follicular");
+  expect(phase).toBe("follicular");
 });
 
 test("latest period selection uses max startDate, not insertion order", () => {
@@ -68,5 +67,5 @@ test("latest period selection uses max startDate, not insertion order", () => {
     { startDate: "2026-03-01", endDate: "2026-03-05" },
   ]);
 
-  assert.equal(latest, "2026-05-01");
+  expect(latest).toBe("2026-05-01");
 });

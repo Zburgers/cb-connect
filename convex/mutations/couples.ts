@@ -44,6 +44,7 @@ export const generatePairingCode = mutation({
         role: "primary",
         sharingPain: false,
         sharingPhase: true,
+        sharingPeriodWrite: false,
         joinedAt: Date.now(),
       });
     }
@@ -203,6 +204,7 @@ export const linkPartnerWithCode = mutation({
       role: "partner",
       sharingPain: false,
       sharingPhase: true,
+      sharingPeriodWrite: false,
       joinedAt: Date.now(),
     });
 
@@ -349,6 +351,7 @@ export const updateSharingSettings = mutation({
   args: {
     sharingPain: v.optional(v.boolean()),
     sharingPhase: v.optional(v.boolean()),
+    sharingPeriodWrite: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -362,10 +365,24 @@ export const updateSharingSettings = mutation({
       throw new Error("You are not part of a couple");
     }
 
+    const effectiveSharingPhase =
+      args.sharingPhase ?? coupleData.membership.sharingPhase;
+    if (args.sharingPeriodWrite === true && !effectiveSharingPhase) {
+      throw new Error("Turn on period visibility first");
+    }
+
+    const sharingPeriodWrite =
+      args.sharingPhase === false
+        ? false
+        : args.sharingPeriodWrite;
+
     await ctx.db.patch(coupleData.membership._id, {
       ...(args.sharingPain !== undefined && { sharingPain: args.sharingPain }),
       ...(args.sharingPhase !== undefined && {
         sharingPhase: args.sharingPhase,
+      }),
+      ...(sharingPeriodWrite !== undefined && {
+        sharingPeriodWrite,
       }),
     });
 
