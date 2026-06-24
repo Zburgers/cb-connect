@@ -1,16 +1,16 @@
-# Graph Report - cb connect  (2026-05-21)
+# Graph Report - cb connect  (2026-06-24)
 
 ## Corpus Check
-- 81 files · ~44,806 words
+- 107 files · ~262,625 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 703 nodes · 788 edges · 60 communities (55 shown, 5 thin omitted)
+- 862 nodes · 1034 edges · 78 communities (72 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9599aa86`
+- Built from commit: `3ba61009`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -66,52 +66,69 @@
 - [[_COMMUNITY_Community 57|Community 57]]
 - [[_COMMUNITY_Community 58|Community 58]]
 - [[_COMMUNITY_Community 59|Community 59]]
+- [[_COMMUNITY_Community 60|Community 60]]
+- [[_COMMUNITY_Community 61|Community 61]]
+- [[_COMMUNITY_Community 62|Community 62]]
+- [[_COMMUNITY_Community 63|Community 63]]
+- [[_COMMUNITY_Community 64|Community 64]]
+- [[_COMMUNITY_Community 65|Community 65]]
+- [[_COMMUNITY_Community 66|Community 66]]
+- [[_COMMUNITY_Community 67|Community 67]]
+- [[_COMMUNITY_Community 68|Community 68]]
+- [[_COMMUNITY_Community 69|Community 69]]
+- [[_COMMUNITY_Community 70|Community 70]]
+- [[_COMMUNITY_Community 71|Community 71]]
+- [[_COMMUNITY_Community 72|Community 72]]
+- [[_COMMUNITY_Community 73|Community 73]]
+- [[_COMMUNITY_Community 74|Community 74]]
+- [[_COMMUNITY_Community 75|Community 75]]
+- [[_COMMUNITY_Community 76|Community 76]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `CB Connect - Technical Product Requirements Document (PRD)` - 23 edges
-2. `🐛 Known Issues` - 18 edges
-3. `CB Connect - Project Context` - 12 edges
-4. `Partner Linking UX Improvements - Design Document` - 12 edges
-5. `Manual Test Execution Results` - 12 edges
-6. `toLocalDateString()` - 11 edges
-7. `CB Connect - Issues & Feature Tracker` - 11 edges
-8. `What Is Weak Or Incomplete` - 11 edges
-9. `Deployment Guide - CB Connect` - 10 edges
-10. `CB Connect - E2E Test Results` - 10 edges
+2. `🐛 Known Issues` - 19 edges
+3. `toLocalDateString()` - 12 edges
+4. `CB Connect - Project Context` - 12 edges
+5. `Convex guidelines` - 12 edges
+6. `Partner Linking UX Improvements - Design Document` - 12 edges
+7. `Manual Test Execution Results` - 12 edges
+8. `CB Connect - Issues & Feature Tracker` - 11 edges
+9. `What Is Weak Or Incomplete` - 11 edges
+10. `getCurrentUserOrNull()` - 10 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `DashboardPage()` --calls--> `toLocalDateString()`  [EXTRACTED]
-  app/(dashboard)/dashboard/page.tsx → lib/utils.ts
 - `POST()` --calls--> `headers`  [INFERRED]
   app/api/webhook/clerk/route.ts → middleware.ts
-- `OnboardingPage()` --calls--> `toLocalDateString()`  [EXTRACTED]
-  app/onboarding/page.tsx → lib/utils.ts
-- `GlassPanel()` --calls--> `cn()`  [EXTRACTED]
-  components/common/GlassPanel.tsx → lib/utils.ts
-- `SanctuaryShell()` --calls--> `cn()`  [EXTRACTED]
-  components/common/SanctuaryShell.tsx → lib/utils.ts
+- `DashboardLayout()` --calls--> `usePartnerPresence()`  [EXTRACTED]
+  app/(dashboard)/layout.tsx → lib/usePartnerPresence.ts
+- `DashboardPage()` --calls--> `toLocalDateString()`  [EXTRACTED]
+  app/(dashboard)/dashboard/page.tsx → lib/utils.ts
+- `TimelineEntry()` --calls--> `toLocalDateString()`  [EXTRACTED]
+  app/(dashboard)/dashboard/log/page.tsx → lib/utils.ts
+- `LogPage()` --calls--> `toLocalDateString()`  [EXTRACTED]
+  app/(dashboard)/dashboard/log/page.tsx → lib/utils.ts
 
-## Communities (60 total, 5 thin omitted)
+## Communities (78 total, 6 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (45): sendDiscordNotification, sendDailyPredictions, crons, seedNutritionTips, seedPainTips, components, canViewPainData(), getCoupleForUser() (+37 more)
+Cohesion: 0.13
+Nodes (22): addCalendarDays(), calculateCycleInfo(), CycleInfo, CyclePhase, daysBetweenCalendarDates(), formatCalendarDate(), getPainSeverityBucket(), parseCalendarDate() (+14 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.05
-Nodes (34): GlassPanel(), GlassPanelProps, SanctuaryShell(), SanctuaryShellProps, OnboardingFlow(), Step, painPhrase(), PhaseAura() (+26 more)
+Cohesion: 0.16
+Nodes (8): GlassPanel(), GlassPanelProps, SanctuaryShell(), SanctuaryShellProps, cn(), DigitalLocket(), DigitalLocketProps, formatConnectedSince()
 
 ### Community 2 - "Community 2"
 Cohesion: 0.04
 Nodes (48): Add a new Convex mutation, Add a new dashboard component, Architecture, Authentication & Authorization, Authorization Flow, Browser Testing, Building and Running, CB Connect - Project Context (+40 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.07
-Nodes (14): DashboardSkeleton(), LoadingSkeletonProps, CurrentPhaseProps, NutritionSuggestions(), NutritionSuggestionsProps, NutritionTip, DashboardPage(), PainLoggerProps (+6 more)
+Cohesion: 0.06
+Nodes (29): DashboardSkeleton(), LoadingSkeletonProps, crons, seedActiveCouple(), seedUser(), TestBackend, modules, DashboardLayout() (+21 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.22
-Nodes (8): 🚀 Active Development, CB Connect - Issues & Feature Tracker, ✅ Completed, Design Principles, Development Guidelines, None currently, 📝 Notes, Partner Linking UX Improvements
+Nodes (8): 🚀 Active Development, CB Connect - Issues & Feature Tracker, ✅ Completed, 📊 Metrics to Track, None currently, Partner Linking UX Improvements, Technical Metrics, User Engagement
 
 ### Community 5 - "Community 5"
 Cohesion: 0.06
@@ -143,7 +160,7 @@ Nodes (17): 7.1 Mutations (Write Operations), 7.2 Queries (Read Operations), 7. 
 
 ### Community 12 - "Community 12"
 Cohesion: 0.11
-Nodes (18): Build and lint scripts are incomplete for the documented workflow, Clerk webhook uses public Convex mutation without authentication context, CORS headers are overly broad, Daily prediction cron cannot read per-user cycle settings, Deployment documentation conflicts with package scripts, Discord notification path is not consent-modeled for sensitive health data, Duplicate onboarding surfaces can drift, Graphify report may be stale relative to current working tree (+10 more)
+Nodes (19): Build and lint scripts are incomplete for the documented workflow, Clerk webhook uses public Convex mutation without authentication context, CORS headers are overly broad, Daily prediction cron cannot read per-user cycle settings, Deployment documentation conflicts with package scripts, Discord notification path is not consent-modeled for sensitive health data, Duplicate onboarding surfaces can drift, Graphify report may be stale relative to current working tree (+11 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.12
@@ -182,8 +199,8 @@ Cohesion: 0.25
 Nodes (8): 15.1 Authentication Security, 15.2 Authorization Checks, 15.3 Data Privacy, 15.4 Input Sanitization, 15.5 Rate Limiting, 15. Security Considerations, code:typescript (// BEFORE returning any health data), code:typescript (// Limit pairing code generation to 5 per hour)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.18
-Nodes (10): 2.1 Core Technologies, 2.2 Development Tools, 2. Technology Stack, Appendix A: Sample Data Structures, Appendix C: Glossary, CB Connect - Technical Product Requirements Document (PRD), code:json ({), Document Revision History (+2 more)
+Cohesion: 0.14
+Nodes (13): 1.1 Product Summary, 1.2 Technical Goals, 1. System Overview, 2.1 Core Technologies, 2.2 Development Tools, 2. Technology Stack, Appendix A: Sample Data Structures, Appendix C: Glossary (+5 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.25
@@ -214,8 +231,8 @@ Cohesion: 0.29
 Nodes (6): code:block1 (Error: page.goto: net::ERR_NETWORK_CHANGED at http://127.0.0), code:ts (1  | import { test, expect } from "@playwright/test";), Error details, Instructions, Test info, Test source
 
 ### Community 30 - "Community 30"
-Cohesion: 0.33
-Nodes (4): DataModel, Doc, Id, TableNames
+Cohesion: 0.06
+Nodes (32): Action guidelines, Authentication guidelines, code:typescript (import { httpRouter } from "convex/server";), code:ts (import { cronJobs } from "convex/server";), code:typescript (/// <reference types="vite/client" />), code:block12 (import { query } from "./_generated/server";), code:typescript (import { mutation } from "./_generated/server";), code:typescript (import { defineSchema, defineTable } from "convex/server";) (+24 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.33
@@ -250,12 +267,16 @@ Cohesion: 0.2
 Nodes (9): config, corsHeadersForOrigin(), DEFAULT_ALLOWED_ORIGINS, getAllowedOrigins(), headers, isProtectedRoute, signInUrl, convex (+1 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.67
-Nodes (3): 1.1 Product Summary, 1.2 Technical Goals, 1. System Overview
+Cohesion: 0.1
+Nodes (18): CurrentPhaseProps, painPhrase(), PhaseAura(), PhaseAuraProps, phaseCopy, phaseLabel(), getNudgeMessage(), isNudgeEmoji() (+10 more)
 
 ### Community 41 - "Community 41"
 Cohesion: 0.29
 Nodes (7): Expected Results Checklist, 📖 Manual Testing Guide, Prerequisites, Test Flow 1: Primary User Generates Code, Test Flow 2: Partner User Links, Test Flow 3: Linked Dashboard View, Test Flow 4: Sharing Settings
+
+### Community 54 - "Community 54"
+Cohesion: 0.21
+Nodes (12): formatDate(), localDateDaysAgo(), attributionCopy(), describePainVisibility(), describePeriodVisibility(), LogPage(), PAIN_TAG_LABELS, painScoreTone() (+4 more)
 
 ### Community 55 - "Community 55"
 Cohesion: 0.5
@@ -274,28 +295,88 @@ Cohesion: 0.5
 Nodes (4): Performance Optimization, Schema Migration, 🔧 Technical Debt, Testing Coverage
 
 ### Community 59 - "Community 59"
+Cohesion: 0.2
+Nodes (10): canViewPainData(), getCoupleForUser(), getCurrentUserOrNull(), goOffline, heartbeat, getDashboardData, latestReceived, getPartnerPresence (+2 more)
+
+### Community 60 - "Community 60"
+Cohesion: 0.18
+Nodes (11): getCurrentUser(), assertCoupleMember(), getActiveCoupleSpace(), ALLOWED_REACTIONS, clear, react, send, getAssistedLoggingContext() (+3 more)
+
+### Community 61 - "Community 61"
+Cohesion: 0.19
+Nodes (7): sendDiscordNotification, sendDailyPredictions, seedNutritionTips, seedPainTips, hideNutritionTip, logNotification, createOrUpdatePainLog
+
+### Community 62 - "Community 62"
+Cohesion: 0.15
+Nodes (9): toCalendarDateString(), assistLogPeriodEnd, assistLogPeriodStart, autoEndPeriods, deletePeriodEvent, logPeriodEnd, logPeriodStart, updateCycleSettings (+1 more)
+
+### Community 63 - "Community 63"
+Cohesion: 0.27
+Nodes (3): copyToClipboard(), getPainSeverityBucket(), shareText()
+
+### Community 64 - "Community 64"
+Cohesion: 0.2
+Nodes (6): generatePairingCode, linkPartnerWithCode, revokePartnerAccess, updateConnectedSinceDate, updatePartnerNickname, updateSharingSettings
+
+### Community 65 - "Community 65"
+Cohesion: 0.2
+Nodes (9): Approaches considered, Attribution model, Backend flow, Decision, Error handling, Interface design, Partner-Assisted Period Logging Design, Permission and ownership model (+1 more)
+
+### Community 66 - "Community 66"
+Cohesion: 0.2
+Nodes (9): Partner-Assisted Period Logging Implementation Plan, Task 1: Install the Convex function test harness, Task 2: Define permission and attribution behavior test-first, Task 3: Add the consent controls and privacy snapshot, Task 4: Replace the period logger with role-aware quick actions, Task 5: Add timeline attribution and correction, Task 6: Validate generated types and application behavior, Task 7: Deploy in controlled order (+1 more)
+
+### Community 67 - "Community 67"
+Cohesion: 0.25
+Nodes (6): PainLoggerProps, FEELING_BANDS, feelingForScore(), PAIN_TAGS, TactilePainLogger(), TactilePainLoggerProps
+
+### Community 68 - "Community 68"
+Cohesion: 0.25
+Nodes (6): createOrUpdateUser, ensureUser, syncUser, syncUserFromWebhook, updateUserPreferences, updateUserRole
+
+### Community 69 - "Community 69"
+Cohesion: 0.38
+Nodes (5): OnboardingFlow(), Step, toLocalDateString(), OnboardingPage(), Step
+
+### Community 71 - "Community 71"
+Cohesion: 0.33
+Nodes (3): PartnerChatProps, QUICK_EMOJIS, QUICK_LINES
+
+### Community 72 - "Community 72"
+Cohesion: 0.47
+Nodes (5): getAnniversaryMoment(), getCoupleStatus, getDisplayFallback(), parseDateParts(), relationshipTermLabel()
+
+### Community 74 - "Community 74"
+Cohesion: 0.4
+Nodes (3): getAllPrimaryUsers, getMe, getMyNotificationLog
+
+### Community 75 - "Community 75"
+Cohesion: 0.5
+Nodes (3): markSeen, NUDGE_MESSAGES, send
+
+### Community 76 - "Community 76"
 Cohesion: 0.67
-Nodes (3): 📊 Metrics to Track, Technical Metrics, User Engagement
+Nodes (3): Design Principles, Development Guidelines, 📝 Notes
 
 ## Knowledge Gaps
-- **363 isolated node(s):** `path`, `nextConfig`, `isProtectedRoute`, `DEFAULT_ALLOWED_ORIGINS`, `signInUrl` (+358 more)
+- **436 isolated node(s):** `path`, `nextConfig`, `isProtectedRoute`, `DEFAULT_ALLOWED_ORIGINS`, `signInUrl` (+431 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `CB Connect - Technical Product Requirements Document (PRD)` connect `Community 22` to `Community 32`, `Community 33`, `Community 34`, `Community 35`, `Community 36`, `Community 40`, `Community 10`, `Community 11`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 21`, `Community 23`, `Community 24`, `Community 26`, `Community 27`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
+- **Why does `CB Connect - Technical Product Requirements Document (PRD)` connect `Community 22` to `Community 32`, `Community 33`, `Community 34`, `Community 35`, `Community 36`, `Community 10`, `Community 11`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 21`, `Community 23`, `Community 24`, `Community 26`, `Community 27`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
 - **Why does `14. Deployment & DevOps` connect `Community 10` to `Community 22`?**
-  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+  _High betweenness centrality (0.008) - this node is a cross-community bridge._
 - **Why does `7. API/Function Specifications` connect `Community 11` to `Community 22`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **What connects `path`, `nextConfig`, `isProtectedRoute` to the rest of the system?**
-  _363 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _436 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
-- **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.13 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
   _Cohesion score 0.04 - nodes in this community are weakly interconnected._
+- **Should `Community 3` be split into smaller, more focused modules?**
+  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
