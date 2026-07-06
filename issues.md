@@ -1,7 +1,7 @@
 # CB Connect - Issues & Feature Tracker
 
 **Last Updated:** May 21, 2026
-
+Update with Github issues on the parent repo
 ---
 
 ## ✅ Completed
