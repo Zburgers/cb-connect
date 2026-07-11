@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 
   const body = await req.text();
 
-  let evt;
+  let evt: ReturnType<typeof verifyClerkWebhookPayload>;
   try {
     evt = verifyClerkWebhookPayload(body, WEBHOOK_SECRET, {
       "svix-id": svix_id,
