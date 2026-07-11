@@ -21,6 +21,13 @@ function requireValidCalendarDate(date: string, label: string) {
   }
 }
 
+function requirePastOrTodayCalendarDate(date: string, label: string) {
+  requireValidCalendarDate(date, label);
+  if (date > toCalendarDateString()) {
+    throw new Error(`${label} cannot be in the future`);
+  }
+}
+
 function requirePrimaryUser(user: Doc<"users">) {
   if (user.role !== "primary") {
     throw new Error("Only the primary user can update cycle data");
@@ -77,7 +84,7 @@ export const logPeriodStart = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
-    requireValidCalendarDate(args.startDate, "Start date");
+    requirePastOrTodayCalendarDate(args.startDate, "Start date");
 
     // Check for ongoing periods - close them first
     const ongoingPeriod = await findOpenPeriod(ctx, user._id);
@@ -116,7 +123,7 @@ export const logPeriodEnd = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
-    requireValidCalendarDate(args.endDate, "End date");
+    requirePastOrTodayCalendarDate(args.endDate, "End date");
 
     const ongoingPeriod = await findOpenPeriod(ctx, user._id);
 
@@ -143,7 +150,7 @@ export const assistLogPeriodStart = mutation({
     startDate: v.string(),
   },
   handler: async (ctx, args) => {
-    requireValidCalendarDate(args.startDate, "Start date");
+    requirePastOrTodayCalendarDate(args.startDate, "Start date");
     const { partner, primaryMembership } =
       await getAssistedLoggingContext(ctx);
     const now = Date.now();
@@ -191,7 +198,7 @@ export const assistLogPeriodEnd = mutation({
     endDate: v.string(),
   },
   handler: async (ctx, args) => {
-    requireValidCalendarDate(args.endDate, "End date");
+    requirePastOrTodayCalendarDate(args.endDate, "End date");
     const { partner, primaryMembership } =
       await getAssistedLoggingContext(ctx);
     const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
@@ -237,9 +244,9 @@ export const updatePeriodEvent = mutation({
       throw new Error("You can only correct your own period entries");
     }
 
-    requireValidCalendarDate(args.startDate, "Start date");
+    requirePastOrTodayCalendarDate(args.startDate, "Start date");
     if (args.endDate !== undefined) {
-      requireValidCalendarDate(args.endDate, "End date");
+      requirePastOrTodayCalendarDate(args.endDate, "End date");
       if (args.endDate < args.startDate) {
         throw new Error("End date cannot be before start date");
       }
