@@ -1,8 +1,7 @@
-import { Webhook } from "svix";
 import { headers } from "next/headers";
-import { WebhookEvent } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { verifyClerkWebhookPayload } from "./verify";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 if (!convexUrl) {
@@ -29,15 +28,13 @@ export async function POST(req: Request) {
 
   const body = await req.text();
 
-  const wh = new Webhook(WEBHOOK_SECRET);
-  let evt: WebhookEvent;
-
+  let evt;
   try {
-    evt = wh.verify(body, {
+    evt = verifyClerkWebhookPayload(body, WEBHOOK_SECRET, {
       "svix-id": svix_id,
       "svix-timestamp": svix_timestamp,
       "svix-signature": svix_signature,
-    }) as WebhookEvent;
+    });
   } catch (err) {
     console.error("Webhook verification failed:", err);
     return new Response("Invalid signature", { status: 400 });
