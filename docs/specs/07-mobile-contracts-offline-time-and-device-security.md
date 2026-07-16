@@ -6,6 +6,7 @@
 | Owner | CB Connect product, mobile, backend, and security |
 | Earliest milestone | After v0.2.0 Gate 0, Care Loop pilot evidence, and stable DTO contracts |
 | Last validated | 2026-07-17 against `main` at `4afd1ceb0640a7da96396b5488178aa1e7fe4e29` |
+| Dependencies | Specs 01-05 deployed; stable DTO/time/idempotency contracts; approved mobile product decision |
 | Candidate stack | Expo / React Native with Expo Router, Clerk, and the existing Convex backend |
 
 ## Decision
@@ -34,8 +35,9 @@ server authorization.
 
 ### Stable role-specific DTOs
 
-Define versionable `PrimaryHomeDto`, `PartnerHomeDto`, `CareCardOwnerDto`,
-`CareCardPartnerDto`, `PrivacySummaryDto`, and `TimelineEntryDto`. Database
+Define versionable `PrimaryHomeDto`, `PartnerHomeDto`, `CareOwnerRequestDto`,
+`CareCardDto`, `PrivacySummaryDto`, and `TimelineEntryDto`. The two Care Loop
+contracts retain the canonical names and meanings from spec 04. Database
 documents remain private. New fields are additive; removing or changing meaning
 requires a contract version.
 

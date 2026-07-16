@@ -159,9 +159,9 @@ defines an explicit correction transition.
 
 ## Immutable recipient share snapshot
 
-Publishing MUST create a new `careShares` record in the same transaction as its
-consent/audit event. The owner-private source record is never exposed through a
-partner query.
+Publishing MUST create a new `careShareSnapshots` record in the same transaction
+as its consent/audit event. The owner-private source record is never exposed
+through a partner query.
 
 The snapshot records, at minimum:
 

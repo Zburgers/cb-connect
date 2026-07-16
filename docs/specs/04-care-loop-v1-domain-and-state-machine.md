@@ -251,11 +251,18 @@ careShareSnapshots: defineTable({
   customHelpfulText: v.optional(v.string()),
   customAvoidText: v.optional(v.string()),
   policyVersion: v.string(),
-  sharedAt: v.number(),
+  publicationKeyDigest: v.string(),
+  createdByUserId: v.id("users"),
+  creationSource: v.literal("web"),
+  consentedAt: v.number(),
+  publishedAt: v.number(),
   expiresAt: v.number(),
 })
   .index("by_request_id_and_revision", ["requestId", "revision"])
-  .index("by_recipient_user_id_and_shared_at", ["recipientUserId", "sharedAt"]),
+  .index("by_recipient_user_id_and_published_at", [
+    "recipientUserId",
+    "publishedAt",
+  ]),
 
 careRequestEvents: defineTable({
   requestId: v.id("careRequests"),
@@ -350,7 +357,7 @@ type CareCardDto = {
   avoidActions: AvoidAction[];
   customHelpfulText?: string;
   customAvoidText?: string;
-  sharedAt: number;
+  publishedAt: number;
   expiresAt: number;
   response: "unanswered" | "acknowledged" | "cannot_help";
 };

@@ -5,7 +5,8 @@
 | Status | Deferred discovery/specification; not approved for implementation |
 | Owner | CB Connect product, mobile, backend, privacy, and health-content review |
 | Earliest milestone | Mobile beta after the mobile decision record is promoted |
-| Last validated | 2026-07-17 |
+| Last validated | 2026-07-17 against `main` at `4afd1ceb0640a7da96396b5488178aa1e7fe4e29` |
+| Dependencies | Approved native client; spec 07 promotion; import job evidence; privacy and health-content review |
 | Platforms considered | Apple HealthKit and Android Health Connect |
 
 ## Decision

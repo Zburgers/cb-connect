@@ -124,7 +124,7 @@ After Gate 0 passes, the pilot includes only:
 
 - one active, expiring Care Card per primary user;
 - request-only sharing as the default and only initial share mode;
-- up to three helpful actions and three avoid actions;
+- one to three helpful actions and zero to three avoid actions;
 - an explicit recipient and immutable partner-visible share snapshot;
 - partner responses limited to `acknowledged` or `cannot_help`;
 - primary-user cancellation and immediate revocation;
@@ -270,8 +270,8 @@ content.
 ### 9.2 Care Loop
 
 - A primary user can publish with zero health fields.
-- Publication enforces three helpful and three avoid items; custom text has a
-  separate bounded validator.
+- Publication enforces one to three helpful and zero to three avoid items;
+  custom text has a separate bounded validator.
 - A second active card requires an explicit replace/cancel path.
 - The partner sees exactly the immutable recipient snapshot.
 - The partner can respond once; duplicate retries return the existing result.

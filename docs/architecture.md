@@ -1,8 +1,14 @@
 # CB Connect Architecture
 
-**Document status:** Canonical architecture baseline for the `v0.2.0` planning branch  
-**Repository baseline reviewed:** `main` at `4afd1ceb0640a7da96396b5488178aa1e7fe4e29`  
-**Scope:** Current web/Convex implementation and the approved target architecture for a consent-first Care Loop release  
+| Field | Value |
+|---|---|
+| Status | Canonical architecture baseline; target v0.2.0 behavior not implemented |
+| Owner | CB Connect Engineering and Privacy/Security |
+| Milestone | `v0.2.0`, trust-first Care Loop pilot |
+| Last validated | 2026-07-17 against `main` at `4afd1ceb0640a7da96396b5488178aa1e7fe4e29` |
+| Dependencies | [PRD v2](./product/cb-connect-prd-v2.md), specs 01-05, and refreshed live issue/PR state |
+| Authority | Canonical current/target system boundary; supersedes architecture claims in the legacy technical PRD |
+| Scope | Current web/Convex implementation and the approved target architecture for a consent-first Care Loop release |
 
 This document separates the system that exists today from the target architecture. A statement under **CURRENT** describes checked-in behavior. A statement under **TARGET v0.2.0** is a design requirement and must not be treated as implemented until its migration step and tests are complete.
 
@@ -102,8 +108,9 @@ The backend is divided by domain behavior rather than by screens:
 - `identity`: canonical Clerk identity mapping and user lifecycle.
 - `relationships`: active membership, invitation, leave/revoke, and shared-data lifecycle.
 - `sharing`: defaults, per-entry consent, immutable consent snapshots, and effective visibility.
-- `cycle`: observed period records and confidence-aware projections.
-- `checkIns`: owner-private daily body context.
+- `cycle`: observed period records and current deterministic calculation;
+  confidence-aware projections remain a post-v0.2.0 candidate.
+- `checkIns`: owner-private Care Loop request/avoid draft source.
 - `care`: partner-safe Care Cards, the lean response state machine, and audit trail.
 - `events`: durable domain event creation.
 - `notifications`: inbox, preferences, devices, delivery planning, retry, and receipts.
@@ -143,8 +150,8 @@ Ownership and authorization follow these rules:
 The target separates:
 
 - owner-private `careCheckIns`;
-- immutable, recipient-specific `careShares`;
-- stateful `careActions`;
+- immutable, recipient-specific `careShareSnapshots`;
+- bounded response state on `careRequests` for the current revision;
 - append-only consent and action audit events.
 
 `careOutcomes`, learned preferences, selected-detail sharing, and completion
@@ -322,12 +329,14 @@ These invariants apply to all `v0.2.0` implementation work:
 2. **Repair identity.** Add canonical token identity fields, backfill, dual-read temporarily, verify, then remove subject-only authorization lookup.
 3. **Repair relationship lifecycle.** Make active membership explicit, constrain roles, add symmetric leave/safety reset, invalidate invitations, and replace destructive chat clear.
 4. **Add data rights.** Define export, retention, account deletion, shared-data handling, and bounded cleanup jobs.
-5. **Add consent primitives.** Introduce persistent Care Loop defaults, immutable per-share snapshots, audit records, expiry, and effective visibility helpers.
+5. **Add consent primitives.** Introduce default-disabled Care Loop pilot eligibility, explicit per-publication consent, immutable per-share snapshots, audit records, expiry, and effective visibility helpers.
 6. **Add Care Loop state.** Introduce private check-ins, recipient shares, acknowledge/cannot-help transitions, and role-safe DTOs without external push.
 7. **Add events and inbox.** Write domain events transactionally and expose a safe in-app feed.
 8. **Add notification delivery.** Introduce preferences, devices, dedupe, retry, receipts, redaction, and consent rechecks; then deprecate direct Discord side effects.
 9. **Extract stable contracts.** Split home composition and publish typed web/mobile-safe DTOs and pure domain validation.
-10. **Add confidence and mobile groundwork.** Persist timezone, standardize dates/idempotency, and introduce confidence-aware cycle projections before a native client or health import.
+10. **Record later foundations.** Persist timezone and standardize
+   dates/idempotency where Gate 0 or Care Loop requires them. Confidence-aware
+   projections, native mobile, and health import remain later candidates.
 
 Every schema step is additive first, supports legacy rows explicitly, updates fixtures and tests with the schema, and removes legacy fields only in a later verified migration.
 
