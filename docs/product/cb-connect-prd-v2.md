@@ -1,11 +1,11 @@
 # CB Connect Product Requirements Document v2
 
-**Status:** Canonical product baseline; approved for v0.2.0 planning  
-**Owner:** CB Connect Product and Engineering  
-**Milestone:** v0.2.0, trust-first pilot  
-**Last validated:** 2026-07-17 against `main` commit `4afd1ceb0640a7da96396b5488178aa1e7fe4e29`  
-**Implementation status:** Not started; Care Loop is a gated product hypothesis  
-**Dependencies:** Gate 0 trust specifications, Care Loop privacy/domain specifications, notification idempotency, and reliable authenticated E2E coverage  
+**Status:** Canonical product baseline; approved for v0.2.0 planning
+**Owner:** CB Connect Product and Engineering
+**Milestone:** v0.2.0, trust-first pilot
+**Last validated:** 2026-07-17 against `main` commit `4afd1ceb0640a7da96396b5488178aa1e7fe4e29`
+**Implementation status:** Not started; Care Loop is a gated product hypothesis
+**Dependencies:** Gate 0 trust specifications, Care Loop privacy/domain specifications, notification idempotency, and reliable authenticated E2E coverage
 **Authority:** This is canonical product truth for current direction and v0.2.0. `docs/cb-connect-technical-prd.md` is historical background, not a current implementation contract.
 
 ## 1. Product decision

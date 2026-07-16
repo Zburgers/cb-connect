@@ -1,11 +1,11 @@
 # CB Connect — Ideation, Product Gap, and Mobile-Readiness Analysis
 
-**Repository:** `Zburgers/cb-connect`  
-**Branch reviewed:** `main`  
-**Repository HEAD reviewed:** `4afd1ceb0640a7da96396b5488178aa1e7fe4e29`  
-**Date:** 2026-07-17  
-**Status:** Validated research input; not canonical product scope  
-**Superseded by:** `docs/product/cb-connect-prd-v2.md` and `docs/product/v0.2.0-roadmap.md`  
+**Repository:** `Zburgers/cb-connect`
+**Branch reviewed:** `main`
+**Repository HEAD reviewed:** `4afd1ceb0640a7da96396b5488178aa1e7fe4e29`
+**Date:** 2026-07-17
+**Status:** Validated research input; not canonical product scope
+**Superseded by:** `docs/product/cb-connect-prd-v2.md` and `docs/product/v0.2.0-roadmap.md`
 **Purpose:** Decide what CB Connect should become, which features are worth building before mobile launch, and which architectural/PRD gaps must be closed first.
 
 > This report records the ideation that produced the v0.2.0 direction. Claims
@@ -47,7 +47,7 @@ The current application already has:
 - a consent-aware timeline and CSV export;
 - relationship metadata such as nicknames and a connected-since date.
 
-These are the foundations of a care-coordination product, not just a tracker. The schema confirms these capabilities in `convex/schema.ts`, including consent flags, attributed period events, presence, nudges, messages, and reactions.   
+These are the foundations of a care-coordination product, not just a tracker. The schema confirms these capabilities in `convex/schema.ts`, including consent flags, attributed period events, presence, nudges, messages, and reactions.
 
 ### The main strategic recommendation
 
@@ -66,7 +66,7 @@ Build in this order:
 
 ### 2.1 Current technical shape
 
-The repository is a Next.js 15.2 and React 19 application backed by Convex and Clerk. It already includes Vitest and Playwright scripts.  
+The repository is a Next.js 15.2 and React 19 application backed by Convex and Clerk. It already includes Vitest and Playwright scripts.
 
 The root `README.md`, however, contains only the project title. The repository therefore has a functioning product and substantial internal documentation, but almost no useful public-facing repository documentation.
 
@@ -80,13 +80,13 @@ The primary dashboard currently renders:
 - pain tips for scores of four or higher;
 - phase-specific nutrition suggestions.
 
-This is visible directly in the dashboard composition. 
+This is visible directly in the dashboard composition.
 
-The timeline supports pain and period history, partner-assisted attribution, correction, deletion, and CSV export.  
+The timeline supports pain and period history, partner-assisted attribution, correction, deletion, and CSV export.
 
 ### 2.3 Current partner experience
 
-The partner dashboard is already framed as “What today asks from you,” which is strategically correct. It surfaces shared phase/pain context and generic tips.  
+The partner dashboard is already framed as “What today asks from you,” which is strategically correct. It surfaces shared phase/pain context and generic tips.
 
 The gap is that “what today asks” is still inferred from generic content. The primary user does not directly express:
 
@@ -106,7 +106,7 @@ The product has three meaningful controls:
 - share pain data;
 - allow the partner to help log period dates.
 
-These are visible in the partner settings UI and represented in `coupleMembers`.  
+These are visible in the partner settings UI and represented in `coupleMembers`.
 
 This is a strong start, but it remains a category-level, persistent consent model. It cannot yet express:
 
@@ -119,7 +119,7 @@ This is a strong start, but it remains a category-level, persistent consent mode
 
 ### 2.5 Current prediction model
 
-Cycle calculations are based on one latest period start, a user-supplied average cycle length, and a deterministic modulo calculation. Ovulation is placed around the midpoint of the configured cycle. 
+Cycle calculations are based on one latest period start, a user-supplied average cycle length, and a deterministic modulo calculation. Ovulation is placed around the midpoint of the configured cycle.
 
 This is acceptable as an early MVP approximation. It is not sufficient for a mature health-adjacent product because it lacks:
 
@@ -133,11 +133,11 @@ This is acceptable as an early MVP approximation. It is not sufficient for a mat
 
 ### 2.6 Current notification model
 
-The schema has a notification log and a single binary `externalNotificationConsent` on the user.  
+The schema has a notification log and a single binary `externalNotificationConsent` on the user.
 
-The settings UI exposes a single “Allow external notification delivery” checkbox rather than preferences by category, channel, recipient, sensitivity, or quiet hours.  
+The settings UI exposes a single “Allow external notification delivery” checkbox rather than preferences by category, channel, recipient, sensitivity, or quiet hours.
 
-The design audit already states that Discord is not an appropriate long-term product surface and recommends an internal outbox before replacing the delivery adapter. 
+The design audit already states that Discord is not an appropriate long-term product surface and recommends an internal outbox before replacing the delivery adapter.
 
 ### 2.7 Current relationship layer
 
@@ -151,7 +151,7 @@ CB Connect already includes:
 - quick messages and reactions;
 - real-time presence and nudges.
 
-The schema and partner page show that this layer is real, not aspirational.   
+The schema and partner page show that this layer is real, not aspirational.
 
 The relationship layer currently lacks stateful workflows. A message can be sent, but there is no concept of a requested action, acknowledgement, completion, outcome, recurring preference, or care boundary.
 
@@ -163,35 +163,35 @@ The relationship layer currently lacks stateful workflows. A message can be sent
 
 #### A. Partner cycle sharing
 
-Clue Connect shares basic phases in a calendar, while hiding tracked experiences such as mood, energy, and pain. Its latest release notes also announce multiconnection, although a current support article still describes one-person sharing, indicating rollout or documentation lag.  
+Clue Connect shares basic phases in a calendar, while hiding tracked experiences such as mood, energy, and pain. Its latest release notes also announce multiconnection, although a current support article still describes one-person sharing, indicating rollout or documentation lag.
 
-Cycles Partner Connect similarly allows a partner to view cycle information while keeping logs, observations, and sexual activity private. 
+Cycles Partner Connect similarly allows a partner to view cycle information while keeping logs, observations, and sexual activity private.
 
 **Implication:** Basic phase sharing is no longer differentiated.
 
 #### B. Partner education and proactive tips
 
-Flo for Partners provides the partner with medical insights and proactive tips. Premium expands this into articles, stories, videos, quizzes, and polls. The partner cannot see or edit symptoms, notes, or historical/future calendar details.   
+Flo for Partners provides the partner with medical insights and proactive tips. Premium expands this into articles, stories, videos, quizzes, and polls. The partner cannot see or edit symptoms, notes, or historical/future calendar details.
 
 **Implication:** Generic partner education is useful, but it is also becoming table stakes.
 
 #### C. Broader symptom tracking and predictive analysis
 
-Clue’s current release notes include pain intensity, predictions for several pain categories based on the past three to four cycles, weight charts, more health conditions, and biometric overlays. 
+Clue’s current release notes include pain intensity, predictions for several pain categories based on the past three to four cycles, weight charts, more health conditions, and biometric overlays.
 
 **Implication:** A single pain score and five pain tags will look thin in a mature mobile product.
 
 #### D. Wearable and health-platform integration
 
-Clue’s release notes include integrations with Fitbit, Whoop, Polar, Garmin through Health Connect, Oura, and other devices. Stardust describes Apple Health and wearable-driven insights across sleep, energy, and activity.  
+Clue’s release notes include integrations with Fitbit, Whoop, Polar, Garmin through Health Connect, Oura, and other devices. Stardust describes Apple Health and wearable-driven insights across sleep, energy, and activity.
 
-Apple HealthKit and Android Health Connect both expose menstrual-cycle data types. Android Health Connect additionally includes flow, basal body temperature, ovulation tests, spotting, resting heart rate, HRV, sleep, skin temperature, and source metadata.   
+Apple HealthKit and Android Health Connect both expose menstrual-cycle data types. Android Health Connect additionally includes flow, basal body temperature, ovulation tests, spotting, resting heart rate, HRV, sleep, skin temperature, and source metadata.
 
 **Implication:** Mobile health-platform integration should be part of the architecture now, even if it is not the first feature shipped.
 
 #### E. Daily relationship rituals
 
-Paired is built around short daily check-ins and a large library of expert-led quizzes, games, questions, exercises, relationship insights, timeline entries, and special dates.  
+Paired is built around short daily check-ins and a large library of expert-led quizzes, games, questions, exercises, relationship insights, timeline entries, and special dates.
 
 **Implication:** Generic couple engagement is a crowded field. CB Connect should not compete by copying a large content library.
 
@@ -322,10 +322,10 @@ Anti-actions are equally important:
 
 The partner sees something like:
 
-> **Today is low-capacity.**  
-> Shared by Naki until 10:00 PM.  
-> **Helpful:** handle dinner, check in once after 7 PM.  
-> **Avoid:** repeated questions or advice.  
+> **Today is low-capacity.**
+> Shared by Naki until 10:00 PM.
+> **Helpful:** handle dinner, check in once after 7 PM.
+> **Avoid:** repeated questions or advice.
 > Body details remain private.
 
 The partner can:
@@ -407,7 +407,7 @@ Replace exact-looking predictions with:
 
 #### Example
 
-> Your next period is most likely between August 12–15.  
+> Your next period is most likely between August 12–15.
 > Confidence: moderate, based on four confirmed cycles with a five-day variation.
 
 This is more honest than a single deterministic date.
@@ -455,7 +455,7 @@ No partner score, streak shame, or public ranking.
 
 ### 6.5 Provider share pack
 
-The repository already provides CSV export, while its backlog still lists PDF reports, provider sharing, and historical analysis as incomplete. 
+The repository already provides CSV export, while its backlog still lists PDF reports, provider sharing, and historical analysis as incomplete.
 
 A provider pack should include only user-selected data:
 
@@ -525,15 +525,15 @@ Imported data needs:
 - conflict policy;
 - user ability to disconnect and remove imported copies.
 
-Android explicitly provides client IDs, client record versions, data origin, recording method, and zone offsets to support synchronization and provenance. 
+Android explicitly provides client IDs, client record versions, data origin, recording method, and zone offsets to support synchronization and provenance.
 
 ---
 
 ## 7. PRD gaps
 
-The technical PRD is Version 1.0, dated January 31, 2026, and still marked “Draft for Review.” Its implementation phases remain an unchecked eight-week MVP plan.  
+The technical PRD is Version 1.0, dated January 31, 2026, and still marked “Draft for Review.” Its implementation phases remain an unchecked eight-week MVP plan.
 
-`AGENTS.md` explicitly warns that the PRD is background rather than current implementation truth. 
+`AGENTS.md` explicitly warns that the PRD is background rather than current implementation truth.
 
 The PRD should be replaced or superseded, not incrementally patched.
 
@@ -595,7 +595,7 @@ The PRD needs explicit requirements for:
 - third-party processor inventory;
 - breach-response workflow.
 
-This is urgent because the current shared-chat clear operation can delete the whole thread for both users, and an open issue documents the data-loss risk. 
+This is urgent because the current shared-chat clear operation can delete the whole thread for both users, and an open issue documents the data-loss risk.
 
 ### 7.5 Notification PRD gaps
 
@@ -611,7 +611,7 @@ The PRD still centers Discord delivery and does not define:
 - device-token lifecycle;
 - revoked consent handling.
 
-Open issue #9 confirms that scheduled notifications currently lack an idempotency key or pre-send deduplication. 
+Open issue #9 confirms that scheduled notifications currently lack an idempotency key or pre-send deduplication.
 
 ### 7.6 Mobile PRD gaps
 
@@ -634,7 +634,7 @@ The PRD has no requirements for:
 
 ### 7.7 Metrics gaps
 
-The repository tracker lists DAU, partner-link conversion, feature adoption, retention, function performance, load time, error rate, and OCC conflict rate, but all remain unchecked. 
+The repository tracker lists DAU, partner-link conversion, feature adoption, retention, function performance, load time, error rate, and OCC conflict rate, but all remain unchecked.
 
 The PRD needs event definitions, not only metric names.
 
@@ -679,7 +679,7 @@ Guardrail metrics:
 - pain-tip selection;
 - nutrition-tip filtering and rotation.
 
-This is manageable today, but adding care requests, insights, notification state, import provenance, and mobile-specific payloads will make it hard to test and evolve. 
+This is manageable today, but adding care requests, insights, notification state, import provenance, and mobile-specific payloads will make it hard to test and evolve.
 
 #### Recommendation
 
@@ -696,7 +696,7 @@ A composed `home.getPrimaryHome` and `home.getPartnerHome` can then assemble sta
 
 ### 8.2 Untyped frontend boundary
 
-`PartnerDashboardProps` currently uses `data: any`. 
+`PartnerDashboardProps` currently uses `data: any`.
 
 This is risky for mobile extraction because web and native clients need explicit, versionable contracts.
 
@@ -748,7 +748,7 @@ Recompute after relevant period changes.
 
 The schema has date strings but no user timezone. The dashboard accepts a client-supplied `todayDate`. Mobile devices may travel, cross midnight offline, or import records with distinct zone offsets.
 
-Android Health Connect explicitly models start and end zone offsets so history remains consistent when a user travels. 
+Android Health Connect explicitly models start and end zone offsets so history remains consistent when a user travels.
 
 #### Recommendation
 
@@ -819,7 +819,7 @@ This directly addresses the repository’s known notification idempotency gap.
 
 ### 8.7 No notification inbox/read model
 
-The schema has no first-class notification inbox and no `readAt` state. The chat launcher badge uses the total message count, not an unread count. 
+The schema has no first-class notification inbox and no `readAt` state. The chat launcher badge uses the total message count, not an unread count.
 
 #### Recommendation
 
@@ -827,7 +827,7 @@ Add per-user read cursors or receipts rather than duplicating read state on ever
 
 ### 8.8 Shared-message lifecycle is unsafe
 
-The current UI calls a shared clear mutation after a browser confirmation. 
+The current UI calls a shared clear mutation after a browser confirmation.
 
 #### Recommendation
 
@@ -840,7 +840,7 @@ Replace global clear with:
 
 ### 8.9 Content has no clinical governance metadata
 
-`painTips` and `nutritionTips` have content and activation fields, but no reviewer, evidence source, revision, jurisdiction, or review date. 
+`painTips` and `nutritionTips` have content and activation fields, but no reviewer, evidence source, revision, jurisdiction, or review date.
 
 #### Recommendation
 
@@ -857,7 +857,7 @@ Add:
 
 ### 8.10 Mobile import requires source-aware idempotency
 
-Health Connect exposes data-origin, client ID, and record version metadata specifically to support synchronization and conflict resolution. 
+Health Connect exposes data-origin, client ID, and record version metadata specifically to support synchronization and conflict resolution.
 
 CB Connect therefore needs a generic import identity:
 
@@ -881,7 +881,7 @@ The repository has:
 - a June graph report built from an older commit;
 - active GitHub issues and a draft PR.
 
-The newest repository work includes assisted period logging, while the old PRD still describes the original MVP. Recent commits confirm that assisted logging and the consent-aware timeline were added in June.  
+The newest repository work includes assisted period logging, while the old PRD still describes the original MVP. Recent commits confirm that assisted logging and the consent-aware timeline were added in June.
 
 #### Recommendation
 
@@ -903,10 +903,10 @@ Use **Expo / React Native with Expo Router**, while retaining the existing Conve
 
 This is compatible with the current repository choices:
 
-- Convex officially supports React Native through the same React client package and documents Expo setup.  
-- Convex’s Clerk integration supports React-based Clerk SDKs, including Expo. 
-- Clerk has a current Expo SDK. Its prebuilt native components are still marked beta, so a production decision should be made consciously rather than adopting them by default.  
-- Expo supports local and remote notifications and can deliver through Expo Push Service, FCM, or APNs.  
+- Convex officially supports React Native through the same React client package and documents Expo setup.
+- Convex’s Clerk integration supports React-based Clerk SDKs, including Expo.
+- Clerk has a current Expo SDK. Its prebuilt native components are still marked beta, so a production decision should be made consciously rather than adopting them by default.
+- Expo supports local and remote notifications and can deliver through Expo Push Service, FCM, or APNs.
 
 ### 9.2 Do not rewrite the web app first
 
@@ -983,7 +983,7 @@ Receipt updates delivery status
 Tap deep-links to authenticated in-app detail
 ```
 
-Track both device tokens and provider-specific status. Expo’s own guidance recommends storing both Expo and native device tokens if flexibility may be needed later. 
+Track both device tokens and provider-specific status. Expo’s own guidance recommends storing both Expo and native device tokens if flexibility may be needed later.
 
 ### 9.5 HealthKit and Health Connect strategy
 
@@ -1001,7 +1001,7 @@ Writing cycle data into system health stores introduces source-of-truth, duplica
 
 #### Use platform privacy rules as architecture inputs
 
-Apple states that health and fitness data is especially sensitive, requires collection disclosure, cannot be used for advertising/data mining, and personal health information may not be stored in iCloud.  
+Apple states that health and fitness data is especially sensitive, requires collection disclosure, cannot be used for advertising/data mining, and personal health information may not be stored in iCloud.
 
 ---
 
@@ -1011,7 +1011,7 @@ This section is product architecture guidance, not legal advice.
 
 ### 10.1 Health-app rules must be treated as launch requirements
 
-The FTC explains that most consumer health apps not covered by HIPAA may still fall under the FTC Act and, depending on their data flows and multiple-source capabilities, the Health Breach Notification Rule. The updated rule covers unauthorized disclosure as well as conventional security breaches.   
+The FTC explains that most consumer health apps not covered by HIPAA may still fall under the FTC Act and, depending on their data flows and multiple-source capabilities, the Health Breach Notification Rule. The updated rule covers unauthorized disclosure as well as conventional security breaches.
 
 Adding HealthKit, Health Connect, or wearable imports makes the product’s data-flow inventory and breach-response plan more important, not less.
 
@@ -1047,7 +1047,7 @@ Required rules:
 - “Give me space” is a valid complete care request.
 - No streaks or scores should punish a user for not sharing.
 
-The current partner dashboard already uses a good ambiguity pattern: absence of pain data may mean it was not logged or was kept private. 
+The current partner dashboard already uses a good ambiguity pattern: absence of pain data may mean it was not logged or was kept private.
 
 ---
 
@@ -1088,7 +1088,7 @@ Current open or partially addressed issues include:
 - role-change constraints;
 - server-side user-sync boundary.
 
-The current draft PR #8 addresses the webhook raw-body issue and future period dates, but remains open and draft. 
+The current draft PR #8 addresses the webhook raw-body issue and future period dates, but remains open and draft.
 
 #### Exit criteria
 
@@ -1348,7 +1348,7 @@ CB Connect should not spend months writing generic quizzes and games. One contex
 
 ### 15.4 Full multi-partner support now
 
-The existing relationship and role model assumes primary/partner semantics. Multiple connections affect permissions, notifications, relationship ownership, UI, and safety. The repository itself already identifies this as a significant architectural change. 
+The existing relationship and role model assumes primary/partner semantics. Multiple connections affect permissions, notifications, relationship ownership, UI, and safety. The repository itself already identifies this as a significant architectural change.
 
 Design identifiers and permissions so a future migration is possible, but do not delay the mobile product for it.
 
