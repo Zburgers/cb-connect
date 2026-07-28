@@ -17,11 +17,6 @@ export const listForCouple = query({
       .take(limit);
 
     const ordered = messages.reverse();
-    const reactions = await ctx.db
-      .query("coupleMessageReactions")
-      .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-      .collect();
-
     return await Promise.all(
       ordered.map(async (message) => {
         const sender = await ctx.db.get(message.senderId);
@@ -33,13 +28,24 @@ export const listForCouple = query({
           : isPartner
             ? membership.partnerNickname || senderPreferredName
             : senderPreferredName;
-        const messageReactions = reactions
-          .filter((reaction) => reaction.messageId === message._id)
-          .map((reaction) => ({
-            _id: reaction._id,
-            emoji: reaction.emoji,
-            isMine: reaction.userId === user._id,
-          }));
+        const reactions = await ctx.db
+          .query("coupleMessageReactions")
+          .withIndex("by_message", (q) => q.eq("messageId", message._id))
+          .take(20);
+        const grouped = new Map<string, { emoji: string; count: number; isMine: boolean }>();
+        for (const reaction of reactions) {
+          const current = grouped.get(reaction.emoji);
+          if (current) {
+            current.count += 1;
+            current.isMine ||= reaction.userId === user._id;
+          } else {
+            grouped.set(reaction.emoji, {
+              emoji: reaction.emoji,
+              count: 1,
+              isMine: reaction.userId === user._id,
+            });
+          }
+        }
 
         return {
           _id: message._id,
@@ -48,10 +54,26 @@ export const listForCouple = query({
           senderName,
           senderImageUrl: sender?.imageUrl ?? null,
           isMine,
-          reactions: messageReactions,
+          deliveredAt: message.deliveredAt ?? null,
+          readAt: message.readAt ?? null,
+          reactions: [...grouped.values()],
         };
       })
     );
+  },
+});
+
+export const unreadSummary = query({
+  args: {},
+  handler: async (ctx) => {
+    const { membership, user } = await getActiveCoupleSpace(ctx);
+    const state = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) =>
+        q.eq("coupleId", membership.coupleId).eq("userId", user._id)
+      )
+      .first();
+    return { unreadCount: state?.unreadCount ?? 0 };
   },
 });
 
