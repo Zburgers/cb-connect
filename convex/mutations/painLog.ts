@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
 import { internal } from "../_generated/api";
+import { requirePastOrTodayCalendarDate } from "../_helpers/calendarDates";
 
 export const createOrUpdatePainLog = mutation({
   args: {
@@ -20,6 +21,7 @@ export const createOrUpdatePainLog = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
+    requirePastOrTodayCalendarDate(args.date, "Pain log date");
 
     if (args.painScore < 0 || args.painScore > 10) {
       throw new Error("Pain score must be between 0 and 10");

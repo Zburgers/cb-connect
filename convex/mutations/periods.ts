@@ -7,26 +7,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
-
-function requireValidCalendarDate(date: string, label: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error(`${label} must be a valid date`);
-  }
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  if (
-    Number.isNaN(parsed.getTime()) ||
-    parsed.toISOString().slice(0, 10) !== date
-  ) {
-    throw new Error(`${label} must be a valid date`);
-  }
-}
-
-function requirePastOrTodayCalendarDate(date: string, label: string) {
-  requireValidCalendarDate(date, label);
-  if (date > toCalendarDateString()) {
-    throw new Error(`${label} cannot be in the future`);
-  }
-}
+import { requirePastOrTodayCalendarDate } from "../_helpers/calendarDates";
 
 function requirePrimaryUser(user: Doc<"users">) {
   if (user.role !== "primary") {
