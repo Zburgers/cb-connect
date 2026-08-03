@@ -41,13 +41,13 @@ Update with Github issues on the parent repo
 
 --
 
-### Production deployment pipeline is incomplete and failed before frontend promotion
+### Production deployment pipeline is incomplete; frontend service recovered
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Remediation implemented; protected secret configuration and a successful deployment verification remain pending
+**Status:** Frontend recovery deployed; coordinated Convex promotion and full runtime verification remain pending
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** For merge `d3ef5a7`, CI run `30852430557` passed, but deploy run `30852430655` failed at Convex deployment because `CONVEX_DEPLOYMENT`/deploy-key configuration was absent; frontend build and PM2 promotion were skipped. This checkout now wires the repository env contract through a targeted `production` environment, validates required values without printing them, syncs optional Convex runtime secrets from a mode-`0600` temporary file, and promotes PM2 with `startOrReload --update-env` without mutating source or deleting the process. The deployment environment and required deploy/configuration values are now present; Clerk webhook signing remains optional because no Clerk Dashboard webhook endpoint is configured. Authenticated E2E, dependency policy, immutable artifacts, post-deploy listener/readiness/version/persistence checks and rollback remain separate Gate 0 work.
+**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` has an invalid authorization format and failed before build. Commit `c47211f` therefore made Convex sync/deploy an explicit `DEPLOY_CONVEX=true` opt-in instead of allowing an invalid backend key to block frontend recovery. Deploy run `30860139400` then passed unit validation, Next build and `pm2 startOrReload`. Public `/api/health` returned 200; a clean browser received the expected dashboard-to-sign-in redirect, rendered the Clerk form, loaded all 34 observed static/app/Clerk assets with 200 responses and reported zero console errors. Authenticated dashboard behavior, immutable release identity, valid coordinated Convex promotion, listener/PM2 reboot persistence, rollback and recovery rehearsals remain unverified Gate 0 work.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --

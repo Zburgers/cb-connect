@@ -106,18 +106,19 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook
 
 ## CI/CD with GitHub Actions
 
-The `main` deployment workflow is configured to target a GitHub environment named `production`. The repository owner must create and protect that environment, then place the deployment secrets there. The workflow does not copy `.env` files into the repository or write secrets into `pm2.config.js`.
+The `main` deployment workflow targets a GitHub environment named `production`. Protect that environment and make the listed Actions secrets available at repository or environment scope. The workflow does not copy `.env` files into the repository or write secrets into `pm2.config.js`.
 
-Required production environment secrets:
+Required frontend deployment secrets:
 
-1. `CONVEX_DEPLOY_KEY` - Convex production deploy key
-2. `CONVEX_DEPLOYMENT` - explicit Convex deployment selector
-3. `NEXT_PUBLIC_CONVEX_URL` - Convex production client URL
-4. `NEXT_PUBLIC_CONVEX_SITE_URL` - Convex HTTP actions URL
-5. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
-6. `CLERK_SECRET_KEY` - Clerk server secret
-7. `CLERK_FRONTEND_API_URL` - Clerk issuer/frontend API URL
-8. `CORS_ALLOWED_ORIGINS` - comma-separated production origin allowlist
+1. `CONVEX_DEPLOYMENT` - explicit Convex deployment selector
+2. `NEXT_PUBLIC_CONVEX_URL` - Convex production client URL
+3. `NEXT_PUBLIC_CONVEX_SITE_URL` - Convex HTTP actions URL
+4. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+5. `CLERK_SECRET_KEY` - Clerk server secret
+6. `CLERK_FRONTEND_API_URL` - Clerk issuer/frontend API URL
+7. `CORS_ALLOWED_ORIGINS` - comma-separated production origin allowlist
+
+Convex promotion is disabled by default. To deploy functions in the same workflow, first replace `CONVEX_DEPLOY_KEY` with a valid production deploy key, then set the Actions variable `DEPLOY_CONVEX=true`. Leave the variable absent/false for a frontend-only recovery deployment; an invalid key must not block PM2 recovery.
 
 Optional production environment secret:
 
@@ -126,7 +127,7 @@ Optional production environment secret:
 
 ### Workflow:
 
-The workflow validates required values without printing them, syncs Convex function secrets using a mode-`0600` temporary file, deploys Convex, builds with the `NEXT_PUBLIC_*` values, then starts or reloads PM2 with runtime values supplied by the step environment. It never uses `sed` to mutate source and never deletes the healthy PM2 process before reload.
+The workflow validates required values without printing them, runs unit tests, builds with the `NEXT_PUBLIC_*` values, then starts or reloads PM2 with runtime values supplied by the step environment. With `DEPLOY_CONVEX=true`, it also syncs optional Convex function secrets using a mode-`0600` temporary file and deploys Convex before the frontend build. It never uses `sed` to mutate source and never deletes the healthy PM2 process before reload.
 
 The public values are still deployment configuration: `NEXT_PUBLIC_*` values are embedded into the browser bundle by Next.js, so they must not contain private credentials. `CLERK_SECRET_KEY` and `CONVEX_DEPLOY_KEY` remain secret-backed. The current deployment does not configure a Clerk webhook endpoint, so `CLERK_WEBHOOK_SECRET` is intentionally optional.
 
