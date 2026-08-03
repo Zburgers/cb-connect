@@ -7,7 +7,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useUser } from "@clerk/nextjs";
 import { User, Heart, Calendar, Check, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { toLocalDateString } from "@/lib/utils";
+import { getLocalTimeZone, toLocalDateString } from "@/lib/utils";
 // Note: by the time OnboardingFlow renders, ensureUser has already run in the layout,
 // so `me` is guaranteed to exist. createOrUpdateUser is not needed here.
 
@@ -53,7 +53,10 @@ export default function OnboardingFlow() {
     if (!lastPeriodDate) return;
     setIsSubmitting(true);
     try {
-      await logPeriodStart({ startDate: lastPeriodDate });
+      await logPeriodStart({
+        startDate: lastPeriodDate,
+        timeZone: getLocalTimeZone(),
+      });
       await updateCycleSettings({ cycleLength, periodLength });
       setStep("done");
       window.location.reload();

@@ -6,7 +6,7 @@ import { Check, HeartPulse, Minus, Plus } from "lucide-react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import GlassPanel from "@/components/common/GlassPanel";
-import { cn, toLocalDateString } from "@/lib/utils";
+import { cn, getLocalTimeZone, toLocalDateString } from "@/lib/utils";
 
 const PAIN_TAGS = [
   { value: "cramps", label: "Cramps" },
@@ -57,6 +57,7 @@ export default function TactilePainLogger({ currentPain }: TactilePainLoggerProp
     try {
       await logPain({
         date: toLocalDateString(),
+        timeZone: getLocalTimeZone(),
         painScore,
         tags: selectedTags as any,
         note: note || undefined,

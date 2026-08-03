@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
+import { resolveCalendarTimeZone } from "../_helpers/calendarDates";
 
 export const updateUserRole = mutation({
   args: {
@@ -42,6 +43,7 @@ export const updateUserPreferences = mutation({
       )
     ),
     externalNotificationConsent: v.optional(v.boolean()),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -54,6 +56,11 @@ export const updateUserPreferences = mutation({
 
     if (!user) throw new Error("User not found");
 
+    const timeZone =
+      args.timeZone === undefined
+        ? undefined
+        : resolveCalendarTimeZone(args.timeZone);
+
     await ctx.db.patch(user._id, {
       ...(args.preferredName !== undefined && {
         preferredName: sanitizePreferredName(args.preferredName),
@@ -63,7 +70,30 @@ export const updateUserPreferences = mutation({
       ...(args.externalNotificationConsent !== undefined && {
         externalNotificationConsent: args.externalNotificationConsent,
       }),
+      ...(timeZone !== undefined && { timeZone }),
     });
+
+    return user._id;
+  },
+});
+
+export const updateUserTimeZone = mutation({
+  args: { timeZone: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) throw new Error("User not found");
+
+    const timeZone = resolveCalendarTimeZone(args.timeZone);
+    if (user.timeZone !== timeZone) {
+      await ctx.db.patch(user._id, { timeZone });
+    }
 
     return user._id;
   },
@@ -76,48 +106,6 @@ function sanitizePreferredName(preferredName: string) {
   }
   return normalized || undefined;
 }
-
-export const syncUserFromWebhook = mutation({
-  args: {
-    clerkId: v.string(),
-    email: v.string(),
-    name: v.string(),
-    imageUrl: v.optional(v.string()),
-    webhookSecret: v.string(),
-  },
-  handler: async (ctx, args) => {
-    if (
-      !process.env.CLERK_WEBHOOK_SECRET ||
-      args.webhookSecret !== process.env.CLERK_WEBHOOK_SECRET
-    ) {
-      throw new Error("Unauthorized");
-    }
-
-    const existing = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .unique();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        email: args.email,
-        name: args.name,
-        ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
-        lastActiveAt: Date.now(),
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("users", {
-      clerkId: args.clerkId,
-      email: args.email,
-      name: args.name,
-      ...(args.imageUrl !== undefined && { imageUrl: args.imageUrl }),
-      createdAt: Date.now(),
-      lastActiveAt: Date.now(),
-    });
-  },
-});
 
 export const syncUser = internalMutation({
   args: {

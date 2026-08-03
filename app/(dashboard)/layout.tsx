@@ -13,6 +13,7 @@ import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { HEARTBEAT_INTERVAL_MS } from "@/lib/presence.mjs";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
+import { getLocalTimeZone } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard",          label: "Home",     icon: Home    },
@@ -26,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router    = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const ensureUser = useMutation(api.mutations.users.ensureUser);
+  const updateUserTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
   const coupleStatus = useQuery(
     api.queries.couples.getCoupleStatus,
@@ -74,9 +76,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (isAuthenticated) {
-      ensureUser().catch(() => {});
+      ensureUser()
+        .then(() => updateUserTimeZone({ timeZone: getLocalTimeZone() }))
+        .catch(() => {});
     }
-  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ensureUser, isAuthenticated, updateUserTimeZone]);
 
   useEffect(() => {
     if (me !== undefined && me !== null && !me.role) {
