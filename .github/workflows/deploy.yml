@@ -25,7 +25,6 @@ jobs:
 
       - name: Validate required deployment configuration
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
           NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
@@ -36,7 +35,6 @@ jobs:
         run: |
           set -euo pipefail
           required=(
-            CONVEX_DEPLOY_KEY
             CONVEX_DEPLOYMENT
             NEXT_PUBLIC_CONVEX_URL
             NEXT_PUBLIC_CONVEX_SITE_URL
@@ -54,6 +52,7 @@ jobs:
           done
 
       - name: Sync Convex runtime secrets
+        if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -95,6 +94,7 @@ jobs:
         run: npm run test:unit -- --run
 
       - name: Deploy Convex backend
+        if: vars.DEPLOY_CONVEX == 'true'
         run: npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
