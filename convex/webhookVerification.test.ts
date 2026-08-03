@@ -17,7 +17,7 @@ vi.mock("svix", () => ({
   },
 }));
 
-import { verifyClerkWebhookPayload } from "../app/api/webhook/clerk/verify";
+import { verifyClerkWebhookPayload } from "./_helpers/clerkWebhook";
 
 describe("Clerk webhook payload verification", () => {
   beforeEach(() => {

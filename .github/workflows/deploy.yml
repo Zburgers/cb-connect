@@ -22,6 +22,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Convex backend
+        run: npm run test:unit -- --run
+
+      - name: Deploy Convex backend
+        run: npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+
       - name: Build application
         run: npm run build
         env:

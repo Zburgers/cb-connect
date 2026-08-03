@@ -4,8 +4,8 @@ import { describe, expect, test } from "vitest";
 import { api } from "../_generated/api";
 import {
   addCalendarDays,
-  toCalendarDateString,
 } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -14,7 +14,7 @@ describe("period date boundaries", () => {
   test("accepts today's date for direct self logging", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
-    const today = toCalendarDateString();
+    const today = toCalendarDateInTimeZone(new Date(), "UTC");
 
     const result = await asPrimary.mutation(
       api.mutations.periods.logPeriodStart,
@@ -36,7 +36,7 @@ describe("period date boundaries", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
-    const today = toCalendarDateString();
+    const today = toCalendarDateInTimeZone(new Date(), "UTC");
     const tomorrow = addCalendarDays(today, 1);
     const pastStart = addCalendarDays(today, -5);
 
@@ -92,7 +92,7 @@ describe("period date boundaries", () => {
   test("rejects a distant future date and still accepts valid past corrections", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
-    const today = toCalendarDateString();
+    const today = toCalendarDateInTimeZone(new Date(), "UTC");
     const originalStart = addCalendarDays(today, -10);
     const correctedStart = addCalendarDays(today, -8);
     const correctedEnd = addCalendarDays(today, -4);

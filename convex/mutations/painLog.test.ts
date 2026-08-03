@@ -2,7 +2,8 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 
 import { api } from "../_generated/api";
-import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -15,7 +16,7 @@ describe("pain log date boundaries", () => {
   test("accepts today and valid past dates", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary } = await seedActiveCouple(t);
-    const today = toCalendarDateString();
+    const today = toCalendarDateInTimeZone(new Date(), "UTC");
 
     await expect(
       asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
@@ -53,7 +54,7 @@ describe("pain log date boundaries", () => {
 
     await expect(
       asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
-        date: addCalendarDays(toCalendarDateString(), 1),
+        date: addCalendarDays(toCalendarDateInTimeZone(new Date(), "UTC"), 1),
         ...validPainLog(),
       })
     ).rejects.toThrow("Pain log date cannot be in the future");

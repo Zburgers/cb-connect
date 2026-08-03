@@ -6,7 +6,12 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { motion, AnimatePresence } from "framer-motion";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
-import { formatDate, localDateDaysAgo, toLocalDateString } from "@/lib/utils";
+import {
+  formatDate,
+  getLocalTimeZone,
+  localDateDaysAgo,
+  toLocalDateString,
+} from "@/lib/utils";
 import {
   ArrowUp,
   CalendarCheck2,
@@ -428,14 +433,22 @@ export default function LogPage() {
     try {
       if (ongoingPeriod) {
         if (isPartnerView) {
-          await assistLogPeriodEnd({ endDate: selectedDate });
+          await assistLogPeriodEnd({
+            endDate: selectedDate,
+          });
         } else {
-          await logPeriodEnd({ endDate: selectedDate });
+          await logPeriodEnd({
+            endDate: selectedDate,
+            timeZone: getLocalTimeZone(),
+          });
         }
       } else if (isPartnerView) {
         await assistLogPeriodStart({ startDate: selectedDate });
       } else {
-        await logPeriodStart({ startDate: selectedDate });
+        await logPeriodStart({
+          startDate: selectedDate,
+          timeZone: getLocalTimeZone(),
+        });
       }
       setSelectedDate("");
       setShowDatePicker(false);
@@ -467,6 +480,7 @@ export default function LogPage() {
       periodEventId,
       startDate: correctedStartDate,
       endDate: correctedEndDate,
+      timeZone: getLocalTimeZone(),
     });
     setMessage("Correction saved.");
   };

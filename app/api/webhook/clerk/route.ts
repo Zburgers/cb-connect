@@ -1,60 +1,41 @@
-import { headers } from "next/headers";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
-import { verifyClerkWebhookPayload } from "./verify";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) {
-  throw new Error("NEXT_PUBLIC_CONVEX_URL is not set. Ensure .env.production is loaded.");
-}
-const convex = new ConvexHttpClient(convexUrl);
-
 export async function POST(req: Request) {
-  const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
-
-  if (!WEBHOOK_SECRET) {
-    console.error("Missing CLERK_WEBHOOK_SECRET");
+  const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+  if (!convexSiteUrl) {
+    console.error("Missing NEXT_PUBLIC_CONVEX_SITE_URL");
     return new Response("Server configuration error", { status: 500 });
   }
 
-  const headerPayload = await headers();
-  const svix_id = headerPayload.get("svix-id");
-  const svix_timestamp = headerPayload.get("svix-timestamp");
-  const svix_signature = headerPayload.get("svix-signature");
-
-  if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response("Missing svix headers", { status: 400 });
+  const body = await req.text();
+  const forwardedHeaders = new Headers();
+  for (const name of [
+    "content-type",
+    "svix-id",
+    "svix-timestamp",
+    "svix-signature",
+  ]) {
+    const value = req.headers.get(name);
+    if (value) forwardedHeaders.set(name, value);
   }
 
-  const body = await req.text();
-
-  let evt: ReturnType<typeof verifyClerkWebhookPayload>;
+  let response: Response;
   try {
-    evt = verifyClerkWebhookPayload(body, WEBHOOK_SECRET, {
-      "svix-id": svix_id,
-      "svix-timestamp": svix_timestamp,
-      "svix-signature": svix_signature,
+    response = await fetch(new URL("/webhooks/clerk", convexSiteUrl), {
+      method: "POST",
+      headers: forwardedHeaders,
+      body,
+      cache: "no-store",
     });
   } catch (err) {
-    console.error("Webhook verification failed:", err);
-    return new Response("Invalid signature", { status: 400 });
+    console.error("Convex webhook relay failed:", err);
+    return new Response("Webhook delivery failed", { status: 502 });
   }
 
-  const eventType = evt.type;
+  const responseHeaders = new Headers();
+  const contentType = response.headers.get("content-type");
+  if (contentType) responseHeaders.set("content-type", contentType);
 
-  if (eventType === "user.created" || eventType === "user.updated") {
-    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
-    const email = email_addresses?.[0]?.email_address ?? "";
-    const name = [first_name, last_name].filter(Boolean).join(" ") || "User";
-
-    await convex.mutation(api.mutations.users.syncUserFromWebhook, {
-      clerkId: id,
-      email,
-      name,
-      imageUrl: image_url ?? undefined,
-      webhookSecret: WEBHOOK_SECRET,
-    });
-  }
-
-  return new Response("OK", { status: 200 });
+  return new Response(await response.text(), {
+    status: response.status,
+    headers: responseHeaders,
+  });
 }

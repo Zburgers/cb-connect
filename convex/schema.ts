@@ -14,6 +14,7 @@ export default defineSchema({
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
     partnerType: v.optional(v.union(v.literal("boyfriend"), v.literal("girlfriend"), v.literal("spouse"), v.literal("partner"), v.literal("other"))),
     externalNotificationConsent: v.optional(v.boolean()),
+    timeZone: v.optional(v.string()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"]),
