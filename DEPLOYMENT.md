@@ -82,12 +82,13 @@ NODE_ENV=production
 # Convex Backend (Production)
 CONVEX_DEPLOYMENT=prod:your-deployment-name
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
-NEXT_PUBLIC_CONVEX_SITE_URL=http://localhost:6050
+NEXT_PUBLIC_CONVEX_SITE_URL=https://your-deployment.convex.site
 
 # Clerk Authentication (Production)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_your-key
 CLERK_SECRET_KEY=sk_live_your-key
-CLERK_FRONTEND_API_URL=http://localhost:6050
+CLERK_FRONTEND_API_URL=https://your-clerk-frontend-api-domain
+CLERK_WEBHOOK_SECRET=whsec_your-svix-secret
 
 # Optional comma-separated list for preflight requests.
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:6050
@@ -108,14 +109,20 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 3. `SSH_HOST` - Server IP or hostname
 4. `KNOWN_HOSTS` - Server's SSH fingerprint
 5. `NEXT_PUBLIC_CONVEX_URL` - Your Convex production URL
-6. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
-7. `CLERK_SECRET_KEY` - Clerk secret key
+6. `CONVEX_DEPLOYMENT` - Convex deployment selector used by the app process
+7. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+8. `CLERK_SECRET_KEY` - Clerk secret key
+9. `CONVEX_DEPLOY_KEY` - Convex production deploy key
+10. `NEXT_PUBLIC_CONVEX_SITE_URL` - Convex HTTP actions URL
+11. `CLERK_FRONTEND_API_URL` - Clerk frontend API domain
+12. `CLERK_WEBHOOK_SECRET` - Svix/Clerk webhook signing secret
 
 ### Workflow:
 
 1. Push to `main` branch
 2. GitHub Actions will:
-   - Run tests
+   - Deploy the Convex backend, including the Clerk webhook HTTP action
+   - Run unit tests
    - Build the application
    - Deploy to your server via SSH
    - Restart the PM2 process

@@ -7,19 +7,10 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
-
-function requireValidCalendarDate(date: string, label: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error(`${label} must be a valid date`);
-  }
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  if (
-    Number.isNaN(parsed.getTime()) ||
-    parsed.toISOString().slice(0, 10) !== date
-  ) {
-    throw new Error(`${label} must be a valid date`);
-  }
-}
+import {
+  requirePastOrTodayCalendarDate,
+  resolveCalendarTimeZone,
+} from "../_helpers/calendarDates";
 
 function requirePrimaryUser(user: Doc<"users">) {
   if (user.role !== "primary") {
@@ -67,17 +58,27 @@ async function getAssistedLoggingContext(ctx: MutationCtx) {
     throw new Error("Assisted period logging is not enabled");
   }
 
-  return { partner, primaryMembership };
+  const primaryUser = await ctx.db.get("users", primaryMembership.userId);
+  if (!primaryUser) {
+    throw new Error("Primary cycle member could not be found");
+  }
+
+  return { partner, primaryMembership, primaryUser };
 }
 
 export const logPeriodStart = mutation({
   args: {
     startDate: v.string(),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
-    requireValidCalendarDate(args.startDate, "Start date");
+    const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
+    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
+      await ctx.db.patch(user._id, { timeZone });
+    }
+    requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
     // Check for ongoing periods - close them first
     const ongoingPeriod = await findOpenPeriod(ctx, user._id);
@@ -112,11 +113,16 @@ export const logPeriodStart = mutation({
 export const logPeriodEnd = mutation({
   args: {
     endDate: v.string(),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
-    requireValidCalendarDate(args.endDate, "End date");
+    const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
+    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
+      await ctx.db.patch(user._id, { timeZone });
+    }
+    requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
 
     const ongoingPeriod = await findOpenPeriod(ctx, user._id);
 
@@ -143,9 +149,13 @@ export const assistLogPeriodStart = mutation({
     startDate: v.string(),
   },
   handler: async (ctx, args) => {
-    requireValidCalendarDate(args.startDate, "Start date");
-    const { partner, primaryMembership } =
+    const { partner, primaryMembership, primaryUser } =
       await getAssistedLoggingContext(ctx);
+    requirePastOrTodayCalendarDate(
+      args.startDate,
+      "Start date",
+      resolveCalendarTimeZone(primaryUser.timeZone)
+    );
     const now = Date.now();
 
     const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
@@ -191,9 +201,13 @@ export const assistLogPeriodEnd = mutation({
     endDate: v.string(),
   },
   handler: async (ctx, args) => {
-    requireValidCalendarDate(args.endDate, "End date");
-    const { partner, primaryMembership } =
+    const { partner, primaryMembership, primaryUser } =
       await getAssistedLoggingContext(ctx);
+    requirePastOrTodayCalendarDate(
+      args.endDate,
+      "End date",
+      resolveCalendarTimeZone(primaryUser.timeZone)
+    );
     const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
     if (!ongoingPeriod) {
       throw new Error("There is no ongoing period to end");
@@ -228,6 +242,7 @@ export const updatePeriodEvent = mutation({
     periodEventId: v.id("periodEvents"),
     startDate: v.string(),
     endDate: v.optional(v.string()),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -237,9 +252,13 @@ export const updatePeriodEvent = mutation({
       throw new Error("You can only correct your own period entries");
     }
 
-    requireValidCalendarDate(args.startDate, "Start date");
+    const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
+    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
+      await ctx.db.patch(user._id, { timeZone });
+    }
+    requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
-      requireValidCalendarDate(args.endDate, "End date");
+      requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
       if (args.endDate < args.startDate) {
         throw new Error("End date cannot be before start date");
       }

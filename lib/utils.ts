@@ -21,6 +21,10 @@ export function toLocalDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export function getLocalTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 export function localDateDaysAgo(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() - days);

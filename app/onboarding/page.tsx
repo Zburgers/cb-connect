@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import { toLocalDateString } from "@/lib/utils";
+import { getLocalTimeZone, toLocalDateString } from "@/lib/utils";
 import { Calendar, ArrowRight, Heart } from "lucide-react";
 
 type Step = "role" | "period" | "done";
@@ -49,7 +49,10 @@ export default function OnboardingPage() {
     setError("");
     setIsSubmitting(true);
     try {
-      await logPeriodStart({ startDate: lastPeriodDate });
+      await logPeriodStart({
+        startDate: lastPeriodDate,
+        timeZone: getLocalTimeZone(),
+      });
       await updateCycleSettings({ cycleLength, periodLength });
       router.push("/dashboard");
     } catch (err: any) {
