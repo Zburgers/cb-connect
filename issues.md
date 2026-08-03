@@ -1,17 +1,76 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** May 21, 2026
+**Last Updated:** August 4, 2026
 Update with Github issues on the parent repo
+
+**Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
 
 ## Active implementation issues
 
 --
 
 ### Couple DM message-state and reaction UX
-**Status:** In implementation; production verification pending
-**Evidence:** The prior chat surface counted all loaded messages for the launcher badge, had no delivery/read state, rendered repeated sender metadata and reaction buttons, and collected all couple reactions without a message bound.
-**Scope:** Add unread-only state, monotonic delivery/read receipts, grouped messages, bounded grouped reactions, accessible progressive-disclosure controls, and authenticated test coverage.
+**Program gate:** Continuous remediation; must close before Mobile Gate 5
+**Status:** Implemented and deployed; authenticated production verification and race-safety remediation pending
+**Evidence:** Commit `05af783` added unread state, delivery/read receipts, grouped messages, bounded reactions, and conditional authenticated Playwright coverage. GitHub Actions run `30399933598` deployed that commit, and the production Convex function spec exposes `markDelivered`, `markRead`, and `unreadSummary`. No authenticated two-user browser smoke was completed, and [GitHub issue #13](https://github.com/Zburgers/cb-connect/issues/13) records a remaining lost-update race in unread counts.
+**Scope:** Make unread updates monotonic/race-safe and complete authenticated two-user production coverage.
 **Exit evidence:** Unit/typecheck/build gates, authenticated two-user E2E at mobile and desktop widths, and production Convex two-user smoke verification.
+
+--
+
+### Prediction rollover and inferred period endings can create false history
+**Program gate:** Cycle Facts Gate 1 and Four-Phase State Gate 2
+**Priority:** Critical
+**Status:** Open
+**Detected:** August 1, 2026
+**Files:** `convex/_helpers/cycleCalculations.ts`, `convex/_helpers/timelinePhases.ts`, `convex/queries/dashboard.ts`, `convex/mutations/periods.ts`, `convex/crons.ts`
+**Evidence:** `calculateCycleInfo` uses modulo arithmetic, so the expected start date becomes cycle day 1 and menstruation without a newly recorded event. Dashboard prediction reads only the latest start plus fixed settings. `autoEndPeriods` writes a configured-duration estimate into `periodEvents.endDate`, and preserves an existing self/partner source, making inferred endings indistinguishable from confirmed endings. The timeline also falls back to a predicted end for open events while the dashboard ignores the latest recorded end.
+**Consequence:** Late, irregular, missing-log, pregnancy/postpartum, or paused-tracking cases can display fabricated cycle/phase state and pollute future statistics or model data.
+**Exit evidence:** A tested recorded/predicted/late state machine; no wrap without a confirmed start; predictions never mutate observed events; recorded open/end state has precedence in dashboard and history; legacy inferred rows are measured and repaired or explicitly marked uncertain.
+
+--
+
+### Period mutation invariants allow duplicates, overlaps, future dates, and implausible auto-closure
+**Program gate:** Cycle Facts Gate 1
+**Priority:** High
+**Status:** Open; UTC-based future-date rejection merged in PR #8, but user-local authority and deployment remain unresolved
+**Detected:** August 1, 2026
+**Files:** `convex/mutations/periods.ts`, `convex/schema.ts`, `convex/mutations/periods.test.ts`
+**Evidence:** PR #8 merged at `d3ef5a7` and added future-date checks across public period writes, but the helper defaults to UTC because period mutations do not supply a persisted user timezone. Main still does not reject duplicate starts or overlaps against closed history; corrections can create either condition; and logging a new start closes any open event on the preceding day regardless of resulting duration. CI passed, but deploy run `30852430655` failed before frontend build/PM2 promotion, so production deployment is unproven. See [GitHub issue #7](https://github.com/Zburgers/cb-connect/issues/7) and [PR #8](https://github.com/Zburgers/cb-connect/pull/8).
+**Exit evidence:** One shared backend validator rejects duplicates, overlaps, invalid/future user-local dates, and implausible closure; corrections use the same invariants; migration/report quantifies existing invalid rows; edge and property tests pass.
+
+--
+
+### Production deployment pipeline is incomplete and failed before frontend promotion
+**Program gate:** Production Reliability Gate 0
+**Priority:** High
+**Status:** Open
+**Detected:** August 1, 2026
+**Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
+**Evidence:** Current main now has a CI workflow for typecheck/unit tests and deploy attempts unit tests plus `convex deploy`. For merge `d3ef5a7`, CI run `30852430557` passed, but deploy run `30852430655` failed at Convex deployment because `CONVEX_DEPLOYMENT`/deploy-key configuration was absent; frontend build and PM2 promotion were skipped. The workflow still omits authenticated E2E, dependency policy, immutable artifacts, post-deploy listener/readiness/version/persistence checks and rollback, and it still edits PM2 source with `sed` then deletes the process. `DEPLOYMENT.md` describes SSH although the workflow runs in-place on a self-hosted runner. Production remains on the previously evidenced state unless independently reverified.
+**Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
+
+--
+
+### Browser test suite is not a trustworthy release gate and contains committed credentials
+**Program gate:** Production Reliability Gate 0
+**Priority:** High
+**Status:** Open
+**Detected:** August 1, 2026
+**Files:** `e2e/signup-repro.spec.ts`, `e2e/onboarding.spec.ts`, `e2e/partner-linking.spec.ts`, `e2e/partner-chat.spec.ts`, `playwright.config.ts`
+**Evidence:** Playwright lists 39 tests, while 32 individual tests are statically skipped and the two chat tests require an optional local auth-state path. The remaining coverage largely proves unauthenticated redirects rather than primary/partner behavior. `signup-repro.spec.ts` commits a fixed email/password pair and can mutate the configured Clerk environment when run. The deploy workflow does not run Playwright.
+**Exit evidence:** Rotate/remove committed credentials; provision isolated test users through secret-backed fixtures; fail closed when auth fixtures are unavailable in release CI; cover both roles, consent/revocation, period integrity, and real-time behavior; publish redacted artifacts; make the suite deterministic and mandatory for release candidates.
+
+--
+
+### Production dependency audit reports unresolved high-severity vulnerabilities
+**Program gate:** Production Reliability Gate 0
+**Priority:** High
+**Status:** Open
+**Detected:** August 1, 2026
+**Files:** `package.json`, `package-lock.json`
+**Evidence:** `npm audit --omit=dev` reports nine vulnerabilities: six high and three moderate, including advisories in the installed Next.js, Clerk/js-cookie, Convex/ws, PostCSS, Sharp, Svix/uuid dependency paths. `npm outdated` shows patched wanted versions for several direct dependencies. The production build still passes, which does not remediate or risk-accept these advisories.
+**Exit evidence:** Upgrade through reviewed compatible releases; inspect reachability and compensating controls for each advisory; rerun typecheck/unit/build/E2E and `npm audit --omit=dev`; document any explicit time-bounded risk acceptance and automate dependency scanning in CI.
 
 --
 ---
@@ -150,7 +209,11 @@ Update with Github issues on the parent repo
 
 ## 🚀 Active Development
 
-### None currently
+### Reliability-first major-release planning and Gate 0 preflight
+
+**Status:** Planning active; application implementation has not started from these plans.
+**Canonical index:** `docs/plans/README.md`
+**Current boundary:** Safely integrate this planning batch onto current `origin/main`, then resolve Gate 0 decisions D-002 through D-007 before production promotion. PR #8 is merged but not proven deployed. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Continuous independently qualified P0/P1 remediation may proceed on narrow branches.
 
 ---
 
@@ -554,15 +617,17 @@ There are two onboarding implementations: `/onboarding` handles role selection p
 
 ---
 
-## 🗓️ Release History
+## 🗓️ Historical tracker labels (not release evidence)
 
-### v1.0.0 - Initial Release
+The repository has no tag/release evidence supporting the historical version labels below. Keep them as product-history notes only until a qualified release report reconciles package version, tag, frontend/backend identity and production evidence.
+
+### Historical “v1.0.0” label
 - Core cycle tracking
 - Pain logging
 - Partner linking (basic)
 - Discord notifications
 
-### v1.1.0 - Upcoming
+### Historical “v1.1.0 upcoming” label
 - Partner linking UX improvements
 - Auto-copy & share functionality
 - Connection status bar

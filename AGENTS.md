@@ -148,3 +148,13 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+<!-- shipyard-codex-compatibility -->
+
+## Shipyard under Codex
+
+- Use the installed native `Shipyard:*` skills directly. Do not tell contributors to run Claude-style `/shipyard:*` commands; this Codex harness does not expose that command surface.
+- Do not invent Shipyard state, configuration keys, hooks, command registries, or plugin fields. Read the existing `.shipyard/` files and installed skill guidance before changing them.
+- Keep Shipyard compatibility changes project-local unless the user explicitly asks to modify the global Codex installation or upstream plugin. Never edit the cached plugin as a workaround.
+
+<!-- shipyard-codex-compatibility-end -->

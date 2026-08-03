@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "interaction_mode": "interactive",
+  "git_strategy": "preserve_current_branch",
+  "review_depth": "standard",
+  "quality_gates": {
+    "tests": true,
+    "security_audit": true,
+    "simplification": false,
+    "documentation": true
+  },
+  "model_routing": {
+    "research": "default",
+    "architecture": "default",
+    "review": "default",
+    "security_audit": "default",
+    "simplification": "default"
+  }
+}
