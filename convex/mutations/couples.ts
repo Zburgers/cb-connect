@@ -285,6 +285,14 @@ export const revokePartnerAccess = mutation({
       await ctx.db.delete(message._id);
     }
 
+    const chatStates = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", coupleData.membership.coupleId))
+      .collect();
+    for (const state of chatStates) {
+      await ctx.db.delete(state._id);
+    }
+
     const partnerMembership = await ctx.db
       .query("coupleMembers")
       .withIndex("by_couple_and_role", (q) =>

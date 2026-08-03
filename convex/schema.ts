@@ -203,6 +203,8 @@ export default defineSchema({
     body: v.string(),
     createdAt: v.number(),
     editedAt: v.optional(v.number()),
+    deliveredAt: v.optional(v.number()),
+    readAt: v.optional(v.number()),
   })
     .index("by_couple_created", ["coupleId", "createdAt"])
     .index("by_sender_created", ["senderId", "createdAt"]),
@@ -217,4 +219,14 @@ export default defineSchema({
     .index("by_couple", ["coupleId"])
     .index("by_message", ["messageId"])
     .index("by_message_and_user", ["messageId", "userId"]),
+
+  coupleChatStates: defineTable({
+    coupleId: v.id("couples"),
+    userId: v.id("users"),
+    unreadCount: v.number(),
+    lastReadAt: v.optional(v.number()),
+    lastDeliveredAt: v.optional(v.number()),
+  })
+    .index("by_couple_and_user", ["coupleId", "userId"])
+    .index("by_user_and_couple", ["userId", "coupleId"]),
 });

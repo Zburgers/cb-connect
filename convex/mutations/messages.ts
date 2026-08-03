@@ -32,6 +32,22 @@ export const send = mutation({
       createdAt: now,
     });
 
+    const recipientState = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) =>
+        q.eq("coupleId", membership.coupleId).eq("userId", partnerMembership.userId)
+      )
+      .first();
+    if (recipientState) {
+      await ctx.db.patch(recipientState._id, { unreadCount: recipientState.unreadCount + 1 });
+    } else {
+      await ctx.db.insert("coupleChatStates", {
+        coupleId: membership.coupleId,
+        userId: partnerMembership.userId,
+        unreadCount: 1,
+      });
+    }
+
     await ctx.db.insert("notificationLog", {
       userId: partnerMembership.userId,
       type: "partner_message",
@@ -45,6 +61,67 @@ export const send = mutation({
     });
 
     return messageId;
+  },
+});
+
+export const markDelivered = mutation({
+  args: { messageId: v.id("coupleMessages") },
+  handler: async (ctx, args) => {
+    const { user } = await getActiveCoupleSpace(ctx);
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    await assertCoupleMember(ctx, message.coupleId, user._id);
+    if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
+    const now = Date.now();
+    if (!message.deliveredAt || message.deliveredAt < now) {
+      await ctx.db.patch(message._id, { deliveredAt: message.deliveredAt ?? now });
+    }
+    const state = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", message.coupleId).eq("userId", user._id))
+      .first();
+    if (state && (!state.lastDeliveredAt || state.lastDeliveredAt < message.createdAt)) {
+      await ctx.db.patch(state._id, { lastDeliveredAt: message.createdAt });
+    }
+    return { deliveredAt: message.deliveredAt ?? now };
+  },
+});
+
+export const markRead = mutation({
+  args: { messageId: v.id("coupleMessages") },
+  handler: async (ctx, args) => {
+    const { user } = await getActiveCoupleSpace(ctx);
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    await assertCoupleMember(ctx, message.coupleId, user._id);
+    if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
+    const now = Date.now();
+    if (!message.deliveredAt || message.deliveredAt < now) {
+      await ctx.db.patch(message._id, { deliveredAt: message.deliveredAt ?? now });
+    }
+    if (!message.readAt || message.readAt < now) {
+      await ctx.db.patch(message._id, { readAt: message.readAt ?? now });
+    }
+    const state = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", message.coupleId).eq("userId", user._id))
+      .first();
+    if (state) {
+      await ctx.db.patch(state._id, {
+        unreadCount: 0,
+        lastReadAt: Math.max(state.lastReadAt ?? 0, message.createdAt),
+        lastDeliveredAt: Math.max(state.lastDeliveredAt ?? 0, message.createdAt),
+      });
+    } else {
+      await ctx.db.insert("coupleChatStates", {
+        coupleId: message.coupleId,
+        userId: user._id,
+        unreadCount: 0,
+        lastReadAt: message.createdAt,
+        lastDeliveredAt: message.createdAt,
+      });
+    }
+    return { readAt: message.readAt ?? now };
   },
 });
 
@@ -112,6 +189,13 @@ export const clear = mutation({
     }
     for (const message of messages) {
       await ctx.db.delete(message._id);
+    }
+    const states = await ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", membership.coupleId))
+      .collect();
+    for (const state of states) {
+      await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: Date.now() });
     }
 
     await ctx.db.insert("notificationLog", {

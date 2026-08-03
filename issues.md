@@ -2,6 +2,18 @@
 
 **Last Updated:** May 21, 2026
 Update with Github issues on the parent repo
+
+## Active implementation issues
+
+--
+
+### Couple DM message-state and reaction UX
+**Status:** In implementation; production verification pending
+**Evidence:** The prior chat surface counted all loaded messages for the launcher badge, had no delivery/read state, rendered repeated sender metadata and reaction buttons, and collected all couple reactions without a message bound.
+**Scope:** Add unread-only state, monotonic delivery/read receipts, grouped messages, bounded grouped reactions, accessible progressive-disclosure controls, and authenticated test coverage.
+**Exit evidence:** Unit/typecheck/build gates, authenticated two-user E2E at mobile and desktop widths, and production Convex two-user smoke verification.
+
+--
 ---
 
 ## ✅ Completed
