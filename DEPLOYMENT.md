@@ -88,7 +88,8 @@ NEXT_PUBLIC_CONVEX_SITE_URL=https://your-deployment.convex.site
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_your-key
 CLERK_SECRET_KEY=sk_live_your-key
 CLERK_FRONTEND_API_URL=https://your-clerk-frontend-api-domain
-CLERK_WEBHOOK_SECRET=whsec_your-svix-secret
+# Optional: only when a Clerk Dashboard webhook endpoint exists.
+# CLERK_WEBHOOK_SECRET=whsec_your-svix-secret
 
 # Required comma-separated production origin allowlist.
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:6050
@@ -116,18 +117,18 @@ Required production environment secrets:
 5. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
 6. `CLERK_SECRET_KEY` - Clerk server secret
 7. `CLERK_FRONTEND_API_URL` - Clerk issuer/frontend API URL
-8. `CLERK_WEBHOOK_SECRET` - Svix/Clerk webhook signing secret
-9. `CORS_ALLOWED_ORIGINS` - comma-separated production origin allowlist
+8. `CORS_ALLOWED_ORIGINS` - comma-separated production origin allowlist
 
 Optional production environment secret:
 
 - `DISCORD_WEBHOOK_URL` - Convex notification destination when Discord notifications are enabled
+- `CLERK_WEBHOOK_SECRET` - Clerk/Svix signing secret, only when a Clerk Dashboard webhook endpoint is configured
 
 ### Workflow:
 
 The workflow validates required values without printing them, syncs Convex function secrets using a mode-`0600` temporary file, deploys Convex, builds with the `NEXT_PUBLIC_*` values, then starts or reloads PM2 with runtime values supplied by the step environment. It never uses `sed` to mutate source and never deletes the healthy PM2 process before reload.
 
-The public values are still deployment configuration: `NEXT_PUBLIC_*` values are embedded into the browser bundle by Next.js, so they must not contain private credentials. `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` and `CONVEX_DEPLOY_KEY` remain secret-backed.
+The public values are still deployment configuration: `NEXT_PUBLIC_*` values are embedded into the browser bundle by Next.js, so they must not contain private credentials. `CLERK_SECRET_KEY` and `CONVEX_DEPLOY_KEY` remain secret-backed. The current deployment does not configure a Clerk webhook endpoint, so `CLERK_WEBHOOK_SECRET` is intentionally optional.
 
 ---
 
