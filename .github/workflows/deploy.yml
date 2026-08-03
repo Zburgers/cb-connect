@@ -81,11 +81,15 @@ jobs:
           fs.writeFileSync(file, content ? `${content}\n` : '', { mode: 0o600 });
           NODE
 
-          convex_env_deployment="$CONVEX_DEPLOYMENT"
-          if [[ "$convex_env_deployment" == prod:* ]]; then
-            convex_env_deployment="${convex_env_deployment#prod:}"
+          if [[ -s "$env_file" ]]; then
+            convex_env_deployment="$CONVEX_DEPLOYMENT"
+            if [[ "$convex_env_deployment" == prod:* ]]; then
+              convex_env_deployment="${convex_env_deployment#prod:}"
+            fi
+            npx convex env set --from-file "$env_file" --deployment "$convex_env_deployment"
+          else
+            echo "Skipping Convex runtime secret sync; no optional values are configured."
           fi
-          npx convex env set --from-file "$env_file" --deployment "$convex_env_deployment"
 
       - name: Validate Convex backend
         run: npm run test:unit -- --run
