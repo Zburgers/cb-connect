@@ -8,6 +8,7 @@ jobs:
   deploy:
     name: Build & Deploy
     runs-on: self-hosted
+    environment: production
 
     steps:
       - name: Checkout code
@@ -22,6 +23,68 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate required deployment configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+        run: |
+          set -euo pipefail
+          required=(
+            CONVEX_DEPLOY_KEY
+            CONVEX_DEPLOYMENT
+            NEXT_PUBLIC_CONVEX_URL
+            NEXT_PUBLIC_CONVEX_SITE_URL
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+            CLERK_SECRET_KEY
+            CLERK_FRONTEND_API_URL
+            CLERK_WEBHOOK_SECRET
+            CORS_ALLOWED_ORIGINS
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required production deployment secret: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Sync Convex runtime secrets
+        env:
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+          umask 077
+
+          node - "$env_file" <<'NODE'
+          const fs = require('node:fs');
+          const file = process.argv[2];
+          const names = [
+            'CLERK_FRONTEND_API_URL',
+            'CLERK_WEBHOOK_SECRET',
+            'DISCORD_WEBHOOK_URL',
+          ];
+          const content = names
+            .filter((name) => process.env[name])
+            .map((name) => `${name}=${process.env[name]}`)
+            .join('\n');
+          fs.writeFileSync(file, content ? `${content}\n` : '', { mode: 0o600 });
+          NODE
+
+          npx convex env set --from-file "$env_file" --deployment "$CONVEX_DEPLOYMENT"
+
       - name: Validate Convex backend
         run: npm run test:unit -- --run
 
@@ -29,6 +92,7 @@ jobs:
         run: npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
 
@@ -36,8 +100,8 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
-          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
           NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -45,11 +109,20 @@ jobs:
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
 
-      - name: Restart with PM2
+      - name: Promote with PM2
         run: |
-          # Inject secret key into pm2.config.js
-          sed -i 's|CLERK_SECRET_KEY: ""|CLERK_SECRET_KEY: "${{ secrets.CLERK_SECRET_KEY }}"|g' pm2.config.js
-          sed -i 's|CONVEX_DEPLOYMENT: ""|CONVEX_DEPLOYMENT: "${{ secrets.CONVEX_DEPLOYMENT }}"|g' pm2.config.js
-          pm2 delete cb-connect || true
-          pm2 start pm2.config.js
+          set -euo pipefail
+          pm2 startOrReload pm2.config.js --update-env
           pm2 save
+        env:
+          NODE_ENV: production
+          PORT: 6050
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
+          NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}

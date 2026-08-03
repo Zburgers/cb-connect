@@ -1,6 +1,7 @@
 .env
 .env.local
 .env.*
+!.env.example
 # Do not track .env.production; remove the negation that forced tracking
 # Keep local production env files out of the repository
 .env.production

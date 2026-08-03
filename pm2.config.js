@@ -1,3 +1,27 @@
+const requiredRuntimeEnv = [
+  'CONVEX_DEPLOYMENT',
+  'NEXT_PUBLIC_CONVEX_URL',
+  'NEXT_PUBLIC_CONVEX_SITE_URL',
+  'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
+  'CLERK_SECRET_KEY',
+  'CLERK_FRONTEND_API_URL',
+  'CORS_ALLOWED_ORIGINS',
+];
+
+function readRequiredRuntimeEnv(name) {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing required production runtime environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+const runtimeEnv = Object.fromEntries(
+  requiredRuntimeEnv.map((name) => [name, readRequiredRuntimeEnv(name)]),
+);
+
 module.exports = {
   apps: [
     {
@@ -10,16 +34,11 @@ module.exports = {
       watch: false,
       max_memory_restart: '1G',
       env: {
-        NODE_ENV: 'production',
-        PORT: 6050,
-        NEXT_PUBLIC_CONVEX_URL: "https://hallowed-hummingbird-284.convex.cloud",
-        NEXT_PUBLIC_CONVEX_SITE_URL: "https://hallowed-hummingbird-284.convex.site",
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_Y2xlcmsuY2IubmFrc2hhdHJhbmV1cmF0ZWNoLmRldiQ",
-        CONVEX_DEPLOYMENT: "",
-        CLERK_SECRET_KEY: "",
-        CLERK_FRONTEND_API_URL: "https://clerk.cb.nakshatraneuratech.dev",
-        NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in",
-        NEXT_PUBLIC_CLERK_SIGN_UP_URL: "/sign-up",
+        NODE_ENV: process.env.NODE_ENV || 'production',
+        PORT: process.env.PORT || 6050,
+        ...runtimeEnv,
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || '/sign-in',
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || '/sign-up',
       },
     },
   ],

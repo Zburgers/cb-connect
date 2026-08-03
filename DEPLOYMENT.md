@@ -90,42 +90,44 @@ CLERK_SECRET_KEY=sk_live_your-key
 CLERK_FRONTEND_API_URL=https://your-clerk-frontend-api-domain
 CLERK_WEBHOOK_SECRET=whsec_your-svix-secret
 
-# Optional comma-separated list for preflight requests.
+# Required comma-separated production origin allowlist.
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:6050
 
 # Clerk Paths
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+
+# Convex runtime secret (set in the Convex deployment environment, not PM2).
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook
 ```
 
 ---
 
 ## CI/CD with GitHub Actions
 
-### Required Secrets in GitHub:
+The `main` deployment workflow is configured to target a GitHub environment named `production`. The repository owner must create and protect that environment, then place the deployment secrets there. The workflow does not copy `.env` files into the repository or write secrets into `pm2.config.js`.
 
-1. `SSH_PRIVATE_KEY` - Your server's SSH private key
-2. `SSH_USER` - SSH username (e.g., `root` or `ubuntu`)
-3. `SSH_HOST` - Server IP or hostname
-4. `KNOWN_HOSTS` - Server's SSH fingerprint
-5. `NEXT_PUBLIC_CONVEX_URL` - Your Convex production URL
-6. `CONVEX_DEPLOYMENT` - Convex deployment selector used by the app process
-7. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
-8. `CLERK_SECRET_KEY` - Clerk secret key
-9. `CONVEX_DEPLOY_KEY` - Convex production deploy key
-10. `NEXT_PUBLIC_CONVEX_SITE_URL` - Convex HTTP actions URL
-11. `CLERK_FRONTEND_API_URL` - Clerk frontend API domain
-12. `CLERK_WEBHOOK_SECRET` - Svix/Clerk webhook signing secret
+Required production environment secrets:
+
+1. `CONVEX_DEPLOY_KEY` - Convex production deploy key
+2. `CONVEX_DEPLOYMENT` - explicit Convex deployment selector
+3. `NEXT_PUBLIC_CONVEX_URL` - Convex production client URL
+4. `NEXT_PUBLIC_CONVEX_SITE_URL` - Convex HTTP actions URL
+5. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+6. `CLERK_SECRET_KEY` - Clerk server secret
+7. `CLERK_FRONTEND_API_URL` - Clerk issuer/frontend API URL
+8. `CLERK_WEBHOOK_SECRET` - Svix/Clerk webhook signing secret
+9. `CORS_ALLOWED_ORIGINS` - comma-separated production origin allowlist
+
+Optional production environment secret:
+
+- `DISCORD_WEBHOOK_URL` - Convex notification destination when Discord notifications are enabled
 
 ### Workflow:
 
-1. Push to `main` branch
-2. GitHub Actions will:
-   - Deploy the Convex backend, including the Clerk webhook HTTP action
-   - Run unit tests
-   - Build the application
-   - Deploy to your server via SSH
-   - Restart the PM2 process
+The workflow validates required values without printing them, syncs Convex function secrets using a mode-`0600` temporary file, deploys Convex, builds with the `NEXT_PUBLIC_*` values, then starts or reloads PM2 with runtime values supplied by the step environment. It never uses `sed` to mutate source and never deletes the healthy PM2 process before reload.
+
+The public values are still deployment configuration: `NEXT_PUBLIC_*` values are embedded into the browser bundle by Next.js, so they must not contain private credentials. `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` and `CONVEX_DEPLOY_KEY` remain secret-backed.
 
 ---
 

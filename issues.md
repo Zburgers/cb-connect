@@ -44,10 +44,10 @@ Update with Github issues on the parent repo
 ### Production deployment pipeline is incomplete and failed before frontend promotion
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Open
+**Status:** Remediation implemented; protected secret configuration and a successful deployment verification remain pending
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Current main now has a CI workflow for typecheck/unit tests and deploy attempts unit tests plus `convex deploy`. For merge `d3ef5a7`, CI run `30852430557` passed, but deploy run `30852430655` failed at Convex deployment because `CONVEX_DEPLOYMENT`/deploy-key configuration was absent; frontend build and PM2 promotion were skipped. The workflow still omits authenticated E2E, dependency policy, immutable artifacts, post-deploy listener/readiness/version/persistence checks and rollback, and it still edits PM2 source with `sed` then deletes the process. `DEPLOYMENT.md` describes SSH although the workflow runs in-place on a self-hosted runner. Production remains on the previously evidenced state unless independently reverified.
+**Evidence:** For merge `d3ef5a7`, CI run `30852430557` passed, but deploy run `30852430655` failed at Convex deployment because `CONVEX_DEPLOYMENT`/deploy-key configuration was absent; frontend build and PM2 promotion were skipped. This checkout now wires the repository env contract through a targeted `production` environment, validates required values without printing them, syncs Convex runtime secrets from a mode-`0600` temporary file, and promotes PM2 with `startOrReload --update-env` without mutating source or deleting the process. GitHub currently has repository build secrets but no `production` environment or the missing deploy/webhook/CORS values, so a deploy is not yet runnable. Authenticated E2E, dependency policy, immutable artifacts, post-deploy listener/readiness/version/persistence checks and rollback remain separate Gate 0 work.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --
