@@ -1,8 +1,25 @@
 # Gate 0 preflight baseline
 
-**Captured:** 2026-08-04
-**Checkout:** `main` at `3ba6d7a` (local merge of the planning batch and refreshed `origin/main`)
+**Historical initial capture:** 2026-08-04
+**Historical checkout:** `main` at `3ba6d7a` (local merge of the planning batch and refreshed `origin/main`)
 **Scope:** Read-only preflight. This document does not approve production readiness or deployment.
+
+## Latest read-only refresh
+
+**Captured:** 2026-08-04T14:09:26+05:30 through 2026-08-04T14:40:00+05:30
+**Artifact:** [redacted preflight checks](commands/2026-08-04-preflight.md)
+
+| Boundary | Evidence | Observation |
+|---|---|---|
+| Git checkout | `git status`, `git ls-remote origin refs/heads/main` | Dedicated Gate 0 worktree is clean at `8c83406`; `origin/main` resolves to the same commit. |
+| Merged PR #8 | `gh pr view 8`, CI/deploy run metadata | PR #8 is merged at `d3ef5a7`; its CI run passed. The original deploy run `30852430655` failed. |
+| Frontend recovery | `gh run list --workflow deploy.yml`, run `30860139400` | Recovery run succeeded for `c47211f`; it is frontend recovery evidence, not coordinated Convex promotion or immutable release identity. |
+| Production host/process | SSH read-only probe to `razor-crest`, PM2 and `ss` | Host alias resolves to `razor-crest`. PM2 service `pm2-naki` is enabled/active; `cb-connect` is online in cluster mode. Port 6050 is listening through `next-server`; a PM2 dump exists. A reboot rehearsal was not performed. |
+| Public TLS/liveness | `GET https://cb.nakshatraneuratech.dev/`, `/api/health` | TLS/HTTP succeeded; `/api/health` returned HTTP 200 with only the liveness shape. |
+| Readiness endpoint | Public and host-local `GET /api/ready` | HTTP 404 in both locations; no compatibility readiness endpoint is deployed. |
+| Convex identity | `npx convex function-spec --deployment festive-malamute-715` | Candidate deployment responds with the current application functions, but no non-sensitive backend compatibility identity query is exposed. |
+
+The earlier snapshot below is retained as historical evidence; this refresh supersedes its checkout, remote-parity and host/process observations.
 
 ## Observed
 
@@ -40,4 +57,4 @@ This record contains no credentials, user identifiers, health values, raw enviro
 
 ## Gate 0 conclusion
 
-The checkout and planning history are integrated, but this baseline does not qualify a release. Gate 0 remains blocked until the required decision authorities approve D-002 through D-007 and the implementation plan produces authenticated, deployment, rollback and measurement evidence.
+The current checkout and production process are observable, but this baseline does not qualify a release. Gate 0 remains blocked until D-002 through D-007 are approved by the required authorities and the implementation plan produces immutable identity, authenticated, deployment, rollback and measurement evidence.
