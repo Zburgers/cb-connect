@@ -144,3 +144,18 @@
 - Decisions made: The approved release-fixture path fails closed when run-scoped storage state is unavailable; legacy `test.skip` paths remain tracked debt for E2/E3 and must not be reported as zero-skip release evidence.
 - Unresolved blockers: No blocker for E1; deterministic two-user provisioning, cleanup, and zero-skip release smoke remain E2/E3 work.
 - Exact next safe action: Start O2 from `dad8fae`; define and test the bounded redacted telemetry serializer without instrumenting user or health data.
+
+---
+
+- Timestamp: 2026-08-05T22:52:20+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: O2 — Add redacted critical-journey telemetry contract
+- Starting commit: `879b46d`
+- Ending commit: `00dcaec`
+- Work performed: Added the D-006 allowlisted telemetry serializer, focused privacy tests and the redacted telemetry contract. The serializer emits only operation, outcome, bounded reason, duration bucket and synthetic marker; unknown fields and sensitive/high-cardinality fields fail closed. No instrumentation or collection was added.
+- Files changed: `lib/telemetry.ts`; `lib/telemetry.test.ts`; `docs/reliability/telemetry-contract.md`
+- Commands and outcomes: Initial `npx vitest run lib/telemetry.test.ts` failed because the serializer was absent; after implementation the focused suite passed 11/11; D-006 spec/privacy review passed; `npm run typecheck` passed; `npm run test:unit` passed 14 files and 65 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284` remains the only approved local Convex target; no Convex operation was needed for O2 and no production deployment or mutation occurred
+- Decisions made: Telemetry serialization is an allowlisted contract only; raw durations and release/user/domain payload data are excluded. Synthetic markers do not establish production evidence, and proposed SLI targets remain unapproved until the later baseline/approval work.
+- Unresolved blockers: No blocker for O2; I4, authenticated release coverage, CI/artifact qualification, promotion, rollback and Gate 0 verdict remain incomplete. Legacy skipped E2E suites remain tracked debt and are not zero-skip release evidence.
+- Exact next safe action: Review the completed I2/E1/O2 packet at the next checkpoint; I4 is dependency-ready but intentionally remains outside this packet.
