@@ -44,6 +44,15 @@ This repository is a Next.js App Router application for CB Connect, a couples cy
 - Use `color: hsl(var(--foreground))` instead of `hsl(var(--muted-foreground))` for `.phase-badge` to guarantee badge readability on atmospheric-warm cards.
 - The repo currently has minimal root documentation beyond this file and `README.md`, so project-specific instructions should live here.
 
+### Gate 0 execution-log contract
+
+- Before doing Gate 0 work, read `docs/execution/gate-0-agent-log.md`, the plan index, the Gate 0 detailed execution plan, and the decision register.
+- Work only in the dedicated worktree `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on branch `gate-0/reliability-2026-08-04` unless the user explicitly approves a replacement.
+- Use the worktree's ignored `.env.local` and its isolated Convex development deployment for local Convex work. Never infer permission to use production or copy production data/secrets into development.
+- Append one `---`-delimited entry to `docs/execution/gate-0-agent-log.md` before every handoff, including read-only reviews and blocked attempts. Never rewrite, reorder, or delete prior entries.
+- Each entry must record timestamp, agent/session identity when available, task/plan IDs, starting and ending commit, files changed, commands and outcomes, Convex deployment class (`dev`, `preview/test`, or `production`) without secrets, decisions made, unresolved blockers, and the exact next safe action.
+- A successful command is evidence only for what it tested. Do not label Gate 0 or production ready unless the plan's complete exit evidence and approvals exist.
+
 ## Available Skills
 
 <!-- SKILLS_TABLE_START -->

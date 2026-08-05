@@ -1,6 +1,6 @@
 # CB Connect major-release plan index
 
-**Status:** Canonical planning dashboard; last reviewed 2026-08-04 with checkout `main` at `05af783` and live `origin/main` at `d3ef5a7`.
+**Status:** Canonical planning dashboard; Gate 0 implementation approved 2026-08-05 in the dedicated worktree at `d586c73` plus the recorded readiness-contract changes.
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -21,7 +21,7 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 | Order | Track | Gate-level plan | Blocking dependency | Planning readiness |
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
-| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Preflight decisions D-002 through D-007; D-001 before affected production consent/retention exposure | Detailed execution plan drafted |
+| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | D-002 through D-007 resolved; D-001 remains required only before affected production consent/retention exposure | Implementation-ready; first packet I1, I3, O1 |
 | 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) | Approved Gate 0 evidence | Gate-level only |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
@@ -32,14 +32,12 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 
 ## Immediate execution sequence
 
-1. Preserve the current uncommitted planning batch; do not pull or merge over it. The checkout is 12 commits behind `origin/main`.
-2. Integrate/review this planning batch in a clean worktree based on `origin/main` at or after `d3ef5a7`.
-3. Treat PR #8 as merged and its source branch as superseded. Record that CI run `30852430557` passed while deploy run `30852430655` failed at Convex deployment before build/PM2 promotion; do not claim those fixes are deployed.
-4. Resolve Gate 0 decision-register items D-002 through D-007 without inventing missing owners or credentials. Resolve D-001 before any affected production consent/retention exposure; it does not block unrelated technical preflight work.
-5. Create a dedicated Gate 0 implementation worktree from the then-current `origin/main`.
-6. Execute [the detailed Gate 0 plan](2026-08-04-00-production-reliability-execution.md) in dependency order.
-7. Produce and approve `docs/evidence/reliability-gate-0/REPORT.md`.
-8. Only then write the dated Gate 1 execution plan using the real release, timezone, schema and migration contracts established by Gate 0/preflight.
+1. Work only in `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on `gate-0/reliability-2026-08-04`; read and append the Gate 0 agent log.
+2. Execute first packet I1, I3 and O1 as separate test/fail/implement/pass/commit cycles.
+3. Continue the detailed Gate 0 dependency graph using only the isolated Convex dev and owner-approved Clerk test environments until the explicit V1/V2 promotion tasks.
+4. Treat PR #8 as merged while retaining its failed deployment as historical evidence; do not claim coordinated promotion until Gate 0 proves it.
+5. Produce and approve `docs/evidence/reliability-gate-0/REPORT.md`.
+6. Only then write the dated Gate 1 execution plan using the real release, timezone, schema and migration contracts established by Gate 0/preflight.
 
 ## Planning policy
 

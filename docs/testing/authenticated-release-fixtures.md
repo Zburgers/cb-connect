@@ -1,14 +1,14 @@
 # Authenticated release-fixture proposal
 
 **Decision:** D-004 and D-005
-**Status:** Engineering proposal; blocked pending environment-owner approval
+**Status:** Approved 2026-08-05 by the sole project and environment owner
 **Scope:** Gate 0 qualification only. Production accounts and production Convex data are explicitly out of scope.
 
-This document is a proposal, not an approval record. It becomes binding only after the environment owner and engineering approver are recorded in the decision register.
+This contract is approved for Gate 0. The decision register is the approval record.
 
 ## Proposed isolated environments
 
-Use a dedicated non-production Clerk instance and a dedicated Convex preview/test deployment owned by the release engineering team. The test deployment must be disposable, contain synthetic fixtures only and be addressable independently from `festive-malamute-715`.
+Use the dedicated non-production Clerk instance labeled `holy clark` and isolated Convex deployment `dev:hallowed-hummingbird-284`, owned by the sole project owner. The test deployment must contain synthetic fixtures only and is independently addressable from `prod:festive-malamute-715`.
 
 The GitHub Actions job should use a protected environment named `cb-connect-auth-test` with access limited to the approved environment owner and release workflow. Values belong in the environment secret store; this document records names and handling rules only.
 
@@ -52,6 +52,6 @@ The environment owner must confirm whether Clerk's supported test-user mechanism
 - No fixed credential literals or committed auth-state files.
 - No conditional skip when the fixture environment is unavailable; release CI fails closed.
 
-## Approval required
+## Approval record
 
-D-004 requires the named owner for the isolated Clerk/Convex environments and credential custody. D-005 requires that owner and engineering to approve the provisioning interface, cleanup authority, retry policy, artifact redaction and retention. Until those approvals are recorded in the decision register, E1–E3 and the authenticated release gate remain blocked.
+D-004 and D-005 were approved by the sole project/environment owner on 2026-08-05, including agent authority to create and delete synthetic users, the cleanup policy, redaction rules and seven-day retention. E1-E3 may execute in these isolated environments; passing evidence remains required.

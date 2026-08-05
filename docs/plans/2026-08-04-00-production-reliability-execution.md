@@ -16,7 +16,18 @@
 
 **Decisions:** [Decision register](../decisions/major-release-decision-register.md)
 
-**Status:** Drafted; application implementation is blocked until the planning batch is integrated onto current `origin/main` and D-002 through D-007 have approved resolutions. PR #8 is merged, but its production deployment failed and must be covered by Gate 0 qualification.
+**Status:** Approved and implementation-ready as of 2026-08-05. The planning batch is integrated, D-002 through D-007 are resolved, the dedicated worktree is current, and an isolated Convex dev deployment is configured. PR #8's production deployment failure remains evidence Gate 0 must remediate, not an entry blocker.
+
+## Execution workspace and continuity contract
+
+- Execute the whole Gate 0 plan in `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on `gate-0/reliability-2026-08-04`. Use additional packet branches only when the user explicitly authorizes them; do not create overlapping implementations.
+- The worktree is configured with an ignored `.env.local` for the isolated CB Connect Convex development deployment. Local implementation and Convex pushes target that dev deployment only unless a later task explicitly authorizes a named preview/test or production target.
+- Every agent must read and append `docs/execution/gate-0-agent-log.md` according to the contract in `AGENTS.md`. The log is continuity evidence, not a substitute for task commits, tests, decision approvals, or Gate 0 release evidence.
+- Never record secrets, environment values, Clerk user identifiers, personal data, or health data in the log.
+
+### First implementation packet
+
+The first agent starts with **I1, I3 and O1**, in that order, on the existing Gate 0 branch. P1-P4 are satisfied by the recorded baseline and owner-approved decisions. I1 and I3 form the local release/liveness contract; O1 hardens PM2 configuration without deploying production. After each task, run its focused test, `npm run typecheck`, `npm run test:unit` and `git diff --check`, then commit separately and append the execution log. Do not start I2 until I1 passes; I2 must be pushed only to the isolated dev deployment during implementation.
 
 ## Locked scope and contracts
 
