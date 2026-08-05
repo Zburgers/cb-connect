@@ -6,8 +6,8 @@ on:
     branches: [main]
 
 jobs:
-  validate:
-    name: Typecheck & unit tests
+  qualify:
+    name: Deterministic qualification
     runs-on: ubuntu-latest
 
     steps:
@@ -17,14 +17,25 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20.19.1
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
 
-      - name: Typecheck
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build application
+        run: npm run build
+
+      - name: Post-build typecheck
         run: npm run typecheck
 
       - name: Unit tests
         run: npm run test:unit -- --run
+
+      - name: Dependency policy
+        run: npm audit --omit=dev --audit-level=high
