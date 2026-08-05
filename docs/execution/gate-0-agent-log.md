@@ -192,6 +192,21 @@
 
 ---
 
+- Timestamp: 2026-08-05T23:22:35+05:30
+- Agent/session: Codex primary agent; implementation review; session identifier unavailable
+- Task and plan IDs: Review of I4 and attempted E2; E3/C1 readiness decision
+- Starting commit: `f392421`
+- Ending commit: review log commit follows this entry
+- Work performed: Reviewed I4 readiness behavior/tests and E2 environment guard, Clerk adapter, global setup/teardown, storage-state handling, UI onboarding/linking, cleanup behavior, plan contract and dependency graph. Confirmed existing local Clerk values are test-scoped without printing values.
+- Files changed: this append-only review entry only
+- Commands and outcomes: I4/E2 focused tests passed 16/16; full unit suite passed 16 files and 81 tests; `npm run typecheck` passed; `npm run build` passed and includes `/api/ready`; `git diff --check` passed; existing local Clerk secret/publishable keys have test prefixes and the frontend API uses a Clerk test domain
+- Convex deployment class and status: I4 had prior read-only validation on `dev:hallowed-hummingbird-284`; review performed no Convex or production mutation
+- Decisions made: I4 is approved. E2 implementation is not accepted as complete because no real isolated provisioning/storage-state/linking/cleanup run occurred. Additionally, current cleanup revokes the relationship and deletes Clerk users but does not prove deletion of synthetic Convex user, couple, period and related run data required by D-005. E3 and C1 remain blocked on completed E2 evidence.
+- Unresolved blockers: Add a bounded dev-only application-data cleanup path with cascade tests and exact fixture targeting; inject the already-available test-scoped Clerk values under the approved E2 variable names without committing/printing them; perform and record a real E2 setup/cleanup run. No user-supplied secret is presently required because test-scoped local values exist, but their mapping and environment identity must be validated during execution.
+- Exact next safe action: Remediate E2 cleanup and run E2 end-to-end against `holy clark` plus `dev:hallowed-hummingbird-284`. If provisioning, two storage states, couple linking and idempotent cleanup all pass, implement E3 zero-skip release smoke. Start C1 only after E3 passes.
+
+---
+
 - Timestamp: 2026-08-05T22:59:32+05:30
 - Agent/session: Codex primary agent; implementation review; session identifier unavailable
 - Task and plan IDs: Review of I2, E1 and O2; next-scope readiness decision
