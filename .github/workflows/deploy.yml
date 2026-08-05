@@ -114,7 +114,10 @@ jobs:
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
 
-      - name: Promote with PM2
+      - name: Validate PM2 promotion contract
+        run: bash scripts/tests/pm2-config.test.sh
+
+      - name: Promote with PM2 start-or-reload
         run: |
           set -euo pipefail
           pm2 startOrReload pm2.config.js --update-env
