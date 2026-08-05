@@ -177,6 +177,21 @@
 
 ---
 
+- Timestamp: 2026-08-05T23:20:10+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 — Provision and clean two isolated authenticated roles; non-blocking D-006 wording correction
+- Starting commit: `e1f9843`
+- Ending commits: `800387d` (E2 implementation); `af38c0d` (measurement wording correction)
+- Work performed: Added the approved `holy clark`/isolated-dev environment guard, run-scoped primary/partner Clerk provisioning adapter, bounded transient retry, partial-failure cleanup, redacted errors, idempotent deletion handling, Playwright global setup/teardown, restricted storage-state and manifest permissions, UI onboarding/linking, desktop/mobile projects and test-runtime environment mapping. Updated measurement wording to state that targets are owner-approved objectives but not demonstrated as achieved.
+- Files changed: `e2e/support/authEnvironment.ts`; `e2e/support/authEnvironment.test.ts`; `e2e/auth.global.setup.ts`; `e2e/auth.global.teardown.ts`; `playwright.config.ts`; `vitest.config.ts`; `docs/testing/authenticated-release-fixtures.md`; `docs/reliability/gate-0-measurement-plan.md`; `docs/reliability/telemetry-contract.md`
+- Commands and outcomes: Initial focused E2 suite failed because the adapter was absent; `npx vitest run e2e/support/authEnvironment.test.ts` passed 11/11 after implementation; `npm run typecheck` passed; `npm run test:unit` passed 16 files and 81 tests; `git diff --check` passed; committed/mock credential scan and tracked auth-state scan passed
+- Convex deployment class and status: No Clerk or Convex provisioning/mutation was attempted because the approved environment credentials and identity were absent; the implementation hard-codes only the approved non-production deployment boundary `dev:hallowed-hummingbird-284`
+- Decisions made: E2 fails closed unless the approved Clerk environment name, test-scoped credential names, isolated Convex deployment/URL and run identifier are present. E3 was intentionally not started because it may begin only after E2 passes against the real isolated environments.
+- Unresolved blockers: Required environment material is missing locally: `CLERK_TEST_ENVIRONMENT_NAME`, `CLERK_TEST_SECRET_KEY`, `NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY`, `CLERK_TEST_FRONTEND_API_URL`, `CONVEX_TEST_DEPLOYMENT`, `NEXT_PUBLIC_TEST_CONVEX_URL` and `CB_CONNECT_RELEASE_RUN_ID`. Provisioning real users, storage states, couple linking and cleanup cannot be safely validated without them.
+- Exact next safe action: Supply the approved test-environment values through the protected/local environment without committing or printing them, rerun E2 against `dev:hallowed-hummingbird-284`, and only after that start E3 zero-skip authenticated release smoke.
+
+---
+
 - Timestamp: 2026-08-05T22:59:32+05:30
 - Agent/session: Codex primary agent; implementation review; session identifier unavailable
 - Task and plan IDs: Review of I2, E1 and O2; next-scope readiness decision
