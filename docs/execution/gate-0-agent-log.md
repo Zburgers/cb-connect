@@ -69,3 +69,18 @@
 - Decisions made: Release metadata accepts only a 40-character hexadecimal commit SHA, bounded build/compatibility tokens, and canonical UTC millisecond timestamps; serialization projects only the approved public identity fields.
 - Unresolved blockers: None for I1; Gate 0 release evidence remains outstanding by design.
 - Exact next safe action: Start I3 from `c9b31fe`; write and run the liveness contract failure test before the minimal route adjustment.
+
+---
+
+- Timestamp: 2026-08-05T21:25:28+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: I3 — Keep liveness contract independent
+- Starting commit: `954afe3`
+- Ending commit: `5419675`
+- Work performed: Added the exact `/api/health` response contract test and an independence test that forces backend fetch failure. Reordered the response fields to the locked `status`, `service`, `timestamp` shape; the handler remains process-only and returns HTTP 200 without backend calls.
+- Files changed: `app/api/health/route.ts`; `app/api/health/route.test.ts`
+- Commands and outcomes: Initial `npx vitest run app/api/health/route.test.ts` failed on the pre-existing field order; after the minimal route adjustment the focused test passed 2/2; `npm run typecheck` passed; `npm run test:unit` passed 12 files and 50 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; not used or mutated; no production deployment or mutation performed
+- Decisions made: Liveness is locked to HTTP 200 with only `status`, `service` and `timestamp`; release/backend identity belongs to the separate readiness contract.
+- Unresolved blockers: None for I3; Gate 0 release evidence remains outstanding by design.
+- Exact next safe action: Start O1 from `5419675`; write and run the static PM2/workflow rejection test before removing mutable secret injection.
