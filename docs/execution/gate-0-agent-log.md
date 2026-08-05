@@ -129,3 +129,18 @@
 - Decisions made: Missing or malformed backend metadata fails closed as null; the public result contains only `deployment`, `compatibilityVersion` and `deployedAt`; I4 is dependency-ready but intentionally remains outside this packet.
 - Unresolved blockers: None for I2; authenticated release coverage, readiness endpoint implementation, CI/artifact qualification, promotion, rollback and Gate 0 verdict remain incomplete.
 - Exact next safe action: Start E1 from `dfe8357`; remove fixed credentials and conditional skipping only from the approved release-fixture path, while preserving the fact that legacy skipped suites are not zero-skip release evidence.
+
+---
+
+- Timestamp: 2026-08-05T22:48:24+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E1 — Remove committed and mock authentication credentials
+- Starting commit: `da23521`
+- Ending commit: `dad8fae`
+- Work performed: Removed fixed account/password values and mock-auth assumptions from `e2e/fixtures.ts` and `e2e/signup-repro.spec.ts`. Added the approved run-scoped primary/partner storage-state interface, fail-closed missing-state errors, a pre-provisioned authenticated fixture check, and ignored paths for generated auth artifacts. Legacy skipped suites were not changed.
+- Files changed: `e2e/fixtures.ts`; `e2e/signup-repro.spec.ts`; `.gitignore`; `scripts/tests/auth-fixtures.test.sh`
+- Commands and outcomes: Initial static scan detected the existing fixed literals; after implementation and ignore-rule correction, `bash scripts/tests/auth-fixtures.test.sh` passed; Playwright listed the approved fixture test with no skip when given a non-secret placeholder state path; `npm run typecheck` passed; `npm run test:unit` passed 13 files and 54 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284` remains the only approved local Convex target; no Convex operation was needed for E1 and no production mutation occurred
+- Decisions made: The approved release-fixture path fails closed when run-scoped storage state is unavailable; legacy `test.skip` paths remain tracked debt for E2/E3 and must not be reported as zero-skip release evidence.
+- Unresolved blockers: No blocker for E1; deterministic two-user provisioning, cleanup, and zero-skip release smoke remain E2/E3 work.
+- Exact next safe action: Start O2 from `dad8fae`; define and test the bounded redacted telemetry serializer without instrumenting user or health data.
