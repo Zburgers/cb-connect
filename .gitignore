@@ -13,6 +13,9 @@ build/
 next-env.d.ts
 test-results/
 playwright-report/
+/e2e/.auth/
+/e2e/auth-state/
+/e2e/storage-state/
 graphify-out/cache/
 graphify-out/.graphify_root
 .antigravitycli/

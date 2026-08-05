@@ -1,20 +1,33 @@
 import { test as base, expect } from "@playwright/test";
 
-/**
- * Test fixtures for CB Connect E2E tests
- * 
- * Provides:
- * - testUser: Primary user credentials
- * - partnerUser: Partner user credentials
- * - authenticatedPage: Pre-authenticated page context
- */
-
 type UserData = {
-  email: string;
-  password: string;
   name: string;
-  role?: "primary" | "partner";
+  storageStatePath: string;
+  role: "primary" | "partner";
 };
+
+type ReleaseFixtureRole = "primary" | "partner";
+
+const storageStateEnvironmentNames: Record<
+  ReleaseFixtureRole,
+  string
+> = {
+  primary: "CB_CONNECT_RELEASE_PRIMARY_STORAGE_STATE",
+  partner: "CB_CONNECT_RELEASE_PARTNER_STORAGE_STATE",
+};
+
+export function getApprovedReleaseFixture(role: ReleaseFixtureRole): string {
+  const environmentName = storageStateEnvironmentNames[role];
+  const storageStatePath = process.env[environmentName]?.trim();
+
+  if (!storageStatePath) {
+    throw new Error(
+      `Missing approved release fixture storage state: ${environmentName}`,
+    );
+  }
+
+  return storageStatePath;
+}
 
 type Fixtures = {
   testUser: UserData;
@@ -24,43 +37,23 @@ type Fixtures = {
 
 export const test = base.extend<Fixtures>({
   testUser: async ({}, use) => {
-    const user: UserData = {
-      email: `test.primary.${Date.now()}@example.com`,
-      password: "Test123!@#",
-      name: "Test Primary User",
+    await use({
+      name: "Approved primary release fixture",
+      storageStatePath: getApprovedReleaseFixture("primary"),
       role: "primary",
-    };
-    
-    // Note: In a real test environment, you would create the user via API
-    // For now, we use mock credentials that would be created manually
-    await use(user);
+    });
   },
 
   partnerUser: async ({}, use) => {
-    const user: UserData = {
-      email: `test.partner.${Date.now()}@example.com`,
-      password: "Test123!@#",
-      name: "Test Partner User",
+    await use({
+      name: "Approved partner release fixture",
+      storageStatePath: getApprovedReleaseFixture("partner"),
       role: "partner",
-    };
-    
-    await use(user);
+    });
   },
 
   authenticatedPage: async ({ page, testUser }, use) => {
-    // Setup: Authenticate user
-    await page.goto("/sign-in");
-    
-    // Wait for Clerk authentication to load
-    await page.waitForSelector('[data-clerk-root]', { timeout: 10000 });
-    
-    // For testing purposes, we'll skip actual auth and assume logged in
-    // In production, you would use API calls to authenticate
     await use({ page, user: testUser });
-    
-    // Teardown: Sign out
-    // await page.getByRole("button", { name: /user/i }).click();
-    // await page.getByRole("menuitem", { name: /sign out/i }).click();
   },
 });
 
