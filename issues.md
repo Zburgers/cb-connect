@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 4, 2026
+**Last Updated:** August 6, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -68,12 +68,13 @@ Update with Github issues on the parent repo
 ### Production dependency audit reports unresolved high-severity vulnerabilities
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Open
+**Status:** Resolved in Gate 0 G1
 **Detected:** August 1, 2026
 **Files:** `package.json`, `package-lock.json`
-**Evidence:** `npm audit --omit=dev` reports nine vulnerabilities: six high and three moderate, including advisories in the installed Next.js, Clerk/js-cookie, Convex/ws, PostCSS, Sharp, Svix/uuid dependency paths. `npm outdated` shows patched wanted versions for several direct dependencies. The production build still passes, which does not remediate or risk-accept these advisories.
-**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) reran `npm audit --omit=dev` after `npm ci` and still reports 9 vulnerabilities (6 high, 3 moderate) across the same reachable dependency paths. No owner/expiry exception is recorded.
-**Exit evidence:** Upgrade through reviewed compatible releases; inspect reachability and compensating controls for each advisory; rerun typecheck/unit/build/E2E and `npm audit --omit=dev`; document any explicit time-bounded risk acceptance and automate dependency scanning in CI.
+**Evidence:** The current pre-remediation tree reported 7 reachable production vulnerabilities (4 high, 3 moderate): Next.js with nested PostCSS/Sharp, Convex with `ws`, and Svix with `uuid`. Reachability was confirmed with `npm ls --all --omit=dev postcss sharp uuid ws convex svix next`. No risk exception was used.
+**Remediation:** `6509bbf` upgrades Next.js within the supported 15.x line and pins secure Next-owned PostCSS/Sharp overrides; `3a64142` upgrades Convex to the release carrying `ws` 8.21.0; `bb30aeb` upgrades Svix to the release carrying `uuid` 11.1.1 or newer.
+**Latest Gate 0 refresh:** After clean `npm ci --no-audit --no-fund`, `npm audit --omit=dev` reports `found 0 vulnerabilities`. `npm run build`, `npm run typecheck`, and `npm run test:unit -- --run` pass (18 files, 93 tests). `.github/workflows/ci.yml` now runs the full production audit without `--audit-level=high`, so any production advisory fails qualification.
+**Exit evidence:** No reachable production advisory remains; no owner/expiry exception is recorded; CI enforces the complete `npm audit --omit=dev` result.
 
 --
 ---

@@ -16,7 +16,7 @@ required_patterns=(
   'run: npm run build'
   'run: npm run typecheck'
   'run: npm run test:unit -- --run'
-  'run: npm audit --omit=dev --audit-level=high'
+  'run: npm audit --omit=dev'
 )
 
 for pattern in "${required_patterns[@]}"; do
@@ -34,7 +34,7 @@ install_line="$(line_for 'run: npm ci --no-audit --no-fund')"
 build_line="$(line_for 'run: npm run build')"
 typecheck_line="$(line_for 'run: npm run typecheck')"
 unit_line="$(line_for 'run: npm run test:unit -- --run')"
-audit_line="$(line_for 'run: npm audit --omit=dev --audit-level=high')"
+audit_line="$(line_for 'run: npm audit --omit=dev')"
 
 if ! (( install_line < build_line && build_line < typecheck_line &&
   typecheck_line < unit_line && unit_line < audit_line )); then
