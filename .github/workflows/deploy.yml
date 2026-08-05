@@ -56,6 +56,9 @@ jobs:
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+          CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BACKEND_DEPLOYED_AT: ${{ github.run_started_at }}
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -72,6 +75,9 @@ jobs:
             'CLERK_FRONTEND_API_URL',
             'CLERK_WEBHOOK_SECRET',
             'DISCORD_WEBHOOK_URL',
+            'CB_CONNECT_BACKEND_DEPLOYMENT',
+            'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION',
+            'CB_CONNECT_BACKEND_DEPLOYED_AT',
           ];
           const content = names
             .filter((name) => process.env[name])
@@ -90,16 +96,36 @@ jobs:
             echo "Skipping Convex runtime secret sync; no optional values are configured."
           fi
 
+      - name: Validate explicit Convex release target
+        if: vars.DEPLOY_CONVEX == 'true'
+        env:
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+        run: |
+          set -euo pipefail
+          expected='prod:festive-malamute-715'
+          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = "$expected"
+          test "$CONVEX_DEPLOYMENT" = "$expected"
+
+      - name: Deploy explicit Convex compatibility release
+        if: vars.DEPLOY_CONVEX == 'true'
+        env:
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+        run: |
+          set -euo pipefail
+          convex_release_env_file="$RUNNER_TEMP/cb-connect-convex-release.env"
+          umask 077
+          printf 'CONVEX_DEPLOYMENT=%s\n' "$CONVEX_DEPLOYMENT" > "$convex_release_env_file"
+          npx convex deploy --env-file "$convex_release_env_file" --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
+          npx convex function-spec --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
+          rg -q 'getBackendIdentity' "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
+          npx convex run queries/system:getBackendIdentity '{}' --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-backend-identity.json"
+          rg -q '"compatibilityVersion"[[:space:]]*:[[:space:]]*"v1"' "$RUNNER_TEMP/cb-connect-backend-identity.json"
+
       - name: Validate Convex backend
         run: npm run test:unit -- --run
-
-      - name: Deploy Convex backend
-        if: vars.DEPLOY_CONVEX == 'true'
-        run: npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
-          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
 
       - name: Build application
         run: npm run build
@@ -113,6 +139,10 @@ jobs:
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
 
       - name: Validate PM2 promotion contract
         run: bash scripts/tests/pm2-config.test.sh
@@ -134,3 +164,7 @@ jobs:
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}

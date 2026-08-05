@@ -26,4 +26,21 @@ if ! rg -q 'Skipping Convex runtime secret sync; no optional values are configur
   exit 1
 fi
 
-echo "deploy workflow optional-runtime-secret handling: PASS"
+required_v1_patterns=(
+  'Validate explicit Convex release target'
+  'CB_CONNECT_PRODUCTION_DEPLOYMENT'
+  'prod:festive-malamute-715'
+  'npx convex deploy --env-file "$convex_release_env_file"'
+  'npx convex function-spec --deployment "$CONVEX_DEPLOYMENT"'
+  'npx convex run queries/system:getBackendIdentity '\''{}'\'' --deployment "$CONVEX_DEPLOYMENT"'
+  'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
+  'CB_CONNECT_COMMIT_SHA'
+)
+for pattern in "${required_v1_patterns[@]}"; do
+  if ! rg -Fq "$pattern" "$workflow"; then
+    echo "V1 explicit Convex release policy is missing: $pattern" >&2
+    exit 1
+  fi
+done
+
+echo "deploy workflow V1 and optional-runtime-secret policy: PASS"
