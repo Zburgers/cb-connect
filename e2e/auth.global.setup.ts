@@ -7,11 +7,14 @@ import {
 } from "@playwright/test";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { clerk, clerkSetup } from "@clerk/testing/playwright";
 
 import {
+  cleanupConvexFixturePair,
   createClerkFixtureServices,
   loadAuthEnvironment,
   provisionFixturePair,
+  registerConvexFixtureUser,
   type AuthEnvironment,
   type FixtureServices,
   type ProvisionedFixturePair,
@@ -30,23 +33,42 @@ function syntheticPastDate(): string {
 }
 
 async function signIn(page: Page, environment: AuthEnvironment, user: { email?: string; password?: string }) {
-  if (!user.email || !user.password) {
+  if (!user.email) {
     throw new Error("authenticated_fixture_setup_failed");
   }
 
-  await page.goto(`${environment.baseUrl}/sign-in`);
-  const identifier = page.locator('input[name="identifier"], input[type="email"]').first();
-  await expect(identifier).toBeVisible();
-  await identifier.fill(user.email);
-
-  const password = page.locator('input[name="password"], input[type="password"]').first();
-  if (!(await password.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: /continue/i }).click();
-  }
-  await expect(password).toBeVisible();
-  await password.fill(user.password);
-  await page.getByRole("button", { name: /continue|sign in/i }).last().click();
+  process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
+  await page.goto(`${environment.baseUrl}/`);
+  await clerk.signIn({
+    page,
+    emailAddress: user.email,
+    setupClerkTestingTokenOptions: {
+      frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
+    },
+  });
+  await page.goto(`${environment.baseUrl}/dashboard`);
   await page.waitForURL(/\/dashboard|\/onboarding/, { timeout: 30000 });
+  await expect(
+    page.getByText(/Welcome|Private observatory/i).first(),
+  ).toBeVisible({ timeout: 30000 });
+}
+
+async function convexAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(async () => {
+    const clerk = (window as Window & {
+      Clerk?: {
+        session?: {
+          getToken: (options: { template: string }) => Promise<string | null>;
+        };
+      };
+    }).Clerk;
+    return (await clerk?.session?.getToken({ template: "convex" })) ?? null;
+  });
+  if (!token) {
+    throw new Error("authenticated_fixture_convex_token_missing");
+  }
+  return token;
 }
 
 async function completeOnboarding(
@@ -118,52 +140,75 @@ export default async function globalSetup(_config: FullConfig) {
   await chmod(environment.storageDir, 0o700);
 
   const clerkServices = createClerkFixtureServices(environment);
-  let primaryPage: Page | null = null;
   let pair: ProvisionedFixturePair | null = null;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  let setupStage = "provision";
 
-  const services: FixtureServices = {
-    ...clerkServices,
-    cleanupApplicationData: async () => {
-      if (!primaryPage) {
-        return;
-      }
-
-      await primaryPage.goto("/dashboard/partner");
-      const revokeButton = primaryPage.getByRole("button", {
-        name: /close partner access/i,
-      });
-      if (await revokeButton.count()) {
-        primaryPage.once("dialog", (dialog) => dialog.accept());
-        await revokeButton.click();
-        await expect(
-          primaryPage.getByText("Partner access revoked."),
-        ).toBeVisible({ timeout: 30000 });
-      }
-    },
-  };
+  const services: FixtureServices = { ...clerkServices };
+  let primaryConvexAuthToken: string | null = null;
 
   try {
     pair = await provisionFixturePair(environment, services, {
       passwordFactory: () => randomBytes(24).toString("base64url"),
     });
 
-    browser = await chromium.launch();
+    process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
+    setupStage = "clerk-testing";
+    await clerkSetup({
+      frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
+    });
+
+    setupStage = "browser";
+    browser = await chromium.launch({
+      ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
+        ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
+        : {}),
+    });
     const primaryContext = await browser.newContext({
       baseURL: environment.baseUrl,
     });
     const partnerContext = await browser.newContext({
       baseURL: environment.baseUrl,
     });
-    primaryPage = await primaryContext.newPage();
+    const primaryPage = await primaryContext.newPage();
     const partnerPage = await partnerContext.newPage();
 
+    setupStage = "primary-sign-in";
     await signIn(primaryPage, environment, pair.primary);
+    setupStage = "primary-onboarding";
     await completeOnboarding(primaryPage, "primary");
+    primaryConvexAuthToken = await convexAuthToken(primaryPage);
+    setupStage = "partner-sign-in";
     await signIn(partnerPage, environment, pair.partner);
+    setupStage = "partner-onboarding";
     await completeOnboarding(partnerPage, "partner");
+    setupStage = "link";
     await linkCouple(primaryPage, partnerPage);
-
+    setupStage = "primary-register";
+    await registerConvexFixtureUser(
+      environment,
+      pair,
+      pair.primary,
+      primaryConvexAuthToken,
+    );
+    // The primary registration creates the durable fixture run record. Install
+    // its authenticated cleanup path before attempting partner registration so
+    // a partial registration failure cannot orphan application data.
+    services.cleanupApplicationData = (fixturePair) =>
+      cleanupConvexFixturePair(
+        environment,
+        fixturePair,
+        primaryConvexAuthToken!,
+      );
+    setupStage = "partner-register";
+    await registerConvexFixtureUser(
+      environment,
+      pair,
+      pair.partner,
+      await convexAuthToken(partnerPage),
+    );
+    setupStage = "storage-state";
     await saveStorageState(primaryContext, environment.primaryStorageStatePath);
     await saveStorageState(partnerContext, environment.partnerStorageStatePath);
     await writeRestrictedManifest(environment, pair);
@@ -177,6 +222,7 @@ export default async function globalSetup(_config: FullConfig) {
     await primaryContext.close();
     await browser.close();
   } catch {
+    console.error(`authenticated_fixture_setup_stage:${setupStage}`);
     if (pair) {
       await services.cleanupApplicationData?.(pair).catch(() => undefined);
       await clerkServices.deleteUser(pair.partner.clerkId).catch(() => undefined);

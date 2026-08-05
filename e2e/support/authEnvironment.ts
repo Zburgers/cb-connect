@@ -1,4 +1,9 @@
-export const APPROVED_CLERK_ENVIRONMENT = "holy clark";
+import { ConvexHttpClient } from "convex/browser";
+
+import { api } from "../../convex/_generated/api";
+
+export const APPROVED_CLERK_ENVIRONMENT = "holy clerk";
+export const APPROVED_CLERK_FRONTEND_API_HOST = "holy-clam-29.clerk.accounts.dev";
 export const APPROVED_CONVEX_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 
 const CLERK_FRONTEND_HOST_SUFFIX = ".clerk.accounts.dev";
@@ -46,6 +51,11 @@ export type FixtureServices = {
   deleteUser: (clerkId: string) => Promise<void>;
   cleanupApplicationData?: (pair: ProvisionedFixturePair) => Promise<void>;
 };
+
+type FixtureApplicationUser = Pick<
+  ProvisionedFixtureUser,
+  "role" | "clerkId" | "email"
+>;
 
 type RetryOptions = {
   maxAttempts?: number;
@@ -141,6 +151,7 @@ export function loadAuthEnvironment(
     !isTestKey(clerkPublishableKey, "pk") ||
     clerkUrl === null ||
     !clerkUrl.hostname.endsWith(CLERK_FRONTEND_HOST_SUFFIX) ||
+    clerkUrl.hostname !== APPROVED_CLERK_FRONTEND_API_HOST ||
     convexDeployment !== APPROVED_CONVEX_DEPLOYMENT ||
     convexAddress === null ||
     !convexAddress.hostname.includes("hallowed-hummingbird-284") ||
@@ -254,6 +265,7 @@ export async function cleanupFixturePair(
   options: RetryOptions = {},
 ): Promise<{ ok: boolean; errors: string[] }> {
   const errors: string[] = [];
+  let applicationCleanupOk = true;
 
   if (services.cleanupApplicationData) {
     try {
@@ -263,7 +275,12 @@ export async function cleanupFixturePair(
       );
     } catch {
       errors.push("application_cleanup_failed");
+      applicationCleanupOk = false;
     }
+  }
+
+  if (!applicationCleanupOk) {
+    return { ok: false, errors };
   }
 
   for (const user of [pair.partner, pair.primary]) {
@@ -277,6 +294,86 @@ export async function cleanupFixturePair(
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+export async function registerConvexFixtureUser(
+  environment: AuthEnvironment,
+  pair: ProvisionedFixturePair,
+  user: FixtureApplicationUser,
+  authToken: string,
+): Promise<void> {
+  const client = new ConvexHttpClient(environment.convexUrl);
+  client.setAuth(authToken);
+  if (!user.email) {
+    throw new Error("fixture_user_email_missing");
+  }
+  try {
+    await client.mutation(api.mutations.fixtureCleanup.registerFixtureUser, {
+      runId: environment.runId,
+      clerkId: user.clerkId,
+      email: user.email,
+      role: user.role,
+      primaryClerkId: pair.primary.clerkId,
+      partnerClerkId: pair.partner.clerkId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const safeReason = [
+      "fixture_cleanup_authenticated_subject_mismatch_target_present",
+      "fixture_cleanup_authenticated_subject_mismatch_target_absent",
+      "fixture_cleanup_authenticated_subject_mismatch",
+      "fixture_cleanup_identity_mismatch",
+      "fixture_cleanup_email_mismatch",
+      "fixture_cleanup_stored_email_mismatch",
+      "fixture_cleanup_role_mismatch",
+      "fixture_user_not_found",
+      "fixture_cleanup_not_allowed",
+      "fixture_cleanup_invalid_scope",
+    ].find((reason) => message.includes(reason));
+    console.error(
+      `authenticated_fixture_registration_error:${safeReason ?? "unknown"}`,
+    );
+    throw error;
+  }
+}
+
+export async function cleanupConvexFixturePair(
+  environment: AuthEnvironment,
+  pair: ProvisionedFixturePair,
+  authToken: string,
+): Promise<void> {
+  const client = new ConvexHttpClient(environment.convexUrl);
+  client.setAuth(authToken);
+  const result = await client.mutation(api.mutations.fixtureCleanup.cleanupFixture, {
+    runId: pair.runId,
+    primaryClerkId: pair.primary.clerkId,
+    partnerClerkId: pair.partner.clerkId,
+  });
+  const status = await client.query(
+    api.mutations.fixtureCleanup.getFixtureCleanupStatus,
+    {
+      runId: pair.runId,
+      primaryClerkId: pair.primary.clerkId,
+      partnerClerkId: pair.partner.clerkId,
+    },
+  );
+  if (!result.ok || result.remaining || status.remaining) {
+    throw new Error("fixture_application_cleanup_incomplete");
+  }
+}
+
+export async function getConvexFixtureCleanupStatus(
+  environment: AuthEnvironment,
+  pair: ProvisionedFixturePair,
+  authToken: string,
+) {
+  const client = new ConvexHttpClient(environment.convexUrl);
+  client.setAuth(authToken);
+  return await client.query(api.mutations.fixtureCleanup.getFixtureCleanupStatus, {
+    runId: pair.runId,
+    primaryClerkId: pair.primary.clerkId,
+    partnerClerkId: pair.partner.clerkId,
+  });
 }
 
 type ClerkUserResponse = { id: string };

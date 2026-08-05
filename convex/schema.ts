@@ -15,9 +15,22 @@ export default defineSchema({
     partnerType: v.optional(v.union(v.literal("boyfriend"), v.literal("girlfriend"), v.literal("spouse"), v.literal("partner"), v.literal("other"))),
     externalNotificationConsent: v.optional(v.boolean()),
     timeZone: v.optional(v.string()),
+    fixtureRunId: v.optional(v.string()),
   })
     .index("by_clerk_id", ["clerkId"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_fixture_run_id_and_clerk_id", ["fixtureRunId", "clerkId"]),
+
+  // This marker deliberately outlives the synthetic users so a failed test
+  // run can be recovered even if Clerk or a partial cleanup removed them first.
+  fixtureRuns: defineTable({
+    runId: v.string(),
+    primaryClerkId: v.string(),
+    partnerClerkId: v.string(),
+    coupleId: v.id("couples"),
+    createdAt: v.number(),
+    cleanedAt: v.optional(v.number()),
+  }).index("by_run_id", ["runId"]),
 
   couples: defineTable({
     createdAt: v.number(),

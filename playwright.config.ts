@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const basePort = new URL(baseURL).port || "3000";
+const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+
 /**
  * Playwright E2E configuration for CB Connect
  * 
@@ -38,7 +42,8 @@ export default defineConfig({
     ["list"],
   ],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+    baseURL,
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -51,12 +56,15 @@ export default defineConfig({
     },
     {
       name: "release-mobile",
-      use: { ...devices["iPhone 13"] },
+      use: {
+        ...devices["iPhone 13"],
+        browserName: "chromium",
+      },
     },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: `npm run dev -- --port ${basePort}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {

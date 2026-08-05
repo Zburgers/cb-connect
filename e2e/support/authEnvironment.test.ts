@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   APPROVED_CLERK_ENVIRONMENT,
+  APPROVED_CLERK_FRONTEND_API_HOST,
   APPROVED_CONVEX_DEPLOYMENT,
   cleanupFixturePair,
   loadAuthEnvironment,
@@ -13,7 +14,7 @@ const validEnvironment = {
   CLERK_TEST_ENVIRONMENT_NAME: APPROVED_CLERK_ENVIRONMENT,
   CLERK_TEST_SECRET_KEY: ["sk", "test", "unit"].join("_"),
   NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ["pk", "test", "unit"].join("_"),
-  CLERK_TEST_FRONTEND_API_URL: "https://holy-clark.clerk.accounts.dev",
+  CLERK_TEST_FRONTEND_API_URL: `https://${APPROVED_CLERK_FRONTEND_API_HOST}`,
   CONVEX_TEST_DEPLOYMENT: APPROVED_CONVEX_DEPLOYMENT,
   NEXT_PUBLIC_TEST_CONVEX_URL:
     "https://hallowed-hummingbird-284.convex.cloud",

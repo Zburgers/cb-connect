@@ -19,6 +19,7 @@ import type * as actions_notifications from "../actions/notifications.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as mutations_couples from "../mutations/couples.js";
+import type * as mutations_fixtureCleanup from "../mutations/fixtureCleanup.js";
 import type * as mutations_messages from "../mutations/messages.js";
 import type * as mutations_misc from "../mutations/misc.js";
 import type * as mutations_nudges from "../mutations/nudges.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   "mutations/couples": typeof mutations_couples;
+  "mutations/fixtureCleanup": typeof mutations_fixtureCleanup;
   "mutations/messages": typeof mutations_messages;
   "mutations/misc": typeof mutations_misc;
   "mutations/nudges": typeof mutations_nudges;

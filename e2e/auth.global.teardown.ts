@@ -1,9 +1,11 @@
-import { chromium, expect, type Page } from "@playwright/test";
-import { readFile, rm } from "node:fs/promises";
+import { chromium, type Page } from "@playwright/test";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import {
+  cleanupConvexFixturePair,
   cleanupFixturePair,
   createClerkFixtureServices,
+  getConvexFixtureCleanupStatus,
   loadAuthEnvironment,
   type ProvisionedFixturePair,
 } from "./support/authEnvironment";
@@ -24,22 +26,19 @@ function isFixtureManifest(value: unknown): value is FixtureManifest {
   );
 }
 
-async function cleanupApplicationData(
-  page: Page,
-): Promise<void> {
-  await page.goto("/dashboard/partner");
-  const revokeButton = page.getByRole("button", {
-    name: /close partner access/i,
+async function convexAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(async () => {
+    const clerk = (window as Window & {
+      Clerk?: {
+        session?: {
+          getToken: (options: { template: string }) => Promise<string | null>;
+        };
+      };
+    }).Clerk;
+    return (await clerk?.session?.getToken({ template: "convex" })) ?? null;
   });
-  if (!(await revokeButton.count())) {
-    return;
-  }
-
-  page.once("dialog", (dialog) => dialog.accept());
-  await revokeButton.click();
-  await expect(page.getByText("Partner access revoked.")).toBeVisible({
-    timeout: 30000,
-  });
+  if (!token) throw new Error("authenticated_fixture_convex_token_missing");
+  return token;
 }
 
 export default async function globalTeardown() {
@@ -76,25 +75,57 @@ export default async function globalTeardown() {
     },
   };
   const clerkServices = createClerkFixtureServices(environment);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
+      : {}),
+  });
   const context = await browser.newContext({
     baseURL: environment.baseUrl,
     storageState: environment.primaryStorageStatePath,
   });
   const page = await context.newPage();
-
   try {
+    await page.goto(`${environment.baseUrl}/dashboard`);
+    const authToken = await convexAuthToken(page);
     const result = await cleanupFixturePair(
       pair,
       {
         ...clerkServices,
-        cleanupApplicationData: () => cleanupApplicationData(page),
+        cleanupApplicationData: (fixturePair) =>
+          cleanupConvexFixturePair(environment, fixturePair, authToken),
       },
       { maxAttempts: 3 },
     );
     if (!result.ok) {
       throw new Error("authenticated_fixture_cleanup_failed");
     }
+    const status = await getConvexFixtureCleanupStatus(
+      environment,
+      pair,
+      authToken,
+    );
+    if (status.remaining) {
+      throw new Error("authenticated_fixture_cleanup_failed");
+    }
+    const evidenceDirectory = "docs/evidence/reliability-gate-0";
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(
+      `${evidenceDirectory}/e2-live-proof.md`,
+      [
+        "# E2 live teardown proof",
+        "",
+        `- Recorded: ${new Date().toISOString()}`,
+        "- Clerk target: approved holy clerk development instance",
+        "- Convex target: dev:hallowed-hummingbird-284",
+        "- Cleanup result: application cascade completed",
+        "- Post-cleanup status: remaining=false",
+        `- Post-cleanup counts: ${JSON.stringify(status.counts)}`,
+        "- Secrets and fixture identifiers: omitted",
+        "",
+      ].join("\n"),
+      { encoding: "utf8", mode: 0o600 },
+    );
     await context.close();
     await browser.close();
     await rm(environment.storageDir, { recursive: true, force: true });
