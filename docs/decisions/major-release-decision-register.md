@@ -20,7 +20,7 @@ Engineering must not invent names, credentials, jurisdictions, legal conclusions
 | D-003 | Exact production Convex selector plus frontend/backend compatibility-version scheme | Engineering and release operator | Gate 0 release identity/deploy tasks | Resolved 2026-08-05 | `prod:festive-malamute-715`; compatibility `v1` approved |
 | D-004 | Isolated Clerk and Convex preview/test environments and credential ownership | Engineering, security/operator | Gate 0 authenticated release suite and rehearsals | Resolved 2026-08-05 | Owner approved Clerk test instance `holy clark` and isolated Convex dev deployment |
 | D-005 | Clerk test-user provisioning, rate-limit-safe cleanup and artifact-redaction method | Engineering and Clerk environment owner | Gate 0 authenticated fixture tasks | Resolved 2026-08-05 | Fixture proposal approved with seven-day restricted failure artifacts |
-| D-006 | Critical-journey SLI definitions, baseline window, approved SLOs and error-budget policy | Engineering proposes; operator/product approve | Gate 0 exit | Resolved 2026-08-05 | Proposed SLIs/targets, 28-day baseline and pause/incident response approved |
+| D-006 | Critical-journey SLI definitions, baseline window, approved SLOs and error-budget policy | Engineering proposes; operator/product approve | Gate 0 exit | Resolved 2026-08-05 | Definitions, targets and response policy are documented; the required 28-day baseline remains not measured |
 | D-007 | Backup/restore owner, approved non-production restore target and RPO/RTO objectives | Operator and product owner | Gate 0 recovery rehearsal and exit | Resolved 2026-08-05 | Sole owner; isolated dev target; RPO 24h and RTO 4h approved |
 | D-008 | User timezone source, default, change behavior and authoritative definition of user-local “today” | Product and engineering; privacy reviews private context | Gate 1 date invariants and replacement of PR #8's UTC fallback | Engineering proposal required | Must precede user-local future-date validation |
 | D-009 | Exact observation certainty, provenance, confirmation and `legacy_unknown` schema/mapping | Product, engineering and privacy | Gate 1 schema/migration | Engineering proposal required | — |
@@ -94,6 +94,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Applies from commit/deployment: Gate 0 telemetry and measurement tasks after `d586c73`.
 - Evidence or runbook: `docs/reliability/gate-0-measurement-plan.md`.
 - Review/expiry date: Review after the first 28-day baseline and at least quarterly thereafter.
+- Implementation record: `docs/reliability/slo.md`, `docs/reliability/error-budget-policy.md` and `docs/reliability/incident-response.md` document the approved contract. No target is labeled achieved until the baseline report exists.
 
 ## D-007 — Recovery ownership and objectives
 
