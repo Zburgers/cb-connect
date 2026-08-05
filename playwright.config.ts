@@ -18,6 +18,10 @@ const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: path.resolve(
+    process.env.CB_CONNECT_RELEASE_AUTH_DIR ?? "e2e/.auth",
+    "test-results",
+  ),
   globalSetup: "./e2e/auth.global.setup.ts",
   globalTeardown: "./e2e/auth.global.teardown.ts",
   timeout: 45000, // 45s timeout for Convex operations

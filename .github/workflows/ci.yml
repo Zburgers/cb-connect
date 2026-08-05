@@ -39,3 +39,76 @@ jobs:
 
       - name: Dependency policy
         run: npm audit --omit=dev
+
+  authenticated-smoke:
+    name: Authenticated release smoke
+    needs: qualify
+    runs-on: ubuntu-latest
+    environment: cb-connect-auth-test
+    timeout-minutes: 20
+    env:
+      CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+      CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+      CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+      CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+      NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+      NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+      CB_CONNECT_RELEASE_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+      CB_CONNECT_RELEASE_AUTH_DIR: ${{ runner.temp }}/cb-connect-release-auth
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate authenticated smoke policy
+        run: bash scripts/tests/release-smoke-workflow.test.sh
+
+      - name: Run authenticated release smoke
+        shell: bash
+        run: |
+          set +e
+          npx playwright test e2e/release-smoke.spec.ts --project=release-desktop --project=release-mobile 2>&1 | tee "$RUNNER_TEMP/cb-connect-release-smoke.log"
+          status=${PIPESTATUS[0]}
+          if (( status == 0 )) && rg -q '[1-9][0-9]* skipped' "$RUNNER_TEMP/cb-connect-release-smoke.log"; then
+            status=1
+          fi
+          printf '%s\n' "$status" > "$RUNNER_TEMP/cb-connect-release-smoke.status"
+          exit "$status"
+
+      - name: Create redacted failure artifact
+        if: failure()
+        shell: bash
+        run: |
+          status=1
+          if [[ -f "$RUNNER_TEMP/cb-connect-release-smoke.status" ]]; then
+            status="$(<"$RUNNER_TEMP/cb-connect-release-smoke.status")"
+          fi
+          bash scripts/redact-release-artifacts.sh "$RUNNER_TEMP/cb-connect-redacted-artifacts" "$status"
+
+      - name: Upload redacted failure artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-release-smoke-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/cb-connect-redacted-artifacts
+          if-no-files-found: error
+          retention-days: 7
