@@ -162,6 +162,21 @@
 
 ---
 
+- Timestamp: 2026-08-05T23:08:40+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: I4 — Add bounded compatibility readiness endpoint
+- Starting commit: `7bd2a41`
+- Ending commit: `c2e9179`
+- Work performed: Added `/api/ready` using the server-only Convex backend-identity query, a strict one-second timeout with abort, runtime validation of the upstream identity shape, exact v1 compatibility matching and bounded redacted readiness responses. Added complete, missing-metadata, timeout, unavailable-backend and mismatch tests.
+- Files changed: `app/api/ready/route.ts`; `app/api/ready/route.test.ts`
+- Commands and outcomes: Initial focused suite failed because the route was absent; `npx vitest run app/api/ready/route.test.ts` passed 5/5 after implementation; `npm run typecheck` passed; `npm run test:unit` passed 15 files and 70 tests; readiness secret-token scan passed; `git diff --check` passed; local runtime probe against the approved isolated dev Convex host returned HTTP 200 with a matching v1 readiness result
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; read-only identity query used for local validation; no production deployment or mutation performed
+- Decisions made: Missing frontend metadata, timeout, unavailable backend and compatibility mismatch all return HTTP 503 with only bounded check states; upstream errors and secrets are never serialized.
+- Unresolved blockers: None for I4; deterministic authenticated fixture provisioning and real two-user release smoke remain E2/E3 work.
+- Exact next safe action: Start E2 from `c2e9179`; write the adapter failure tests before adding any Clerk or Convex provisioning code, and fail closed if approved environment credentials are absent.
+
+---
+
 - Timestamp: 2026-08-05T22:59:32+05:30
 - Agent/session: Codex primary agent; implementation review; session identifier unavailable
 - Task and plan IDs: Review of I2, E1 and O2; next-scope readiness decision
@@ -174,3 +189,18 @@
 - Decisions made: I2, E1 and O2 are approved with no blocking code finding. One non-blocking documentation correction is required: telemetry/measurement prose still says SLI targets await owner approval although D-006 records approval; distinguish approved objectives from not-yet-achieved evidence. Next packet is I4, E2 and E3, with E3 strictly dependent on successful E2 provisioning/cleanup evidence.
 - Unresolved blockers: E2 runtime Clerk credentials are not committed and must be injected from the approved `holy clark` test environment. Zero-skip authenticated evidence does not exist until E2/E3 pass. The wording correction remains open but does not block starting I4 or E2.
 - Exact next safe action: Correct the D-006 wording, implement I4 and E2 as separate test/fail/implement/pass/commit cycles, then execute E3 only after E2 proves two-role provisioning, storage states and idempotent cleanup in the isolated environments. Do not deploy production.
+
+---
+
+- Timestamp: 2026-08-05T23:06:57+05:30
+- Agent/session: Codex Shipyard fix builder; session identifier unavailable
+- Task and plan IDs: E1 corrective fix — apply approved storage state to `authenticatedPage`
+- Starting commit: `7bd2a41`; concurrent I4 commit `c2e9179` advanced the shared branch before the bounded E1 implementation commit
+- Ending commit: E1 implementation `3f094c4`; corrective log commit follows this entry
+- Work performed: Corrected `authenticatedPage` to create an isolated browser context with `storageState: testUser.storageStatePath`, create its page from that context and always close the context in `finally`. Strengthened the static fixture policy so using Playwright's default page, omitting the approved primary storage state or omitting cleanup fails the test. The prior E1 handoff overclaimed removal of mock-auth assumptions: it removed fixed credentials and mock-auth comments, but still returned Playwright's default unauthenticated page while calling the fixture authenticated; this entry records and corrects that overclaim.
+- Files changed: `e2e/fixtures.ts`; `scripts/tests/auth-fixtures.test.sh`; this append-only log
+- Commands and outcomes: The new static assertion first failed against the default-page fixture with the intended authenticated-context error. After correction, `bash scripts/tests/auth-fixtures.test.sh` passed; `npm run typecheck` passed; `npm run test:unit -- --run` passed 15 files and 70 tests; `git diff --check` passed. An isolated worktree at `7bd2a41` with the byte-identical E1 diff also passed the required checks with 14 files and 65 tests while concurrent I4 work was incomplete.
+- Convex deployment class and status: No Convex command or deployment was performed; no production access or mutation occurred.
+- Decisions made: Missing primary role state remains fail-closed through `getApprovedReleaseFixture`; the authenticated fixture now consumes that approved path rather than merely carrying it as metadata. No credentials, account identifiers, conditional release skips or production access were added.
+- Unresolved blockers: None for this bounded E1 correction. E2 provisioning, E3 authenticated release evidence and all other Gate 0 tasks remain outside this fix and are not claimed complete.
+- Exact next safe action: Review and integrate the two E1 corrective commits only; do not infer E2/E3 readiness or production qualification from this fixture correction.
