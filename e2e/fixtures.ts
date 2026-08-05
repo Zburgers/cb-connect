@@ -1,4 +1,4 @@
-import { test as base, expect } from "@playwright/test";
+import { test as base, type Page } from "@playwright/test";
 
 type UserData = {
   name: string;
@@ -32,7 +32,7 @@ export function getApprovedReleaseFixture(role: ReleaseFixtureRole): string {
 type Fixtures = {
   testUser: UserData;
   partnerUser: UserData;
-  authenticatedPage: { page: any; user: UserData };
+  authenticatedPage: { page: Page; user: UserData };
 };
 
 export const test = base.extend<Fixtures>({
@@ -52,8 +52,17 @@ export const test = base.extend<Fixtures>({
     });
   },
 
-  authenticatedPage: async ({ page, testUser }, use) => {
-    await use({ page, user: testUser });
+  authenticatedPage: async ({ browser, testUser }, use) => {
+    const context = await browser.newContext({
+      storageState: testUser.storageStatePath,
+    });
+    const page = await context.newPage();
+
+    try {
+      await use({ page, user: testUser });
+    } finally {
+      await context.close();
+    }
   },
 });
 

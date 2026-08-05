@@ -34,6 +34,11 @@ if ! rg -q 'throw new Error' e2e/fixtures.ts; then
   exit 1
 fi
 
+if ! rg -Uq '(?s)authenticatedPage: async \(\{ browser, testUser \}, use\) => \{.*browser\.newContext\(\{\s*storageState: testUser\.storageStatePath,?\s*\}\).*context\.newPage\(\).*try \{.*await use\(\{ page, user: testUser \}\).*\} finally \{\s*await context\.close\(\);?\s*\}' e2e/fixtures.ts; then
+  echo "authenticatedPage must use the approved primary storage state in an isolated context and close it in finally" >&2
+  exit 1
+fi
+
 if git ls-files 'e2e/**' | rg -n '(^|/)(\.auth|auth-state|storage-state)/|(^|/).*(auth|storage)[-_]state.*\.json$'; then
   echo "generated authentication state must not be tracked" >&2
   exit 1
