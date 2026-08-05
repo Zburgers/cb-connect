@@ -54,3 +54,18 @@
 - Decisions made: Sole owner holds all Gate 0 approval roles; compatibility `v1`; Clerk test instance `holy clark`; seven-day artifacts; 28-day baseline; 24-hour RPO; four-hour RTO; synthetic-only non-production recovery target.
 - Unresolved blockers: No planning blocker remains for the first implementation packet. Runtime Clerk secrets must stay outside Git and be injected only when E2/E3 require them. Passing implementation and release evidence remains outstanding.
 - Exact next safe action: Start I1, then I3, then O1 in separate test/fail/implement/pass/commit cycles. Do not deploy production.
+
+---
+
+- Timestamp: 2026-08-05T21:23:32+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: I1 — Parse immutable frontend release metadata
+- Starting commit: `ba64ae4`
+- Ending commit: `c9b31fe`
+- Work performed: Added a pure fail-closed parser and bounded serializer for the four approved frontend release metadata fields. Added focused validity, missing-field, malformed timestamp, invalid SHA and sensitive-input redaction tests. Extended Vitest discovery so the plan-mandated `lib/` focused command executes the new test.
+- Files changed: `lib/releaseInfo.ts`; `lib/releaseInfo.test.ts`; `vitest.config.ts`
+- Commands and outcomes: Initial focused command reported no test files because the existing include list omitted `lib/`; after the minimal discovery fix, `npx vitest run lib/releaseInfo.test.ts` passed 9/9; `npm run typecheck` passed; `npm run test:unit` passed 11 files and 48 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; not used or mutated; no production deployment or mutation performed
+- Decisions made: Release metadata accepts only a 40-character hexadecimal commit SHA, bounded build/compatibility tokens, and canonical UTC millisecond timestamps; serialization projects only the approved public identity fields.
+- Unresolved blockers: None for I1; Gate 0 release evidence remains outstanding by design.
+- Exact next safe action: Start I3 from `c9b31fe`; write and run the liveness contract failure test before the minimal route adjustment.
