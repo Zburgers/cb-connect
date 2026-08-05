@@ -84,3 +84,18 @@
 - Decisions made: Liveness is locked to HTTP 200 with only `status`, `service` and `timestamp`; release/backend identity belongs to the separate readiness contract.
 - Unresolved blockers: None for I3; Gate 0 release evidence remains outstanding by design.
 - Exact next safe action: Start O1 from `5419675`; write and run the static PM2/workflow rejection test before removing mutable secret injection.
+
+---
+
+- Timestamp: 2026-08-05T21:37:20+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: O1 — Remove mutable PM2 secret injection
+- Starting commit: `522ddce`
+- Ending commit: `bbe4dce`
+- Work performed: Removed PM2's hardcoded runtime-variable allowlist and environment copying. PM2 now inherits the protected deployment-step environment, runs from the checked-out cwd, and keeps the package start command. Added a static policy test and wired it into deployment before non-destructive PM2 start-or-reload.
+- Files changed: `pm2.config.js`; `scripts/tests/pm2-config.test.sh`; `.github/workflows/deploy.yml`
+- Commands and outcomes: Initial static test detected the old secret/deployment identifiers; after implementation and shell-quoting correction, `bash scripts/tests/pm2-config.test.sh` passed; isolated scrubbed PM2 start and `startOrReload` both reported online with the expected cwd and command; `npm run build` passed; `npm run typecheck` passed; `npm run test:unit` passed 12 files and 50 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; not used or mutated; no production deployment or mutation performed
+- Decisions made: Protected workflow environment values remain outside source and PM2 config; deployment validates the environment-neutral configuration before reloading the healthy process; no `sed -i` source edits or `pm2 delete` workflow operation is allowed.
+- Unresolved blockers: None for O1. A scrubbed local HTTP probe returned 500 because no Clerk runtime configuration was supplied; no credential was invented or injected, and this was outside the prescribed O1 verification.
+- Exact next safe action: Begin I2 — expose the non-sensitive Convex backend identity — using only `dev:hallowed-hummingbird-284`; do not deploy production.
