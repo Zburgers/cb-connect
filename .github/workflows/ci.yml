@@ -30,6 +30,11 @@ jobs:
 
       - name: Build application
         run: npm run build
+        env:
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
 
       - name: Post-build typecheck
         run: npm run typecheck
@@ -39,6 +44,25 @@ jobs:
 
       - name: Dependency policy
         run: npm audit --omit=dev
+
+      - name: Package immutable standalone release
+        run: |
+          bash scripts/tests/package-release.test.sh
+          bash scripts/package-release.sh "$RUNNER_TEMP/cb-connect-release"
+          bash scripts/package-release.sh --verify "$RUNNER_TEMP/cb-connect-release/release-manifest.json"
+        env:
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
+
+      - name: Upload immutable standalone release
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-release-${{ github.sha }}
+          path: ${{ runner.temp }}/cb-connect-release
+          if-no-files-found: error
+          retention-days: 7
 
   authenticated-smoke:
     name: Authenticated release smoke
