@@ -114,3 +114,18 @@
 - Decisions made: I1, I3 and O1 satisfy the approved packet with no blocking review finding. Next packet is I2, E1 and O2. I4 becomes dependency-ready after I2 but stays outside this three-task packet for checkpoint review. In E1, “no conditional release skip” applies to the approved fixture/bootstrap release path; existing legacy skipped suites are tracked debt until E3 and must not be misreported as zero-skip release evidence.
 - Unresolved blockers: No blocker to I2/E1/O2. Actual authenticated zero-skip release coverage, readiness endpoint, CI/artifact qualification, dependency remediation, promotion, rollback and Gate 0 verdict remain incomplete.
 - Exact next safe action: Execute I2, E1 and O2 as separate test/fail/implement/pass/commit cycles, append each handoff, use only the isolated dev deployment for I2 validation, and do not deploy production.
+
+---
+
+- Timestamp: 2026-08-05T22:44:12+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: I2 — Expose non-sensitive Convex backend identity
+- Starting commit: `2a52216`
+- Ending commit: `dfe8357`
+- Work performed: Added the public argument-validated `queries/system.getBackendIdentity` query with an exact identity-or-null return validator. It reads only approved backend deployment, compatibility and deployment timestamp metadata, validates bounded formats, and performs no auth or database access. Added convex-test coverage and refreshed generated API types.
+- Files changed: `convex/queries/system.ts`; `convex/queries/system.test.ts`; `convex/_generated/api.d.ts`
+- Commands and outcomes: Initial focused test failed because `queries/system` was absent; focused suite passed 4/4 after implementation; `npx convex dev --once` passed on the selected dev deployment; initial typecheck failed on stale generated API types, then passed after codegen; default dev `function-spec` confirmed the public query and exact return union; missing-metadata dev run returned null; dev metadata was set only on `hallowed-hummingbird-284` and complete identity shape validation passed; `npm run test:unit` passed 13 files and 54 tests; `git diff --check` passed
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; functions and non-sensitive test metadata validated there only; no production deployment or mutation performed
+- Decisions made: Missing or malformed backend metadata fails closed as null; the public result contains only `deployment`, `compatibilityVersion` and `deployedAt`; I4 is dependency-ready but intentionally remains outside this packet.
+- Unresolved blockers: None for I2; authenticated release coverage, readiness endpoint implementation, CI/artifact qualification, promotion, rollback and Gate 0 verdict remain incomplete.
+- Exact next safe action: Start E1 from `dfe8357`; remove fixed credentials and conditional skipping only from the approved release-fixture path, while preserving the fact that legacy skipped suites are not zero-skip release evidence.
