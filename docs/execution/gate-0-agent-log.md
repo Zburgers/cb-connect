@@ -234,3 +234,123 @@
 - Decisions made: Missing primary role state remains fail-closed through `getApprovedReleaseFixture`; the authenticated fixture now consumes that approved path rather than merely carrying it as metadata. No credentials, account identifiers, conditional release skips or production access were added.
 - Unresolved blockers: None for this bounded E1 correction. E2 provisioning, E3 authenticated release evidence and all other Gate 0 tasks remain outside this fix and are not claimed complete.
 - Exact next safe action: Review and integrate the two E1 corrective commits only; do not infer E2/E3 readiness or production qualification from this fixture correction.
+
+---
+
+- Timestamp: 2026-08-05T23:51:05+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 remediation and real isolated lifecycle attempt; E3/C1 dependency gate
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with uncommitted implementation changes
+- Work performed: Added a bounded dev-only Convex fixture registration, cascade cleanup and post-cleanup status query. The scope requires the exact run ID, primary/partner Clerk IDs, expected synthetic emails and roles; it rejects production or non-approved deployment identities. Added the optional run marker/index to Convex users, cascade tests for all fixture tables, production rejection, partial cleanup and repeated cleanup. Wired global setup to register both users and global teardown to run the Convex cascade/status proof before Clerk deletion. Added isolated Playwright server-port and executable overrides. Updated the runtime Clerk environment label to the user-specified `holy clerk` and pinned the observed non-production frontend host without recording secret values.
+- Files changed: `convex/schema.ts`; `convex/_generated/api.d.ts`; `convex/mutations/fixtureCleanup.ts`; `convex/mutations/fixtureCleanup.test.ts`; `e2e/support/authEnvironment.ts`; `e2e/support/authEnvironment.test.ts`; `e2e/auth.global.setup.ts`; `e2e/auth.global.teardown.ts`; `playwright.config.ts`; this log
+- Commands and outcomes: `npx convex dev --once` passed against the isolated dev deployment and generated the cleanup API/index; `npx vitest run convex/mutations/fixtureCleanup.test.ts e2e/support/authEnvironment.test.ts` passed 15/15; `npm run typecheck` passed; full Vitest passed 17 files and 85 tests; auth-fixture policy and `git diff --check` passed. Real setup attempts reached the application but did not complete: one was blocked by port 3000 being owned by an unrelated WhatsApp bridge; after isolated-port/browser correction, setup reached primary Clerk sign-in and failed because the mapped publishable and secret keys were from different development instances. Failed run cleanup found zero users carrying the attempted run identities; no setup reached Convex fixture registration.
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; cleanup guard variables set on that dev deployment only; functions ready; no production deployment or mutation performed
+- Decisions made: The existing source `.env.local` values were mapped in-process only to approved E2 names and were never printed or committed. The `sk_test_*` value is not a valid secret for the target `holy-clam-29` test publishable key, and no live key or other-instance test key was substituted. E3 was not implemented or run because E2 did not pass against the real isolated environments; C1 remains dependency-blocked.
+- Unresolved blockers: A matching test-scoped Clerk secret for the approved `holy clerk`/`holy-clam-29` environment is not available in the local source or the isolated Convex environment. The real two-user E2 setup/teardown proof remains outstanding.
+- Exact next safe action: Inject the matching approved test Clerk secret under `CLERK_TEST_SECRET_KEY` without printing or committing it, rerun E2 on `dev:hallowed-hummingbird-284` with a fresh run ID, verify the post-cleanup status query is zero, then implement and run E3 before starting C1.
+
+---
+
+- Timestamp: 2026-08-06T01:40:16+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 credential retry; E3/C1 dependency gate
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with uncommitted implementation and ignored local env changes
+- Work performed: Added the user-provided test-scoped Clerk publishable key and secret to the dedicated worktree's ignored `.env.local`; values were verified by exact comparison without printing. Retried real E2 setup/teardown against the approved Clerk/Convex targets on isolated port 3010. The run reached `primary-sign-in` and failed; no E2 setup reached Convex fixture registration.
+- Files changed: `.env.local` (ignored); this append-only log
+- Commands and outcomes: Git confirmed `.env.local` is ignored. Clerk metadata probe returned HTTP 200 and `environment_type=development`; the publishable key decodes to the approved `holy-clam-29.clerk.accounts.dev` host, but the supplied secret's Clerk instance host does not match. No secret values or fixture identifiers were printed. E3 was not implemented or run; C1 remains dependency-blocked.
+- Convex deployment class and status: `dev:hallowed-hummingbird-284`; no production deployment or mutation performed
+- Decisions made: Keep the supplied values local for user convenience, but do not treat them as an approved E2 credential pair. Preserve the E2 gate until a secret from the same Clerk instance as the approved publishable key is supplied.
+- Unresolved blockers: Matching Clerk secret for `holy-clam-29.clerk.accounts.dev` remains outstanding; the current secret is a valid non-production key for another development instance.
+- Exact next safe action: Replace only the local `CLERK_SECRET_KEY` value with the matching `sk_test_*` secret from the `holy clerk` instance, rerun E2, and record zero post-cleanup fixture records before implementing E3.
+
+---
+
+- Timestamp: 2026-08-06T01:44:31+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 credential retry requested by user; E3/C1 dependency gate
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with uncommitted implementation and ignored local env changes
+- Work performed: Retried the real E2 setup/teardown using the exact Clerk pair supplied by the user, the approved `holy-clam-29.clerk.accounts.dev` frontend host, and Convex `dev:hallowed-hummingbird-284` on isolated port 3011. The browser reached Clerk sign-in, but the Next.js/Clerk runtime emitted its explicit instance-key mismatch diagnostic and setup stopped at `primary-sign-in`.
+- Files changed: this append-only log
+- Commands and outcomes: Real Playwright E2 attempt failed during global setup; no fixture reached Convex registration and no E2 zero-record proof exists. The supplied Clerk secret API call returned HTTP 200 and the target JWKS returned HTTP 200, but the application still rejected the publishable/secret pair as mismatched. No secret values or fixture identifiers were printed. E3 was not implemented or run; C1 remains dependency-blocked.
+- Convex deployment class and status: `dev:hallowed-hummingbird-284`; no production deployment or mutation performed
+- Decisions made: Honor the user's supplied values for the retry, but treat the runtime's explicit Clerk mismatch as authoritative for E2 readiness. Do not bypass Clerk or proceed to E3/C1.
+- Unresolved blockers: The exact Clerk secret supplied does not operate as a matching secret for the publishable key in the running app, despite being accepted by the Clerk API endpoint.
+- Exact next safe action: Obtain the secret copied from the same `holy clerk` instance's API keys panel as the `pk_test_*` publishable key, replace only the ignored local secret, then rerun E2 and record post-cleanup zero status.
+
+---
+
+- Timestamp: 2026-08-06T03:05:51+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 completion, E3 authenticated release smoke, C1 deterministic CI qualification
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with uncommitted implementation and evidence changes
+- Work performed: Reconciled the supplied dev Clerk pair against the approved Clerk frontend/JWKS and completed real E2 setup/teardown on isolated port runs using `holy clerk` and `dev:hallowed-hummingbird-284`. Added `e2e/release-smoke.spec.ts` with one zero-skip primary/partner journey for desktop and mobile Chromium emulation, including linking, sharing controls, primary period logging, partner-assisted period ending, chat, revocation and relinking. Fixed a real revoke/relink defect that left the primary on a revoked membership and added a Convex regression test. Added the C1 ordered qualification workflow and a repository policy test.
+- Files changed: `.github/workflows/ci.yml`; `package.json`; `scripts/tests/ci-workflow.test.sh`; `convex/mutations/couples.ts`; `convex/mutations/couples.test.ts`; `playwright.config.ts`; `e2e/release-smoke.spec.ts`; `docs/evidence/reliability-gate-0/e2-live-proof.md`; `docs/evidence/reliability-gate-0/e3-live-proof.md`; `docs/evidence/reliability-gate-0/c1-local-proof.md`; this append-only log; prior E2 fixture files remain in the same uncommitted worktree.
+- Commands and outcomes: `npx convex dev --once` passed after the revoke/relink fix; focused Convex/auth tests passed 15/15; full local qualification sequence `npm ci --no-audit --no-fund`, `npm run build`, `npm run typecheck` and `npm run test:unit -- --run` passed, with 17 files and 87 tests green; CI policy test and YAML parse passed; `git diff --check` passed. Real E3 passed on desktop (1 passed, 0 skipped) and mobile (1 passed, 0 skipped). Global teardown recorded `remaining=false` and zero counts for all fixture tables. The C1 dependency audit exits 1 on 7 production advisories (4 high, 3 moderate), fail-closed as intended.
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284`; E2/E3 fixture mutations and cleanup were limited to this dev deployment; no production deployment, identity or data was used.
+- Decisions made: The supplied dev values were used only through the ignored local environment and runtime-approved variable mapping; no values or fixture identifiers were printed or committed. Mobile qualification is explicitly Chromium with iPhone-sized viewport/touch emulation because the generic iPhone descriptor defaults to WebKit while the configured executable is Chromium. E3 is accepted as passed; C1 workflow implementation is present, while its audit gate correctly remains red pending the planned G1 dependency remediation or an approved time-bounded exception.
+- Unresolved blockers: Production dependency policy is not green; no exception authority/expiry is recorded. This remains a C1/G1 qualification blocker and does not authorize production promotion.
+- Exact next safe action: Remediate or formally risk-accept the seven production dependency advisories under G1, then rerun the C1 workflow-equivalent audit and preserve the resulting evidence. Do not deploy production.
+
+---
+
+- Timestamp: 2026-08-06T03:11:24+05:30
+- Agent/session: Codex primary agent; code/Convex review; session identifier unavailable
+- Task and plan IDs: Review of uncommitted E2 remediation, E3 live smoke, revoke/relink fix and C1 workflow implementation
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with the reviewed implementation still uncommitted
+- Work performed: Reviewed the complete dirty diff, E2/E3/C1 evidence, Convex cleanup security/identity/cascade behavior, relationship relink semantics, Playwright desktop/mobile journey, workflow policy and current dependency audit. Preserved the shared dirty work without restructuring or committing it.
+- Files changed: this append-only review entry only; all reviewed implementation changes remain uncommitted
+- Commands and outcomes: focused review suites passed 25/25; full unit suite passed 17 files and 87 tests; typecheck passed; build passed; auth-fixture and CI workflow policies passed; `git diff --check` passed. Production audit remains red with seven advisories (four high, three moderate). Persisted live evidence reports desktop/mobile E3 1 passed and 0 skipped each plus zero post-cleanup fixture-table counts; the review did not rerun external mutations.
+- Convex deployment class and status: persisted E2/E3 evidence is limited to `dev:hallowed-hummingbird-284`; review performed no Convex or production mutation
+- Decisions made: Request changes before accepting/committing the packet. Blocking: public unauthenticated `cleanupFixture` and `getFixtureCleanupStatus` expose destructive/status operations on the enabled dev deployment. Important: cleanup discovery can report empty if both marked user rows disappear while couple-linked rows remain. Important: revoke/relink uses `.first()` over potentially duplicated historical memberships and can reopen/select the wrong couple. C1 is implemented but not green because dependency policy fails.
+- Unresolved blockers: Authenticate or internalize cleanup/status; make fixture scope independently recoverable by run ID even after user-row loss and add the both-users-missing orphan test; reconcile duplicate memberships deterministically with regression/migration behavior; split and commit the approved E2, E3, relationship fix and C1 work after review passes; remediate G1 advisories and rerun C1.
+- Exact next safe action: Fix the three review findings first and rerun E2 cleanup/unit evidence. Then commit the packet in task-sized commits. Next planned work is G1 dependency remediation; after audit and C1 are green, execute C2 and C3. Do not deploy production.
+
+---
+
+- Timestamp: 2026-08-06T03:19:18+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: E2 review remediation; revoke/relink regression correction
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with scoped uncommitted remediation layered onto the existing E2/E3/C1 work
+- Work performed: Replaced the unauthenticated fixture cleanup/status surface with an authenticated-primary boundary bound to the exact run registry and both Clerk identities. Added the durable `fixtureRuns` record, which stores the approved couple ID and remains after data cleanup so recovery and idempotent zero-status checks work after either or both application user rows disappear. Updated setup to create the registry after linking, and teardown to obtain a fresh Convex token from the restricted primary storage state before cleanup/status. Made pairing-code selection bounded and deterministic: it uses the sole active/pending membership, reopens only one unambiguous revoked membership, and rejects multiple/stale/role-inconsistent memberships.
+- Files changed: `convex/schema.ts`; `convex/_generated/api.d.ts`; `convex/mutations/fixtureCleanup.ts`; `convex/mutations/fixtureCleanup.test.ts`; `convex/mutations/couples.ts`; `convex/mutations/couples.test.ts`; `e2e/auth.global.setup.ts`; `e2e/auth.global.teardown.ts`; `e2e/support/authEnvironment.ts`; this append-only log. Existing unrelated dirty E2/E3/C1 files were preserved.
+- Commands and outcomes: `npx convex dev --once` passed and added `fixtureRuns.by_run_id` only on the isolated dev deployment. Focused fixture/relink/auth tests passed 25/25; `npm run typecheck` passed; `npm run test:unit -- --run` passed 17 files and 91 tests; `npm run build` passed; `bash scripts/tests/auth-fixtures.test.sh` and `bash scripts/tests/ci-workflow.test.sh` passed; `git diff --check` passed.
+- Convex deployment class and status: `dev:hallowed-hummingbird-284`; schema/function deployment was limited to that isolated development deployment. No production deployment, data access, or mutation occurred.
+- Decisions made: The public cleanup/status functions remain necessary for normal Playwright global teardown, but now require the authenticated primary fixture identity and exact durable run record; no unauthenticated status or destructive surface remains. The durable registry is intentionally retained and marked `cleanedAt` rather than deleted, allowing a repeat call to prove zero state. Ambiguous historical membership data is rejected rather than silently repaired because a safe repair cannot infer the intended relationship.
+- Unresolved blockers: G1 dependency policy remains red on the seven previously recorded production advisories; this continues to block C1 qualification. The external E2/E3 Clerk/Convex journey was not rerun during this remediation because it would mutate the isolated fixture environment and the changes were covered by unit/schema deployment checks.
+- Exact next safe action: Review this remediation with the existing E2/E3 packet, then split and commit the approved task-sized changes. Proceed with G1 dependency remediation before claiming C1 green; do not deploy production.
+
+---
+
+- Timestamp: 2026-08-06T03:23:01+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: E2 partial-failure cleanup correction
+- Starting commit: `45f0a21`
+- Ending commit: `45f0a21` with the correction uncommitted in the existing shared worktree
+- Work performed: Moved installation of the authenticated Convex cleanup callback to immediately after successful primary registration, when both the durable fixture run record and primary Convex token are present, before partner registration begins. Added a deterministic mocked global-setup test that makes partner registration fail and proves the Convex cleanup callback runs with the primary token before either Clerk deletion is attempted.
+- Files changed: `e2e/auth.global.setup.ts`; `e2e/auth.global.setup.test.ts`; this append-only log. All pre-existing dirty E2/E3/C1/remediation work was preserved.
+- Commands and outcomes: Focused setup/auth/fixture/relink tests passed 26/26; `npm run typecheck` passed; `npm run test:unit -- --run` passed 18 files and 93 tests; `npm run build` passed; `bash scripts/tests/auth-fixtures.test.sh` and `bash scripts/tests/ci-workflow.test.sh` passed; `git diff --check` passed.
+- Convex deployment class and status: No Convex command, deployment, data access, or mutation was performed for this ordering-only correction; no production access occurred.
+- Decisions made: A setup failure after primary registration must attempt application cleanup before deleting either Clerk user. The new test exercises actual global-setup control flow and call ordering rather than relying on static source inspection.
+- Unresolved blockers: G1 dependency policy remains red on the seven previously recorded production advisories. The live E2/E3 lifecycle was intentionally not rerun because this correction is deterministically covered without mutating the isolated fixture environment.
+- Exact next safe action: Review the complete packet and, if accepted, split/commit task-sized changes. Remediate G1 and rerun C1 before claiming qualification green; do not deploy production.
+
+---
+
+- Timestamp: 2026-08-06T03:26:25+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: E2 remediation commit; relationship correction commit; E3 commit; C1 workflow commit
+- Starting commit: `45f0a21`
+- Ending commit: `85caa28`
+- Work performed: Accepted the reviewed Terra remediation and split the shared dirty packet into four task-sized commits without amending prior history: E2 deterministic authenticated fixture hardening (`02fd356`), deterministic revoke/relink behavior (`0d43075`), authenticated desktop/mobile release smoke (`e617b73`), and the fail-closed C1 qualification workflow (`85caa28`). Kept the execution log separate so the implementation commits remain independently reviewable.
+- Files changed: all previously reviewed E2, relationship, E3 and C1 implementation/evidence files; this append-only log
+- Commands and outcomes: Each staged packet passed `git diff --cached --check` before commit. The E2 package manifest hunk was staged independently from the C1 workflow-script hunk so dependency and CI concerns remain correctly scoped. Consolidated post-commit validation follows this entry.
+- Convex deployment class and status: No Convex command, deployment, data access or mutation was performed while committing; prior live evidence remains limited to `dev:hallowed-hummingbird-284`. No production action occurred.
+- Decisions made: Preserve the four implementation concerns as separate commits and record the shared execution history in a fifth documentation-only commit. C1 implementation is committed but is not qualification-green while the production dependency audit fails.
+- Unresolved blockers: G1 must remediate the recorded seven production dependency advisories, after which C1 must be rerun and its evidence updated. External E2/E3 was not rerun after the ordering/security remediation; deterministic tests cover the changed behavior, while the earlier live evidence remains the latest external run.
+- Exact next safe action: Run consolidated committed-tree validation, commit this log entry, then begin G1 dependency remediation. Once G1 makes the audit green, rerun C1 before proceeding to C2 and C3. Do not deploy production.
