@@ -26,8 +26,13 @@ if ! rg -q 'pm2 startOrReload pm2\.config\.js --update-env' "$workflow"; then
   exit 1
 fi
 
-if ! rg -q 'cwd:[[:space:]]*process\.cwd\(\)' "$pm2_config"; then
-  echo "pm2 config must run from the checked-out application directory" >&2
+if ! rg -q 'cwd:[[:space:]]*releaseDir[[:space:]]*\|\|[[:space:]]*process\.cwd\(\)' "$pm2_config"; then
+  echo "pm2 config must run from the immutable release directory when supplied" >&2
+  exit 1
+fi
+
+if ! rg -q "path\.join\(releaseDir,[[:space:]]*['\"]server\.js['\"]\)" "$pm2_config"; then
+  echo "pm2 config must promote the packaged standalone server when supplied" >&2
   exit 1
 fi
 

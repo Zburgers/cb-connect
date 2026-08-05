@@ -32,6 +32,8 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
         run: |
           set -euo pipefail
           required=(
@@ -42,6 +44,7 @@ jobs:
             CLERK_SECRET_KEY
             CLERK_FRONTEND_API_URL
             CORS_ALLOWED_ORIGINS
+            CB_CONNECT_PRODUCTION_BASE_URL
           )
 
           for name in "${required[@]}"; do
@@ -50,6 +53,9 @@ jobs:
               exit 1
             fi
           done
+
+          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = 'prod:festive-malamute-715'
+          [[ "$CB_CONNECT_PRODUCTION_BASE_URL" == https://* ]]
 
       - name: Sync Convex runtime secrets
         if: vars.DEPLOY_CONVEX == 'true'
@@ -147,6 +153,24 @@ jobs:
       - name: Validate PM2 promotion contract
         run: bash scripts/tests/pm2-config.test.sh
 
+      - name: Package immutable standalone release
+        env:
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/cb-connect-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          extract_dir="$release_dir/extracted"
+          mkdir -p "$extract_dir"
+          bash scripts/package-release.sh "$release_dir"
+          manifest="$release_dir/release-manifest.json"
+          bash scripts/package-release.sh --verify "$manifest"
+          artifact="$(node -e 'const fs=require("node:fs"); const path=require("node:path"); const m=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(path.join(path.dirname(process.argv[1]), m.artifact));' "$manifest")"
+          tar -xzf "$artifact" -C "$extract_dir"
+          test -f "$extract_dir/server.js"
+
       - name: Promote with PM2 start-or-reload
         run: |
           set -euo pipefail
@@ -168,3 +192,16 @@ jobs:
           CB_CONNECT_BUILD_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
           CB_CONNECT_COMPATIBILITY_VERSION: v1
           CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
+          CB_CONNECT_RELEASE_DIR: ${{ runner.temp }}/cb-connect-release-${{ github.run_id }}-${{ github.run_attempt }}/extracted
+
+      - name: Verify compatible release promotion
+        env:
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+          PM2_PROCESS_NAME: cb-connect
+          RELEASE_REQUIRE_TLS: true
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/cb-connect-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/release-manifest.json"
+          bash scripts/verify-release.sh "$manifest" "$CB_CONNECT_PRODUCTION_BASE_URL" "$CB_CONNECT_PRODUCTION_DEPLOYMENT" "$CB_CONNECT_COMPATIBILITY_VERSION"
