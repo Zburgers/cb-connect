@@ -1,6 +1,6 @@
 # CB Connect major-release plan index
 
-**Status:** Canonical planning dashboard; Gate 0 implementation approved 2026-08-05 in the dedicated worktree at `d586c73` plus the recorded readiness-contract changes.
+**Status:** Canonical planning dashboard; Gate 0 implementation packet closed 2026-08-06 with an explicit blocked promotion verdict in [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md).
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -21,7 +21,7 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 | Order | Track | Gate-level plan | Blocking dependency | Planning readiness |
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
-| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | D-002 through D-007 resolved; D-001 remains required only before affected production consent/retention exposure | Implementation-ready; first packet I1, I3, O1 |
+| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Direct protected-CI, production runtime, measured recovery and 28-day baseline evidence | Implementation packet closed; promotion blocked |
 | 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) | Approved Gate 0 evidence | Gate-level only |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
@@ -36,8 +36,18 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 2. Execute first packet I1, I3 and O1 as separate test/fail/implement/pass/commit cycles.
 3. Continue the detailed Gate 0 dependency graph using only the isolated Convex dev and owner-approved Clerk test environments until the explicit V1/V2 promotion tasks.
 4. Treat PR #8 as merged while retaining its failed deployment as historical evidence; do not claim coordinated promotion until Gate 0 proves it.
-5. Produce and approve `docs/evidence/reliability-gate-0/REPORT.md`.
-6. Only then write the dated Gate 1 execution plan using the real release, timezone, schema and migration contracts established by Gate 0/preflight.
+5. Produce `docs/evidence/reliability-gate-0/REPORT.md` and record a blocked or approved verdict without borrowing evidence.
+6. Keep Gate 1 unexposed while the Gate 0 report is blocked; only then write the dated Gate 1 execution plan using the real release, timezone, schema and migration contracts established by Gate 0/preflight.
+
+## Gate 0 closeout
+
+The implementation sequence G1 → C1/C2/C3 → V1/V2 → X1 → G2 → G3 is
+recorded in the dedicated worktree and append-only execution log. G1, C1, C3,
+V1 isolated-dev identity, V2 implementation and X1 guardrails have passing
+local or synthetic evidence. C2 protected execution, production V1/V2
+runtime evidence, measured X1 restore objectives and the G2 baseline are not
+available; therefore the Gate 0 report is explicitly **BLOCKED** and Gate 1
+must remain unexposed.
 
 ## Planning policy
 

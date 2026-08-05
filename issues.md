@@ -44,11 +44,11 @@ Update with Github issues on the parent repo
 ### Production deployment pipeline is incomplete; frontend service recovered
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Frontend recovery deployed; coordinated Convex promotion and full runtime verification remain pending
+**Status:** Gate 0 implementation packet complete; production qualification remains blocked
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` has an invalid authorization format and failed before build. Commit `c47211f` therefore made Convex sync/deploy an explicit `DEPLOY_CONVEX=true` opt-in instead of allowing an invalid backend key to block frontend recovery. Deploy run `30860139400` then passed unit validation, Next build and `pm2 startOrReload`. Public `/api/health` returned 200; a clean browser received the expected dashboard-to-sign-in redirect, rendered the Clerk form, loaded all 34 observed static/app/Clerk assets with 200 responses and reported zero console errors. Authenticated dashboard behavior, immutable release identity, valid coordinated Convex promotion, listener/PM2 reboot persistence, rollback and recovery rehearsals remain unverified Gate 0 work.
-**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) confirms the current local build/typecheck/unit baseline with fake build-only values. Read-only SSH verification now observes `razor-crest`, online PM2 `cb-connect`, listener `*:6050`, enabled/active PM2 startup and a saved PM2 dump; no reboot rehearsal was performed. Public and host-local `/api/ready` both return 404, so release identity/readiness remains unimplemented.
+**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. No production deployment, production identity query, HTTPS readiness check, PM2 reboot persistence check or provider restore was run.
+**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) is historical local evidence; [the V1 proof](docs/evidence/reliability-gate-0/v1-dev-proof.md) is isolated-dev evidence only; [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md) records the current blocked verdict.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --
@@ -56,11 +56,11 @@ Update with Github issues on the parent repo
 ### Browser test suite is not a trustworthy release gate and contains committed credentials
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Open
+**Status:** Deterministic release smoke and protected CI gate implemented; current protected execution remains pending
 **Detected:** August 1, 2026
 **Files:** `e2e/signup-repro.spec.ts`, `e2e/onboarding.spec.ts`, `e2e/partner-linking.spec.ts`, `e2e/partner-chat.spec.ts`, `playwright.config.ts`
 **Evidence:** Playwright lists 39 tests, while 32 individual tests are statically skipped and the two chat tests require an optional local auth-state path. The remaining coverage largely proves unauthenticated redirects rather than primary/partner behavior. `signup-repro.spec.ts` commits a fixed email/password pair and can mutate the configured Clerk environment when run. The deploy workflow does not run Playwright.
-**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) reconfirms 39 listed tests, 32 skip paths and 3 fixed credential literals across the E2E fixtures. No deterministic two-role release smoke or isolated environment adapter exists.
+**Latest Gate 0 refresh:** Commit `e6ea11c` adds the deterministic primary/partner release smoke and a fail-closed `authenticated-smoke` job using the protected `cb-connect-auth-test` environment. The earlier isolated-dev E3 proof passed desktop/mobile with zero skips, but the post-G1 protected CI result is not present in this worktree because the required secret-backed test environment is not available locally. See [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
 **Exit evidence:** Rotate/remove committed credentials; provision isolated test users through secret-backed fixtures; fail closed when auth fixtures are unavailable in release CI; cover both roles, consent/revocation, period integrity, and real-time behavior; publish redacted artifacts; make the suite deterministic and mandatory for release candidates.
 
 --
@@ -215,9 +215,9 @@ Update with Github issues on the parent repo
 
 ### Reliability-first major-release planning and Gate 0 preflight
 
-**Status:** Planning active; application implementation has not started from these plans.
+**Status:** Gate 0 implementation packet closed with an explicit blocked promotion verdict; Gate 1 remains unexposed.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Safely integrate this planning batch onto current `origin/main`, then resolve Gate 0 decisions D-002 through D-007 before production promotion. PR #8 is merged but not proven deployed. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Continuous independently qualified P0/P1 remediation may proceed on narrow branches.
+**Current boundary:** Gate 0 decisions D-002 through D-007 are resolved and the implementation packet is recorded in [`REPORT.md`](docs/evidence/reliability-gate-0/REPORT.md). Promotion remains blocked by missing direct protected-CI, production runtime, measured recovery and 28-day baseline evidence. PR #8 remains historical evidence, not coordinated promotion proof. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Gate 1 planning and exposure remain blocked.
 
 ---
 
