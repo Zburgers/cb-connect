@@ -9,12 +9,15 @@
  */
 
 import type * as _helpers_auth from "../_helpers/auth.js";
+import type * as _helpers_calendarDates from "../_helpers/calendarDates.js";
+import type * as _helpers_clerkWebhook from "../_helpers/clerkWebhook.js";
 import type * as _helpers_coupleSpace from "../_helpers/coupleSpace.js";
 import type * as _helpers_cycleCalculations from "../_helpers/cycleCalculations.js";
 import type * as _helpers_timelinePhases from "../_helpers/timelinePhases.js";
 import type * as actions_discord from "../actions/discord.js";
 import type * as actions_notifications from "../actions/notifications.js";
 import type * as crons from "../crons.js";
+import type * as http from "../http.js";
 import type * as mutations_couples from "../mutations/couples.js";
 import type * as mutations_messages from "../mutations/messages.js";
 import type * as mutations_misc from "../mutations/misc.js";
@@ -29,6 +32,7 @@ import type * as queries_history from "../queries/history.js";
 import type * as queries_messages from "../queries/messages.js";
 import type * as queries_nudges from "../queries/nudges.js";
 import type * as queries_presence from "../queries/presence.js";
+import type * as queries_system from "../queries/system.js";
 import type * as queries_users from "../queries/users.js";
 import type * as seed from "../seed.js";
 
@@ -40,12 +44,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "_helpers/auth": typeof _helpers_auth;
+  "_helpers/calendarDates": typeof _helpers_calendarDates;
+  "_helpers/clerkWebhook": typeof _helpers_clerkWebhook;
   "_helpers/coupleSpace": typeof _helpers_coupleSpace;
   "_helpers/cycleCalculations": typeof _helpers_cycleCalculations;
   "_helpers/timelinePhases": typeof _helpers_timelinePhases;
   "actions/discord": typeof actions_discord;
   "actions/notifications": typeof actions_notifications;
   crons: typeof crons;
+  http: typeof http;
   "mutations/couples": typeof mutations_couples;
   "mutations/messages": typeof mutations_messages;
   "mutations/misc": typeof mutations_misc;
@@ -60,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "queries/messages": typeof queries_messages;
   "queries/nudges": typeof queries_nudges;
   "queries/presence": typeof queries_presence;
+  "queries/system": typeof queries_system;
   "queries/users": typeof queries_users;
   seed: typeof seed;
 }>;
