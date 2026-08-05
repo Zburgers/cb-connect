@@ -159,3 +159,18 @@
 - Decisions made: Telemetry serialization is an allowlisted contract only; raw durations and release/user/domain payload data are excluded. Synthetic markers do not establish production evidence, and proposed SLI targets remain unapproved until the later baseline/approval work.
 - Unresolved blockers: No blocker for O2; I4, authenticated release coverage, CI/artifact qualification, promotion, rollback and Gate 0 verdict remain incomplete. Legacy skipped E2E suites remain tracked debt and are not zero-skip release evidence.
 - Exact next safe action: Review the completed I2/E1/O2 packet at the next checkpoint; I4 is dependency-ready but intentionally remains outside this packet.
+
+---
+
+- Timestamp: 2026-08-05T22:59:32+05:30
+- Agent/session: Codex primary agent; implementation review; session identifier unavailable
+- Task and plan IDs: Review of I2, E1 and O2; next-scope readiness decision
+- Starting commit: `f788b2d`
+- Ending commit: review log commit follows this entry
+- Work performed: Reviewed I2/E1/O2 diffs, validators, test coverage, generated API exposure, fixture fail-closed behavior, credential/skip policy, telemetry allowlist/privacy boundary, decision consistency and the Gate 0 dependency graph.
+- Files changed: this append-only review entry only
+- Commands and outcomes: I2/O2 focused tests passed 15/15; full unit suite passed 14 files and 65 tests; `npm run typecheck` passed; auth-fixture policy passed; fixed-credential scan passed; `git diff --check` passed; default dev `function-spec` confirmed `queries/system.getBackendIdentity` with exact arguments/return union; worktree was clean before this entry
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284` exposes the bounded backend-identity query; no production deployment or mutation occurred during review
+- Decisions made: I2, E1 and O2 are approved with no blocking code finding. One non-blocking documentation correction is required: telemetry/measurement prose still says SLI targets await owner approval although D-006 records approval; distinguish approved objectives from not-yet-achieved evidence. Next packet is I4, E2 and E3, with E3 strictly dependent on successful E2 provisioning/cleanup evidence.
+- Unresolved blockers: E2 runtime Clerk credentials are not committed and must be injected from the approved `holy clark` test environment. Zero-skip authenticated evidence does not exist until E2/E3 pass. The wording correction remains open but does not block starting I4 or E2.
+- Exact next safe action: Correct the D-006 wording, implement I4 and E2 as separate test/fail/implement/pass/commit cycles, then execute E3 only after E2 proves two-role provisioning, storage states and idempotent cleanup in the isolated environments. Do not deploy production.
