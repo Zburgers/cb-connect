@@ -6,9 +6,11 @@ import { internal } from "../_generated/api";
 
 const PAIRING_CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_PAIRING_CODE_ATTEMPTS = 10;
+const MAX_MEMBERSHIPS_PER_USER = 3;
 
 export const generatePairingCode = mutation({
   args: {},
+  returns: v.object({ code: v.string(), expiresAt: v.number() }),
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
 
@@ -16,22 +18,53 @@ export const generatePairingCode = mutation({
       throw new Error("Only primary users can generate pairing codes");
     }
 
-    const existingCouple = await getCoupleForUser(ctx, user._id);
+    const memberships = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .take(MAX_MEMBERSHIPS_PER_USER);
+    if (memberships.length === MAX_MEMBERSHIPS_PER_USER) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    const membershipCouples = await Promise.all(
+      memberships.map(async (membership) => ({
+        membership,
+        couple: await ctx.db.get("couples", membership.coupleId),
+      })),
+    );
+    if (membershipCouples.some(({ membership }) => membership.role !== "primary")) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    if (membershipCouples.some(({ couple }) => couple === null)) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    const usableMemberships = membershipCouples.filter(
+      (entry): entry is { membership: typeof memberships[number]; couple: NonNullable<typeof entry.couple> } =>
+        entry.couple !== null,
+    );
+    const activeOrPending = usableMemberships.filter(
+      ({ couple }) => couple.status === "active" || couple.status === "pending",
+    );
+    const revoked = usableMemberships.filter(
+      ({ couple }) => couple.status === "revoked",
+    );
+    if (activeOrPending.length > 1 || (activeOrPending.length === 0 && revoked.length > 1)) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    const selected = activeOrPending[0] ?? revoked[0] ?? null;
     let coupleId: Id<"couples">;
 
-    if (existingCouple) {
-      coupleId = existingCouple.membership.coupleId;
-
-      // Invalidate existing active codes
-      const existingCodes = await ctx.db
-        .query("pairingCodes")
-        .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
-        .filter((q) => q.eq(q.field("status"), "active"))
-        .collect();
-
-      for (const code of existingCodes) {
-        await ctx.db.patch(code._id, { status: "expired" });
-      }
+    if (selected?.couple.status === "revoked") {
+      // Revocation removes the partner membership but intentionally keeps the
+      // primary membership. Reopen that couple for a fresh invite so the
+      // primary does not accumulate duplicate memberships that hide the new
+      // active link behind the revoked one.
+      coupleId = selected.membership.coupleId;
+      await ctx.db.patch(coupleId, {
+        status: "pending",
+        linkedAt: undefined,
+      });
+    } else if (selected) {
+      coupleId = selected.couple._id;
     } else {
       coupleId = await ctx.db.insert("couples", {
         createdAt: Date.now(),
@@ -47,6 +80,19 @@ export const generatePairingCode = mutation({
         sharingPeriodWrite: false,
         joinedAt: Date.now(),
       });
+    }
+
+    if (selected) {
+      // Invalidate existing active codes
+      const existingCodes = await ctx.db
+        .query("pairingCodes")
+        .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .collect();
+
+      for (const code of existingCodes) {
+        await ctx.db.patch(code._id, { status: "expired" });
+      }
     }
 
     // Rate limit: max 5 pairing codes per hour
