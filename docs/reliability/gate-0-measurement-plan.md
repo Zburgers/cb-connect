@@ -4,7 +4,7 @@
 **Status:** Approved 2026-08-05 by the sole project owner acting as product, operations and recovery authority
 **Scope:** Define what must be measured and rehearsed before Gate 0 promotion. No target below is evidence of achieved reliability.
 
-This contract is approved for Gate 0. The decision register is the approval record. Targets remain objectives until measured evidence demonstrates them.
+This contract is approved for Gate 0. The decision register is the approval record. Targets are owner-approved objectives, but are not demonstrated as achieved until measured evidence supports them.
 
 ## Proposed critical-journey SLIs (D-006)
 
@@ -20,7 +20,7 @@ Telemetry may record route/function class, outcome, bounded reason, duration buc
 
 ## Baseline and approval process
 
-Engineering proposes a 28-day baseline after the redacted telemetry contract is deployed. The baseline report must show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. Targets remain proposed until the named operator and product approver sign the report; a green build or HTTP 200 health response cannot substitute for the baseline.
+Engineering will collect a 28-day baseline after the redacted telemetry contract is deployed. The baseline report must show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. The targets are owner-approved objectives, not demonstrated achievements, until the baseline evidence is reported; a green build or HTTP 200 health response cannot substitute for the baseline.
 
 The operator approval must also name the error-budget response: pause non-critical rollout, open an incident, or accept a bounded exception with owner, reason, controls and expiry. Privacy/security review is required for telemetry fields before collection.
 

@@ -49,6 +49,6 @@ The `synthetic` marker distinguishes approved fixture measurements from aggregat
 
 ## D-006 relationship
 
-The operations map to the approved release-readiness, authenticated-session, critical-mutation, scheduled-effect-uniqueness and recovery-readiness SLIs. The reason and outcome enums support the documented exclusions without storing their sensitive source data. Proposed targets remain objectives until the approved 28-day baseline, owner review and error-budget policy exist.
+The operations map to the approved release-readiness, authenticated-session, critical-mutation, scheduled-effect-uniqueness and recovery-readiness SLIs. The reason and outcome enums support the documented exclusions without storing their sensitive source data. The targets are owner-approved objectives, but are not demonstrated as achieved until the approved 28-day baseline provides direct evidence and the error-budget policy is exercised.
 
 This file defines serialization only. It does not add event collection, storage, dashboards, user-facing analytics or a Gate 0 completion claim.
