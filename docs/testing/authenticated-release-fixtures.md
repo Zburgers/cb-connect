@@ -14,6 +14,7 @@ The GitHub Actions job should use a protected environment named `cb-connect-auth
 
 Proposed secret/configuration names:
 
+- `CLERK_TEST_ENVIRONMENT_NAME` (must be the approved `holy clark` identity)
 - `CLERK_TEST_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY`
 - `CLERK_TEST_FRONTEND_API_URL`
