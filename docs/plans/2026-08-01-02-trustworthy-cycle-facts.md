@@ -1,6 +1,9 @@
 # Trustworthy Cycle Facts Implementation Plan
 
-> **Codex/Shipyard execution:** This gate-level plan requires a dated, approved execution plan after Gate 0 evidence exists.
+> **Codex/Shipyard execution:** This gate-level plan requires an **approved
+> Gate 0 report**, resolved Gate 1 decisions, and a dated approved execution
+> plan. The current Gate 0 report is blocked, so this document is not
+> executable.
 
 **Goal:** Ensure period history contains explicit user observations with valid provenance and never silently stores system estimates as facts.
 
@@ -16,7 +19,11 @@
 
 **Next gate:** [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md)
 
-**Planning status:** Gate-level work packages only. The dated execution plan is written after Gate 0 evidence and decisions D-008 through D-010/D-012 are resolved.
+**Planning status:** Gate-level work packages only. The dated execution plan
+is written only after the Gate 0 report is approved and D-008, D-009, D-010
+(after the aggregate audit), and D-012 are resolved. See the
+[Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
+current code inventory and decision boundary; it is not an execution plan.
 
 ## Required detailed execution order
 

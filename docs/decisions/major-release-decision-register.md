@@ -18,7 +18,7 @@ Engineering must not invent names, credentials, jurisdictions, legal conclusions
 | D-001 | Initial target jurisdictions and legal data-controller/operator identity | Product owner and privacy/legal | Production exposure involving unreviewed consent/retention claims; Gates 1, 4-6 | Required input | — |
 | D-002 | Named release operator and incident owner, with an escalation route | Product owner/operator | Gate 0 production rollout and exit | Resolved 2026-08-05 | Sole owner is operator and incident authority; this repository/GitHub thread is the escalation record |
 | D-003 | Exact production Convex selector plus frontend/backend compatibility-version scheme | Engineering and release operator | Gate 0 release identity/deploy tasks | Resolved 2026-08-05 | `prod:festive-malamute-715`; compatibility `v1` approved |
-| D-004 | Isolated Clerk and Convex preview/test environments and credential ownership | Engineering, security/operator | Gate 0 authenticated release suite and rehearsals | Resolved 2026-08-05 | Owner approved Clerk test instance `holy clark` and isolated Convex dev deployment |
+| D-004 | Isolated Clerk and Convex preview/test environments and credential ownership | Engineering, security/operator | Gate 0 authenticated release suite and rehearsals | Resolved 2026-08-05 | Owner approved Clerk test instance `holy clerk` and isolated Convex dev deployment |
 | D-005 | Clerk test-user provisioning, rate-limit-safe cleanup and artifact-redaction method | Engineering and Clerk environment owner | Gate 0 authenticated fixture tasks | Resolved 2026-08-05 | Fixture proposal approved with seven-day restricted failure artifacts |
 | D-006 | Critical-journey SLI definitions, baseline window, approved SLOs and error-budget policy | Engineering proposes; operator/product approve | Gate 0 exit | Resolved 2026-08-05 | Definitions, targets and response policy are documented; the required 28-day baseline remains not measured |
 | D-007 | Backup/restore owner, approved non-production restore target and RPO/RTO objectives | Operator and product owner | Gate 0 recovery rehearsal and exit | Resolved 2026-08-05 | Sole owner; isolated dev target; RPO 24h and RTO 4h approved |
@@ -67,7 +67,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 
 ## D-004 — Isolated test environments and ownership
 
-- Decision: Use the owner-approved non-production Clerk instance labeled `holy clark` with isolated Convex dev deployment `dev:hallowed-hummingbird-284`. The sole owner controls credentials. Agents may configure and use these environments for synthetic Gate 0 fixtures.
+- Decision: Use the owner-approved non-production Clerk instance labeled `holy clerk` with isolated Convex dev deployment `dev:hallowed-hummingbird-284`. The sole owner controls credentials. Agents may configure and use these environments for synthetic Gate 0 fixtures.
 - Alternatives considered: Production accounts/data and shared static accounts were rejected.
 - Approver and authority: Sole project and environment owner.
 - Approved on: 2026-08-05.

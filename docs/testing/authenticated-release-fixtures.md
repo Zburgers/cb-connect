@@ -8,13 +8,13 @@ This contract is approved for Gate 0. The decision register is the approval reco
 
 ## Proposed isolated environments
 
-Use the dedicated non-production Clerk instance labeled `holy clark` and isolated Convex deployment `dev:hallowed-hummingbird-284`, owned by the sole project owner. The test deployment must contain synthetic fixtures only and is independently addressable from `prod:festive-malamute-715`.
+Use the dedicated non-production Clerk instance labeled `holy clerk` and isolated Convex deployment `dev:hallowed-hummingbird-284`, owned by the sole project owner. The test deployment must contain synthetic fixtures only and is independently addressable from `prod:festive-malamute-715`.
 
 The GitHub Actions job should use a protected environment named `cb-connect-auth-test` with access limited to the approved environment owner and release workflow. Values belong in the environment secret store; this document records names and handling rules only.
 
 Proposed secret/configuration names:
 
-- `CLERK_TEST_ENVIRONMENT_NAME` (must be the approved `holy clark` identity)
+- `CLERK_TEST_ENVIRONMENT_NAME` (must be the approved `holy clerk` identity)
 - `CLERK_TEST_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY`
 - `CLERK_TEST_FRONTEND_API_URL`

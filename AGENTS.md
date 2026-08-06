@@ -8,7 +8,7 @@ This repository is a Next.js App Router application for CB Connect, a couples cy
 
 ### Stack
 
-- Next.js 15.2.x
+- Next.js 15.5.x
 - React 19
 - TypeScript
 - Tailwind CSS
@@ -45,6 +45,18 @@ This repository is a Next.js App Router application for CB Connect, a couples cy
 - The repo currently has minimal root documentation beyond this file and `README.md`, so project-specific instructions should live here.
 
 ### Gate 0 execution-log contract
+
+- Current state: the Gate 0 implementation packet is closed, its report is
+  blocked for production promotion, and Gate 1 is not plan-ready. Do not resume
+  the old first-packet task sequence or create a Gate 1 execution plan from the
+  gate-level document.
+- Before any release or follow-on review, read `README.md`,
+  `docs/plans/README.md`, `docs/evidence/reliability-gate-0/REPORT.md`, and
+  `docs/handoffs/2026-08-06-gate-0-to-gate-1.md`.
+- A push or merge must not imply production promotion. The deployment workflow
+  remains disabled unless `PROMOTE_PRODUCTION=true`; do not set that variable,
+  `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK`, or `DEPLOY_CONVEX` without a
+  separately authorized release operation and the documented prerequisites.
 
 - Before doing Gate 0 work, read `docs/execution/gate-0-agent-log.md`, the plan index, the Gate 0 detailed execution plan, and the decision register.
 - Work only in the dedicated worktree `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on branch `gate-0/reliability-2026-08-04` unless the user explicitly approves a replacement.

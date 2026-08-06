@@ -16,7 +16,12 @@
 
 **Decisions:** [Decision register](../decisions/major-release-decision-register.md)
 
-**Status:** Approved and implementation-ready as of 2026-08-05. The planning batch is integrated, D-002 through D-007 are resolved, the dedicated worktree is current, and an isolated Convex dev deployment is configured. PR #8's production deployment failure remains evidence Gate 0 must remediate, not an entry blocker.
+**Status:** Historical detailed execution record. The implementation packet
+closed on 2026-08-06, and the current Gate 0 verdict is
+**[BLOCKED](../evidence/reliability-gate-0/REPORT.md)** for production
+promotion. D-002 through D-007 remain resolved implementation decisions, but
+they do not replace missing direct evidence. This document must not be used as
+a new local task queue.
 
 ## Execution workspace and continuity contract
 
@@ -25,9 +30,13 @@
 - Every agent must read and append `docs/execution/gate-0-agent-log.md` according to the contract in `AGENTS.md`. The log is continuity evidence, not a substitute for task commits, tests, decision approvals, or Gate 0 release evidence.
 - Never record secrets, environment values, Clerk user identifiers, personal data, or health data in the log.
 
-### First implementation packet
+### First implementation packet (historical)
 
-The first agent starts with **I1, I3 and O1**, in that order, on the existing Gate 0 branch. P1-P4 are satisfied by the recorded baseline and owner-approved decisions. I1 and I3 form the local release/liveness contract; O1 hardens PM2 configuration without deploying production. After each task, run its focused test, `npm run typecheck`, `npm run test:unit` and `git diff --check`, then commit separately and append the execution log. Do not start I2 until I1 passes; I2 must be pushed only to the isolated dev deployment during implementation.
+The first packet was **I1, I3 and O1**, in that order. The completed
+implementation sequence and commits are recorded in the append-only agent log
+and the Gate 0 report. Do not rerun these tasks merely because they appear
+below; follow the current external-evidence boundary in the plan index and
+report instead.
 
 ## Locked scope and contracts
 
@@ -573,4 +582,8 @@ bash scripts/tests/rehearse-rollback.test.sh
 git diff --check
 ```
 
-All commands must exit 0 except `npm audit --omit=dev` only where the approved policy explicitly records a time-bounded exception. Production promotion additionally requires matching `/api/ready` identities, listener/TLS/PM2 persistence evidence, successful authenticated two-user smoke and an approved Gate 0 report.
+The completed local verification set passed with `npm audit --omit=dev`
+reporting zero vulnerabilities. Production promotion still additionally
+requires a current authenticated CI result, matching production `/api/ready`
+identities, listener/TLS/PM2 persistence evidence, measured recovery evidence,
+the 28-day baseline and an approved Gate 0 report.

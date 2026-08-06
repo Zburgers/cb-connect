@@ -53,15 +53,25 @@ Update with Github issues on the parent repo
 
 --
 
-### Browser test suite is not a trustworthy release gate and contains committed credentials
+### Browser test suite is not yet a trustworthy release gate; legacy static skips remain
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Deterministic release smoke and protected CI gate implemented; current protected execution remains pending
+**Status:** Deterministic release smoke and fail-closed CI job implemented; a current secret-backed execution remains pending
 **Detected:** August 1, 2026
 **Files:** `e2e/signup-repro.spec.ts`, `e2e/onboarding.spec.ts`, `e2e/partner-linking.spec.ts`, `e2e/partner-chat.spec.ts`, `playwright.config.ts`
-**Evidence:** Playwright lists 39 tests, while 32 individual tests are statically skipped and the two chat tests require an optional local auth-state path. The remaining coverage largely proves unauthenticated redirects rather than primary/partner behavior. `signup-repro.spec.ts` commits a fixed email/password pair and can mutate the configured Clerk environment when run. The deploy workflow does not run Playwright.
-**Latest Gate 0 refresh:** Commit `e6ea11c` adds the deterministic primary/partner release smoke and a fail-closed `authenticated-smoke` job using the protected `cb-connect-auth-test` environment. The earlier isolated-dev E3 proof passed desktop/mobile with zero skips, but the post-G1 protected CI result is not present in this worktree because the required secret-backed test environment is not available locally. See [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
-**Exit evidence:** Rotate/remove committed credentials; provision isolated test users through secret-backed fixtures; fail closed when auth fixtures are unavailable in release CI; cover both roles, consent/revocation, period integrity, and real-time behavior; publish redacted artifacts; make the suite deterministic and mandatory for release candidates.
+**Evidence:** The historical baseline found 32 statically skipped tests and an
+optional local-auth-state chat path; that legacy suite still is not release
+evidence. The former fixed credentials in `signup-repro.spec.ts` were removed
+in Gate 0 E1. The current file uses the approved primary fixture storage
+state, and authenticated setup generates run-scoped credentials at runtime;
+no fixed test credential is claimed as current. The release-smoke CI job is
+defined but lacks a current successful secret-backed execution result.
+**Latest Gate 0 refresh:** Commit `e6ea11c` adds the deterministic primary/partner release smoke and a fail-closed `authenticated-smoke` job. Final branch review added pre-dashboard run ownership/partial-failure cleanup and exact Convex test-host validation. The environment-scoped GitHub configuration now exists, but no post-review successful CI result is present; configuration is not direct qualification. See [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
+**Exit evidence:** Keep fixture credentials generated and uncommitted; obtain a
+current successful secret-backed CI result; fail closed when auth fixtures are
+unavailable; cover both roles, consent/revocation, period integrity, and
+real-time behavior; publish redacted artifacts; make the suite deterministic
+and mandatory for release candidates.
 
 --
 
