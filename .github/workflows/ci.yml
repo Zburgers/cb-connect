@@ -31,6 +31,12 @@ jobs:
       - name: Build application
         run: npm run build
         env:
+          # Qualification is intentionally secret-free and its build output is
+          # never promoted. These inert values prevent a local ignored env file
+          # from becoming an accidental CI dependency.
+          NEXT_PUBLIC_CONVEX_URL: https://qualification.convex.cloud
+          NEXT_PUBLIC_CONVEX_SITE_URL: https://qualification.convex.site
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_qualification
           CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
           CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
           CB_CONNECT_COMPATIBILITY_VERSION: v1
@@ -44,25 +50,6 @@ jobs:
 
       - name: Dependency policy
         run: npm audit --omit=dev
-
-      - name: Package immutable standalone release
-        run: |
-          bash scripts/tests/package-release.test.sh
-          bash scripts/package-release.sh "$RUNNER_TEMP/cb-connect-release"
-          bash scripts/package-release.sh --verify "$RUNNER_TEMP/cb-connect-release/release-manifest.json"
-        env:
-          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
-          CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
-          CB_CONNECT_COMPATIBILITY_VERSION: v1
-          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
-
-      - name: Upload immutable standalone release
-        uses: actions/upload-artifact@v4
-        with:
-          name: cb-connect-release-${{ github.sha }}
-          path: ${{ runner.temp }}/cb-connect-release
-          if-no-files-found: error
-          retention-days: 7
 
   authenticated-smoke:
     name: Authenticated release smoke
@@ -134,5 +121,70 @@ jobs:
         with:
           name: cb-connect-release-smoke-failure-${{ github.run_id }}
           path: ${{ runner.temp }}/cb-connect-redacted-artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  release-artifact:
+    name: Production-configured immutable release
+    needs: [qualify, authenticated-smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+      NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+      CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+      CB_CONNECT_COMPATIBILITY_VERSION: v1
+      CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate production public build configuration
+        run: |
+          set -euo pipefail
+          required=(
+            NEXT_PUBLIC_CONVEX_URL
+            NEXT_PUBLIC_CONVEX_SITE_URL
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          )
+          for name in "${required[@]}"; do
+            test -n "${!name:-}"
+          done
+          [[ "$NEXT_PUBLIC_CONVEX_URL" == https://* ]]
+          [[ "$NEXT_PUBLIC_CONVEX_SITE_URL" == https://* ]]
+          [[ "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" == pk_* ]]
+
+      - name: Build the production-configured release artifact
+        run: npm run build
+
+      - name: Package immutable standalone release
+        run: |
+          bash scripts/tests/package-release.test.sh
+          bash scripts/package-release.sh "$RUNNER_TEMP/cb-connect-release"
+          bash scripts/package-release.sh --verify "$RUNNER_TEMP/cb-connect-release/release-manifest.json"
+
+      - name: Upload immutable standalone release
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-release-${{ github.sha }}
+          path: ${{ runner.temp }}/cb-connect-release
           if-no-files-found: error
           retention-days: 7

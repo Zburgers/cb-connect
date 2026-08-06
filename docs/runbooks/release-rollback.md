@@ -49,15 +49,18 @@ provider-supported restore and integrity checks.
 2. Select a prior manifest whose frontend/backend compatibility pair is
    recorded and approved for the same environment.
 3. Verify the prior tarball checksum with `scripts/package-release.sh --verify`.
-4. Extract that verified artifact into a new run-scoped release directory and
-   point `CB_CONNECT_RELEASE_DIR` at it for `pm2 startOrReload pm2.config.js
-   --update-env`.
+4. Use the retained immutable candidate under
+   `$CB_CONNECT_RELEASE_ROOT/releases/<commit>-<build-id>/extracted`; do not
+   rebuild from a checkout or use `RUNNER_TEMP`. Point
+   `CB_CONNECT_RELEASE_DIR` at that durable directory for
+   `pm2 startOrReload pm2.config.js --update-env`.
 5. Run `scripts/verify-release.sh` with the environment’s base URL, backend
    selector and compatibility version. Require HTTPS and PM2 persistence for
    production verification.
-6. Preserve the failed and restored manifest identities and open the incident
-   response path if readiness, authenticated behavior or persistence remains
-   unhealthy.
+6. Update `$CB_CONNECT_RELEASE_ROOT/current` only after the restored candidate
+   passes verification. Preserve the failed and restored manifest identities
+   and open the incident response path if readiness, authenticated behavior or
+   persistence remains unhealthy.
 
 Rollback is complete only when the compatible pair is verified and the
 operator records the result. A successful process restart alone is not
