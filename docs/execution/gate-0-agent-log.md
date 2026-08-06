@@ -369,3 +369,153 @@
 - Decisions made: Treat the implementation packet as closed but do not claim Gate 0 promotion. Treat protected CI, production runtime, measured restore and 28-day SLO baseline as distinct missing evidence. Preserve D-002 through D-007 owner approvals without converting them into achieved reliability. Gate 1 remains blocked and unexposed.
 - Unresolved blockers: Current protected C2 execution requires the configured `cb-connect-auth-test` secret-backed environment; production V1/V2 listener, TLS, readiness and PM2 persistence evidence is absent; X1 measured restore RPO/RTO and integrity evidence is absent; G2’s 28-day baseline is absent. Production deployment remains unauthorized in this execution.
 - Exact next safe action: Run the protected qualification and separately authorized environment checks, append redacted evidence, and refresh `docs/evidence/reliability-gate-0/REPORT.md`. Do not deploy production or expose Gate 1 from local, isolated-dev or synthetic evidence.
+
+---
+
+- Timestamp: 2026-08-06T14:02:57+05:30
+- Agent/session: Codex Terra subagent; documentation and Gate 1 handoff review; session identifier unavailable
+- Task and plan IDs: Gate 0 closeout documentation truth review; Gate 1 handoff review only
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this append-only review entry uncommitted
+- Work performed: Performed a read-only reconciliation of the canonical plan index, major-release program, Gate 0 detailed/parent plans, decision register, evidence report, issue tracker, deployment guide, runbooks, workflows and current schema/mutation state. Reviewed Gate 1 only as a gate-level handoff; no Gate 1 execution plan or application work was created.
+- Files changed: `docs/execution/gate-0-agent-log.md` only
+- Commands and outcomes: Reviewed repository and documentation state at `2a0a2f5`; branch is clean before this entry and is ahead of `origin/main`. No tests, external services, Convex deployment, production access or data mutation were run. Confirmed Gate 0 report remains BLOCKED: protected C2 result, direct production V1/V2 evidence, measured X1 restore and 28-day G2 baseline are absent.
+- Convex deployment class and status: none; review only; no Convex command or mutation performed
+- Decisions made: Gate 1 remains unexposed. Documentation must be refreshed before push so current blocked evidence, a correct next-safe-action sequence and the Gate 1 handoff prerequisites cannot be mistaken for an implementation-ready Gate 1 plan.
+- Unresolved blockers: `docs/plans/README.md`, the Gate 0 parent/detailed plans and the major-release program retain stale first-packet/current-readiness wording. `DEPLOYMENT.md` retains legacy manual build/restart/delete guidance that conflicts with the immutable-artifact/start-or-reload contract. The Gate 1 plan still needs D-008, D-009, D-010 after aggregate audit, D-012, approved Gate 0 report, migration/recovery target confirmation and a current-code inventory before any dated execution plan.
+- Exact next safe action: Update the Gate 0 status/handoff documentation and deployment command guide without claiming missing external evidence; then address the separately identified immutable-artifact deployment-path review finding before push. Do not begin Gate 1 planning or implementation.
+
+---
+
+- Timestamp: 2026-08-06T08:33:16Z
+- Agent/session: Codex Terra subagent; Gate 0 CI/release/deployment/recovery review; session identifier unavailable
+- Task and plan IDs: Gate 0 C1/C2/C3, V1/V2, X1, G3; push/PR readiness review
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this append-only review entry uncommitted
+- Work performed: Performed a read-only end-to-end review of the detailed/parent Gate 0 plans, current CI/deploy workflows, package/verification/rehearsal scripts, PM2 configuration, release/restore runbooks, deployment guide, evidence report, remote Actions history, GitHub environments and branch controls. No implementation, deployment, production access or Convex mutation was performed.
+- Files changed: `docs/execution/gate-0-agent-log.md` only
+- Commands and outcomes: Local workflow/package/PM2/verifier/rehearsal policy tests passed. Remote review found only the `production` environment (restricted to `main`); no `cb-connect-auth-test` environment exists. `main` has no branch protection. The latest relevant deploy history predates this branch; a historical Convex attempt failed before promotion. This branch is 43 commits ahead of `origin/main` and has no remote Gate 0 branch yet.
+- Convex deployment class and status: none; read-only review only; no deployment, data access or mutation performed
+- Decisions made: Request changes before push/merge. The workflows must make promotion consume the exact qualified artifact and wait for qualification/authenticated smoke; a local/synthetic policy pass is not release readiness. The report remains correctly BLOCKED, but its use of "protected C2" is not supported by current GitHub environment configuration.
+- Unresolved blockers: (1) `.github/workflows/deploy.yml` triggers directly on `main` push and independently rebuilds/promotes instead of consuming the C3 artifact; it can run before CI/C2 and violates the parent plan's build-once/qualification-before-restart requirement. (2) The promoted artifact is extracted under `RUNNER_TEMP`, so it is not a durable PM2 release directory after self-hosted runner cleanup/reboot. (3) No configured/protected `cb-connect-auth-test` environment exists, so C2 cannot currently be treated as protected qualification. (4) Verification runs only after `pm2 startOrReload`, with no automatic verified-pair rollback when readiness fails; concurrent production runs are not serialized. (5) V1 has no preview/test promotion path before production, and the current production workflow does not preflight the deploy key before the enabled Convex path. (6) `DEPLOYMENT.md` and the planning dashboard retain stale/manual wording that can instruct rebuilds, destructive PM2 operations or already-completed first-packet work.
+- Exact next safe action: Implement and test the release-workflow corrections in a focused commit series: establish protected authenticated-test configuration, gate/serialize production promotion on successful qualification, transfer and verify the exact C3 artifact into a durable release root, add verified rollback behavior, and add the preview/test V1 path. Then refresh the report/index/runbooks and run a PR qualification. Do not merge or deploy production until those changes and the existing external-evidence gates are satisfied.
+
+---
+
+- Timestamp: 2026-08-06T15:38:00+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: Gate 0 C3/V1/V2 promotion-chain remediation
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this focused remediation uncommitted in the shared worktree
+- Work performed: Replaced the direct-push, self-hosted rebuild/repackage deployment flow with a `workflow_run` promotion flow that accepts only a successful `CI` push run on `main`. It checks out the qualified SHA, rejects a superseded SHA, downloads the artifact named for and from that exact CI run, and fails closed unless the artifact manifest checksum, commit SHA, CI run build ID and `v1` compatibility identity match. The workflow now materializes the tarball, manifest and extracted standalone server beneath the configured durable `CB_CONNECT_RELEASE_ROOT/releases/<commit>-<build-id>` path, never promotes from `RUNNER_TEMP`, serializes production promotions, and records `current` only after verification. It validates a prior durable compatible candidate before promotion and restores/verifies it automatically after a frontend promotion/verification failure. Convex remains explicit opt-in, now with a non-empty deploy-key preflight; it installs dependencies only for that optional Convex release and never rebuilds the frontend. Updated deployment/rollback documentation and workflow policy coverage.
+- Files changed: `.github/workflows/deploy.yml`; `scripts/tests/deploy-workflow.test.sh`; `DEPLOYMENT.md`; `docs/runbooks/release-rollback.md`; this append-only log. Existing shared documentation, issue, fixture and plan edits were preserved.
+- Commands and outcomes: YAML parse passed; deploy workflow policy, PM2 contract, standalone package, release verifier and rollback rehearsal policy tests passed. `npm run typecheck` passed; unit suite passed 18 files/101 tests; production build passed; `npm audit --omit=dev` passed; `git diff --check` passed. No production, Convex, GitHub environment or network mutation was performed.
+- Convex deployment class and status: none; no Convex command, deployment, data access or mutation was performed.
+- Decisions made: The CI artifact is the sole promotable frontend input. `CB_CONNECT_RELEASE_ROOT` must be a pre-provisioned writable absolute path outside the workspace and temporary runner filesystem; a missing/unsafe path fails before promotion. A missing `current` candidate on the first promotion fails closed rather than fabricating rollback evidence. The workflow can restore only a checksum-verified frontend candidate compatible with the current approved backend selector/version; an actual Convex code rollback and preview/test promotion still require externally configured target/release evidence.
+- Unresolved blockers: GitHub currently lacks the `cb-connect-auth-test` protected environment, so C2 is not configured protected qualification. No preview/test Convex selector/secrets or prior production candidate has been supplied. Direct production V1/V2 evidence, measured X1 restore evidence, the 28-day G2 baseline and an approved refreshed Gate 0 report remain absent. The branch must not be treated as production-ready from local policy checks.
+- Exact next safe action: Review and commit the focused workflow remediation with the concurrent documentation packet, configure protected authentication/preview/release-root prerequisites outside the repository, then run a fresh main CI and separately authorized production promotion to collect redacted evidence. Do not deploy or expose Gate 1 before the report's blockers are closed.
+
+---
+
+- Timestamp: 2026-08-06T15:41:00+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: Gate 0 C3/V2 remediation review correction
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with the corrected remediation uncommitted in the shared worktree
+- Work performed: Corrected the durable release-pointer contract after review: `current` consistently targets the PM2 `extracted` directory and rollback resolution derives `release-manifest.json` from its parent release directory. Added a semantic temporary-directory test for this exact layout. Also assigned stable promotion and verification step IDs and restricted automatic rollback/missing-candidate reporting to an attempted frontend promotion or post-promotion verification failure; configuration, artifact and Convex failures cannot restart a prior frontend.
+- Files changed: `.github/workflows/deploy.yml`; `scripts/tests/deploy-workflow.test.sh`; this append-only log. Existing shared worktree changes were preserved.
+- Commands and outcomes: YAML parse, the strengthened deploy workflow policy test and `git diff --check` passed. Full local qualification passed: typecheck; 18 unit files/101 tests; production build; `npm audit --omit=dev`; CI/deploy/PM2/package/verifier/rollback policy tests. No production, Convex, GitHub environment or network mutation was performed.
+- Convex deployment class and status: none; no Convex command, deployment, data access or mutation was performed.
+- Decisions made: An automatically recovered candidate is eligible only when `current` resolves inside the managed durable extracted directory and its parent manifest passes checksum/compatibility verification. Rollback is triggered only after the frontend promotion boundary has been reached and failed.
+- Unresolved blockers: Protected C2 configuration, a preview/test Convex target, direct production promotion evidence, measured X1 restore evidence, the G2 baseline and final report approval remain external Gate 0 blockers. Convex code rollback remains separate from the frontend compatibility fallback because no provider-backed prior backend-release identity has been configured.
+- Exact next safe action: Review/commit the corrected workflow packet with the shared documentation changes, then configure the external protected environments and durable host root before collecting fresh CI and authorized production evidence. Do not deploy from local checks or expose Gate 1.
+
+---
+
+- Timestamp: 2026-08-06T15:44:00+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: Gate 0 C1/C2/C3 qualified production-artifact correction
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this correction uncommitted in the shared worktree
+- Work performed: Split generic CI qualification from production artifact construction. The secret-free `qualify` job now builds only with explicit inert public placeholder values and never packages/uploads a release. A new `release-artifact` job runs only for trusted `push` events on `main`, needs both `qualify` and `authenticated-smoke`, enters the protected `production` environment, validates only the required `NEXT_PUBLIC_*` production build configuration, builds once, then packages and uploads the immutable artifact consumed by deployment. The production deploy workflow's existing completed-CI trigger therefore waits for the full qualification workflow and downloads an artifact that was built with the proper public release configuration. CI policy coverage now rejects production secrets/configuration or artifact publication in generic qualification and rejects private server/deploy secrets in the artifact build.
+- Files changed: `.github/workflows/ci.yml`; `scripts/tests/ci-workflow.test.sh`; `DEPLOYMENT.md`; this append-only log. Existing shared worktree changes were preserved.
+- Commands and outcomes: CI/deploy workflow policy tests and YAML parsing passed; `git diff --check` passed. A clean `git archive` checkout with no ignored `.env.local`, linked only to the existing dependency directory, built successfully with the inert qualification values. No GitHub workflow, Convex, production environment, data or secret mutation was performed.
+- Convex deployment class and status: none; no Convex command, deployment, data access or mutation was performed.
+- Decisions made: A deployable frontend artifact is now produced only after the authenticated smoke gate and only from protected production public build configuration on trusted main. Public build settings are intentionally available to that trusted job because Next.js embeds them; private server/deploy credentials are not provided to it.
+- Unresolved blockers: The actual protected `cb-connect-auth-test` environment remains absent, so the authenticated gate cannot be evidenced from this checkout. The production release root, preview/test target, production promotion/rollback evidence, measured restore evidence, 28-day SLO baseline and report approval remain external blockers.
+- Exact next safe action: Commit/review the workflow and documentation packet, configure the missing protected environments and durable release root, then run a new main CI and separately authorized promotion for redacted evidence. Do not treat the clean local build or policy tests as production qualification.
+
+---
+
+- Timestamp: 2026-08-06T15:47:00+05:30
+- Agent/session: Codex Terra subagent; session identifier unavailable
+- Task and plan IDs: Gate 0 V2 push-safety remediation
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this push-safety correction uncommitted in the shared worktree
+- Work performed: Added a job-level `vars.PROMOTE_PRODUCTION == 'true'` condition to production deployment, so a successful main CI does not create a deployment job by default. Added a pre-PM2 rollback-safety gate: promotion requires a checksum-verified compatible durable `current` candidate unless the separately explicit `vars.ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK == 'true'` opt-in is present for an authorized first promotion. This remains independent of the existing `DEPLOY_CONVEX` opt-in. Updated policy coverage and deployment documentation; no opt-in variables were configured.
+- Files changed: `.github/workflows/deploy.yml`; `scripts/tests/deploy-workflow.test.sh`; `DEPLOYMENT.md`; this append-only log. Existing shared worktree changes were preserved.
+- Commands and outcomes: Deploy and CI workflow policy tests passed; both workflow YAML files parsed; `git diff --check` passed. No GitHub variable/environment change, workflow run, Convex operation, PM2 command or production mutation was performed.
+- Convex deployment class and status: none; no Convex command, deployment, data access or mutation was performed.
+- Decisions made: `PROMOTE_PRODUCTION` is documented as a repository Actions variable because job-level conditions must resolve before an environment-only variable is reliably available. The first-promotion exception is a separate production-environment variable and does not itself authorize deployment; normal merges leave both controls unset.
+- Unresolved blockers: All prior protected-auth, preview/test, durable-host, direct-production, recovery, SLO and final-report evidence blockers remain. A release still needs explicit authorization and evidence after both workflow opt-ins are set; this change only prevents accidental promotion.
+- Exact next safe action: Commit/review the updated workflow packet, leave both promotion variables unset until authorization/evidence prerequisites are met, then configure them only for a bounded release operation with the required protected environments and durable release root. Do not deploy from merge alone or expose Gate 1.
+
+---
+
+- Timestamp: 2026-08-06T14:20:00+05:30
+- Agent/session: Codex Terra subagent; Gate 0 documentation truth refresh and Gate 1 handoff; session identifier unavailable
+- Task and plan IDs: Gate 0 closeout documentation; Gate 1 handoff review only
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with documentation changes uncommitted
+- Work performed: Updated the canonical plan index, Gate 0 parent/detailed plans and major-release program from stale execution-ready language to the completed-packet/blocked-report boundary. Corrected the Gate 1 gate-level prerequisite to an approved Gate 0 report without creating a dated execution plan. Added a handoff that inventories only confirmed current schema, timezone, period-write and timeline behavior plus D-008/D-009/D-010/D-012 and authorization inputs. Replaced obsolete manual deployment/restart/cleanup instructions with the current blocked operational boundary. Corrected the issue tracker’s legacy fixed-credential claim: E1 removed it; remaining failure is missing direct secret-backed CI evidence and legacy static skips.
+- Files changed: `docs/plans/README.md`; `docs/plans/2026-08-04-00-production-reliability-execution.md`; `docs/plans/2026-08-01-01-production-reliability-foundation.md`; `docs/plans/2026-08-01-cb-connect-major-release-program.md`; `docs/plans/2026-08-01-02-trustworthy-cycle-facts.md`; `docs/handoffs/2026-08-06-gate-0-to-gate-1.md`; `issues.md`; `DEPLOYMENT.md`; this append-only log. `.github/workflows/deploy.yml` was reviewed but not edited.
+- Commands and outcomes: Markdown internal-link validation passed for all updated documents; stale execution/credential/destructive-command scan retained only historical policy references or explicit prohibitions; `git diff --check` passed. No application test, external service, GitHub configuration, Convex command, deployment, production access, or data mutation was run.
+- Convex deployment class and status: none; documentation review only; no Convex command or mutation performed
+- Decisions made: The Gate 0 report remains the release authority and is blocked. Gate 1 is not plan-ready: a handoff inventory cannot satisfy its required Gate 0 approval, decisions or migration authorization. The deployment guide must not imply the existing workflow has already achieved its required qualification/artifact-chain controls.
+- Unresolved blockers: Gate 0 requires a current authenticated-smoke CI result, direct authorized production V1/V2 evidence, measured restore evidence and the 28-day SLO baseline before report approval. The separately identified deployment-workflow corrections remain outside this documentation-only change. Gate 1 requires that approved report, D-008, D-009, D-010 after permitted aggregate audit, D-012 and an authorized migration/recovery boundary before a dated plan.
+- Exact next safe action: Complete the focused deployment/qualification workflow remediation and its tests, obtain the missing authorized external evidence, refresh the Gate 0 report, then obtain its approval. Only afterward may a new agent author a dated Gate 1 execution plan; do not implement Gate 1 from this handoff.
+
+---
+
+- Timestamp: 2026-08-06T15:31:18+05:30
+- Agent/session: Codex Terra subagent; Gate 0 application/security audit; session identifier unavailable
+- Task and plan IDs: Gate 0 I2/I4, E1/E2/E3, G1/C1 review; push-safety audit
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this append-only review entry uncommitted
+- Work performed: Performed a read-only review of `origin/main...HEAD` application logic, Convex public functions/schema/auth boundaries, fixture lifecycle and cleanup, readiness privacy/timeout behavior, telemetry, dependency policy, release-test configuration and ignored/generated-artifact handling. No implementation, external service access, Convex deployment, or production action occurred.
+- Files changed: `docs/execution/gate-0-agent-log.md` only
+- Commands and outcomes: `npm run test:unit -- --run` passed (18 files, 93 tests); `npm audit --omit=dev` passed (0 vulnerabilities); fixture and CI workflow policy tests passed; `git diff --check origin/main...HEAD` passed. The current worktree contains pre-existing uncommitted append-only review entries and ignored local/build/test artifacts, which were not modified.
+- Convex deployment class and status: none; read-only review only; no Convex command, data access, or mutation performed
+- Decisions made: Request changes before push/merge. The authenticated fixture lifecycle is not fail-clean: application records can be created during sign-in/onboarding/linking before the cleanup callback is installed by primary Convex registration, so a failure in that interval only deletes Clerk users and can orphan synthetic Convex data. The environment allowlist also accepts a lookalike Convex hostname because it uses substring matching before browser tokens are sent.
+- Unresolved blockers: (1) `e2e/auth.global.setup.ts` performs the first `registerConvexFixtureUser` only after both onboarding and linking; its catch at `224-230` has no application cleanup callback until `198-203`, leaving the earlier failure interval without an exact cleanup record/path. Add a lifecycle test for a failure after `ensureUser`/onboarding or linking but before primary registration, and establish a recoverable run marker/cleanup ownership before application data is created. (2) `e2e/support/authEnvironment.ts:157` accepts any HTTPS hostname containing `hallowed-hummingbird-284`; require the exact approved Convex host or a strict approved suffix plus exact deployment label before `ConvexHttpClient` receives an authenticated token. (3) Existing external blockers remain: no protected authenticated-test environment/evidence, no direct production V1/V2 evidence, no measured restore rehearsal, and no 28-day SLO baseline.
+- Exact next safe action: Implement and test the two fixture security corrections in focused commits, rerun the local qualification suite, then complete the separate workflow/promotion corrections and obtain the missing external Gate 0 evidence. Do not merge or deploy production.
+
+---
+
+- Timestamp: 2026-08-06T15:39:21+05:30
+- Agent/session: Codex Terra subagent; Gate 0 E2 fixture-security remediation; session identifier unavailable
+- Task and plan IDs: E2 corrective remediation from Gate 0 application/security audit
+- Starting commit: `2a0a2f5`
+- Ending commit: `2a0a2f5` with this corrective implementation uncommitted in the shared worktree
+- Work performed: Added a primary-authenticated `beginFixtureRun` mutation and made `fixtureRuns.coupleId` optional until linking completes. Global setup now creates the durable run immediately after primary Clerk authentication and before dashboard navigation can call `ensureUser`; the cleanup callback is installed at that point. Cleanup now safely recovers exact run-owned, partially registered users and a primary-only pending couple while retaining fail-closed identity checks for foreign records. Final registration attaches the verified linked couple to the pre-existing run. Tightened the Convex test endpoint gate to require exactly `https://hallowed-hummingbird-284.convex.cloud` with no alternate authority, port, path, query or fragment.
+- Files changed: `convex/schema.ts`; `convex/mutations/fixtureCleanup.ts`; `convex/mutations/fixtureCleanup.test.ts`; `e2e/auth.global.setup.ts`; `e2e/auth.global.setup.test.ts`; `e2e/support/authEnvironment.ts`; `e2e/support/authEnvironment.test.ts`; this append-only log. Concurrent workflow/documentation edits were preserved.
+- Commands and outcomes: Focused fixture/setup/environment tests passed 27/27; fixture and CI workflow policy tests passed; typecheck passed; full unit suite passed 18 files and 101 tests; production build passed; `npm audit --omit=dev` and `git diff --check` passed. No secret value was printed.
+- Convex deployment class and status: no Convex command, deployment, data access, or mutation was performed during this implementation; no production access occurred.
+- Decisions made: A durable run record is the sole recovery authority for its exact primary/partner Clerk IDs; idempotent cleanup may recover partial synthetic records only when their deterministic email and, for dangling memberships, the finalized exact couple marker prove scope. The authenticated test URL is an exact canonical endpoint rather than a substring allowlist.
+- Unresolved blockers: The separate deploy/workflow findings, absent protected C2 execution, absent direct production V1/V2 evidence, unmeasured X1 restore and absent 28-day G2 baseline remain. No Gate 0 promotion or Gate 1 exposure is claimed.
+- Exact next safe action: Review and split/commit the bounded E2 remediation with its tests after reconciling concurrent shared-worktree changes; then address the independent workflow/promotion corrections and collect required external Gate 0 evidence. Do not deploy production.
+
+---
+
+- Timestamp: 2026-08-06T15:53:19+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 final branch review, remediation, push-safety closeout and Gate 1 handoff review
+- Starting commit: `2a0a2f5`
+- Ending commit: `3251d57` before this append-only log commit
+- Work performed: Reconciled three Terra reviews and fixed every confirmed branch-level blocker. Committed pre-dashboard authenticated fixture-run ownership, partial-failure cleanup and exact Convex test-host validation as `83372a9`. Committed build-once trusted artifact qualification, exact cross-workflow artifact consumption, durable release storage, serialized promotion, constrained automatic rollback and default-off production opt-ins as `8000d39`. Committed the canonical plan/readme/agent-command refresh and Gate 0-to-Gate 1 handoff as `3251d57`. Created the GitHub `cb-connect-auth-test` environment with the seven approved test configuration names, created `/home/naki/cb-connect-releases` mode 0750 on the self-hosted runner, and configured the production environment release root, exact production selector and public base URL. No secret value was printed or committed.
+- Files changed: Gate 0 fixture schema/mutation/setup/tests; CI/deploy workflows and policy tests; deployment/rollback documentation; root `README.md`; `AGENTS.md`; canonical plan index, Gate 0 plans/program/report/decision and issue documents; authenticated fixture contract; Gate 1 handoff; this append-only log
+- Commands and outcomes: `npx convex dev --once` pushed the reviewed optional fixture-run schema and functions to `dev:hallowed-hummingbird-284`. Clean install, explicit inert-configuration production build, typecheck, 18 unit files/101 tests, every shell policy test, production audit with zero vulnerabilities, workflow YAML parsing and `git diff --check` passed. Terra separately proved a clean `git archive` build with no `.env.local`. GitHub environment/secret inspection confirmed only names, not values. `PROMOTE_PRODUCTION`, `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` and `DEPLOY_CONVEX` remain absent.
+- Convex deployment class and status: `dev:hallowed-hummingbird-284` only; schema/functions ready. No production Convex deployment, production data access, production fixture, PM2 promotion or restore occurred.
+- Decisions made: The branch is safe to push for review, but Gate 0 production promotion remains blocked. A push/merge cannot create a production deploy job while `PROMOTE_PRODUCTION` is absent. Gate 1 remains gate-level only and not plan-ready; the handoff records current facts without authorizing planning or implementation.
+- Unresolved blockers: A successful post-review authenticated-smoke CI run is still absent. No preview/test Convex promotion evidence, verified durable production rollback candidate, direct production V1/V2 identity/TLS/listener/readiness/PM2 evidence, measured X1 restore, 28-day G2 baseline or approved refreshed Gate 0 promotion verdict exists. Main branch protection also remains an external repository-policy decision; it was not enabled in this closeout.
+- Exact next safe action: Push this branch and open a pull request so CI can run the configured authenticated smoke. Keep all production opt-ins unset. Review the CI artifacts/results and refresh the Gate 0 report with direct evidence. Only after separate production/recovery/baseline evidence and explicit Gate 0 approval may a dated Gate 1 execution plan be authored.
