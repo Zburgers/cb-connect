@@ -10,6 +10,7 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { clerk, clerkSetup } from "@clerk/testing/playwright";
 
 import {
+  beginConvexFixtureRun,
   cleanupConvexFixturePair,
   createClerkFixtureServices,
   loadAuthEnvironment,
@@ -32,7 +33,12 @@ function syntheticPastDate(): string {
   return date.toISOString().slice(0, 10);
 }
 
-async function signIn(page: Page, environment: AuthEnvironment, user: { email?: string; password?: string }) {
+async function signIn(
+  page: Page,
+  environment: AuthEnvironment,
+  user: { email?: string; password?: string },
+  afterAuthenticated?: () => Promise<void>,
+) {
   if (!user.email) {
     throw new Error("authenticated_fixture_setup_failed");
   }
@@ -47,6 +53,7 @@ async function signIn(page: Page, environment: AuthEnvironment, user: { email?: 
       frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
     },
   });
+  await afterAuthenticated?.();
   await page.goto(`${environment.baseUrl}/dashboard`);
   await page.waitForURL(/\/dashboard|\/onboarding/, { timeout: 30000 });
   await expect(
@@ -175,10 +182,25 @@ export default async function globalSetup(_config: FullConfig) {
     const partnerPage = await partnerContext.newPage();
 
     setupStage = "primary-sign-in";
-    await signIn(primaryPage, environment, pair.primary);
+    await signIn(primaryPage, environment, pair.primary, async () => {
+      const token = await convexAuthToken(primaryPage);
+      primaryConvexAuthToken = token;
+      await beginConvexFixtureRun(
+        environment,
+        pair!,
+        token,
+      );
+      // The durable run exists before the dashboard can call ensureUser.
+      // From this point every failure can clean partially-created app data.
+      services.cleanupApplicationData = (fixturePair) =>
+        cleanupConvexFixturePair(
+          environment,
+          fixturePair,
+          token,
+        );
+    });
     setupStage = "primary-onboarding";
     await completeOnboarding(primaryPage, "primary");
-    primaryConvexAuthToken = await convexAuthToken(primaryPage);
     setupStage = "partner-sign-in";
     await signIn(partnerPage, environment, pair.partner);
     setupStage = "partner-onboarding";
@@ -186,21 +208,15 @@ export default async function globalSetup(_config: FullConfig) {
     setupStage = "link";
     await linkCouple(primaryPage, partnerPage);
     setupStage = "primary-register";
+    if (!primaryConvexAuthToken) {
+      throw new Error("authenticated_fixture_convex_token_missing");
+    }
     await registerConvexFixtureUser(
       environment,
       pair,
       pair.primary,
       primaryConvexAuthToken,
     );
-    // The primary registration creates the durable fixture run record. Install
-    // its authenticated cleanup path before attempting partner registration so
-    // a partial registration failure cannot orphan application data.
-    services.cleanupApplicationData = (fixturePair) =>
-      cleanupConvexFixturePair(
-        environment,
-        fixturePair,
-        primaryConvexAuthToken!,
-      );
     setupStage = "partner-register";
     await registerConvexFixtureUser(
       environment,

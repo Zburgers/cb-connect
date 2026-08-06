@@ -29,6 +29,7 @@ const environment = {
 };
 
 const cleanupConvexFixturePair = vi.fn();
+const beginConvexFixtureRun = vi.fn();
 const deleteUser = vi.fn();
 const registerConvexFixtureUser = vi.fn();
 const signIn = vi.fn();
@@ -95,6 +96,7 @@ vi.mock("node:fs/promises", () => ({
 
 vi.mock("./support/authEnvironment", () => ({
   cleanupConvexFixturePair,
+  beginConvexFixtureRun,
   createClerkFixtureServices: () => ({ deleteUser }),
   loadAuthEnvironment: () => environment,
   provisionFixturePair: vi.fn().mockResolvedValue(fixturePair),
@@ -106,17 +108,13 @@ describe("authenticated fixture global setup", () => {
     vi.clearAllMocks();
   });
 
-  test("cleans the durable fixture run before deleting Clerk users when partner registration fails", async () => {
-    registerConvexFixtureUser.mockImplementation(
-      async (_environment, _pair, user) => {
-        if (user.role === "partner") {
-          throw new Error("partner_registration_failed");
-        }
-      },
-    );
+  test("creates the durable run before dashboard work and cleans it when partner sign-in fails", async () => {
     cleanupConvexFixturePair.mockResolvedValue(undefined);
+    beginConvexFixtureRun.mockResolvedValue(undefined);
     deleteUser.mockResolvedValue(undefined);
-    signIn.mockResolvedValue(undefined);
+    signIn
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("partner_sign_in_failed"));
     clerkSetup.mockResolvedValue(undefined);
     close.mockResolvedValue(undefined);
 
@@ -126,15 +124,23 @@ describe("authenticated fixture global setup", () => {
       "authenticated_fixture_setup_failed",
     );
 
+    expect(beginConvexFixtureRun).toHaveBeenCalledWith(
+      environment,
+      fixturePair,
+      "primary-convex-token",
+    );
+
     expect(cleanupConvexFixturePair).toHaveBeenCalledWith(
       environment,
       fixturePair,
       "primary-convex-token",
     );
+    expect(registerConvexFixtureUser).not.toHaveBeenCalled();
     expect(deleteUser.mock.invocationCallOrder[0]).toBeGreaterThan(
       cleanupConvexFixturePair.mock.invocationCallOrder[0],
     );
     expect(deleteUser).toHaveBeenCalledWith(fixturePair.partner.clerkId);
     expect(deleteUser).toHaveBeenCalledWith(fixturePair.primary.clerkId);
   });
+
 });

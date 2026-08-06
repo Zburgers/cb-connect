@@ -27,7 +27,10 @@ export default defineSchema({
     runId: v.string(),
     primaryClerkId: v.string(),
     partnerClerkId: v.string(),
-    coupleId: v.id("couples"),
+    // Created as soon as the primary Clerk session exists, before either
+    // account is allowed to visit the application and create fixture data.
+    // The couple is attached only after the synthetic accounts are linked.
+    coupleId: v.optional(v.id("couples")),
     createdAt: v.number(),
     cleanedAt: v.optional(v.number()),
   }).index("by_run_id", ["runId"]),

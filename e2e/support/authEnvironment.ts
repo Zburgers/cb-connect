@@ -6,6 +6,9 @@ export const APPROVED_CLERK_ENVIRONMENT = "holy clerk";
 export const APPROVED_CLERK_FRONTEND_API_HOST = "holy-clam-29.clerk.accounts.dev";
 export const APPROVED_CONVEX_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 
+const [, APPROVED_CONVEX_DEPLOYMENT_NAME] = APPROVED_CONVEX_DEPLOYMENT.split(":");
+const APPROVED_CONVEX_HOST = `${APPROVED_CONVEX_DEPLOYMENT_NAME}.convex.cloud`;
+
 const CLERK_FRONTEND_HOST_SUFFIX = ".clerk.accounts.dev";
 const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -83,6 +86,21 @@ function isHttpsUrl(value: string): URL | null {
   }
 }
 
+function isApprovedConvexUrl(value: string): boolean {
+  const url = isHttpsUrl(value);
+  return (
+    url !== null &&
+    value === `https://${APPROVED_CONVEX_HOST}` &&
+    url.hostname === APPROVED_CONVEX_HOST &&
+    url.port === "" &&
+    url.username === "" &&
+    url.password === "" &&
+    url.pathname === "/" &&
+    url.search === "" &&
+    url.hash === ""
+  );
+}
+
 function isTestKey(value: string, expectedPrefix: "sk" | "pk"): boolean {
   const [prefix, environment] = value.split("_", 3);
   return prefix === expectedPrefix && environment === "test";
@@ -144,7 +162,6 @@ export function loadAuthEnvironment(
   );
 
   const clerkUrl = isHttpsUrl(clerkFrontendApiUrl);
-  const convexAddress = isHttpsUrl(convexUrl);
   if (
     clerkEnvironmentName !== APPROVED_CLERK_ENVIRONMENT ||
     !isTestKey(clerkSecretKey, "sk") ||
@@ -153,9 +170,7 @@ export function loadAuthEnvironment(
     !clerkUrl.hostname.endsWith(CLERK_FRONTEND_HOST_SUFFIX) ||
     clerkUrl.hostname !== APPROVED_CLERK_FRONTEND_API_HOST ||
     convexDeployment !== APPROVED_CONVEX_DEPLOYMENT ||
-    convexAddress === null ||
-    !convexAddress.hostname.includes("hallowed-hummingbird-284") ||
-    convexAddress.hostname.includes("festive-malamute-715") ||
+    !isApprovedConvexUrl(convexUrl) ||
     !SAFE_RUN_ID_PATTERN.test(runId)
   ) {
     throw new Error(
@@ -335,6 +350,20 @@ export async function registerConvexFixtureUser(
     );
     throw error;
   }
+}
+
+export async function beginConvexFixtureRun(
+  environment: AuthEnvironment,
+  pair: ProvisionedFixturePair,
+  authToken: string,
+): Promise<void> {
+  const client = new ConvexHttpClient(environment.convexUrl);
+  client.setAuth(authToken);
+  await client.mutation(api.mutations.fixtureCleanup.beginFixtureRun, {
+    runId: pair.runId,
+    primaryClerkId: pair.primary.clerkId,
+    partnerClerkId: pair.partner.clerkId,
+  });
 }
 
 export async function cleanupConvexFixturePair(

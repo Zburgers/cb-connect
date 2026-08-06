@@ -216,6 +216,15 @@ describe("bounded fixture cleanup", () => {
       });
     });
 
+    await t.run(async (ctx) => {
+      await ctx.db.insert("fixtureRuns", {
+        runId: fixtureArgs.runId,
+        primaryClerkId: fixtureArgs.primaryClerkId,
+        partnerClerkId: fixtureArgs.partnerClerkId,
+        createdAt: Date.now(),
+      });
+    });
+
     const result = await t.withIdentity({
       subject: fixtureArgs.primaryClerkId,
     }).mutation(api.mutations.fixtureCleanup.registerFixtureUser, {
@@ -234,6 +243,70 @@ describe("bounded fixture cleanup", () => {
       email: "cb-connect-e2e+run-fixture-cleanup-primary@example.com",
       fixtureRunId: fixtureArgs.runId,
     }));
+  });
+
+  test("records run ownership before dashboard writes and cleans a linking failure idempotently", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+
+    await expect(
+      t.withIdentity({ subject: fixtureArgs.primaryClerkId }).mutation(
+        api.mutations.fixtureCleanup.beginFixtureRun,
+        fixtureArgs,
+      ),
+    ).resolves.toEqual({ begun: true });
+    await expect(
+      t.withIdentity({ subject: fixtureArgs.primaryClerkId }).mutation(
+        api.mutations.fixtureCleanup.beginFixtureRun,
+        fixtureArgs,
+      ),
+    ).resolves.toEqual({ begun: false });
+
+    await t.run(async (ctx) => {
+      const primaryId = await ctx.db.insert("users", {
+        clerkId: fixtureArgs.primaryClerkId,
+        email: "cb-connect-e2e+run-fixture-cleanup-primary@example.com",
+        name: "Fixture Primary",
+        role: "primary",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
+      const coupleId = await ctx.db.insert("couples", {
+        createdAt: Date.now(),
+        status: "pending",
+      });
+      await ctx.db.insert("coupleMembers", {
+        coupleId,
+        userId: primaryId,
+        role: "primary",
+        sharingPain: false,
+        sharingPhase: true,
+        joinedAt: Date.now(),
+      });
+      await ctx.db.insert("users", {
+        clerkId: fixtureArgs.partnerClerkId,
+        email: "cb-connect-e2e+run-fixture-cleanup-partner@example.com",
+        name: "Fixture Partner",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
+    });
+
+    const cleaned = await t.withIdentity({ subject: fixtureArgs.primaryClerkId }).mutation(
+      api.mutations.fixtureCleanup.cleanupFixture,
+      fixtureArgs,
+    );
+    expect(cleaned).toMatchObject({
+      ok: true,
+      remaining: false,
+      deleted: { users: 2, couples: 1, coupleMembers: 1 },
+    });
+    await expect(
+      t.withIdentity({ subject: fixtureArgs.primaryClerkId }).mutation(
+        api.mutations.fixtureCleanup.cleanupFixture,
+        fixtureArgs,
+      ),
+    ).resolves.toMatchObject({ ok: true, remaining: false });
   });
 
   test("rejects production deployment identities before reading or mutating", async () => {

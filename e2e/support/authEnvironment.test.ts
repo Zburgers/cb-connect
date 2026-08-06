@@ -51,6 +51,23 @@ describe("approved authenticated fixture environment", () => {
     );
   });
 
+  test.each([
+    "https://hallowed-hummingbird-284.convex.cloud.evil.example",
+    "https://evil-hallowed-hummingbird-284.convex.cloud",
+    "https://hallowed-hummingbird-284.convex.cloud:443",
+    "https://user@hallowed-hummingbird-284.convex.cloud",
+    "https://hallowed-hummingbird-284.convex.cloud/other",
+    "https://hallowed-hummingbird-284.convex.cloud/?target=evil",
+    "https://hallowed-hummingbird-284.convex.cloud/#fragment",
+  ])("rejects a lookalike or non-canonical Convex URL: %s", (convexUrl) => {
+    expect(() =>
+      loadAuthEnvironment({
+        ...validEnvironment,
+        NEXT_PUBLIC_TEST_CONVEX_URL: convexUrl,
+      }),
+    ).toThrow("Missing approved authenticated fixture environment");
+  });
+
   test("retries transient operations with bounded attempts", async () => {
     let attempts = 0;
 

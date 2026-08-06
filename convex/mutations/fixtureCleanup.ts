@@ -282,9 +282,12 @@ async function loadFixtureRecords(
     if (!user) continue;
 
     const expectedEmail = `cb-connect-e2e+${args.runId}-${requested.role}@example.com`;
+    // A durable run is claimed before either account visits the dashboard.
+    // During a failed onboarding/linking interval the application user may not
+    // yet carry fixtureRunId or a role, but the exact run-owned Clerk ID and
+    // deterministic email still make it safe to recover.
     if (
-      user.fixtureRunId !== args.runId ||
-      user.role !== requested.role ||
+      (user.fixtureRunId !== undefined && user.fixtureRunId !== args.runId) ||
       user.email !== expectedEmail
     ) {
       throw new Error("fixture_cleanup_identity_mismatch");
@@ -296,36 +299,58 @@ async function loadFixtureRecords(
     requested.role,
     users.find((user) => user.clerkId === requested.clerkId),
   ]));
-  const coupleMembers = await rowsByCouple(
-    ctx,
-    "coupleMembers",
-    fixtureRun.coupleId,
-  );
-  if (coupleMembers.length > 2) {
-    throw new Error("fixture_cleanup_scope_too_large:couple_members");
+  const allFixtureUserIds = new Set<UserId>(users.map((user) => user._id));
+  const coupleIds = new Set<CoupleId>();
+  if (fixtureRun.coupleId !== undefined) {
+    coupleIds.add(fixtureRun.coupleId);
   }
-  const allFixtureUserIds = new Set<UserId>();
-  const memberRoles = new Set<string>();
-  for (const member of coupleMembers) {
-    if (memberRoles.has(member.role)) {
+  for (const user of users) {
+    for (const membership of await rowsByUser(ctx, "coupleMembers", user._id)) {
+      coupleIds.add(membership.coupleId);
+    }
+  }
+
+  const coupleMemberById = new Map<Id<"coupleMembers">, Doc<"coupleMembers">>();
+  const couples: Doc<"couples">[] = [];
+  for (const coupleId of coupleIds) {
+    const couple = await ctx.db.get("couples", coupleId);
+    if (couple) couples.push(couple);
+    const members = await rowsByCouple(ctx, "coupleMembers", coupleId);
+    if (members.length > 2) {
+      throw new Error("fixture_cleanup_scope_too_large:couple_members");
+    }
+    const memberRoles = new Set<string>();
+    for (const member of members) {
+      if (memberRoles.has(member.role)) {
+        throw new Error("fixture_cleanup_identity_mismatch");
+      }
+      memberRoles.add(member.role);
+      const expectedUser = targetUsersByRole.get(member.role);
+      if (
+        (expectedUser !== undefined && expectedUser._id !== member.userId) ||
+        (expectedUser === undefined && fixtureRun.coupleId !== coupleId)
+      ) {
+        throw new Error("fixture_cleanup_identity_mismatch");
+      }
+      // A previously finalized run can be retried after Clerk/user deletion;
+      // its exact couple marker authorizes cleanup of dangling memberships.
+      allFixtureUserIds.add(member.userId);
+      coupleMemberById.set(member._id, member);
+    }
+    // Before a partner consumes the code, a synthetic primary-only pending
+    // couple is valid and must be recoverable. Any other partial relationship
+    // fails closed rather than risking deletion outside this run.
+    if (
+      members.length > 0 &&
+      !(
+        (members.length === 1 && members[0].role === "primary") ||
+        (members.length === 2 && memberRoles.size === 2)
+      )
+    ) {
       throw new Error("fixture_cleanup_identity_mismatch");
     }
-    memberRoles.add(member.role);
-    const expectedUser = targetUsersByRole.get(member.role);
-    if (expectedUser && expectedUser._id !== member.userId) {
-      throw new Error("fixture_cleanup_identity_mismatch");
-    }
-    allFixtureUserIds.add(member.userId);
   }
-  if (
-    coupleMembers.length > 0 &&
-    (coupleMembers.length !== 2 || memberRoles.size !== 2)
-  ) {
-    throw new Error("fixture_cleanup_identity_mismatch");
-  }
-  const couple = await ctx.db.get("couples", fixtureRun.coupleId);
-  const couples = couple ? [couple] : [];
-  const coupleIds = new Set<CoupleId>(couple ? [fixtureRun.coupleId] : []);
+  const coupleMembers = [...coupleMemberById.values()];
 
   const pairingCodes: Doc<"pairingCodes">[] = [];
   const presence: Doc<"presence">[] = [];
@@ -443,6 +468,41 @@ function hasRemaining(records: FixtureRecords): boolean {
   return Object.values(records).some((rows) => rows.length > 0);
 }
 
+export const beginFixtureRun = mutation({
+  args: fixtureArgs,
+  returns: v.object({ begun: v.boolean() }),
+  handler: async (ctx, args) => {
+    assertFixtureScopeAllowed();
+    assertFixtureArgs(args);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || identity.subject !== args.primaryClerkId) {
+      throw new Error("fixture_cleanup_unauthenticated");
+    }
+
+    const existing = await ctx.db
+      .query("fixtureRuns")
+      .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
+      .unique();
+    if (existing) {
+      if (
+        existing.primaryClerkId !== args.primaryClerkId ||
+        existing.partnerClerkId !== args.partnerClerkId
+      ) {
+        throw new Error("fixture_cleanup_identity_mismatch");
+      }
+      return { begun: false };
+    }
+
+    await ctx.db.insert("fixtureRuns", {
+      runId: args.runId,
+      primaryClerkId: args.primaryClerkId,
+      partnerClerkId: args.partnerClerkId,
+      createdAt: Date.now(),
+    });
+    return { begun: true };
+  },
+});
+
 export const registerFixtureUser = mutation({
   args: {
     runId: v.string(),
@@ -496,26 +556,27 @@ export const registerFixtureUser = mutation({
       throw new Error("fixture_cleanup_identity_mismatch");
     }
 
+    const fixtureRun = await ctx.db
+      .query("fixtureRuns")
+      .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
+      .unique();
+    if (
+      !fixtureRun ||
+      fixtureRun.primaryClerkId !== args.primaryClerkId ||
+      fixtureRun.partnerClerkId !== args.partnerClerkId
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
     if (user.fixtureRunId !== args.runId || user.email !== expectedEmail) {
       await ctx.db.patch(user._id, {
         email: expectedEmail,
         fixtureRunId: args.runId,
       });
     }
-    const fixtureRun = await ctx.db
-      .query("fixtureRuns")
-      .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
-      .unique();
-    if (fixtureRun) {
-      if (
-        fixtureRun.primaryClerkId !== args.primaryClerkId ||
-        fixtureRun.partnerClerkId !== args.partnerClerkId
-      ) {
+
+    if (args.role === "primary") {
+      if (args.clerkId !== args.primaryClerkId) {
         throw new Error("fixture_cleanup_identity_mismatch");
-      }
-    } else {
-      if (args.role !== "primary" || args.clerkId !== args.primaryClerkId) {
-        throw new Error("fixture_cleanup_primary_registration_required");
       }
       const memberships = await rowsByUser(ctx, "coupleMembers", user._id);
       if (memberships.length !== 1) {
@@ -545,13 +606,20 @@ export const registerFixtureUser = mutation({
           throw new Error("fixture_cleanup_identity_mismatch");
         }
       }
-      await ctx.db.insert("fixtureRuns", {
-        runId: args.runId,
-        primaryClerkId: args.primaryClerkId,
-        partnerClerkId: args.partnerClerkId,
+      if (
+        fixtureRun.coupleId !== undefined &&
+        fixtureRun.coupleId !== memberships[0].coupleId
+      ) {
+        throw new Error("fixture_cleanup_identity_mismatch");
+      }
+      await ctx.db.patch(fixtureRun._id, {
         coupleId: memberships[0].coupleId,
-        createdAt: Date.now(),
       });
+    } else if (
+      args.clerkId !== args.partnerClerkId ||
+      fixtureRun.coupleId === undefined
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
     }
     return { registered: true };
   },
