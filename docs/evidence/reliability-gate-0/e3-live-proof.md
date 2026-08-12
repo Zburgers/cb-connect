@@ -8,4 +8,5 @@
 - Mobile result: 1 passed, 0 skipped in an independent fixture lifecycle (iPhone-sized Chromium emulation)
 - Covered journey: primary and partner linking, sharing settings, primary period logging, partner-assisted period ending, private chat, revocation, and relinking
 - Teardown proof: e2-live-proof.md reports remaining=false and all fixture-table counts zero
+- Protected CI confirmation: run 31627216861 passed deterministic qualification and authenticated release smoke; production-configured release remained skipped by disabled promotion flags
 - Secrets and fixture identifiers: omitted

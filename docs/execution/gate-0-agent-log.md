@@ -624,3 +624,18 @@
 - Decisions made: Gate 0 is merge-ready from the code/CI perspective. Gate 0 production promotion remains blocked until direct production release identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline are obtained. Gate 1 remains unexposed until the production gate is approved.
 - Unresolved blockers: production promotion evidence and D-012 final retention/deletion scope remain pending. These do not block merging the reviewed Gate 0 implementation PR.
 - Exact next safe action: Commit and push the report/log update. Merge PR #17 only through the project’s normal review process; do not enable production promotion flags as part of this merge.
+
+---
+
+- Timestamp: 2026-08-13T00:07:51+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 final local and protected-CI confirmation; PR #17
+- Starting commit: `058d4ad`
+- Ending commit: `058d4ad` with final evidence updates uncommitted before push
+- Work performed: Ran the exact pushed head locally against the approved isolated Clerk/Convex development boundary using separate fixture lifecycles for `release-desktop` and `release-mobile`. Both completed the full linking, sharing, period, chat, revocation and relinking journey with `1 passed, 0 skipped`; teardown completed with `remaining=false` and zero fixture-table counts. Checked protected rerun `31627216861`: deterministic qualification and authenticated release smoke both passed; production-configured immutable release was skipped because production promotion flags remain disabled. Updated the report and E3 proof to reference the final protected run.
+- Files changed: `docs/evidence/reliability-gate-0/REPORT.md`; `docs/evidence/reliability-gate-0/e2-live-proof.md`; `docs/evidence/reliability-gate-0/e3-live-proof.md`; this append-only log
+- Commands and outcomes: local two-project release smoke passed; `gh run view 31627216861` reported `success`; worktree source remains unchanged and production was not accessed.
+- Convex deployment class and status: isolated `dev:hallowed-hummingbird-284` only; synthetic fixture data was cleaned successfully. No production Convex deployment, data access, PM2 operation, promotion or restore occurred.
+- Decisions made: Gate 0 is now confirmed merge-ready for implementation and CI. Gate 0 production promotion remains blocked on direct production identity/readiness/PM2/TLS evidence, a durable rollback candidate, measured restore and the 28-day baseline. Gate 1 remains unexposed until that production gate is approved.
+- Unresolved blockers: production promotion evidence and D-012 final retention/deletion scope remain pending; neither blocks merging PR #17.
+- Exact next safe action: Commit and push this final evidence update. Merge PR #17 through normal review; keep production promotion flags disabled.
