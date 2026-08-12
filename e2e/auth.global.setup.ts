@@ -81,17 +81,25 @@ async function convexAuthToken(page: Page): Promise<string> {
 async function completeOnboarding(
   page: Page,
   role: "primary" | "partner",
+  reportStage: (stage: string) => void = () => undefined,
 ) {
+  reportStage(`${role}-onboarding-load`);
   await page.goto("/onboarding");
   if (role === "primary") {
+    reportStage("primary-onboarding-role");
     await page.getByRole("button", { name: /I track my cycle/i }).click();
+    reportStage("primary-onboarding-date");
     await page.locator('input[type="date"]').fill(syntheticPastDate());
+    reportStage("primary-onboarding-submit");
     await page.getByRole("button", { name: /start tracking/i }).click();
+    reportStage("primary-onboarding-redirect");
     await page.waitForURL(/\/dashboard/, { timeout: 30000 });
     return;
   }
 
+  reportStage("partner-onboarding-role");
   await page.getByRole("button", { name: /I support my partner/i }).click();
+  reportStage("partner-onboarding-redirect");
   await page.waitForURL(/\/dashboard\/partner/, { timeout: 30000 });
 }
 
@@ -200,11 +208,15 @@ export default async function globalSetup(_config: FullConfig) {
         );
     });
     setupStage = "primary-onboarding";
-    await completeOnboarding(primaryPage, "primary");
+    await completeOnboarding(primaryPage, "primary", (stage) => {
+      setupStage = stage;
+    });
     setupStage = "partner-sign-in";
     await signIn(partnerPage, environment, pair.partner);
     setupStage = "partner-onboarding";
-    await completeOnboarding(partnerPage, "partner");
+    await completeOnboarding(partnerPage, "partner", (stage) => {
+      setupStage = stage;
+    });
     setupStage = "link";
     await linkCouple(primaryPage, partnerPage);
     setupStage = "primary-register";

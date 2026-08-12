@@ -48,6 +48,15 @@ hosted runner. All seven environment secret names were present and redacted;
 the browser smoke did not run. The follow-up explicitly installs `ripgrep`
 before policy validation and smoke execution. This run is not C2 evidence.
 
+PR run `31623024480` then passed deterministic qualification and reached the
+real authenticated browser setup. It failed during the coarse
+`primary-onboarding` stage, cleaned the run-owned fixtures and uploaded only a
+redacted summary; desktop/mobile journey tests did not begin. The branch now
+reports non-sensitive onboarding substages so the next run can distinguish
+load, role selection, date entry, submit and redirect without retaining user
+or health data. This failed run is evidence that the gate fails closed, not a
+C2 pass.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |

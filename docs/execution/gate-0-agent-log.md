@@ -579,3 +579,18 @@
 - Decisions made: Treat `ripgrep` as an explicit CI dependency because fail-closed policy and zero-skip checks require it; do not weaken or remove those checks.
 - Unresolved blockers: A successful authenticated browser smoke remains absent; all production/recovery/baseline blockers remain.
 - Exact next safe action: Commit/push the explicit tool setup and observe the replacement PR run through the real browser journey.
+
+---
+
+- Timestamp: 2026-08-12T23:07:43+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 E2/E3 authenticated setup diagnosis; PR #17 qualification
+- Starting commit: `95cd52e`
+- Ending commit: `95cd52e` with diagnostic follow-up uncommitted before the next focused commit
+- Work performed: Observed PR run `31623024480` pass deterministic qualification and execute the environment-scoped authenticated setup. The setup failed at the coarse `primary-onboarding` stage before desktop/mobile specs began; cleanup and the redacted failure artifact completed. Added data-free substage labels for onboarding load, role selection, date entry, submit and redirect. Attempted a local isolated reproduction with the ignored approved dev mapping: the first attempt stopped at missing default Playwright browser; the explicit installed Chrome attempt reached `primary-register` and failed closed with `fixture_cleanup_identity_mismatch`, a different stage from CI. No raw IDs, credentials, dates or browser artifacts were retained.
+- Files changed: `e2e/auth.global.setup.ts`; `docs/evidence/reliability-gate-0/REPORT.md`; this append-only log
+- Commands and outcomes: GitHub deterministic qualification passed; authenticated setup failed at `primary-onboarding`; redacted artifact contained only exit status and withholding policy. Local `npm run test:unit -- --run` passed 18 files/101 tests; `npm run typecheck` and `git diff --check` passed. Local explicit-Chrome reproduction reached `primary-register` and failed closed during exact fixture ownership validation; cleanup was attempted.
+- Convex deployment class and status: isolated development only for the local reproduction (`dev:hallowed-hummingbird-284`); no production access or mutation occurred
+- Decisions made: Improve only non-sensitive stage telemetry; do not weaken cleanup identity checks or artifact redaction to obtain diagnostics.
+- Unresolved blockers: The CI onboarding substep is not yet identified and the local registration mismatch remains a separate isolated-fixture finding. C2 is still failed/blocked.
+- Exact next safe action: Commit/push the safe substage diagnostics, rerun PR CI, and remediate only the exact failing substep while preserving cleanup and redaction.
