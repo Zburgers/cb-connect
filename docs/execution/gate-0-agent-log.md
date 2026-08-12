@@ -609,3 +609,18 @@
 - Decisions made: Keep fixture authorization fail-closed on exact authenticated Clerk subjects and the durable primary/partner run record. Empty email is accepted only as a known transient representation for an otherwise exact run-owned identity. Each browser project owns a separate fixture lifecycle. Teardown reauthenticates the deterministic primary and stops the app before destructive cleanup. Production opt-ins and first-promotion override remain unset.
 - Unresolved blockers: The replacement PR run still must pass deterministic qualification and both environment-scoped authenticated projects. Production remains a pre-candidate with no durable rollback artifact, `/api/ready` returning 404, no direct V1/V2/PM2 verification, no measured synthetic restore and no 28-day SLO baseline. D-012 final retention duration/scope remains pending.
 - Exact next safe action: Commit and push this focused remediation, observe the replacement PR run through both independent fixture lifecycles, then update the report with that direct CI result. Do not promote production or expose Gate 1 from local evidence alone.
+
+---
+
+- Timestamp: 2026-08-12T23:45:00+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 protected CI closeout; PR #17
+- Starting commit: `1df018f`
+- Ending commit: `1df018f` with this report/log update uncommitted before the final documentation commit
+- Work performed: Reviewed replacement protected CI run `31626337428` and PR #17 status. Deterministic qualification passed; authenticated release smoke passed on independent desktop and mobile fixture lifecycles with zero skips; the production-configured immutable release job was skipped as intended because `PROMOTE_PRODUCTION`, `DEPLOY_CONVEX` and the first-promotion override remain unset. Updated the Gate 0 report to mark C2 PASS for current protected CI evidence while retaining the production-promotion blockers.
+- Files changed: `docs/evidence/reliability-gate-0/REPORT.md`; this append-only log
+- Commands and outcomes: `gh run view 31626337428` reported both qualification jobs `success`; `gh pr view 17` reported `MERGEABLE` and `CLEAN`. No source or runtime changes were made.
+- Convex deployment class and status: no Convex command or deployment; production selector remains configured for later gated use only, with no production data access or mutation.
+- Decisions made: Gate 0 is merge-ready from the code/CI perspective. Gate 0 production promotion remains blocked until direct production release identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline are obtained. Gate 1 remains unexposed until the production gate is approved.
+- Unresolved blockers: production promotion evidence and D-012 final retention/deletion scope remain pending. These do not block merging the reviewed Gate 0 implementation PR.
+- Exact next safe action: Commit and push the report/log update. Merge PR #17 only through the project’s normal review process; do not enable production promotion flags as part of this merge.

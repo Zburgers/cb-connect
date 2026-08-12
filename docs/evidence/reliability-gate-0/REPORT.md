@@ -71,13 +71,19 @@ per Playwright project. Fresh isolated-dev desktop and mobile lifecycles each
 passed 1/1 with zero skips and `remaining=false`. A replacement PR run is
 still required before C2 can pass.
 
+Replacement PR run `31626337428` passed both protected jobs: deterministic
+qualification and authenticated release smoke. The smoke ran independent
+desktop and mobile fixture lifecycles with zero skips; the production-configured
+release job was correctly skipped because production promotion remains
+disabled. This closes the current C2 CI-evidence blocker.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |
 |---|---|---|---|
 | G1 dependency remediation | Direct local qualification | `6509bbf`, `3a64142`, `bb30aeb`, `e26afb4`; `npm audit --omit=dev` reports 0 vulnerabilities | PASS |
 | C1 local qualification | Direct local qualification | [`c1-local-proof.md`](c1-local-proof.md); build, typecheck, 18 files/101 tests and full production audit pass in the final review tree | PASS |
-| C2 authenticated release smoke | Current isolated-dev direct evidence; replacement CI pending | [`e3-live-proof.md`](e3-live-proof.md), [`e2-live-proof.md`](e2-live-proof.md), `.github/workflows/ci.yml`; desktop and mobile each passed in independent fixture lifecycles with zero residue. PR run `31623624502` predates the remediation and failed at `primary-register` | BLOCKED pending a green current PR run |
+| C2 authenticated release smoke | Protected CI direct evidence | [`e3-live-proof.md`](e3-live-proof.md), [`e2-live-proof.md`](e2-live-proof.md), `.github/workflows/ci.yml`; PR run `31626337428` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; production-configured release was skipped by disabled promotion flags | PASS |
 | C3 immutable artifact | Direct local qualification and reviewed workflow policy | `a5be590` plus final branch review; standalone package checksum/extraction pass, trusted push-main artifact waits for qualification and authenticated smoke, and deployment consumes that exact artifact | PASS for implementation; trusted CI execution and runtime promotion remain unproven |
 | V1 backend release | Isolated-development direct evidence | [`v1-dev-proof.md`](v1-dev-proof.md); `dev:hallowed-hummingbird-284` returned backend deployment and `v1` identity | PASS for isolated dev; production not executed |
 | V2 compatible promotion | Local implementation and synthetic endpoint/process tests | `379e8c6` plus final review remediation; verifier covers identity/readiness/TLS/listener/PM2 persistence, deploys from a durable release root, serializes promotion and limits automatic rollback to frontend promotion failures | PASS for implementation; production evidence missing |
@@ -94,12 +100,12 @@ still required before C2 can pass.
 - The Gate 0 deployment issue remains active because production coordinated
   release identity, listener/TLS/readiness, PM2 persistence and rollback
   evidence are not directly verified.
-- The authenticated browser issue is locally remediated: deterministic
+- The authenticated browser issue is remediated: deterministic
   release smoke, pre-dashboard durable cleanup ownership, exact empty-email
   recovery, teardown reauthentication, project-isolated fixture lifecycles,
   strict Convex test URL validation and fail-closed environment-scoped CI are
-  implemented. The replacement configured job has not yet supplied a green
-  current result.
+  implemented. Protected PR run `31626337428` passed both desktop and mobile
+  authenticated journeys with zero skips.
 - Production promotion is disabled by default. `PROMOTE_PRODUCTION`,
   `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` and `DEPLOY_CONVEX` remain unset;
   pushing or merging this branch does not authorize production mutation.
@@ -125,11 +131,10 @@ substitute those results.
 
 ## Final verdict
 
-Gate 0 engineering implementation and the final push-safety remediation are
-closed at the commit boundaries recorded in the execution log, but Gate 0
-promotion is **BLOCKED**. Gate 1 remains
+Gate 0 engineering implementation, authenticated CI qualification and the
+final push-safety remediation are closed at the commit boundaries recorded in
+the execution log, but Gate 0 production promotion is **BLOCKED**. Gate 1 remains
 blocked and unexposed until the missing direct evidence is obtained and the
 owner records the resulting approval. The next safe action is to run the
-protected qualification and authorized environment checks, append their
-redacted results to the Gate 0 log, then refresh this report; no production
+direct production/recovery/baseline evidence and owner approval; no production
 deployment is implied by this report.
