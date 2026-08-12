@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 6, 2026
+**Last Updated:** August 12, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -47,7 +47,7 @@ Update with Github issues on the parent repo
 **Status:** Gate 0 implementation packet complete; production qualification remains blocked
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. No production deployment, production identity query, HTTPS readiness check, PM2 reboot persistence check or provider restore was run.
+**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. The 2026-08-12 review found and fixed workflow ordering so rollback-candidate resolution/guard runs before optional Convex env sync/deploy; `bash scripts/tests/deploy-workflow.test.sh` passes. Owner-supplied production evidence is `https://cb.nakshatraneuratech.dev/api/health=200`, `/api/ready=404`, with an empty `/home/naki/cb-connect-releases`; production remains a pre-candidate and no production mutation or secret operation was run.
 **Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) is historical local evidence; [the V1 proof](docs/evidence/reliability-gate-0/v1-dev-proof.md) is isolated-dev evidence only; [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md) records the current blocked verdict.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 

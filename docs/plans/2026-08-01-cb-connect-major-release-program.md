@@ -44,7 +44,7 @@ for establishing.
 |---|---|---|---|
 | Continuous issue remediation | Active | Yes, for independently qualified fixes | Reproduction and acceptance evidence in `issues.md` |
 | Gate 0 reliability | Implementation packet closed; promotion report blocked | No local implementation task remains | Direct C2/production/X1/G2 evidence and an approved Gate 0 report |
-| Gate 1 cycle facts | Gate-level plan only; handoff inventory available | No | Approved Gate 0 report, D-008/D-009/D-010/D-012, then a dated execution plan |
+| Gate 1 cycle facts | Dated implementation plan and handoff available; execution blocked | No | Approved Gate 0 report; D-012 approval before destructive migration, hard deletion or production exposure |
 | Gate 2 four-phase semantics | Gate-level plan only | No | Post-Gate-1 state-contract execution plan |
 | Gate 3 prediction | Gate-level plan only | No | Frozen benchmark and calibration protocol |
 | Gate 4 notifications | Gate-level plan only | No | Approved event/privacy/retention execution plan |

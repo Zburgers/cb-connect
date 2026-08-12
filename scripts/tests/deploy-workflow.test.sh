@@ -83,6 +83,22 @@ if ! rg -q 'if \[\[ -s "\$env_file" \]\]; then' "$workflow"; then
   exit 1
 fi
 
+# The rollback safety precondition must fail before either Convex mutation. A
+# missing durable `current` pointer is the expected first-promotion failure
+# when the explicit override is unset; it must not partially deploy backend
+# code or runtime secrets before failing.
+rollback_guard_line="$(rg -n '^      - name: Validate rollback safety precondition$' "$workflow" | cut -d: -f1)"
+if [[ -z "$rollback_guard_line" ]]; then
+  echo "deploy workflow is missing the rollback safety precondition step" >&2
+  exit 1
+fi
+while IFS=: read -r mutation_line mutation_text; do
+  if [[ "$mutation_line" -le "$rollback_guard_line" ]]; then
+    echo "Convex mutation appears before rollback safety precondition: $mutation_text" >&2
+    exit 1
+  fi
+done < <(rg -n 'npx convex (env set|deploy)\b' "$workflow")
+
 # `current` deliberately targets the extracted server directory because PM2
 # starts from it. The manifest is one parent directory above; this contract
 # catches a rollback resolver that accidentally looks beside `server.js`.

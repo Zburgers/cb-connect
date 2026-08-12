@@ -22,11 +22,11 @@ Engineering must not invent names, credentials, jurisdictions, legal conclusions
 | D-005 | Clerk test-user provisioning, rate-limit-safe cleanup and artifact-redaction method | Engineering and Clerk environment owner | Gate 0 authenticated fixture tasks | Resolved 2026-08-05 | Fixture proposal approved with seven-day restricted failure artifacts |
 | D-006 | Critical-journey SLI definitions, baseline window, approved SLOs and error-budget policy | Engineering proposes; operator/product approve | Gate 0 exit | Resolved 2026-08-05 | Definitions, targets and response policy are documented; the required 28-day baseline remains not measured |
 | D-007 | Backup/restore owner, approved non-production restore target and RPO/RTO objectives | Operator and product owner | Gate 0 recovery rehearsal and exit | Resolved 2026-08-05 | Sole owner; isolated dev target; RPO 24h and RTO 4h approved |
-| D-008 | User timezone source, default, change behavior and authoritative definition of user-local “today” | Product and engineering; privacy reviews private context | Gate 1 date invariants and replacement of PR #8's UTC fallback | Engineering proposal required | Must precede user-local future-date validation |
-| D-009 | Exact observation certainty, provenance, confirmation and `legacy_unknown` schema/mapping | Product, engineering and privacy | Gate 1 schema/migration | Engineering proposal required | — |
-| D-010 | Treatment of suspected auto-ended, duplicate, overlapping and ambiguous legacy rows | Product, engineering, privacy/legal | Gate 1 production migration | Required input after aggregate audit | Never fabricate confirmation or delete history silently |
+| D-008 | User timezone source, default, change behavior and authoritative definition of user-local “today” | Product and engineering; privacy reviews private context | Gate 1 date invariants and replacement of PR #8's UTC fallback | Resolved 2026-08-12 | Device-local IANA timezone is authoritative for user-facing dates; validate and normalize consistently; no silent UTC fallback for an identified user |
+| D-009 | Exact observation certainty, provenance, confirmation and `legacy_unknown` schema/mapping | Product, engineering and privacy | Gate 1 schema/migration | Resolved 2026-08-12 | Partner assistance is accepted immediately; primary user's later correction/deletion is authoritative; approximate dates remain explicit approximate facts and never become exact implicitly |
+| D-010 | Treatment of suspected auto-ended, duplicate, overlapping and ambiguous legacy rows | Product, engineering, privacy/legal | Gate 1 production migration | Resolved 2026-08-12 for conservative policy; aggregate audit still required | Preserve ambiguous rows as explicit `legacy_unknown`; exclude them from high-confidence facts/prediction until corrected; never fabricate confirmation or delete history silently |
 | D-011 | Clinical/content reviewer and approval process for phase, Late and relationship-guidance copy | Product owner and qualified reviewer | Gate 2 pilot exposure | Required input | — |
-| D-012 | Data retention/deletion rules for users, couples, messages, notifications, snapshots and research artifacts | Privacy/legal and product owner | Gates 1, 4, 6 and Research 7 | Required input | Include Clerk `user.deleted` workflow |
+| D-012 | Data retention/deletion rules for users, couples, messages, notifications, snapshots and research artifacts | Privacy/legal and product owner | Gates 1, 4, 6 and Research 7 | Required input | Safe proposal: retain user-visible cycle history until explicit primary deletion; preserve only minimum redacted audit evidence for a bounded period; block destructive migration and final durations pending owner/privacy confirmation; include Clerk `user.deleted` workflow |
 | D-013 | Prediction benchmark dataset authority, consent basis, calibration split and preregistration approver | Product, privacy and engineering/statistical reviewer | Gate 3 benchmark/promotion | Deferred until Gate 2 evidence | Criteria may not be loosened after results |
 | D-014 | Apple, Google and EAS account ownership, bundle/package IDs, signing recovery and supported OS matrix | Mobile release owner/product | Gates 5-6 | Deferred until Gate 4 evidence | — |
 | D-015 | Pilot cohort sizes, staffing, observation windows and staged rollout percentages | Product owner and operator | Pilot/store promotion in Gates 2-6 | Required input before affected pilot | — |
@@ -105,6 +105,46 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Applies from commit/deployment: Gate 0 X1 rehearsal only; never production restoration.
 - Evidence or runbook: `docs/reliability/gate-0-measurement-plan.md` and the future backup/restore runbook.
 - Review/expiry date: Revalidate immediately before X1 and every restore rehearsal.
+
+## D-008 — Device-local timezone authority
+
+- Decision: The device-reported IANA timezone is authoritative for user-facing calendar dates. The client sends the current device timezone with date-bearing writes and the backend validates it before comparing dates; stored timezone is updated when the device timezone changes. Date-only values remain `YYYY-MM-DD` calendar values and are never converted through server-local time. An identified user must not silently fall back to UTC; missing or invalid device timezone fails closed until the client supplies a valid IANA zone.
+- Alternatives considered: Backend UTC, runner timezone and browser locale strings were rejected because they can shift a user's calendar date or vary by execution environment.
+- Approver and authority: Sole project owner, approved directly in the coordinating conversation.
+- Approved on: 2026-08-12.
+- Applies from commit/deployment: Gate 1 additive timezone contract; no production behavior changes until Gate 0 approval and the dated plan entry criteria are met.
+- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md` and `convex/_helpers/calendarDates.ts` tests.
+- Review/expiry date: Revalidate on client platform/timezone-library changes or 2026-11-12, whichever comes first.
+
+## D-009 — Observation certainty, provenance and primary autonomy
+
+- Decision: Every new period fact records actor/source and explicit certainty for start and end. Exact and approximate dates are both allowed, but approximate values remain approximate facts and are never silently promoted to exact. Partner-assisted entries are accepted immediately for the primary user's history and may be shown as accepted assistance; the menstruating/primary user's later correction or deletion always wins. Partner assistance cannot prevent primary correction/deletion and does not override primary privacy/revocation controls.
+- Alternatives considered: Treating partner assistance as pending until primary confirmation was rejected by the owner; silently treating approximate input as exact was rejected because it pollutes later reliability and prediction work.
+- Approver and authority: Sole project owner, approved directly in the coordinating conversation.
+- Approved on: 2026-08-12.
+- Applies from commit/deployment: Gate 1 additive schema and write path; pending Gate 0 approval and retention decision.
+- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`.
+- Review/expiry date: Revalidate before Gate 2 prediction/phase exposure or 2026-11-12, whichever comes first.
+
+## D-010 — Conservative legacy compatibility
+
+- Decision: Legacy rows are never rewritten into certainty that the old data cannot prove. Rows with missing provenance, system-inferred endings, duplicate/overlap ambiguity or uncertain closure receive explicit `legacy_unknown` compatibility metadata, remain readable, and are excluded from high-confidence cycle facts and prediction/evaluation inputs until a primary correction establishes current truth. The aggregate audit determines counts and migration scope; it does not expose raw histories or delete rows.
+- Alternatives considered: Deleting ambiguous rows, choosing the newest duplicate as truth, and labeling inferred endings confirmed were rejected because each can break history or fabricate health facts.
+- Approver and authority: Sole project owner, approved directly in the coordinating conversation; privacy/retention authority remains required for destructive lifecycle actions.
+- Approved on: 2026-08-12.
+- Applies from commit/deployment: Gate 1 audit/migration only after approved Gate 0 report, retention decision and recovery boundary.
+- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md` and the planned aggregate audit/migration evidence.
+- Review/expiry date: Revalidate after the aggregate audit and before any protected migration.
+
+## D-012 — Retention proposal pending explicit authority
+
+- Decision: Proposed safe default is to retain user-visible cycle history until the primary user explicitly deletes it, preserve only minimum redacted aggregate/audit evidence for a bounded period, and block destructive migration, hard deletion of legacy rows and final retention-duration claims until the owner and privacy authority confirm the policy. Account deletion must be wired to the approved Clerk deletion event once the lifecycle policy is resolved.
+- Alternatives considered: Automatic deletion on age alone and irreversible legacy cleanup were rejected while the owner has not confirmed retention duration, deletion scope or legal basis.
+- Approver and authority: Proposal drafted by engineering on 2026-08-12; explicit owner/privacy confirmation is still required.
+- Approved on: Pending.
+- Applies from commit/deployment: After Gate 0 approval, additive schema/helpers/tests and non-destructive compatibility are allowed; no hard deletion, destructive migration or production exposure is authorized until this decision is approved.
+- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`.
+- Review/expiry date: Must be resolved before Gate 1 migration or any deletion behavior is enabled.
 
 ## Resolution format
 

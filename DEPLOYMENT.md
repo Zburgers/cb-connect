@@ -34,7 +34,10 @@ The deployment workflow runs only after that whole `CI` workflow succeeds. It
 rejects superseded commits, downloads the C3 artifact by the completed CI run
 ID, and verifies its checksum, commit SHA, CI build ID and approved `v1`
 compatibility identity before any production change. It does not rebuild or
-repackage the frontend on the self-hosted runner.
+repackage the frontend on the self-hosted runner. It resolves and validates
+the durable rollback candidate immediately after artifact materialization and
+fails closed before any optional Convex runtime-secret sync or Convex deploy
+when no candidate exists and the first-promotion override is unset.
 
 Production promotion is disabled by default even for a successful `main` CI
 run. An operator must set the repository Actions variable

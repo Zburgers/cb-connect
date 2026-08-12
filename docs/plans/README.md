@@ -22,7 +22,7 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
 | 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Approved Gate 0 report backed by direct CI, production, recovery and baseline evidence | Implementation packet closed; promotion blocked |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) | Approved Gate 0 report | Gate-level only; not plan-ready |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [dated plan](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md) | Approved Gate 0 report; D-012 approval is required for destructive migration, hard deletion and production exposure | Dated implementation plan exists; execution awaits Gate 0 approval, then additive work may proceed while destructive work remains blocked |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
@@ -47,7 +47,10 @@ external evidence and authorization, in this order:
    integrity and RPO/RTO results, then collect the 28-day allowlisted SLO
    baseline.
 4. Refresh the Gate 0 report and obtain an explicit approval. Until then, do
-   not expose Gate 1 or write its dated execution plan.
+   not expose or execute Gate 1. Its dated plan may be reviewed, but it is
+   not an authorization to mutate code or data. After Gate 0 approval, safe
+   additive helpers/schema/tests may proceed; D-012 still blocks destructive
+   migration, hard deletion and production exposure.
 
 ## Gate 0 closeout
 
@@ -57,7 +60,7 @@ V1 isolated-dev identity, V2 implementation and X1 guardrails have passing
 local or synthetic evidence. A current C2 secret-backed CI result, production
 V1/V2 runtime evidence, measured X1 restore objectives and the G2 baseline
 are not available; therefore the Gate 0 report is explicitly **BLOCKED** and
-Gate 1 must remain unexposed.
+Gate 1 must remain unexposed and its feature flag must remain off.
 
 ## Planning policy
 

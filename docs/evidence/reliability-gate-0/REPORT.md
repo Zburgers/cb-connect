@@ -10,6 +10,31 @@ boundary. It does not claim that Gate 0 production qualification passed. No
 production deployment, production Convex mutation, production fixture or
 production restore was performed.
 
+## 2026-08-12 environment verification
+
+The release operator confirmed the intended targets, and read-only GitHub and
+production checks verified the following without printing secret values:
+
+- Intended production Convex selector: `prod:festive-malamute-715`.
+- Production HTTPS base URL: `https://cb.nakshatraneuratech.dev`.
+- Deployment path: the existing PM2 GitHub Actions workflow.
+- The `cb-connect-auth-test` environment contains the seven expected
+  Clerk/Convex test secret names. Repository and production-environment
+  configuration contains the expected production secret/variable names.
+- `PROMOTE_PRODUCTION`, `DEPLOY_CONVEX` and
+  `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` are unset.
+- `/home/naki/cb-connect-releases` exists but is empty, so there is no durable
+  verified rollback candidate.
+- Current production `/api/health` is `200`; `/api/ready` is `404`. Production
+  is therefore a pre-candidate runtime, not a qualified Gate 0 release.
+
+Environment-scoped CI and production verification were authorized by the owner, but no
+deployment or production-secret operation is performed in this local audit.
+The workflow guard remediation in this branch now resolves and validates the
+rollback candidate before any optional Convex runtime-secret sync or Convex
+deploy. With the empty release root and no override, the job fails before any
+Convex mutation.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |
