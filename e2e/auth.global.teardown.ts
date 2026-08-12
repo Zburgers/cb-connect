@@ -1,4 +1,8 @@
 import { chromium, type Page } from "@playwright/test";
+import {
+  clerk,
+  clerkSetup,
+} from "@clerk/testing/playwright";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import {
@@ -43,6 +47,7 @@ async function convexAuthToken(page: Page): Promise<string> {
 
 export default async function globalTeardown() {
   const environment = loadAuthEnvironment();
+  let teardownStage = "manifest-read";
   let manifestText: string;
   try {
     manifestText = await readFile(
@@ -75,6 +80,13 @@ export default async function globalTeardown() {
     },
   };
   const clerkServices = createClerkFixtureServices(environment);
+  process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
+  teardownStage = "clerk-testing";
+  await clerkSetup({
+    frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
+  });
+  teardownStage = "browser-launch";
   const browser = await chromium.launch({
     ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
       ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
@@ -82,12 +94,25 @@ export default async function globalTeardown() {
   });
   const context = await browser.newContext({
     baseURL: environment.baseUrl,
-    storageState: environment.primaryStorageStatePath,
   });
   const page = await context.newPage();
   try {
-    await page.goto(`${environment.baseUrl}/dashboard`);
+    teardownStage = "primary-sign-in";
+    await page.goto(`${environment.baseUrl}/`);
+    await clerk.signIn({
+      page,
+      emailAddress: `cb-connect-e2e+${pair.runId}-primary@example.com`,
+      setupClerkTestingTokenOptions: {
+        frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
+      },
+    });
+    teardownStage = "primary-token";
     const authToken = await convexAuthToken(page);
+    // Stop the app before deleting rows so its reactive ensureUser call cannot
+    // recreate the authenticated primary during the cleanup/status interval.
+    await context.close();
+    await browser.close();
+    teardownStage = "fixture-cleanup";
     const result = await cleanupFixturePair(
       pair,
       {
@@ -98,8 +123,12 @@ export default async function globalTeardown() {
       { maxAttempts: 3 },
     );
     if (!result.ok) {
+      console.error(
+        `authenticated_fixture_cleanup_errors:${result.errors.join(",") || "unknown"}`,
+      );
       throw new Error("authenticated_fixture_cleanup_failed");
     }
+    teardownStage = "zero-status";
     const status = await getConvexFixtureCleanupStatus(
       environment,
       pair,
@@ -108,6 +137,7 @@ export default async function globalTeardown() {
     if (status.remaining) {
       throw new Error("authenticated_fixture_cleanup_failed");
     }
+    teardownStage = "evidence-write";
     const evidenceDirectory = "docs/evidence/reliability-gate-0";
     await mkdir(evidenceDirectory, { recursive: true });
     await writeFile(
@@ -126,10 +156,10 @@ export default async function globalTeardown() {
       ].join("\n"),
       { encoding: "utf8", mode: 0o600 },
     );
-    await context.close();
-    await browser.close();
+    teardownStage = "auth-artifact-remove";
     await rm(environment.storageDir, { recursive: true, force: true });
   } catch {
+    console.error(`authenticated_fixture_teardown_stage:${teardownStage}`);
     await context.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
     throw new Error("authenticated_fixture_cleanup_failed");

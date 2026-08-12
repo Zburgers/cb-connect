@@ -57,13 +57,27 @@ load, role selection, date entry, submit and redirect without retaining user
 or health data. This failed run is evidence that the gate fails closed, not a
 C2 pass.
 
+PR run `31623624502` passed deterministic qualification and reached
+`primary-register`, where exact fixture ownership rejected the partially
+materialized partner row with `fixture_cleanup_identity_mismatch`; browser
+journey tests did not begin. Isolated reproduction identified two harness
+defects: Clerk can create the linked partner with an empty Convex email before
+partner registration, and teardown could keep the app alive long enough for
+`ensureUser` to recreate the primary during cleanup. The branch now accepts
+an empty email only for an exact Clerk ID bound to the authenticated durable
+fixture run, reauthenticates the exact deterministic primary for teardown,
+closes the app before cascading data, and provisions a distinct fixture run
+per Playwright project. Fresh isolated-dev desktop and mobile lifecycles each
+passed 1/1 with zero skips and `remaining=false`. A replacement PR run is
+still required before C2 can pass.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |
 |---|---|---|---|
 | G1 dependency remediation | Direct local qualification | `6509bbf`, `3a64142`, `bb30aeb`, `e26afb4`; `npm audit --omit=dev` reports 0 vulnerabilities | PASS |
 | C1 local qualification | Direct local qualification | [`c1-local-proof.md`](c1-local-proof.md); build, typecheck, 18 files/101 tests and full production audit pass in the final review tree | PASS |
-| C2 authenticated release smoke | Environment-scoped CI configured; latest execution not available | `e6ea11c`, `.github/workflows/ci.yml`; GitHub environment `cb-connect-auth-test` now contains the approved seven test configuration names. The prior isolated-dev E3 proof is not a post-review CI result | BLOCKED for direct current qualification |
+| C2 authenticated release smoke | Current isolated-dev direct evidence; replacement CI pending | [`e3-live-proof.md`](e3-live-proof.md), [`e2-live-proof.md`](e2-live-proof.md), `.github/workflows/ci.yml`; desktop and mobile each passed in independent fixture lifecycles with zero residue. PR run `31623624502` predates the remediation and failed at `primary-register` | BLOCKED pending a green current PR run |
 | C3 immutable artifact | Direct local qualification and reviewed workflow policy | `a5be590` plus final branch review; standalone package checksum/extraction pass, trusted push-main artifact waits for qualification and authenticated smoke, and deployment consumes that exact artifact | PASS for implementation; trusted CI execution and runtime promotion remain unproven |
 | V1 backend release | Isolated-development direct evidence | [`v1-dev-proof.md`](v1-dev-proof.md); `dev:hallowed-hummingbird-284` returned backend deployment and `v1` identity | PASS for isolated dev; production not executed |
 | V2 compatible promotion | Local implementation and synthetic endpoint/process tests | `379e8c6` plus final review remediation; verifier covers identity/readiness/TLS/listener/PM2 persistence, deploys from a durable release root, serializes promotion and limits automatic rollback to frontend promotion failures | PASS for implementation; production evidence missing |
@@ -80,10 +94,12 @@ C2 pass.
 - The Gate 0 deployment issue remains active because production coordinated
   release identity, listener/TLS/readiness, PM2 persistence and rollback
   evidence are not directly verified.
-- The authenticated browser issue is partially remediated: deterministic
-  release smoke, pre-dashboard durable cleanup ownership, strict Convex test
-  URL validation and fail-closed environment-scoped CI are implemented. The
-  configured job has not supplied a current post-review result.
+- The authenticated browser issue is locally remediated: deterministic
+  release smoke, pre-dashboard durable cleanup ownership, exact empty-email
+  recovery, teardown reauthentication, project-isolated fixture lifecycles,
+  strict Convex test URL validation and fail-closed environment-scoped CI are
+  implemented. The replacement configured job has not yet supplied a green
+  current result.
 - Production promotion is disabled by default. `PROMOTE_PRODUCTION`,
   `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` and `DEPLOY_CONVEX` remain unset;
   pushing or merging this branch does not authorize production mutation.

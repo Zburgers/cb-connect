@@ -187,7 +187,10 @@ describe("bounded fixture cleanup", () => {
     await t.run(async (ctx) => {
       const partnerId = await ctx.db.insert("users", {
         clerkId: fixtureArgs.partnerClerkId,
-        email: "cb-connect-e2e+run-fixture-cleanup-partner@example.com",
+        // Clerk's Convex JWT does not always include an email claim, so the
+        // dashboard can create the partner before fixture registration with
+        // an empty stored email.
+        email: "",
         name: "Fixture Partner",
         role: "partner",
         createdAt: Date.now(),
@@ -265,7 +268,7 @@ describe("bounded fixture cleanup", () => {
     await t.run(async (ctx) => {
       const primaryId = await ctx.db.insert("users", {
         clerkId: fixtureArgs.primaryClerkId,
-        email: "cb-connect-e2e+run-fixture-cleanup-primary@example.com",
+        email: "",
         name: "Fixture Primary",
         role: "primary",
         createdAt: Date.now(),

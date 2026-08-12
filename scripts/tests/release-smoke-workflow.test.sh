@@ -18,7 +18,8 @@ required_patterns=(
   'CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}'
   'CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}'
   'NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}'
-  'npx playwright test e2e/release-smoke.spec.ts --project=release-desktop --project=release-mobile'
+  'for project in release-desktop release-mobile'
+  'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test e2e/release-smoke.spec.ts --project="$project"'
   'sudo apt-get update && sudo apt-get install --yes ripgrep'
   'bash scripts/redact-release-artifacts.sh'
   'retention-days: 7'
@@ -30,6 +31,22 @@ for pattern in "${required_patterns[@]}"; do
     exit 1
   fi
 done
+
+if rg -q -- '--project=release-desktop --project=release-mobile' "$workflow"; then
+  echo "authenticated smoke must provision and tear down a distinct fixture run per browser project" >&2
+  exit 1
+fi
+
+if ! rg -Fq 'await clerkSetup({' e2e/auth.global.teardown.ts; then
+  echo "authenticated teardown must initialize the approved Clerk testing handshake" >&2
+  exit 1
+fi
+
+if ! rg -Fq 'await clerk.signIn({' e2e/auth.global.teardown.ts ||
+   ! rg -Fq 'cb-connect-e2e+${pair.runId}-primary@example.com' e2e/auth.global.teardown.ts; then
+  echo "authenticated teardown must reauthenticate the exact deterministic primary fixture" >&2
+  exit 1
+fi
 
 if rg -n 'continue-on-error:[[:space:]]*true|--pass-with-no-tests|test\.skip' "$workflow"; then
   echo "authenticated smoke must fail closed; skips and pass-with-no-tests are not allowed" >&2

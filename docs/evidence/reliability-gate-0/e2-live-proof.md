@@ -1,6 +1,6 @@
 # E2 live teardown proof
 
-- Recorded: 2026-08-05T21:29:52.775Z
+- Recorded: 2026-08-12T18:08:07.894Z
 - Clerk target: approved holy clerk development instance
 - Convex target: dev:hallowed-hummingbird-284
 - Cleanup result: application cascade completed

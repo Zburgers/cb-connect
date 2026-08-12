@@ -288,7 +288,7 @@ async function loadFixtureRecords(
     // deterministic email still make it safe to recover.
     if (
       (user.fixtureRunId !== undefined && user.fixtureRunId !== args.runId) ||
-      user.email !== expectedEmail
+      (user.email !== "" && user.email !== expectedEmail)
     ) {
       throw new Error("fixture_cleanup_identity_mismatch");
     }
@@ -596,12 +596,21 @@ export const registerFixtureUser = mutation({
       ]);
       for (const member of members) {
         const memberUser = await ctx.db.get("users", member.userId);
+        const expectedMemberEmail =
+          `cb-connect-e2e+${args.runId}-${member.role}@example.com`;
+        const hasExpectedMemberEmail =
+          memberUser?.email === expectedMemberEmail ||
+          // Primary registration runs first so it can bind the couple to the
+          // durable fixture run. The partner may still have the empty email
+          // written by ensureUser when Clerk omits email from the Convex JWT;
+          // partner registration authenticates that exact Clerk subject and
+          // fills the deterministic email immediately afterwards.
+          (member.role === "partner" && memberUser?.email === "");
         if (
           !memberUser ||
           memberUser.clerkId !== expectedByRole.get(member.role) ||
           memberUser.role !== member.role ||
-          memberUser.email !==
-            `cb-connect-e2e+${args.runId}-${member.role}@example.com`
+          !hasExpectedMemberEmail
         ) {
           throw new Error("fixture_cleanup_identity_mismatch");
         }

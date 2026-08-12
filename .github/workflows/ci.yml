@@ -104,11 +104,21 @@ jobs:
         shell: bash
         run: |
           set +e
-          npx playwright test e2e/release-smoke.spec.ts --project=release-desktop --project=release-mobile 2>&1 | tee "$RUNNER_TEMP/cb-connect-release-smoke.log"
-          status=${PIPESTATUS[0]}
-          if (( status == 0 )) && rg -q '[1-9][0-9]* skipped' "$RUNNER_TEMP/cb-connect-release-smoke.log"; then
-            status=1
-          fi
+          base_run_id="$CB_CONNECT_RELEASE_RUN_ID"
+          status=0
+          : > "$RUNNER_TEMP/cb-connect-release-smoke.log"
+          for project in release-desktop release-mobile; do
+            project_log="$RUNNER_TEMP/cb-connect-release-smoke-${project}.log"
+            CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test e2e/release-smoke.spec.ts --project="$project" 2>&1 | tee "$project_log" | tee -a "$RUNNER_TEMP/cb-connect-release-smoke.log"
+            project_status=${PIPESTATUS[0]}
+            if (( project_status == 0 )) && rg -q '[1-9][0-9]* skipped' "$project_log"; then
+              project_status=1
+            fi
+            if (( project_status != 0 )); then
+              status="$project_status"
+              break
+            fi
+          done
           printf '%s\n' "$status" > "$RUNNER_TEMP/cb-connect-release-smoke.status"
           exit "$status"
 
