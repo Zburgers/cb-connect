@@ -42,6 +42,12 @@ those expressions with runtime UTC timestamps and step-level `$RUNNER_TEMP`
 setup. Official `actionlint` 1.7.12 and repository workflow policy tests pass
 on the corrected files; a successful GitHub run is still required.
 
+The corrected PR run `31622741248` passed deterministic qualification but the
+authenticated job stopped at its policy step because `rg` was absent from the
+hosted runner. All seven environment secret names were present and redacted;
+the browser smoke did not run. The follow-up explicitly installs `ripgrep`
+before policy validation and smoke execution. This run is not C2 evidence.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |

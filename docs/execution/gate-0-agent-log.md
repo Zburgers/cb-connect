@@ -564,3 +564,18 @@
 - Decisions made: Release timestamps are generated at the executing job/step boundary rather than represented by a nonexistent GitHub context. Auth artifacts use `$RUNNER_TEMP` only after runner allocation. Production opt-ins and first-promotion override remain unset.
 - Unresolved blockers: PR #17 still needs a successful corrected deterministic qualification and environment-scoped authenticated smoke. All previously recorded production, restore and baseline blockers remain.
 - Exact next safe action: Commit and push the workflow-context remediation, observe the new PR checks, and investigate any actual job failure without enabling production promotion.
+
+---
+
+- Timestamp: 2026-08-12T23:00:44+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 C2 hosted-runner tool remediation; PR #17 qualification
+- Starting commit: `ab66f08`
+- Ending commit: `ab66f08` with this follow-up uncommitted before the next focused commit
+- Work performed: Observed PR run `31622741248` pass deterministic qualification and start the environment-scoped authenticated job. The job received all seven redacted environment values, installed Chromium, then failed before browser execution because `scripts/tests/release-smoke-workflow.test.sh` invokes `rg` and the hosted image did not provide it. Added an explicit `ripgrep` installation before policy validation and required that step in repository policy.
+- Files changed: `.github/workflows/ci.yml`; `scripts/tests/release-smoke-workflow.test.sh`; `docs/evidence/reliability-gate-0/REPORT.md`; this append-only log
+- Commands and outcomes: GitHub deterministic qualification passed build, post-build typecheck, 18 files/101 unit tests and production audit. Authenticated policy step failed with `rg: command not found`; smoke was skipped; the redacted failure artifact path ran. No credential value appeared in retained output.
+- Convex deployment class and status: none; browser setup/application flow did not execute and no Convex or production mutation occurred
+- Decisions made: Treat `ripgrep` as an explicit CI dependency because fail-closed policy and zero-skip checks require it; do not weaken or remove those checks.
+- Unresolved blockers: A successful authenticated browser smoke remains absent; all production/recovery/baseline blockers remain.
+- Exact next safe action: Commit/push the explicit tool setup and observe the replacement PR run through the real browser journey.

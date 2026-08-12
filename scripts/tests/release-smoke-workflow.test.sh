@@ -19,6 +19,7 @@ required_patterns=(
   'CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}'
   'NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}'
   'npx playwright test e2e/release-smoke.spec.ts --project=release-desktop --project=release-mobile'
+  'sudo apt-get update && sudo apt-get install --yes ripgrep'
   'bash scripts/redact-release-artifacts.sh'
   'retention-days: 7'
 )
