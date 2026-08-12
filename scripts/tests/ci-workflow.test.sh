@@ -83,4 +83,19 @@ if rg -n 'continue-on-error:[[:space:]]*true' "$workflow"; then
   exit 1
 fi
 
+if rg -q 'github\.run_started_at|CB_CONNECT_RELEASE_AUTH_DIR:[[:space:]]*\$\{\{ runner\.temp \}\}' .github/workflows/ci.yml .github/workflows/deploy.yml; then
+  echo "workflow uses a GitHub context that is invalid at workflow/job evaluation time" >&2
+  exit 1
+fi
+
+for pattern in \
+  'Record qualification build timestamp' \
+  'Record release build timestamp' \
+  'Configure isolated auth artifact directory'; do
+  if ! rg -q "$pattern" "$workflow"; then
+    echo "CI workflow is missing runtime environment setup: $pattern" >&2
+    exit 1
+  fi
+done
+
 echo "CI qualification and trusted-artifact workflow policy: PASS"

@@ -549,3 +549,18 @@
 - Decisions made: D-008 device-local IANA authority, D-009 accepted partner assistance with primary autonomy, D-010 conservative `legacy_unknown` compatibility and the non-destructive D-012 proposal are implementation-plan inputs. Approximate facts retain the user-selected calendar date plus explicit uncertainty and no inferred hidden date range. D-012 blocks destructive migration, hard deletion and production exposure, but not safe additive work after Gate 0 approval. The first-promotion override remains prohibited/unset.
 - Unresolved blockers: A current PR authenticated-smoke result is still absent. Production remains pre-candidate (`/api/health` 200, `/api/ready` 404), the durable release root is empty, and production V1/V2 identity/readiness/PM2, measured synthetic restore and 28-day SLO evidence remain absent. D-012 final retention duration/scope remains pending. Main branch protection is absent and is not changed by this work.
 - Exact next safe action: Commit and push the reviewed branch, open a PR to obtain the environment-scoped authenticated-smoke result, and keep all production opt-ins unset. Review that CI evidence before merge. Do not claim Gate 0 production qualification or enable Gate 1 from a PR pass alone.
+
+---
+
+- Timestamp: 2026-08-12T22:56:48+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 C2 GitHub workflow startup remediation; PR #17 qualification
+- Starting commit: `c474a30`
+- Ending commit: `c474a30` with this follow-up uncommitted before the next focused commit
+- Work performed: Opened PR #17 and observed GitHub Actions run `31622393885` fail before creating jobs. Used official `actionlint` 1.7.12 to identify invalid workflow contexts: nonexistent `github.run_started_at` in CI/deploy metadata and `runner.temp` in job-level environment evaluation. Replaced them with shell-generated UTC timestamps written through `GITHUB_ENV` and step-level `$RUNNER_TEMP` setup. Added repository policy assertions preventing recurrence.
+- Files changed: `.github/workflows/ci.yml`; `.github/workflows/deploy.yml`; `scripts/tests/ci-workflow.test.sh`; `scripts/tests/deploy-workflow.test.sh`; `docs/evidence/reliability-gate-0/REPORT.md`; this append-only log
+- Commands and outcomes: Official `actionlint` 1.7.12 passed both workflow files; CI, deploy and release-smoke policy tests passed; `npm run typecheck` passed; `npm run test:unit -- --run` passed 18 files/101 tests; `git diff --check` passed. Failed GitHub run `31622393885` had zero jobs/logs and therefore supplied no qualification evidence.
+- Convex deployment class and status: none; the failed workflow created no jobs and no Convex, PM2 or production operation occurred
+- Decisions made: Release timestamps are generated at the executing job/step boundary rather than represented by a nonexistent GitHub context. Auth artifacts use `$RUNNER_TEMP` only after runner allocation. Production opt-ins and first-promotion override remain unset.
+- Unresolved blockers: PR #17 still needs a successful corrected deterministic qualification and environment-scoped authenticated smoke. All previously recorded production, restore and baseline blockers remain.
+- Exact next safe action: Commit and push the workflow-context remediation, observe the new PR checks, and investigate any actual job failure without enabling production promotion.

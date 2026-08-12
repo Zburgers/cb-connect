@@ -35,6 +35,13 @@ rollback candidate before any optional Convex runtime-secret sync or Convex
 deploy. With the empty release root and no override, the job fails before any
 Convex mutation.
 
+PR #17's first push at `c474a30` was rejected before job creation because the
+workflow referenced nonexistent `github.run_started_at` values and used
+`runner.temp` in job-level environment evaluation. The follow-up replaces
+those expressions with runtime UTC timestamps and step-level `$RUNNER_TEMP`
+setup. Official `actionlint` 1.7.12 and repository workflow policy tests pass
+on the corrected files; a successful GitHub run is still required.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |

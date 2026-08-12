@@ -212,6 +212,10 @@ jobs:
         if: vars.DEPLOY_CONVEX == 'true'
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Record backend deployment timestamp
+        if: vars.DEPLOY_CONVEX == 'true'
+        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       - name: Sync Convex runtime secrets
         if: vars.DEPLOY_CONVEX == 'true'
         env:
@@ -219,7 +223,6 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
           CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
-          CB_CONNECT_BACKEND_DEPLOYED_AT: ${{ github.run_started_at }}
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

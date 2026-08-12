@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Record qualification build timestamp
+        run: printf 'CB_CONNECT_BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       - name: Build application
         run: npm run build
         env:
@@ -40,7 +43,6 @@ jobs:
           CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
           CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
           CB_CONNECT_COMPATIBILITY_VERSION: v1
-          CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
 
       - name: Post-build typecheck
         run: npm run typecheck
@@ -66,12 +68,14 @@ jobs:
       NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
       NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
       CB_CONNECT_RELEASE_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-      CB_CONNECT_RELEASE_AUTH_DIR: ${{ runner.temp }}/cb-connect-release-auth
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Configure isolated auth artifact directory
+        run: printf 'CB_CONNECT_RELEASE_AUTH_DIR=%s/cb-connect-release-auth\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -137,7 +141,6 @@ jobs:
       CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
       CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
       CB_CONNECT_COMPATIBILITY_VERSION: v1
-      CB_CONNECT_BUILT_AT: ${{ github.run_started_at }}
 
     steps:
       - name: Checkout code
@@ -156,6 +159,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Record release build timestamp
+        run: printf 'CB_CONNECT_BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Validate production public build configuration
         run: |
