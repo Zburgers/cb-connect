@@ -23,6 +23,8 @@ required_patterns=(
   'name: Production-configured immutable release'
   'name: Validate production public build configuration'
   'name: Build the production-configured release artifact'
+  'name: Smoke packaged standalone runtime'
+  'run: bash scripts/tests/standalone-runtime.test.sh'
   'name: Upload immutable standalone release'
   'name: cb-connect-release-\$\{\{ github\.sha \}\}'
 )

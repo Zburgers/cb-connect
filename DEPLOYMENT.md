@@ -100,6 +100,7 @@ npm run typecheck
 npm run test:unit -- --run
 npm audit --omit=dev
 bash scripts/tests/package-release.test.sh
+bash scripts/tests/standalone-runtime.test.sh
 bash scripts/tests/pm2-config.test.sh
 bash scripts/tests/verify-release.test.sh
 bash scripts/tests/rehearse-rollback.test.sh
@@ -107,9 +108,17 @@ git diff --check
 ```
 
 The authenticated release smoke must run only through its approved
-secret-backed fixture environment. Missing fixture configuration is a failure,
-not a reason to add static credentials, reuse production accounts, or skip the
-test.
+secret-backed fixture environment and its dedicated configuration:
+
+```bash
+npm run test:e2e:release -- e2e/release-smoke.spec.ts --project=release-desktop
+npm run test:e2e:release -- e2e/release-smoke.spec.ts --project=release-mobile
+```
+
+Missing fixture configuration is a failure, not a reason to add static
+credentials, reuse production accounts, or skip the test. Ordinary
+`npm run test:e2e` uses the default non-release Playwright configuration and
+does not provision Gate 0 fixture users.
 
 ## Promotion, rollback and recovery
 

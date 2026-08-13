@@ -597,6 +597,115 @@ There are two onboarding implementations: `/onboarding` handles role selection p
 - Reduce Convex function calls
 - Implement pagination for historical data
 
+### Gate 0 health and readiness endpoints appeared duplicative
+**Priority:** High
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `docs/plans/2026-08-04-00-production-reliability-execution.md`, `app/api/health/route.ts`, `app/api/ready/route.ts`, `scripts/verify-release.sh`
+
+The two endpoints are intentionally separate contracts, not duplicate handlers:
+`/api/health` is process liveness and must remain independent of Clerk, Convex
+and compatibility state; `/api/ready` is bounded release readiness and may
+return 503 when backend, metadata or compatibility checks fail. The Gate 0
+plan explicitly assigns separate I3/I4 tasks, and the release verifier checks
+both contracts. Collapsing them would make restart/process failures and
+dependency/compatibility failures indistinguishable and would weaken the
+promotion gate.
+
+- [x] Keep `/api/health` as the cheap liveness contract
+- [x] Keep `/api/ready` as the bounded dependency and compatibility contract
+- [x] Document and test that both routes remain reachable without Clerk credentials
+
+### Gate 0 operational endpoints could be intercepted by Clerk middleware
+**Priority:** High
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `middleware.ts`, `app/api/health/route.ts`, `app/api/ready/route.ts`
+
+The Gate 0 liveness and readiness handlers were covered by the broad Clerk
+middleware matcher. An unavailable or incompletely configured Clerk runtime
+could therefore return an authentication error before the health handler ran,
+contradicting the contract that liveness must remain process-only.
+
+- [x] Exclude `/api/health` and `/api/ready` from the Clerk middleware matcher
+- [x] Add a regression test for the public operational-path contract
+- [x] Add a packaged standalone runtime smoke without Clerk credentials
+
+### Gate 0 release smoke was coupled to the default Playwright configuration
+**Priority:** Medium
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `playwright.config.ts`, `playwright.release.config.ts`, `package.json`, `.github/workflows/ci.yml`
+
+The authenticated release fixture setup, release-only projects and teardown
+were installed into the default Playwright configuration. That made ordinary
+local E2E commands provision synthetic users and changed the project names
+available to unrelated feature tests.
+
+- [x] Restore a normal default Playwright configuration
+- [x] Isolate authenticated release smoke in `playwright.release.config.ts`
+- [x] Make CI and the release script select the release configuration explicitly
+- [x] Restrict Playwright discovery to `*.spec.ts` so Vitest helper files cannot be collected as browser tests
+
+### Gate 0 deployment contract contains repeated release assumptions
+**Priority:** Medium
+**Status:** Open; documented for follow-up after Gate 0
+**Detected:** August 13, 2026
+**Files:** `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/*.sh`, `convex/queries/system.ts`, `app/api/ready/route.ts`
+
+The compatibility tag and environment selectors are repeated across workflow,
+shell, frontend and Convex code. The repetition is currently protected by
+tests, but future version or environment changes can update one authority and
+silently leave another stale.
+
+- [ ] Define one versioned release-contract source for application code and CI
+- [ ] Keep production and synthetic selectors as separately validated deployment inputs
+- [ ] Add a contract test that compares workflow, frontend and Convex compatibility values
+
+### Gate 0 fixture cleanup functions remain public Convex functions
+**Priority:** Medium
+**Status:** Open; fail-closed in production, removal requires a fixture-architecture change
+**Detected:** August 13, 2026
+**Files:** `convex/mutations/fixtureCleanup.ts`, `convex/schema.ts`, `e2e/support/authEnvironment.ts`
+
+Authenticated release setup calls fixture lifecycle functions through the
+Convex public API. They reject every deployment except the approved synthetic
+development target and require exact run ownership, but their existence still
+creates a production-visible test surface.
+
+- [x] Reject production selectors and disabled cleanup configuration
+- [x] Require authenticated exact-run ownership and bounded cleanup scope
+- [ ] Move fixture lifecycle operations to a dedicated test deployment or private administrative boundary
+
+### Gate 0 deployment workflow policy is large and regex-driven
+**Priority:** Medium
+**Status:** Open; non-blocking after current policy tests pass
+**Detected:** August 13, 2026
+**Files:** `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/tests/*.sh`
+
+The deployment workflow and its policy tests have grown into a large string-
+matched contract. This catches accidental policy removal, but YAML layout
+changes can create false failures and the important release logic is difficult
+to review as one unit.
+
+- [ ] Split qualification, artifact promotion and Convex promotion into reusable reviewed units
+- [ ] Replace fragile text assertions with parsed workflow or executable contract tests where practical
+- [ ] Keep the production opt-in and rollback guard as explicit independent checks
+
+### Gate 0 dependency ranges allow unrelated transitive upgrades
+**Priority:** Medium
+**Status:** Open; current lockfile passes build, tests and production audit
+**Detected:** August 13, 2026
+**Files:** `package.json`, `package-lock.json`
+
+Caret ranges resolved broader upgrades during Gate 0, including React,
+Playwright and other transitive packages. The current candidate is qualified,
+but future installs can drift without a deliberate dependency-upgrade review.
+
+- [x] Commit the lockfile and run `npm ci` in qualification
+- [x] Run build, typecheck, unit tests and `npm audit --omit=dev`
+- [ ] Review and pin release-critical framework/tooling ranges in a separate dependency change
+
 ---
 
 ## 📊 Metrics to Track

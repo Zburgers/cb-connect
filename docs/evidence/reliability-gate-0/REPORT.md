@@ -10,6 +10,28 @@ boundary. It does not claim that Gate 0 production qualification passed. No
 production deployment, production Convex mutation, production fixture or
 production restore was performed.
 
+## 2026-08-13 ship-hardening follow-up
+
+The follow-up review found and corrected two implementation risks without
+touching production data or enabling promotion:
+
+- `/api/health` and `/api/ready` are now excluded from the Clerk middleware
+  matcher, preserving process liveness and compatibility readiness when Clerk
+  runtime configuration is unavailable.
+- Authenticated release smoke now uses the dedicated
+  `playwright.release.config.ts`; ordinary Playwright runs no longer inherit
+  fixture provisioning and teardown, and both configs restrict discovery to
+  browser `*.spec.ts` files so Vitest helpers are not collected as E2E tests.
+- CI now smoke-tests the packaged standalone server and verifies that health
+  and readiness return their JSON contracts rather than a middleware-generated
+  500 response.
+
+Local follow-up verification passed: 19 unit-test files/103 tests, production
+build, typecheck, workflow policy tests, packaged standalone runtime smoke,
+and `npm audit --omit=dev` with zero vulnerabilities. This is implementation
+evidence only; it does not replace the missing production identity, rollback,
+restore or 28-day baseline evidence below.
+
 ## 2026-08-12 environment verification
 
 The release operator confirmed the intended targets, and read-only GitHub and

@@ -109,7 +109,7 @@ jobs:
           : > "$RUNNER_TEMP/cb-connect-release-smoke.log"
           for project in release-desktop release-mobile; do
             project_log="$RUNNER_TEMP/cb-connect-release-smoke-${project}.log"
-            CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test e2e/release-smoke.spec.ts --project="$project" 2>&1 | tee "$project_log" | tee -a "$RUNNER_TEMP/cb-connect-release-smoke.log"
+            CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project" 2>&1 | tee "$project_log" | tee -a "$RUNNER_TEMP/cb-connect-release-smoke.log"
             project_status=${PIPESTATUS[0]}
             if (( project_status == 0 )) && rg -q '[1-9][0-9]* skipped' "$project_log"; then
               project_status=1
@@ -199,6 +199,9 @@ jobs:
           bash scripts/tests/package-release.test.sh
           bash scripts/package-release.sh "$RUNNER_TEMP/cb-connect-release"
           bash scripts/package-release.sh --verify "$RUNNER_TEMP/cb-connect-release/release-manifest.json"
+
+      - name: Smoke packaged standalone runtime
+        run: bash scripts/tests/standalone-runtime.test.sh
 
       - name: Upload immutable standalone release
         uses: actions/upload-artifact@v4

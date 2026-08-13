@@ -19,7 +19,7 @@ required_patterns=(
   'CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}'
   'NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}'
   'for project in release-desktop release-mobile'
-  'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test e2e/release-smoke.spec.ts --project="$project"'
+  'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
   'sudo apt-get update && sudo apt-get install --yes ripgrep'
   'bash scripts/redact-release-artifacts.sh'
   'retention-days: 7'
