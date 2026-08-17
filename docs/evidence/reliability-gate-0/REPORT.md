@@ -128,8 +128,8 @@ advancing before the period step was rendered. The route now ensures the user
 before role assignment, and fixture setup waits for the date field; focused
 tests and typecheck passed.
 
-The current head `781577f` was then verified by [CI run
-32009539170](https://github.com/Zburgers/cb-connect/actions/runs/32009539170).
+The current application head `f0704cd` was then verified by [CI run
+32010663067](https://github.com/Zburgers/cb-connect/actions/runs/32010663067).
 Deterministic qualification and authenticated release smoke both passed. The
 desktop and mobile fixture lifecycles completed with zero skips. The
 production-configured immutable release job was skipped because the workflow
@@ -142,7 +142,7 @@ This supersedes the older protected-run references for current C2 evidence.
 |---|---|---|---|
 | G1 dependency remediation | Direct local qualification | `6509bbf`, `3a64142`, `bb30aeb`, `e26afb4`; `npm audit --omit=dev` reports 0 vulnerabilities | PASS |
 | C1 local qualification | Direct local qualification | [`ship-hardening-2026-08-13.md`](ship-hardening-2026-08-13.md); build, typecheck, 19 files/103 tests, policy tests and full production audit pass in the final review tree | PASS |
-| C2 authenticated release smoke | Protected CI direct evidence | [`c2-protected-2026-08-17.md`](c2-protected-2026-08-17.md); current run `32009539170` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; the production-configured release was skipped for the pull-request event | PASS |
+| C2 authenticated release smoke | Protected CI direct evidence | [`c2-protected-2026-08-17.md`](c2-protected-2026-08-17.md); current run `32010663067` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; the production-configured release was skipped for the pull-request event | PASS |
 | C3 immutable artifact | Direct local qualification and reviewed workflow policy | `a5be590` plus final branch review; standalone package checksum/extraction pass, trusted push-main artifact waits for qualification and authenticated smoke, and deployment consumes that exact artifact | PASS for implementation; trusted CI execution and runtime promotion remain unproven |
 | V1 backend release | Isolated-development direct evidence | [`v1-dev-proof.md`](v1-dev-proof.md); `dev:hallowed-hummingbird-284` returned backend deployment and `v1` identity | PASS for isolated dev; production not executed |
 | V2 compatible promotion | Local implementation and synthetic endpoint/process tests | `379e8c6` plus final review remediation; verifier covers identity/readiness/TLS/listener/PM2 persistence, deploys from a durable release root, serializes promotion and limits automatic rollback to frontend promotion failures | PASS for implementation; production evidence missing |
@@ -163,7 +163,7 @@ This supersedes the older protected-run references for current C2 evidence.
   release smoke, pre-dashboard durable cleanup ownership, exact empty-email
   recovery, teardown reauthentication, project-isolated fixture lifecycles,
   strict Convex test URL validation, onboarding user readiness and fail-closed
-  environment-scoped CI are implemented. Protected PR run `32009539170` passed
+  environment-scoped CI are implemented. Protected PR run `32010663067` passed
   both desktop and mobile authenticated journeys with zero skips.
 - Production promotion is disabled by default. `PROMOTE_PRODUCTION`,
   `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` and `DEPLOY_CONVEX` remain unset;

@@ -1,9 +1,9 @@
 # C2 protected CI proof
 
 - Recorded: 2026-08-17
-- Commit: `781577f8cf7a0995ac25dbe222e82068ec6082eb`
+- Commit: `f0704cd07d18c3100bc0b55eb1dbe518cb56a2c4`
 - Pull request: [PR #17](https://github.com/Zburgers/cb-connect/pull/17)
-- Workflow run: [CI run 32009539170](https://github.com/Zburgers/cb-connect/actions/runs/32009539170)
+- Workflow run: [CI run 32010663067](https://github.com/Zburgers/cb-connect/actions/runs/32010663067)
 - Deterministic qualification: PASS
 - Authenticated release smoke: PASS for independent desktop and mobile fixture lifecycles, with zero skips
 - Production-configured immutable release: SKIPPED because this was a pull-request event; no production promotion was attempted

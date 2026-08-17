@@ -66,7 +66,7 @@ in Gate 0 E1. The current file uses the approved primary fixture storage
 state, and authenticated setup generates run-scoped credentials at runtime;
 no fixed test credential is claimed as current. The release-smoke CI job passed
 in the protected run recorded below.
-**Latest Gate 0 refresh:** Commit `781577f` records the onboarding readiness remediation after owner-authorized environment sync; protected run `32009539170` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
+**Latest Gate 0 refresh:** Commit `f0704cd` records the onboarding readiness remediation after owner-authorized environment sync; protected run `32010663067` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
 **Exit evidence:** Keep fixture credentials generated and uncommitted; retain
 the current successful secret-backed CI result; fail closed when auth fixtures
 are unavailable; cover both roles, consent/revocation, period integrity, and

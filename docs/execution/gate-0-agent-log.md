@@ -682,3 +682,17 @@
 - Decisions made: PR #17 is implementation-merge ready if GitHub reports the final checks and review state as green. Gate 0 production promotion remains blocked and all promotion switches remain unset.
 - Unresolved blockers: direct production runtime identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline remain pending; D-012 final retention/deletion scope remains open.
 - Exact next safe action: Merge PR #17 only as an implementation change through normal review; do not enable production promotion or deploy from this evidence.
+
+---
+
+- Timestamp: 2026-08-17T14:35:00+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 final documentation audit and PR #17 merge review
+- Starting commit: `4d2bf15`
+- Ending commit: `f0704cd` with this evidence refresh pending push
+- Work performed: The final protected application run initially showed a slow hosted onboarding mutation boundary. Increased the fixture's explicit period-step readiness wait from 30 to 60 seconds without changing the production flow. The final application head passed protected CI, and current evidence references were advanced to that head and run.
+- Commands and outcomes: Typecheck and focused setup test passed. Protected CI run `32010663067` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; the production-configured immutable release was skipped for the pull-request event. No raw credentials, fixture identifiers or browser artifacts were retained.
+- Convex deployment class and status: no Convex publish, production access, production mutation, PM2 operation, promotion or restore occurred.
+- Decisions made: The implementation PR is ready for merge when the final docs-only head has green checks. Gate 0 production promotion remains blocked and all promotion switches remain unset.
+- Unresolved blockers: direct production runtime identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline remain pending; D-012 final retention/deletion scope remains open.
+- Exact next safe action: Push the evidence refresh, verify the final PR checks, then merge PR #17 only as an implementation change through normal review.
