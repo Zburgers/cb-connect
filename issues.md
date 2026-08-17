@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 12, 2026
+**Last Updated:** August 17, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -66,7 +66,7 @@ in Gate 0 E1. The current file uses the approved primary fixture storage
 state, and authenticated setup generates run-scoped credentials at runtime;
 no fixed test credential is claimed as current. The release-smoke CI job passed
 in the protected run recorded below.
-**Latest Gate 0 refresh:** Commit `30e6b81` records the owner-authorized environment sync and current protected run `32006791305`; deterministic qualification and authenticated desktop/mobile smoke passed with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
+**Latest Gate 0 refresh:** Commit `781577f` records the onboarding readiness remediation after owner-authorized environment sync; protected run `32009539170` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
 **Exit evidence:** Keep fixture credentials generated and uncommitted; retain
 the current successful secret-backed CI result; fail closed when auth fixtures
 are unavailable; cover both roles, consent/revocation, period integrity, and

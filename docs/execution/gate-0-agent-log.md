@@ -668,3 +668,17 @@
 - Decisions made: The PR is merge-ready for implementation and CI. Production promotion remains disabled and Gate 0 promotion remains blocked on direct production runtime identity/readiness/PM2/TLS evidence, a durable rollback candidate, measured restore and the 28-day baseline.
 - Unresolved blockers: production promotion evidence, measured recovery, 28-day baseline and D-012 final retention/deletion scope remain pending; none blocks merging the reviewed implementation PR.
 - Exact next safe action: Validate this documentation-only remediation, commit and push it, then merge PR #17 only through the normal review process with all promotion switches still unset.
+
+---
+
+- Timestamp: 2026-08-17T14:20:00+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 final documentation audit and PR #17 merge review
+- Starting commit: `a1ab11d`
+- Ending commit: `781577f`
+- Work performed: Final review caught two repeatable authenticated setup failures at `primary-onboarding-date` on the documentation-refresh head. Remediated the standalone onboarding route to ensure the Convex user before role assignment and made the fixture wait for the period date field before filling it. Refreshed the current C2 proof, report, issue tracker and planning references to the final PR head and successful run.
+- Commands and outcomes: Focused setup test and typecheck passed. Protected CI run `32009539170` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; the production-configured immutable release was skipped for the pull-request event. Targeted documentation link/stale-claim/secret scans and `git diff --check` passed.
+- Convex deployment class and status: no Convex publish, production access, production mutation, PM2 operation, promotion or restore occurred.
+- Decisions made: PR #17 is implementation-merge ready if GitHub reports the final checks and review state as green. Gate 0 production promotion remains blocked and all promotion switches remain unset.
+- Unresolved blockers: direct production runtime identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline remain pending; D-012 final retention/deletion scope remains open.
+- Exact next safe action: Merge PR #17 only as an implementation change through normal review; do not enable production promotion or deploy from this evidence.

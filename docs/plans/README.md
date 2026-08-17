@@ -37,7 +37,7 @@ task queue. The authoritative outcome is the explicit **BLOCKED** verdict in
 [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md). The remaining work is
 external evidence and authorization, in this order:
 
-1. C2 is now evidenced by [protected CI run 32006791305](../evidence/reliability-gate-0/c2-protected-2026-08-17.md), which passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. This does not establish production evidence.
+1. C2 is now evidenced by [protected CI run 32009539170](../evidence/reliability-gate-0/c2-protected-2026-08-17.md), which passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. This does not establish production evidence.
 2. Only with separate release authorization, establish direct production V1/V2
    identity, TLS/listener/readiness and PM2-persistence evidence; do not infer
    it from an old deploy, build, or dev deployment.
