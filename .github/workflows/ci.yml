@@ -6,8 +6,8 @@ on:
     branches: [main]
 
 jobs:
-  validate:
-    name: Typecheck & unit tests
+  qualify:
+    name: Deterministic qualification
     runs-on: ubuntu-latest
 
     steps:
@@ -17,14 +17,196 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20.19.1
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
 
-      - name: Typecheck
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Record qualification build timestamp
+        run: printf 'CB_CONNECT_BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Build application
+        run: npm run build
+        env:
+          # Qualification is intentionally secret-free and its build output is
+          # never promoted. These inert values prevent a local ignored env file
+          # from becoming an accidental CI dependency.
+          NEXT_PUBLIC_CONVEX_URL: https://qualification.convex.cloud
+          NEXT_PUBLIC_CONVEX_SITE_URL: https://qualification.convex.site
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_qualification
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
+
+      - name: Post-build typecheck
         run: npm run typecheck
 
       - name: Unit tests
         run: npm run test:unit -- --run
+
+      - name: Dependency policy
+        run: npm audit --omit=dev
+
+  authenticated-smoke:
+    name: Authenticated release smoke
+    needs: qualify
+    runs-on: ubuntu-latest
+    environment: cb-connect-auth-test
+    timeout-minutes: 20
+    env:
+      CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+      CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+      CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+      CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+      NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+      NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+      CB_CONNECT_RELEASE_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure isolated auth artifact directory
+        run: printf 'CB_CONNECT_RELEASE_AUTH_DIR=%s/cb-connect-release-auth\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Install release policy tools
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
+
+      - name: Validate authenticated smoke policy
+        run: bash scripts/tests/release-smoke-workflow.test.sh
+
+      - name: Run authenticated release smoke
+        shell: bash
+        run: |
+          set +e
+          base_run_id="$CB_CONNECT_RELEASE_RUN_ID"
+          status=0
+          : > "$RUNNER_TEMP/cb-connect-release-smoke.log"
+          for project in release-desktop release-mobile; do
+            project_log="$RUNNER_TEMP/cb-connect-release-smoke-${project}.log"
+            CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project" 2>&1 | tee "$project_log" | tee -a "$RUNNER_TEMP/cb-connect-release-smoke.log"
+            project_status=${PIPESTATUS[0]}
+            if (( project_status == 0 )) && rg -q '[1-9][0-9]* skipped' "$project_log"; then
+              project_status=1
+            fi
+            if (( project_status != 0 )); then
+              status="$project_status"
+              break
+            fi
+          done
+          printf '%s\n' "$status" > "$RUNNER_TEMP/cb-connect-release-smoke.status"
+          exit "$status"
+
+      - name: Create redacted failure artifact
+        if: failure()
+        shell: bash
+        run: |
+          status=1
+          if [[ -f "$RUNNER_TEMP/cb-connect-release-smoke.status" ]]; then
+            status="$(<"$RUNNER_TEMP/cb-connect-release-smoke.status")"
+          fi
+          bash scripts/redact-release-artifacts.sh "$RUNNER_TEMP/cb-connect-redacted-artifacts" "$status"
+
+      - name: Upload redacted failure artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-release-smoke-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/cb-connect-redacted-artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  release-artifact:
+    name: Production-configured immutable release
+    needs: [qualify, authenticated-smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+      NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+      CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+      CB_CONNECT_COMPATIBILITY_VERSION: v1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Record release build timestamp
+        run: printf 'CB_CONNECT_BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Validate production public build configuration
+        run: |
+          set -euo pipefail
+          required=(
+            NEXT_PUBLIC_CONVEX_URL
+            NEXT_PUBLIC_CONVEX_SITE_URL
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          )
+          for name in "${required[@]}"; do
+            test -n "${!name:-}"
+          done
+          [[ "$NEXT_PUBLIC_CONVEX_URL" == https://* ]]
+          [[ "$NEXT_PUBLIC_CONVEX_SITE_URL" == https://* ]]
+          [[ "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" == pk_* ]]
+
+      - name: Build the production-configured release artifact
+        run: npm run build
+
+      - name: Package immutable standalone release
+        run: |
+          bash scripts/tests/package-release.test.sh
+          bash scripts/package-release.sh "$RUNNER_TEMP/cb-connect-release"
+          bash scripts/package-release.sh --verify "$RUNNER_TEMP/cb-connect-release/release-manifest.json"
+
+      - name: Smoke packaged standalone runtime
+        run: bash scripts/tests/standalone-runtime.test.sh
+
+      - name: Upload immutable standalone release
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-release-${{ github.sha }}
+          path: ${{ runner.temp }}/cb-connect-release
+          if-no-files-found: error
+          retention-days: 7

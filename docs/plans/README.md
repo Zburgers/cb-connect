@@ -1,6 +1,6 @@
 # CB Connect major-release plan index
 
-**Status:** Canonical planning dashboard; last reviewed 2026-08-04 with checkout `main` at `05af783` and live `origin/main` at `d3ef5a7`.
+**Status:** Canonical planning dashboard; Gate 0 implementation packet closed 2026-08-06 with an explicit blocked promotion verdict in [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md).
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -21,8 +21,8 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 | Order | Track | Gate-level plan | Blocking dependency | Planning readiness |
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
-| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Preflight decisions D-002 through D-007; D-001 before affected production consent/retention exposure | Detailed execution plan drafted |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) | Approved Gate 0 evidence | Gate-level only |
+| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Approved Gate 0 report backed by direct CI, production, recovery and baseline evidence | Implementation packet closed; promotion blocked |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [dated plan](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md) | Approved Gate 0 report; D-012 approval is required for destructive migration, hard deletion and production exposure | Dated implementation plan exists; execution awaits Gate 0 approval, then additive work may proceed while destructive work remains blocked |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
@@ -30,16 +30,35 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 | 7 | Push and staged stores | [Gate 6](2026-08-01-07-push-and-store-qualification.md) | Gate 5 real-device evidence | Gate-level only |
 | Research | Probabilistic shadow model | [Research Gate 7](2026-08-01-08-probabilistic-shadow-model.md) | Gates 0, 1 and 3 data/governance prerequisites | Research design only; never user-visible |
 
-## Immediate execution sequence
+## Current Gate 0 boundary
 
-1. Preserve the current uncommitted planning batch; do not pull or merge over it. The checkout is 12 commits behind `origin/main`.
-2. Integrate/review this planning batch in a clean worktree based on `origin/main` at or after `d3ef5a7`.
-3. Treat PR #8 as merged and its source branch as superseded. Record that CI run `30852430557` passed while deploy run `30852430655` failed at Convex deployment before build/PM2 promotion; do not claim those fixes are deployed.
-4. Resolve Gate 0 decision-register items D-002 through D-007 without inventing missing owners or credentials. Resolve D-001 before any affected production consent/retention exposure; it does not block unrelated technical preflight work.
-5. Create a dedicated Gate 0 implementation worktree from the then-current `origin/main`.
-6. Execute [the detailed Gate 0 plan](2026-08-04-00-production-reliability-execution.md) in dependency order.
-7. Produce and approve `docs/evidence/reliability-gate-0/REPORT.md`.
-8. Only then write the dated Gate 1 execution plan using the real release, timezone, schema and migration contracts established by Gate 0/preflight.
+The detailed Gate 0 implementation packet is complete; it is no longer a local
+task queue. The authoritative outcome is the explicit **BLOCKED** verdict in
+[`REPORT.md`](../evidence/reliability-gate-0/REPORT.md). The remaining work is
+external evidence and authorization, in this order:
+
+1. C2 is now evidenced by [protected CI run 32010663067](../evidence/reliability-gate-0/c2-protected-2026-08-17.md), which passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. This does not establish production evidence.
+2. Only with separate release authorization, establish direct production V1/V2
+   identity, TLS/listener/readiness and PM2-persistence evidence; do not infer
+   it from an old deploy, build, or dev deployment.
+3. Run and record the approved synthetic restore rehearsal with measured
+   integrity and RPO/RTO results, then collect the 28-day allowlisted SLO
+   baseline.
+4. Refresh the Gate 0 report and obtain an explicit approval. Until then, do
+   not expose or execute Gate 1. Its dated plan may be reviewed, but it is
+   not an authorization to mutate code or data. After Gate 0 approval, safe
+   additive helpers/schema/tests may proceed; D-012 still blocks destructive
+   migration, hard deletion and production exposure.
+
+## Gate 0 closeout
+
+The implementation sequence G1 → C1/C2/C3 → V1/V2 → X1 → G2 → G3 is
+recorded in the dedicated worktree and append-only execution log. G1, C1, C2,
+C3, V1 isolated-dev identity, V2 implementation and X1 guardrails have
+passing local, protected-CI or synthetic evidence. Production V1/V2 runtime
+evidence, measured X1 restore objectives and the G2 baseline are not available;
+therefore the Gate 0 report is explicitly **BLOCKED** and Gate 1 must remain
+unexposed and its feature flag must remain off.
 
 ## Planning policy
 

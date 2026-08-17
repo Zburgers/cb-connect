@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 4, 2026
+**Last Updated:** August 17, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -44,33 +44,47 @@ Update with Github issues on the parent repo
 ### Production deployment pipeline is incomplete; frontend service recovered
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Frontend recovery deployed; coordinated Convex promotion and full runtime verification remain pending
+**Status:** Gate 0 implementation packet complete; production qualification remains blocked
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` has an invalid authorization format and failed before build. Commit `c47211f` therefore made Convex sync/deploy an explicit `DEPLOY_CONVEX=true` opt-in instead of allowing an invalid backend key to block frontend recovery. Deploy run `30860139400` then passed unit validation, Next build and `pm2 startOrReload`. Public `/api/health` returned 200; a clean browser received the expected dashboard-to-sign-in redirect, rendered the Clerk form, loaded all 34 observed static/app/Clerk assets with 200 responses and reported zero console errors. Authenticated dashboard behavior, immutable release identity, valid coordinated Convex promotion, listener/PM2 reboot persistence, rollback and recovery rehearsals remain unverified Gate 0 work.
+**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. The 2026-08-12 review found and fixed workflow ordering so rollback-candidate resolution/guard runs before optional Convex env sync/deploy; `bash scripts/tests/deploy-workflow.test.sh` passes. Owner-supplied production evidence is `https://cb.nakshatraneuratech.dev/api/health=200`, `/api/ready=404`, with an empty `/home/naki/cb-connect-releases`; production remains a pre-candidate and no production deployment or Convex mutation was run. On 2026-08-17, the owner-authorized GitHub environment sync populated the required production runtime configuration without recording secret values.
+**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) is historical local evidence; [the V1 proof](docs/evidence/reliability-gate-0/v1-dev-proof.md) is isolated-dev evidence only; [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md) records the current blocked verdict.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --
 
-### Browser test suite is not a trustworthy release gate and contains committed credentials
+### Legacy browser suite is not a trustworthy release gate; authenticated smoke passes
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Open
+**Status:** Deterministic release smoke and fail-closed CI job passed in protected CI; legacy static skips remain outside the release gate
 **Detected:** August 1, 2026
 **Files:** `e2e/signup-repro.spec.ts`, `e2e/onboarding.spec.ts`, `e2e/partner-linking.spec.ts`, `e2e/partner-chat.spec.ts`, `playwright.config.ts`
-**Evidence:** Playwright lists 39 tests, while 32 individual tests are statically skipped and the two chat tests require an optional local auth-state path. The remaining coverage largely proves unauthenticated redirects rather than primary/partner behavior. `signup-repro.spec.ts` commits a fixed email/password pair and can mutate the configured Clerk environment when run. The deploy workflow does not run Playwright.
-**Exit evidence:** Rotate/remove committed credentials; provision isolated test users through secret-backed fixtures; fail closed when auth fixtures are unavailable in release CI; cover both roles, consent/revocation, period integrity, and real-time behavior; publish redacted artifacts; make the suite deterministic and mandatory for release candidates.
+**Evidence:** The historical baseline found 32 statically skipped tests and an
+optional local-auth-state chat path; that legacy suite still is not release
+evidence. The former fixed credentials in `signup-repro.spec.ts` were removed
+in Gate 0 E1. The current file uses the approved primary fixture storage
+state, and authenticated setup generates run-scoped credentials at runtime;
+no fixed test credential is claimed as current. The release-smoke CI job passed
+in the protected run recorded below.
+**Latest Gate 0 refresh:** Commit `f0704cd` records the onboarding readiness remediation after owner-authorized environment sync; protected run `32010663067` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
+**Exit evidence:** Keep fixture credentials generated and uncommitted; retain
+the current successful secret-backed CI result; fail closed when auth fixtures
+are unavailable; cover both roles, consent/revocation, period integrity, and
+real-time behavior; publish redacted artifacts; make the suite deterministic
+and mandatory for release candidates.
 
 --
 
 ### Production dependency audit reports unresolved high-severity vulnerabilities
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Open
+**Status:** Resolved in Gate 0 G1
 **Detected:** August 1, 2026
 **Files:** `package.json`, `package-lock.json`
-**Evidence:** `npm audit --omit=dev` reports nine vulnerabilities: six high and three moderate, including advisories in the installed Next.js, Clerk/js-cookie, Convex/ws, PostCSS, Sharp, Svix/uuid dependency paths. `npm outdated` shows patched wanted versions for several direct dependencies. The production build still passes, which does not remediate or risk-accept these advisories.
-**Exit evidence:** Upgrade through reviewed compatible releases; inspect reachability and compensating controls for each advisory; rerun typecheck/unit/build/E2E and `npm audit --omit=dev`; document any explicit time-bounded risk acceptance and automate dependency scanning in CI.
+**Evidence:** The current pre-remediation tree reported 7 reachable production vulnerabilities (4 high, 3 moderate): Next.js with nested PostCSS/Sharp, Convex with `ws`, and Svix with `uuid`. Reachability was confirmed with `npm ls --all --omit=dev postcss sharp uuid ws convex svix next`. No risk exception was used.
+**Remediation:** `6509bbf` upgrades Next.js within the supported 15.x line and pins secure Next-owned PostCSS/Sharp overrides; `3a64142` upgrades Convex to the release carrying `ws` 8.21.0; `bb30aeb` upgrades Svix to the release carrying `uuid` 11.1.1 or newer.
+**Latest Gate 0 refresh:** After clean `npm ci --no-audit --no-fund`, `npm audit --omit=dev` reports `found 0 vulnerabilities`. `npm run build`, `npm run typecheck`, and `npm run test:unit -- --run` pass (19 files, 103 tests). The final lockfile remediation updates `nanoid` to `3.3.18`; `.github/workflows/ci.yml` runs the full production audit, so any production advisory fails qualification.
+**Exit evidence:** No reachable production advisory remains; no owner/expiry exception is recorded; CI enforces the complete `npm audit --omit=dev` result.
 
 --
 ---
@@ -211,9 +225,9 @@ Update with Github issues on the parent repo
 
 ### Reliability-first major-release planning and Gate 0 preflight
 
-**Status:** Planning active; application implementation has not started from these plans.
+**Status:** Gate 0 implementation packet closed with an explicit blocked promotion verdict; Gate 1 remains unexposed.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Safely integrate this planning batch onto current `origin/main`, then resolve Gate 0 decisions D-002 through D-007 before production promotion. PR #8 is merged but not proven deployed. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Continuous independently qualified P0/P1 remediation may proceed on narrow branches.
+**Current boundary:** Gate 0 decisions D-002 through D-007 are resolved and the implementation packet is recorded in [`REPORT.md`](docs/evidence/reliability-gate-0/REPORT.md). Current protected C2 CI evidence is present, but promotion remains blocked by missing production runtime, measured recovery and 28-day baseline evidence. PR #8 remains historical evidence, not coordinated promotion proof. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Gate 1 planning and exposure remain blocked.
 
 ---
 
@@ -582,6 +596,115 @@ There are two onboarding implementations: `/onboarding` handles role selection p
 - Consider caching for cycle calculations
 - Reduce Convex function calls
 - Implement pagination for historical data
+
+### Gate 0 health and readiness endpoints appeared duplicative
+**Priority:** High
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `docs/plans/2026-08-04-00-production-reliability-execution.md`, `app/api/health/route.ts`, `app/api/ready/route.ts`, `scripts/verify-release.sh`
+
+The two endpoints are intentionally separate contracts, not duplicate handlers:
+`/api/health` is process liveness and must remain independent of Clerk, Convex
+and compatibility state; `/api/ready` is bounded release readiness and may
+return 503 when backend, metadata or compatibility checks fail. The Gate 0
+plan explicitly assigns separate I3/I4 tasks, and the release verifier checks
+both contracts. Collapsing them would make restart/process failures and
+dependency/compatibility failures indistinguishable and would weaken the
+promotion gate.
+
+- [x] Keep `/api/health` as the cheap liveness contract
+- [x] Keep `/api/ready` as the bounded dependency and compatibility contract
+- [x] Document and test that both routes remain reachable without Clerk credentials
+
+### Gate 0 operational endpoints could be intercepted by Clerk middleware
+**Priority:** High
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `middleware.ts`, `app/api/health/route.ts`, `app/api/ready/route.ts`
+
+The Gate 0 liveness and readiness handlers were covered by the broad Clerk
+middleware matcher. An unavailable or incompletely configured Clerk runtime
+could therefore return an authentication error before the health handler ran,
+contradicting the contract that liveness must remain process-only.
+
+- [x] Exclude `/api/health` and `/api/ready` from the Clerk middleware matcher
+- [x] Add a regression test for the public operational-path contract
+- [x] Add a packaged standalone runtime smoke without Clerk credentials
+
+### Gate 0 release smoke was coupled to the default Playwright configuration
+**Priority:** Medium
+**Status:** Resolved in Gate 0 ship-hardening follow-up
+**Detected:** August 13, 2026
+**Files:** `playwright.config.ts`, `playwright.release.config.ts`, `package.json`, `.github/workflows/ci.yml`
+
+The authenticated release fixture setup, release-only projects and teardown
+were installed into the default Playwright configuration. That made ordinary
+local E2E commands provision synthetic users and changed the project names
+available to unrelated feature tests.
+
+- [x] Restore a normal default Playwright configuration
+- [x] Isolate authenticated release smoke in `playwright.release.config.ts`
+- [x] Make CI and the release script select the release configuration explicitly
+- [x] Restrict Playwright discovery to `*.spec.ts` so Vitest helper files cannot be collected as browser tests
+
+### Gate 0 deployment contract contains repeated release assumptions
+**Priority:** Medium
+**Status:** Open; documented for follow-up after Gate 0
+**Detected:** August 13, 2026
+**Files:** `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/*.sh`, `convex/queries/system.ts`, `app/api/ready/route.ts`
+
+The compatibility tag and environment selectors are repeated across workflow,
+shell, frontend and Convex code. The repetition is currently protected by
+tests, but future version or environment changes can update one authority and
+silently leave another stale.
+
+- [ ] Define one versioned release-contract source for application code and CI
+- [ ] Keep production and synthetic selectors as separately validated deployment inputs
+- [ ] Add a contract test that compares workflow, frontend and Convex compatibility values
+
+### Gate 0 fixture cleanup functions remain public Convex functions
+**Priority:** Medium
+**Status:** Open; fail-closed in production, removal requires a fixture-architecture change
+**Detected:** August 13, 2026
+**Files:** `convex/mutations/fixtureCleanup.ts`, `convex/schema.ts`, `e2e/support/authEnvironment.ts`
+
+Authenticated release setup calls fixture lifecycle functions through the
+Convex public API. They reject every deployment except the approved synthetic
+development target and require exact run ownership, but their existence still
+creates a production-visible test surface.
+
+- [x] Reject production selectors and disabled cleanup configuration
+- [x] Require authenticated exact-run ownership and bounded cleanup scope
+- [ ] Move fixture lifecycle operations to a dedicated test deployment or private administrative boundary
+
+### Gate 0 deployment workflow policy is large and regex-driven
+**Priority:** Medium
+**Status:** Open; non-blocking after current policy tests pass
+**Detected:** August 13, 2026
+**Files:** `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/tests/*.sh`
+
+The deployment workflow and its policy tests have grown into a large string-
+matched contract. This catches accidental policy removal, but YAML layout
+changes can create false failures and the important release logic is difficult
+to review as one unit.
+
+- [ ] Split qualification, artifact promotion and Convex promotion into reusable reviewed units
+- [ ] Replace fragile text assertions with parsed workflow or executable contract tests where practical
+- [ ] Keep the production opt-in and rollback guard as explicit independent checks
+
+### Gate 0 dependency ranges allow unrelated transitive upgrades
+**Priority:** Medium
+**Status:** Open; current lockfile passes build, tests and production audit
+**Detected:** August 13, 2026
+**Files:** `package.json`, `package-lock.json`
+
+Caret ranges resolved broader upgrades during Gate 0, including React,
+Playwright and other transitive packages. The current candidate is qualified,
+but future installs can drift without a deliberate dependency-upgrade review.
+
+- [x] Commit the lockfile and run `npm ci` in qualification
+- [x] Run build, typecheck, unit tests and `npm audit --omit=dev`
+- [ ] Review and pin release-critical framework/tooling ranges in a separate dependency change
 
 ---
 

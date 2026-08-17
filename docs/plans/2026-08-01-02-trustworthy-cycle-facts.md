@@ -1,10 +1,15 @@
 # Trustworthy Cycle Facts Implementation Plan
 
-> **Codex/Shipyard execution:** This gate-level plan requires a dated, approved execution plan after Gate 0 evidence exists.
+> **Codex/Shipyard execution:** This gate-level plan requires an **approved
+> Gate 0 report**, resolved Gate 1 decisions, and a dated approved execution
+> plan. A dated draft now exists at
+> [`2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md),
+> but the current Gate 0 report is blocked and D-012 retention authority is
+> pending, so neither this document nor the dated draft is executable.
 
 **Goal:** Ensure period history contains explicit user observations with valid provenance and never silently stores system estimates as facts.
 
-**Architecture:** Period-event mutations enforce one invariant set inside Convex transactions. Observation certainty, actor provenance and primary confirmation are separate fields. A privacy-preserving aggregate audit informs backward-compatible migration; predicted endings remain derived and open events remain open until confirmed.
+**Architecture:** Period-event mutations enforce one invariant set inside Convex transactions. Observation certainty, actor provenance and primary authority are separate fields. Partner assistance is accepted immediately while later primary correction or deletion/tombstone wins. A privacy-preserving aggregate audit informs backward-compatible migration; predicted endings remain derived and open events remain open until explicitly ended.
 
 **Tech Stack:** Convex schema/migrations, TypeScript, Vitest, convex-test, Next.js App Router.
 
@@ -16,14 +21,19 @@
 
 **Next gate:** [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md)
 
-**Planning status:** Gate-level work packages only. The dated execution plan is written after Gate 0 evidence and decisions D-008 through D-010/D-012 are resolved.
+**Planning status:** Gate-level work packages plus a dated non-executable draft. The
+dated plan may be reviewed now, but execution starts only after the Gate 0
+report is approved and D-012 is explicitly resolved before destructive
+migration or deletion behavior. See the
+[Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
+current code inventory and decision boundary; it is not an execution plan.
 
 ## Required detailed execution order
 
 1. Establish timezone storage, default/change behavior and authoritative user-local `today` from F6/D-008.
-2. Add backward-compatible observation/provenance/confirmation fields from F2/D-009.
+2. Add backward-compatible observation/provenance/certainty/authority fields from F2/D-009. Partner assistance is accepted immediately; primary correction/deletion remains authoritative.
 3. Implement F1 invariants using the established timezone contract; do not compare against backend-runtime “today.”
-4. Run F3 aggregate audit and resolve D-010 from measured reason counts.
+4. Run F3 aggregate audit and quantify D-010 reason counts without exposing raw rows; preserve all ambiguous rows as `legacy_unknown`.
 5. Rehearse and run F4 additive migration.
 6. Remove F5 inferred writes only after compatible reads/new writes are active.
 7. Complete remaining private context/segment behavior and F7 UI behind feature flags.
@@ -59,7 +69,7 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 </task>
 
 <task id="F2" name="Add explicit observation and confirmation semantics">
-  <description>Separate source/actor from certainty and primary confirmation while preserving legacy compatibility.</description>
+  <description>Separate source/actor from certainty and primary authority while preserving legacy compatibility.</description>
   <files>
     <modify>convex/schema.ts</modify>
     <modify>convex/mutations/periods.ts</modify>
@@ -67,14 +77,14 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
     <modify>convex/mutations/periods.test.ts</modify>
   </files>
   <steps>
-    <step>Add failing tests proving partner-assisted entries are pending and ineligible until the primary acts.</step>
-    <step>Add `startCertainty`, optional `endCertainty`, confirmation state and explicit legacy provenance using optional/backward-compatible fields first.</step>
+    <step>Add failing tests proving partner-assisted entries are accepted immediately, while later primary correction/deletion wins and approximate values remain approximate.</step>
+    <step>Add `startCertainty`, optional `endCertainty`, actor/source, primary-authority metadata and explicit legacy provenance using optional/backward-compatible fields first.</step>
     <step>Keep `createdByUserId` and `updatedByUserId`; remove `system` from all new observation writes.</step>
-    <step>Add primary confirm/reject mutations with couple-membership, revocation and ownership tests.</step>
+    <step>Add primary correction/tombstone precedence with couple-membership, stale-write, revocation and ownership tests; do not add a partner confirm/reject workflow.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/mutations/periods.test.ts</command>
-    <expected>Self, approximate, pending partner-assist, confirm, reject and revoked-access cases pass.</expected>
+    <expected>Self, approximate, immediately accepted partner-assist, primary correction/deletion, legacy-unknown and revoked-access cases pass.</expected>
   </verification>
 </task>
 
@@ -108,7 +118,7 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
   <steps>
     <step>Write idempotency and interrupted-resume tests against synthetic legacy rows.</step>
     <step>Backfill only values derivable from existing actor/source fields.</step>
-    <step>Mark suspected auto-ended rows and missing provenance as `legacy_unknown`; never label them confirmed.</step>
+    <step>Mark suspected auto-ended rows, missing provenance and unresolved duplicate/overlap rows as `legacy_unknown`; never label them confirmed.</step>
     <step>Run dry-run counts, migration rehearsal and rollback/forward-fix procedure on a non-production clone before protected production execution.</step>
   </steps>
   <verification>
@@ -159,7 +169,7 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 </task>
 
 <task id="F7" name="Update logging, correction and confirmation UI">
-  <description>Expose confirmed/approximate starts and ends, unresolved open events and pending partner assistance without presenting estimates as history.</description>
+  <description>Expose exact/approximate starts and ends, unresolved open events and accepted partner assistance without presenting estimates as history.</description>
   <files>
     <modify>app/(dashboard)/dashboard/log/page.tsx</modify>
     <modify>app/(dashboard)/dashboard/partner/page.tsx</modify>
@@ -168,14 +178,14 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
     <create>e2e/cycle-facts.spec.ts</create>
   </files>
   <steps>
-    <step>Write failing browser cases for approximate input, pending partner record, primary confirm/reject, overlap and unresolved old open period.</step>
+    <step>Write failing browser cases for approximate input, accepted partner assistance, primary correction/tombstone, overlap and unresolved old open period.</step>
     <step>Use one shared cycle-setup form/validation contract across onboarding and dashboard recovery.</step>
-    <step>Show actor and certainty honestly; provide “Is your period still ongoing?” as a private prompt, never an automatic answer.</step>
+    <step>Show actor, certainty and accepted assistance honestly; provide “Is your period still ongoing?” as a private prompt, never an automatic answer.</step>
     <step>Recompute/invalidate dependent derived views after correction/deletion without mutating history.</step>
   </steps>
   <verification>
-    <command>npx playwright test e2e/cycle-facts.spec.ts --project=chromium</command>
-    <expected>All factual logging/correction/confirmation journeys pass with zero skips.</expected>
+    <command>npx playwright test e2e/cycle-facts.spec.ts --project=release-desktop --project=release-mobile</command>
+    <expected>All factual logging/correction/authority journeys pass on desktop and mobile with zero skips.</expected>
   </verification>
 </task>
 
@@ -185,15 +195,15 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 - Legacy rows have known provenance or explicit `legacy_unknown`: 100% after migration.
 - Backend accepts duplicate starts, overlaps, end-before-start or future-local dates: 0 in tests and pilot telemetry.
 - Predicted/configured period endings written into `periodEvents.endDate`: 0.
-- Partner-assisted records used for future prediction/evaluation before primary confirmation: 0.
+- Approximate or `legacy_unknown` records silently promoted to exact/high-confidence prediction inputs: 0; partner-assisted records remain accepted but primary correction/deletion always wins.
 - Aggregate production audit reports contain raw IDs, dates, notes or rows: 0.
 - Context/pause labels exposed to a partner without separate approved sharing: 0.
 - Migration is idempotent and rehearsal aggregate counts reconcile before/after.
 
 ## Rollout and rollback
 
-Deploy additive schema and read compatibility first, then dry-run audit, then migration, then guarded new writes, and only afterward remove old write paths. Feature-flag the new UI. Stop on count mismatch, invariant rejection spike, unauthorized visibility, migration non-idempotency or inability to restore. Rollback reads to compatible fields; never “undo” by deleting migrated history.
+Deploy additive schema and read compatibility first, then dry-run audit, then migration, then guarded new writes, and only afterward remove old write paths. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and exposes only an authenticated boolean capability to the UI. Gate 0 approval is required before additive execution; D-012 approval remains required for hard deletion, destructive migration and production exposure. Stop on count mismatch, invariant rejection spike, unauthorized visibility, migration non-idempotency or inability to restore. Rollback reads to compatible fields; never “undo” by deleting migrated history.
 
 ## Exit evidence
 
-Store synthetic audit output, suppressed production aggregate counts, migration reconciliation, invariant test report, authenticated browser report and rollback rehearsal under `docs/evidence/cycle-facts-gate-1/`. Gate 2 may not derive phase state from pending or legacy-unknown records.
+Store synthetic audit output, suppressed production aggregate counts, migration reconciliation, invariant test report, authenticated browser report and rollback rehearsal under `docs/evidence/cycle-facts-gate-1/`. Gate 2 may not derive exact phase state from approximate or legacy-unknown records unless a later approved policy explicitly handles that uncertainty.

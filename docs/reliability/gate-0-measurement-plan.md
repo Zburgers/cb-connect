@@ -1,10 +1,10 @@
 # Gate 0 measurement and recovery proposal
 
 **Decisions:** D-006 and D-007
-**Status:** Engineering proposal; targets and owners are not approved
+**Status:** Approved 2026-08-05 by the sole project owner acting as product, operations and recovery authority
 **Scope:** Define what must be measured and rehearsed before Gate 0 promotion. No target below is evidence of achieved reliability.
 
-This document is a proposal, not an approval record. It becomes binding only after the required operator/product authorities are recorded in the decision register.
+This contract is approved for Gate 0. The decision register is the approval record. Targets are owner-approved objectives, but are not demonstrated as achieved until measured evidence supports them.
 
 ## Proposed critical-journey SLIs (D-006)
 
@@ -20,7 +20,7 @@ Telemetry may record route/function class, outcome, bounded reason, duration buc
 
 ## Baseline and approval process
 
-Engineering proposes a 28-day baseline after the redacted telemetry contract is deployed. The baseline report must show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. Targets remain proposed until the named operator and product approver sign the report; a green build or HTTP 200 health response cannot substitute for the baseline.
+Engineering will collect a 28-day baseline after the redacted telemetry contract is deployed. The baseline report must show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. The targets are owner-approved objectives, not demonstrated achievements, until the baseline evidence is reported; a green build or HTTP 200 health response cannot substitute for the baseline.
 
 The operator approval must also name the error-budget response: pause non-critical rollout, open an incident, or accept a bounded exception with owner, reason, controls and expiry. Privacy/security review is required for telemetry fields before collection.
 
@@ -38,6 +38,6 @@ Engineering proposes:
 
 Rollback and restore scripts must reject production selectors, unresolved targets and destructive Git operations. A restore rehearsal is not complete merely because a backup command exits successfully.
 
-## Approval required
+## Approval record
 
-D-006 requires a named operator and product approver for the SLI definitions, baseline window, targets, exclusions and error-budget response. D-007 requires a named backup/restore owner, an approved non-production target and approved RPO/RTO objectives. Until these are recorded in the decision register, O2, X1 and the Gate 0 exit remain blocked.
+D-006 and D-007 were approved by the sole project owner on 2026-08-05. The 28-day baseline, proposed targets, exclusions, pause/incident response, `dev:hallowed-hummingbird-284` synthetic-only rehearsal target, 24-hour RPO and four-hour RTO are binding Gate 0 objectives. O2 and planning for X1 may proceed; X1 must revalidate that its target remains non-production immediately before rehearsal.

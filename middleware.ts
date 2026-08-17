@@ -4,6 +4,17 @@ import { NextResponse } from "next/server";
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/onboarding"]);
 const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost:6050"];
 
+// Operational endpoints must be reachable even when Clerk is unavailable or
+// its runtime configuration is incomplete. The deployment verifier uses these
+// routes to distinguish process liveness from application readiness.
+export const PUBLIC_OPERATIONAL_PATHS = ["/api/health", "/api/ready"] as const;
+
+export function isPublicOperationalPath(pathname: string): boolean {
+  return PUBLIC_OPERATIONAL_PATHS.includes(
+    pathname as (typeof PUBLIC_OPERATIONAL_PATHS)[number],
+  );
+}
+
 function getAllowedOrigins() {
   return (process.env.CORS_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS.join(","))
     .split(",")
@@ -60,7 +71,6 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
+    "/((?!_next|api/(?:health|ready)(?:/|$)|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
   ],
 };

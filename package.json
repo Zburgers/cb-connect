@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "npm run typecheck",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test"
+    "test:ci-workflow": "bash scripts/tests/ci-workflow.test.sh",
+    "test:e2e": "playwright test",
+    "test:e2e:release": "playwright test --config=playwright.release.config.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.3",
@@ -26,17 +28,18 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "convex": "^1.39.1",
+    "convex": "^1.43.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.474.0",
-    "next": "^15.2.0",
+    "next": "^15.5.22",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "svix": "^1.87.0",
+    "svix": "^1.99.1",
     "tailwind-merge": "^3.0.2"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.2.17",
     "@edge-runtime/vm": "^5.0.0",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.13.0",
@@ -48,5 +51,11 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.25",
+      "sharp": "0.35.3"
+    }
   }
 }

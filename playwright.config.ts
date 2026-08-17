@@ -1,32 +1,22 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/**
- * Playwright E2E configuration for CB Connect
- * 
- * Run tests:
- * - npx playwright test                    # Run all tests
- * - npx playwright test --headed           # Run in headed mode
- * - npx playwright test --debug            # Debug mode
- * - npx playwright test --project=chromium # Run on specific browser
- * - npx playwright test --grep "partner"   # Run specific test
- */
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const basePort = new URL(baseURL).port || "3000";
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 45000, // 45s timeout for Convex operations
+  testMatch: "**/*.spec.ts",
+  timeout: 45000,
   expect: {
-    timeout: 8000, // 8s for assertions
+    timeout: 8000,
   },
-  fullyParallel: false, // Run tests sequentially for auth flows
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0, // Retry on CI
-  workers: 1, // Single worker for auth tests
-  reporter: [
-    ["html", { outputFolder: "playwright-report" }],
-    ["list"],
-  ],
+  retries: process.env.CI ? 2 : 0,
+  workers: 1,
+  reporter: [["html", { outputFolder: "playwright-report", open: "never" }], ["list"]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -37,19 +27,10 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
-    // Add more browsers as needed
-    // {
-    //   name: "firefox",
-    //   use: { ...devices["Desktop Firefox"] },
-    // },
-    // {
-    //   name: "webkit",
-    //   use: { ...devices["Desktop Safari"] },
-    // },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: `npm run dev -- --port ${basePort}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

@@ -32,15 +32,19 @@ The numbered gate documents are **gate-level plans**: they lock goals, architect
 3. names exact file paths, verification commands, rollback boundaries and task dependencies;
 4. records the approved branch/worktree and production exposure boundary.
 
-Only Gate 0 has a current detailed execution plan. Gates 1-6 and Research Gate 7 are deliberately planned just in time after their prerequisites produce evidence; this prevents later plans from guessing contracts that earlier gates are responsible for establishing.
+Gate 0 has a completed detailed execution record and an explicit blocked
+promotion report. Gates 1-6 and Research Gate 7 remain deliberately planned
+just in time after their prerequisites produce approved evidence; this
+prevents later plans from guessing contracts that earlier gates are responsible
+for establishing.
 
 ## Current planning readiness
 
 | Lane or gate | Planning status | May implementation start? | Next required artifact |
 |---|---|---|---|
 | Continuous issue remediation | Active | Yes, for independently qualified fixes | Reproduction and acceptance evidence in `issues.md` |
-| Gate 0 reliability | Detailed execution plan drafted | After Gate 0 preflight decisions are resolved | `2026-08-04-00-production-reliability-execution.md` |
-| Gate 1 cycle facts | Gate-level plan only | No | Post-Gate-0 schema/timezone/migration execution plan |
+| Gate 0 reliability | Implementation packet closed; promotion report blocked | No local implementation task remains | Direct C2/production/X1/G2 evidence and an approved Gate 0 report |
+| Gate 1 cycle facts | Dated implementation plan and handoff available; execution blocked | No | Approved Gate 0 report; D-012 approval before destructive migration, hard deletion or production exposure |
 | Gate 2 four-phase semantics | Gate-level plan only | No | Post-Gate-1 state-contract execution plan |
 | Gate 3 prediction | Gate-level plan only | No | Frozen benchmark and calibration protocol |
 | Gate 4 notifications | Gate-level plan only | No | Approved event/privacy/retention execution plan |
@@ -62,7 +66,7 @@ Only Gate 0 has a current detailed execution plan. Gates 1-6 and Research Gate 7
 |---|---|---|---|
 | Continuous | Evidence-backed issue remediation | None | Fixes may ship whenever qualified |
 | 0 | [Production reliability](2026-08-01-01-production-reliability-foundation.md) | None | Operational controls and transparent release identity |
-| 1 | [Trustworthy cycle facts](2026-08-01-02-trustworthy-cycle-facts.md) | Gate 0 release controls | Corrected logging/history semantics |
+| 1 | [Trustworthy cycle facts](2026-08-01-02-trustworthy-cycle-facts.md) | Approved Gate 0 report | Corrected logging/history semantics |
 | 2 | [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md) | Gate 1 facts | Recorded/Calendar estimate/Late UX |
 | 3 | [Personalized prediction](2026-08-01-04-personalized-prediction-and-evaluation.md) | Gate 2 state machine | Calibrated point and likely window |
 | 4 | [Notification platform](2026-08-01-05-notification-platform.md) | Gates 0–3 event contracts | In-app inbox first |

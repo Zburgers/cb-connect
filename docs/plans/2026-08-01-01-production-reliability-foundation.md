@@ -18,7 +18,13 @@
 
 **Detailed execution plan:** [2026-08-04 Gate 0 execution plan](2026-08-04-00-production-reliability-execution.md)
 
-**Planning status:** Gate-level work packages. Do not execute R1-R7 directly; integrate the planning batch onto current `origin/main`, resolve D-002 through D-007, then execute the task-sized detailed plan. PR #8 is merged but not proven deployed because run `30852430655` failed at Convex deployment.
+**Planning status:** Historical gate-level work packages. The task-sized
+implementation packet is closed and its current outcome is the explicit
+**[BLOCKED Gate 0 report](../evidence/reliability-gate-0/REPORT.md)**. Do not
+execute R1-R7 directly or reopen them as a local queue. Gate 0 can progress
+only through the remaining production, recovery and 28-day baseline evidence,
+followed by an approved report. Current protected C2 authenticated-CI evidence
+is recorded in [`c2-protected-2026-08-17.md`](../evidence/reliability-gate-0/c2-protected-2026-08-17.md). Gate 1 is blocked until that approval exists.
 
 ## Entry criteria
 

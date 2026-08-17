@@ -1,27 +1,93 @@
 name: Deploy cb-connect
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: cb-connect-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build & Deploy
+    name: Promote qualified release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      vars.PROMOTE_PRODUCTION == 'true'
     runs-on: self-hosted
     environment: production
+    env:
+      CB_CONNECT_RELEASE_ROOT: ${{ vars.CB_CONNECT_RELEASE_ROOT }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout the qualified commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Setup Node.js
+      - name: Reject a superseded qualified commit
+        env:
+          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          test "$QUALIFIED_SHA" = "$(git rev-parse origin/main)"
+
+      - name: Setup Node.js for artifact verification
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 20.19.1
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Download the exact qualified release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cb-connect-release-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/cb-connect-qualified-release
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify qualified artifact identity and checksum
+        id: qualified_release
+        env:
+          QUALIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+          QUALIFIED_RUN_ID: ${{ github.event.workflow_run.id }}
+          QUALIFIED_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          QUALIFIED_RELEASE_DIR: ${{ runner.temp }}/cb-connect-qualified-release
+        run: |
+          set -euo pipefail
+          manifest="$QUALIFIED_RELEASE_DIR/release-manifest.json"
+          bash scripts/package-release.sh --verify "$manifest"
+          node - "$manifest" <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const manifestPath = process.argv[2];
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const expectedSha = process.env.QUALIFIED_SHA;
+          const expectedBuildId = `run-${process.env.QUALIFIED_RUN_ID}-${process.env.QUALIFIED_RUN_ATTEMPT}`;
+          if (manifest.commitSha !== expectedSha) throw new Error('qualified artifact commit SHA does not match its CI run');
+          if (manifest.buildId !== expectedBuildId) throw new Error('qualified artifact build ID does not match its CI run');
+          if (manifest.compatibilityVersion !== 'v1') throw new Error('qualified artifact compatibility version is not approved');
+          const artifactPath = path.join(path.dirname(manifestPath), manifest.artifact);
+          if (!fs.existsSync(artifactPath)) throw new Error('qualified artifact payload is missing');
+          for (const [key, value] of Object.entries({
+            manifest: manifestPath,
+            artifact: artifactPath,
+            commit_sha: manifest.commitSha,
+            build_id: manifest.buildId,
+            built_at: manifest.builtAt,
+            compatibility_version: manifest.compatibilityVersion,
+          })) console.log(`${key}=${value}`);
+          NODE
 
       - name: Validate required deployment configuration
         env:
@@ -32,6 +98,8 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
         run: |
           set -euo pipefail
           required=(
@@ -42,20 +110,119 @@ jobs:
             CLERK_SECRET_KEY
             CLERK_FRONTEND_API_URL
             CORS_ALLOWED_ORIGINS
+            CB_CONNECT_PRODUCTION_BASE_URL
+            CB_CONNECT_RELEASE_ROOT
           )
-
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required production deployment secret: ${name}"
+              echo "::error::Missing required production deployment configuration: ${name}"
               exit 1
             fi
           done
+          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = 'prod:festive-malamute-715'
+          [[ "$CB_CONNECT_PRODUCTION_BASE_URL" == https://* ]]
+          [[ "$CB_CONNECT_RELEASE_ROOT" =~ ^/[a-zA-Z0-9._/-]+$ ]]
+          test "$CB_CONNECT_RELEASE_ROOT" != '/'
+          test "$CB_CONNECT_RELEASE_ROOT" != /tmp/*
+          [[ "$CB_CONNECT_RELEASE_ROOT" != "$RUNNER_TEMP"* ]]
+          [[ "$CB_CONNECT_RELEASE_ROOT" != "$GITHUB_WORKSPACE"* ]]
+          test -d "$CB_CONNECT_RELEASE_ROOT"
+          test -w "$CB_CONNECT_RELEASE_ROOT"
+
+      - name: Materialize durable immutable release
+        env:
+          QUALIFIED_MANIFEST: ${{ steps.qualified_release.outputs.manifest }}
+          QUALIFIED_ARTIFACT: ${{ steps.qualified_release.outputs.artifact }}
+          QUALIFIED_COMMIT_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
+          QUALIFIED_BUILD_ID: ${{ steps.qualified_release.outputs.build_id }}
+        run: |
+          set -euo pipefail
+          release_id="${QUALIFIED_COMMIT_SHA}-${QUALIFIED_BUILD_ID}"
+          releases_dir="$CB_CONNECT_RELEASE_ROOT/releases"
+          release_dir="$releases_dir/$release_id"
+          mkdir -p "$releases_dir"
+          if [[ -e "$release_dir" ]]; then
+            test -d "$release_dir"
+            test -f "$release_dir/release-manifest.json"
+            bash scripts/package-release.sh --verify "$release_dir/release-manifest.json"
+            cmp -s "$QUALIFIED_MANIFEST" "$release_dir/release-manifest.json"
+          else
+            staging_dir="$(mktemp -d "$releases_dir/.staging-${release_id}.XXXXXX")"
+            trap 'rm -rf "$staging_dir"' EXIT
+            cp "$QUALIFIED_MANIFEST" "$staging_dir/release-manifest.json"
+            cp "$QUALIFIED_ARTIFACT" "$staging_dir/"
+            bash scripts/package-release.sh --verify "$staging_dir/release-manifest.json"
+            mkdir "$staging_dir/extracted"
+            artifact_name="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).artifact)' "$staging_dir/release-manifest.json")"
+            tar --no-same-owner -xzf "$staging_dir/$artifact_name" -C "$staging_dir/extracted"
+            test -f "$staging_dir/extracted/server.js"
+            mv "$staging_dir" "$release_dir"
+            trap - EXIT
+          fi
+          printf 'CB_CONNECT_DURABLE_MANIFEST=%s\n' "$release_dir/release-manifest.json" >> "$GITHUB_ENV"
+          printf 'CB_CONNECT_RELEASE_DIR=%s\n' "$release_dir/extracted" >> "$GITHUB_ENV"
+
+      - name: Resolve verified rollback candidate
+        id: rollback_candidate
+        run: |
+          set -euo pipefail
+          current_link="$CB_CONNECT_RELEASE_ROOT/current"
+          if [[ ! -L "$current_link" ]]; then echo 'available=false' >> "$GITHUB_OUTPUT"; exit 0; fi
+          previous_dir="$(readlink -f "$current_link")"
+          case "$previous_dir" in "$CB_CONNECT_RELEASE_ROOT"/releases/*/extracted) ;; *) echo 'current release pointer is outside the managed extracted release directory' >&2; exit 1 ;; esac
+          previous_manifest="$(dirname "$previous_dir")/release-manifest.json"
+          bash scripts/package-release.sh --verify "$previous_manifest"
+          node - "$previous_manifest" <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('node:fs');
+          const manifestPath = process.argv[2];
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (manifest.compatibilityVersion !== 'v1') throw new Error('rollback candidate compatibility is not approved');
+          const releaseRoot = manifestPath.replace(/\/release-manifest\.json$/, '');
+          for (const [key, value] of Object.entries({ previous_dir: `${releaseRoot}/extracted`, previous_manifest: manifestPath, previous_commit_sha: manifest.commitSha, previous_build_id: manifest.buildId, previous_built_at: manifest.builtAt, previous_compatibility_version: manifest.compatibilityVersion })) console.log(`${key}=${value}`);
+          console.log('available=true');
+          NODE
+
+      - name: Validate rollback safety precondition
+        if: >-
+          steps.rollback_candidate.outputs.available != 'true' &&
+          vars.ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK != 'true'
+        run: |
+          echo '::error::No verified rollback candidate is available. Set the separately explicit ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK variable to true only for an authorized first promotion.'
+          exit 1
+
+      - name: Validate PM2 promotion contract
+        run: bash scripts/tests/pm2-config.test.sh
+
+      - name: Validate Convex deploy key preflight
+        if: vars.DEPLOY_CONVEX == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$CONVEX_DEPLOY_KEY"
+
+      - name: Setup Node.js for explicit Convex release
+        if: vars.DEPLOY_CONVEX == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Install explicit Convex release dependencies
+        if: vars.DEPLOY_CONVEX == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Record backend deployment timestamp
+        if: vars.DEPLOY_CONVEX == 'true'
+        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Sync Convex runtime secrets
         if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+          CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -64,61 +231,51 @@ jobs:
           env_file="$(mktemp)"
           trap 'rm -f "$env_file"' EXIT
           umask 077
-
           node - "$env_file" <<'NODE'
           const fs = require('node:fs');
-          const file = process.argv[2];
-          const names = [
-            'CLERK_FRONTEND_API_URL',
-            'CLERK_WEBHOOK_SECRET',
-            'DISCORD_WEBHOOK_URL',
-          ];
-          const content = names
-            .filter((name) => process.env[name])
-            .map((name) => `${name}=${process.env[name]}`)
-            .join('\n');
-          fs.writeFileSync(file, content ? `${content}\n` : '', { mode: 0o600 });
+          const names = ['CLERK_FRONTEND_API_URL', 'CLERK_WEBHOOK_SECRET', 'DISCORD_WEBHOOK_URL', 'CB_CONNECT_BACKEND_DEPLOYMENT', 'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION', 'CB_CONNECT_BACKEND_DEPLOYED_AT'];
+          const content = names.filter((name) => process.env[name]).map((name) => `${name}=${process.env[name]}`).join('\n');
+          fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', { mode: 0o600 });
           NODE
-
           if [[ -s "$env_file" ]]; then
             convex_env_deployment="$CONVEX_DEPLOYMENT"
-            if [[ "$convex_env_deployment" == prod:* ]]; then
-              convex_env_deployment="${convex_env_deployment#prod:}"
-            fi
+            if [[ "$convex_env_deployment" == prod:* ]]; then convex_env_deployment="${convex_env_deployment#prod:}"; fi
             npx convex env set --from-file "$env_file" --deployment "$convex_env_deployment"
           else
-            echo "Skipping Convex runtime secret sync; no optional values are configured."
+            echo 'Skipping Convex runtime secret sync; no optional values are configured.'
           fi
 
-      - name: Validate Convex backend
-        run: npm run test:unit -- --run
-
-      - name: Deploy Convex backend
+      - name: Validate explicit Convex release target
         if: vars.DEPLOY_CONVEX == 'true'
-        run: npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${GITHUB_SHA}"
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
-          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
-
-      - name: Build application
-        run: npm run build
-        env:
-          NODE_ENV: production
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
-          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
-          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
-          NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
-          NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
-
-      - name: Promote with PM2
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
         run: |
           set -euo pipefail
-          pm2 startOrReload pm2.config.js --update-env
-          pm2 save
+          expected='prod:festive-malamute-715'
+          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = "$expected"
+          test "$CONVEX_DEPLOYMENT" = "$expected"
+
+      - name: Deploy explicit Convex compatibility release
+        if: vars.DEPLOY_CONVEX == 'true'
+        env:
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          QUALIFIED_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          convex_release_env_file="$(mktemp)"
+          trap 'rm -f "$convex_release_env_file"' EXIT
+          umask 077
+          printf 'CONVEX_DEPLOYMENT=%s\n' "$CONVEX_DEPLOYMENT" > "$convex_release_env_file"
+          npx convex deploy --env-file "$convex_release_env_file" --typecheck enable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
+          npx convex function-spec --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
+          rg -q 'getBackendIdentity' "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
+          npx convex run queries/system:getBackendIdentity '{}' --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-backend-identity.json"
+          rg -q '"compatibilityVersion"[[:space:]]*:[[:space:]]*"v1"' "$RUNNER_TEMP/cb-connect-backend-identity.json"
+
+      - name: Promote qualified release with PM2 start-or-reload
+        id: promote
         env:
           NODE_ENV: production
           PORT: 6050
@@ -131,3 +288,72 @@ jobs:
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
+          CB_CONNECT_COMMIT_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
+          CB_CONNECT_BUILD_ID: ${{ steps.qualified_release.outputs.build_id }}
+          CB_CONNECT_COMPATIBILITY_VERSION: ${{ steps.qualified_release.outputs.compatibility_version }}
+          CB_CONNECT_BUILT_AT: ${{ steps.qualified_release.outputs.built_at }}
+        run: |
+          set -euo pipefail
+          pm2 startOrReload pm2.config.js --update-env
+          pm2 save
+
+      - name: Verify qualified release promotion
+        id: verify_promotion
+        env:
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+          CB_CONNECT_COMPATIBILITY_VERSION: ${{ steps.qualified_release.outputs.compatibility_version }}
+          PM2_PROCESS_NAME: cb-connect
+          RELEASE_REQUIRE_TLS: true
+        run: |
+          set -euo pipefail
+          bash scripts/verify-release.sh "$CB_CONNECT_DURABLE_MANIFEST" "$CB_CONNECT_PRODUCTION_BASE_URL" "$CB_CONNECT_PRODUCTION_DEPLOYMENT" "$CB_CONNECT_COMPATIBILITY_VERSION"
+
+      - name: Record verified release as rollback candidate
+        run: |
+          set -euo pipefail
+          current_link="$CB_CONNECT_RELEASE_ROOT/current"
+          if [[ -e "$current_link" && ! -L "$current_link" ]]; then echo 'current release pointer must be a symlink' >&2; exit 1; fi
+          ln -sfn "$CB_CONNECT_RELEASE_DIR" "$current_link"
+
+      - name: Restore prior verified release after failed promotion
+        if: >-
+          always() &&
+          (steps.promote.outcome == 'failure' || steps.verify_promotion.outcome == 'failure') &&
+          steps.rollback_candidate.outputs.available == 'true'
+        env:
+          NODE_ENV: production
+          PORT: 6050
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }}
+          NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }}
+          CB_CONNECT_RELEASE_DIR: ${{ steps.rollback_candidate.outputs.previous_dir }}
+          CB_CONNECT_COMMIT_SHA: ${{ steps.rollback_candidate.outputs.previous_commit_sha }}
+          CB_CONNECT_BUILD_ID: ${{ steps.rollback_candidate.outputs.previous_build_id }}
+          CB_CONNECT_COMPATIBILITY_VERSION: ${{ steps.rollback_candidate.outputs.previous_compatibility_version }}
+          CB_CONNECT_BUILT_AT: ${{ steps.rollback_candidate.outputs.previous_built_at }}
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
+          PM2_PROCESS_NAME: cb-connect
+          RELEASE_REQUIRE_TLS: true
+        run: |
+          set -euo pipefail
+          pm2 startOrReload pm2.config.js --update-env
+          pm2 save
+          bash scripts/verify-release.sh "${{ steps.rollback_candidate.outputs.previous_manifest }}" "$CB_CONNECT_PRODUCTION_BASE_URL" "$CB_CONNECT_PRODUCTION_DEPLOYMENT" "$CB_CONNECT_COMPATIBILITY_VERSION"
+          ln -sfn "$CB_CONNECT_RELEASE_DIR" "$CB_CONNECT_RELEASE_ROOT/current"
+
+      - name: Report missing rollback candidate
+        if: >-
+          always() &&
+          (steps.promote.outcome == 'failure' || steps.verify_promotion.outcome == 'failure') &&
+          steps.rollback_candidate.outputs.available != 'true'
+        run: |
+          echo '::error::Promotion failed and no previously verified compatible release is available for automatic rollback.'
+          exit 1

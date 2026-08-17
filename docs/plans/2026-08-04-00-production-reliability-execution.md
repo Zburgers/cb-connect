@@ -16,7 +16,27 @@
 
 **Decisions:** [Decision register](../decisions/major-release-decision-register.md)
 
-**Status:** Drafted; application implementation is blocked until the planning batch is integrated onto current `origin/main` and D-002 through D-007 have approved resolutions. PR #8 is merged, but its production deployment failed and must be covered by Gate 0 qualification.
+**Status:** Historical detailed execution record. The implementation packet
+closed on 2026-08-06, and the current Gate 0 verdict is
+**[BLOCKED](../evidence/reliability-gate-0/REPORT.md)** for production
+promotion. D-002 through D-007 remain resolved implementation decisions, but
+they do not replace missing direct evidence. This document must not be used as
+a new local task queue.
+
+## Execution workspace and continuity contract
+
+- Execute the whole Gate 0 plan in `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on `gate-0/reliability-2026-08-04`. Use additional packet branches only when the user explicitly authorizes them; do not create overlapping implementations.
+- The worktree is configured with an ignored `.env.local` for the isolated CB Connect Convex development deployment. Local implementation and Convex pushes target that dev deployment only unless a later task explicitly authorizes a named preview/test or production target.
+- Every agent must read and append `docs/execution/gate-0-agent-log.md` according to the contract in `AGENTS.md`. The log is continuity evidence, not a substitute for task commits, tests, decision approvals, or Gate 0 release evidence.
+- Never record secrets, environment values, Clerk user identifiers, personal data, or health data in the log.
+
+### First implementation packet (historical)
+
+The first packet was **I1, I3 and O1**, in that order. The completed
+implementation sequence and commits are recorded in the append-only agent log
+and the Gate 0 report. Do not rerun these tasks merely because they appear
+below; follow the current external-evidence boundary in the plan index and
+report instead.
 
 ## Locked scope and contracts
 
@@ -562,4 +582,6 @@ bash scripts/tests/rehearse-rollback.test.sh
 git diff --check
 ```
 
-All commands must exit 0 except `npm audit --omit=dev` only where the approved policy explicitly records a time-bounded exception. Production promotion additionally requires matching `/api/ready` identities, listener/TLS/PM2 persistence evidence, successful authenticated two-user smoke and an approved Gate 0 report.
+The completed local verification set passed with `npm audit --omit=dev`
+reporting zero vulnerabilities. Current protected authenticated CI evidence is
+recorded in [`c2-protected-2026-08-17.md`](../evidence/reliability-gate-0/c2-protected-2026-08-17.md). Production promotion still additionally requires matching production `/api/ready` identities, listener/TLS/PM2 persistence evidence, measured recovery evidence, the 28-day baseline and an approved Gate 0 report.

@@ -11,6 +11,7 @@ type Step = "role" | "period" | "done";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
   const updateCycleSettings = useMutation(api.mutations.periods.updateCycleSettings);
@@ -30,6 +31,9 @@ export default function OnboardingPage() {
     setError("");
     setIsSubmitting(true);
     try {
+      // The standalone onboarding route is not wrapped by the dashboard
+      // layout, so ensure the Convex user exists before assigning a role.
+      await ensureUser();
       await updateRole({ role });
       if (role === "primary") {
         setStep("period");
