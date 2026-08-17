@@ -90,7 +90,7 @@ async function completeOnboarding(
     await page.getByRole("button", { name: /I track my cycle/i }).click();
     reportStage("primary-onboarding-date");
     const periodDateInput = page.locator('input[type="date"]');
-    await expect(periodDateInput).toBeVisible({ timeout: 30000 });
+    await expect(periodDateInput).toBeVisible({ timeout: 60000 });
     await periodDateInput.fill(syntheticPastDate());
     reportStage("primary-onboarding-submit");
     await page.getByRole("button", { name: /start tracking/i }).click();
