@@ -57,6 +57,26 @@ rollback candidate before any optional Convex runtime-secret sync or Convex
 deploy. With the empty release root and no override, the job fails before any
 Convex mutation.
 
+## 2026-08-17 owner-authorized GitHub environment sync
+
+The Gate 0 authority authorized the existing local environment values to be
+synced through the GitHub CLI without exposing secret values. The following
+protected configuration is present:
+
+- `cb-connect-auth-test` contains all seven required Clerk/Convex fixture
+  secrets.
+- `production` contains the required frontend/Convex/Clerk runtime secrets,
+  CORS origin, and sign-in/sign-up route settings.
+- `production` variables contain `CB_CONNECT_PRODUCTION_DEPLOYMENT` and
+  `CB_CONNECT_RELEASE_ROOT`.
+- `CB_CONNECT_PRODUCTION_BASE_URL` remains configured as the production
+  environment secret.
+- `PROMOTE_PRODUCTION`, `DEPLOY_CONVEX` and
+  `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` remain unset.
+
+This sync establishes CI configuration only. It does not authorize merge,
+production deployment, Convex mutation, or a passed Gate 0 promotion verdict.
+
 PR #17's first push at `c474a30` was rejected before job creation because the
 workflow referenced nonexistent `github.run_started_at` values and used
 `runner.temp` in job-level environment evaluation. The follow-up replaces
