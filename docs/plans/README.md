@@ -37,9 +37,7 @@ task queue. The authoritative outcome is the explicit **BLOCKED** verdict in
 [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md). The remaining work is
 external evidence and authorization, in this order:
 
-1. Obtain a current successful authenticated-smoke CI run from the configured
-   secret-backed test environment. A workflow definition or local fixture proof
-   is not that result.
+1. C2 is now evidenced by [protected CI run 32006791305](../evidence/reliability-gate-0/c2-protected-2026-08-17.md), which passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. This does not establish production evidence.
 2. Only with separate release authorization, establish direct production V1/V2
    identity, TLS/listener/readiness and PM2-persistence evidence; do not infer
    it from an old deploy, build, or dev deployment.
@@ -55,12 +53,12 @@ external evidence and authorization, in this order:
 ## Gate 0 closeout
 
 The implementation sequence G1 → C1/C2/C3 → V1/V2 → X1 → G2 → G3 is
-recorded in the dedicated worktree and append-only execution log. G1, C1, C3,
-V1 isolated-dev identity, V2 implementation and X1 guardrails have passing
-local or synthetic evidence. A current C2 secret-backed CI result, production
-V1/V2 runtime evidence, measured X1 restore objectives and the G2 baseline
-are not available; therefore the Gate 0 report is explicitly **BLOCKED** and
-Gate 1 must remain unexposed and its feature flag must remain off.
+recorded in the dedicated worktree and append-only execution log. G1, C1, C2,
+C3, V1 isolated-dev identity, V2 implementation and X1 guardrails have
+passing local, protected-CI or synthetic evidence. Production V1/V2 runtime
+evidence, measured X1 restore objectives and the G2 baseline are not available;
+therefore the Gate 0 report is explicitly **BLOCKED** and Gate 1 must remain
+unexposed and its feature flag must remain off.
 
 ## Planning policy
 

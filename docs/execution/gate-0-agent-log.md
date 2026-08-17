@@ -654,3 +654,17 @@
 - Decisions made: Keep both operational endpoints because removing either weakens the release verifier’s ability to distinguish process failure from dependency/compatibility failure. Keep production promotion flags disabled. Treat the implementation as merge-candidate hardening, not production qualification.
 - Unresolved blockers: The new local commit has not yet been pushed, so protected CI must rerun on `c39ddcc`. Production remains blocked by missing direct production identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day SLO baseline. D-012 final retention/deletion scope and the four documented technical-debt follow-ups remain open.
 - Exact next safe action: Push `c39ddcc`, observe the replacement protected CI and normal review, then merge only if those checks remain green. Do not deploy or enable production promotion from this local evidence; complete the production evidence gate separately before promotion.
+
+---
+
+- Timestamp: 2026-08-17T13:45:00+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Gate 0 final documentation audit and PR #17 merge review
+- Starting commit: `30e6b81`
+- Ending commit: documentation remediation pending push
+- Work performed: Re-read the Gate 0 plan, report, issue tracker, deployment guide and current PR evidence. Found stale references that treated the current secret-backed authenticated CI result as missing, pointed C2 to the older protected run, and reported the older local test count. Added the current C2 proof for run `32006791305`, updated the report/dashboard/issues to distinguish current C2 evidence from still-missing production, recovery and baseline evidence, and recorded the owner-authorized GitHub environment sync without secret values.
+- Commands and outcomes: `gh pr view 17` reported head `30e6b81`, base `8c83406`, `CLEAN`, and an open PR. CI run `32006791305` passed deterministic qualification and authenticated release smoke with zero skips; the production-configured immutable release job was skipped for the pull-request event. Local build, typecheck, 103 unit tests, policy tests, audit and `git diff --check` passed before this documentation-only remediation.
+- Convex deployment class and status: no Convex publish, production access, production mutation, PM2 operation, promotion or restore occurred.
+- Decisions made: The PR is merge-ready for implementation and CI. Production promotion remains disabled and Gate 0 promotion remains blocked on direct production runtime identity/readiness/PM2/TLS evidence, a durable rollback candidate, measured restore and the 28-day baseline.
+- Unresolved blockers: production promotion evidence, measured recovery, 28-day baseline and D-012 final retention/deletion scope remain pending; none blocks merging the reviewed implementation PR.
+- Exact next safe action: Validate this documentation-only remediation, commit and push it, then merge PR #17 only through the normal review process with all promotion switches still unset.

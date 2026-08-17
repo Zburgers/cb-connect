@@ -1,6 +1,6 @@
 # Gate 0 evidence report and promotion verdict
 
-**Recorded:** 2026-08-06
+**Recorded:** 2026-08-17
 **Worktree:** `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0`
 **Branch:** `gate-0/reliability-2026-08-04`
 **Verdict:** **BLOCKED for production promotion**
@@ -118,13 +118,23 @@ desktop and mobile fixture lifecycles with zero skips; the production-configured
 release job was correctly skipped because production promotion remains
 disabled. This closes the current C2 CI-evidence blocker.
 
+## 2026-08-17 protected CI refresh
+
+The current head `30e6b81` was verified by [CI run
+32006791305](https://github.com/Zburgers/cb-connect/actions/runs/32006791305).
+Deterministic qualification and authenticated release smoke both passed. The
+desktop and mobile fixture lifecycles completed with zero skips. The
+production-configured immutable release job was skipped because the workflow
+was triggered by a pull-request event; no production promotion was attempted.
+This supersedes the older protected-run references for current C2 evidence.
+
 ## Criterion review
 
 | Criterion | Evidence kind | Artifact | Result |
 |---|---|---|---|
 | G1 dependency remediation | Direct local qualification | `6509bbf`, `3a64142`, `bb30aeb`, `e26afb4`; `npm audit --omit=dev` reports 0 vulnerabilities | PASS |
-| C1 local qualification | Direct local qualification | [`c1-local-proof.md`](c1-local-proof.md); build, typecheck, 18 files/101 tests and full production audit pass in the final review tree | PASS |
-| C2 authenticated release smoke | Protected CI direct evidence | [`e3-live-proof.md`](e3-live-proof.md), [`e2-live-proof.md`](e2-live-proof.md), `.github/workflows/ci.yml`; protected rerun `31627216861` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; production-configured release was skipped by disabled promotion flags | PASS |
+| C1 local qualification | Direct local qualification | [`ship-hardening-2026-08-13.md`](ship-hardening-2026-08-13.md); build, typecheck, 19 files/103 tests, policy tests and full production audit pass in the final review tree | PASS |
+| C2 authenticated release smoke | Protected CI direct evidence | [`c2-protected-2026-08-17.md`](c2-protected-2026-08-17.md); current run `32006791305` passed deterministic qualification and authenticated desktop/mobile smoke with zero skips; the production-configured release was skipped for the pull-request event | PASS |
 | C3 immutable artifact | Direct local qualification and reviewed workflow policy | `a5be590` plus final branch review; standalone package checksum/extraction pass, trusted push-main artifact waits for qualification and authenticated smoke, and deployment consumes that exact artifact | PASS for implementation; trusted CI execution and runtime promotion remain unproven |
 | V1 backend release | Isolated-development direct evidence | [`v1-dev-proof.md`](v1-dev-proof.md); `dev:hallowed-hummingbird-284` returned backend deployment and `v1` identity | PASS for isolated dev; production not executed |
 | V2 compatible promotion | Local implementation and synthetic endpoint/process tests | `379e8c6` plus final review remediation; verifier covers identity/readiness/TLS/listener/PM2 persistence, deploys from a durable release root, serializes promotion and limits automatic rollback to frontend promotion failures | PASS for implementation; production evidence missing |
@@ -145,7 +155,7 @@ disabled. This closes the current C2 CI-evidence blocker.
   release smoke, pre-dashboard durable cleanup ownership, exact empty-email
   recovery, teardown reauthentication, project-isolated fixture lifecycles,
   strict Convex test URL validation and fail-closed environment-scoped CI are
-  implemented. Protected PR run `31626337428` passed both desktop and mobile
+  implemented. Protected PR run `32006791305` passed both desktop and mobile
   authenticated journeys with zero skips.
 - Production promotion is disabled by default. `PROMOTE_PRODUCTION`,
   `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK` and `DEPLOY_CONVEX` remain unset;
@@ -164,11 +174,10 @@ contracts. Those approvals establish the target, compatibility scheme,
 isolated fixture boundary, SLO definitions and recovery objectives; they are
 not evidence that production behavior or the baseline has been measured.
 
-The missing evidence requires authorized external state: a successful CI run
-with the configured Clerk/Convex test environment, a production release run with
-the approved selector and HTTPS base URL, a measured synthetic backup/restore,
-and the 28-day allowlisted telemetry baseline. This worktree must not invent or
-substitute those results.
+The remaining evidence requires authorized external state: a production release
+run with the approved selector and HTTPS base URL, a measured synthetic
+backup/restore, and the 28-day allowlisted telemetry baseline. This worktree
+must not invent or substitute those results.
 
 ## Final verdict
 

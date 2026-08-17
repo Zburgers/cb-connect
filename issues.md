@@ -47,16 +47,16 @@ Update with Github issues on the parent repo
 **Status:** Gate 0 implementation packet complete; production qualification remains blocked
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. The 2026-08-12 review found and fixed workflow ordering so rollback-candidate resolution/guard runs before optional Convex env sync/deploy; `bash scripts/tests/deploy-workflow.test.sh` passes. Owner-supplied production evidence is `https://cb.nakshatraneuratech.dev/api/health=200`, `/api/ready=404`, with an empty `/home/naki/cb-connect-releases`; production remains a pre-candidate and no production mutation or secret operation was run.
+**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. The 2026-08-12 review found and fixed workflow ordering so rollback-candidate resolution/guard runs before optional Convex env sync/deploy; `bash scripts/tests/deploy-workflow.test.sh` passes. Owner-supplied production evidence is `https://cb.nakshatraneuratech.dev/api/health=200`, `/api/ready=404`, with an empty `/home/naki/cb-connect-releases`; production remains a pre-candidate and no production deployment or Convex mutation was run. On 2026-08-17, the owner-authorized GitHub environment sync populated the required production runtime configuration without recording secret values.
 **Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) is historical local evidence; [the V1 proof](docs/evidence/reliability-gate-0/v1-dev-proof.md) is isolated-dev evidence only; [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md) records the current blocked verdict.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --
 
-### Browser test suite is not yet a trustworthy release gate; legacy static skips remain
+### Legacy browser suite is not a trustworthy release gate; authenticated smoke passes
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Deterministic release smoke and fail-closed CI job implemented; a current secret-backed execution remains pending
+**Status:** Deterministic release smoke and fail-closed CI job passed in protected CI; legacy static skips remain outside the release gate
 **Detected:** August 1, 2026
 **Files:** `e2e/signup-repro.spec.ts`, `e2e/onboarding.spec.ts`, `e2e/partner-linking.spec.ts`, `e2e/partner-chat.spec.ts`, `playwright.config.ts`
 **Evidence:** The historical baseline found 32 statically skipped tests and an
@@ -64,12 +64,12 @@ optional local-auth-state chat path; that legacy suite still is not release
 evidence. The former fixed credentials in `signup-repro.spec.ts` were removed
 in Gate 0 E1. The current file uses the approved primary fixture storage
 state, and authenticated setup generates run-scoped credentials at runtime;
-no fixed test credential is claimed as current. The release-smoke CI job is
-defined but lacks a current successful secret-backed execution result.
-**Latest Gate 0 refresh:** Commit `e6ea11c` adds the deterministic primary/partner release smoke and a fail-closed `authenticated-smoke` job. Final branch review added pre-dashboard run ownership/partial-failure cleanup and exact Convex test-host validation. The environment-scoped GitHub configuration now exists, but no post-review successful CI result is present; configuration is not direct qualification. See [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
-**Exit evidence:** Keep fixture credentials generated and uncommitted; obtain a
-current successful secret-backed CI result; fail closed when auth fixtures are
-unavailable; cover both roles, consent/revocation, period integrity, and
+no fixed test credential is claimed as current. The release-smoke CI job passed
+in the protected run recorded below.
+**Latest Gate 0 refresh:** Commit `30e6b81` records the owner-authorized environment sync and current protected run `32006791305`; deterministic qualification and authenticated desktop/mobile smoke passed with zero skips. See [the current C2 proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md) and [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md).
+**Exit evidence:** Keep fixture credentials generated and uncommitted; retain
+the current successful secret-backed CI result; fail closed when auth fixtures
+are unavailable; cover both roles, consent/revocation, period integrity, and
 real-time behavior; publish redacted artifacts; make the suite deterministic
 and mandatory for release candidates.
 
@@ -83,7 +83,7 @@ and mandatory for release candidates.
 **Files:** `package.json`, `package-lock.json`
 **Evidence:** The current pre-remediation tree reported 7 reachable production vulnerabilities (4 high, 3 moderate): Next.js with nested PostCSS/Sharp, Convex with `ws`, and Svix with `uuid`. Reachability was confirmed with `npm ls --all --omit=dev postcss sharp uuid ws convex svix next`. No risk exception was used.
 **Remediation:** `6509bbf` upgrades Next.js within the supported 15.x line and pins secure Next-owned PostCSS/Sharp overrides; `3a64142` upgrades Convex to the release carrying `ws` 8.21.0; `bb30aeb` upgrades Svix to the release carrying `uuid` 11.1.1 or newer.
-**Latest Gate 0 refresh:** After clean `npm ci --no-audit --no-fund`, `npm audit --omit=dev` reports `found 0 vulnerabilities`. `npm run build`, `npm run typecheck`, and `npm run test:unit -- --run` pass (18 files, 93 tests). `.github/workflows/ci.yml` now runs the full production audit without `--audit-level=high`, so any production advisory fails qualification.
+**Latest Gate 0 refresh:** After clean `npm ci --no-audit --no-fund`, `npm audit --omit=dev` reports `found 0 vulnerabilities`. `npm run build`, `npm run typecheck`, and `npm run test:unit -- --run` pass (19 files, 103 tests). The final lockfile remediation updates `nanoid` to `3.3.18`; `.github/workflows/ci.yml` runs the full production audit, so any production advisory fails qualification.
 **Exit evidence:** No reachable production advisory remains; no owner/expiry exception is recorded; CI enforces the complete `npm audit --omit=dev` result.
 
 --
@@ -227,7 +227,7 @@ and mandatory for release candidates.
 
 **Status:** Gate 0 implementation packet closed with an explicit blocked promotion verdict; Gate 1 remains unexposed.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Gate 0 decisions D-002 through D-007 are resolved and the implementation packet is recorded in [`REPORT.md`](docs/evidence/reliability-gate-0/REPORT.md). Promotion remains blocked by missing direct protected-CI, production runtime, measured recovery and 28-day baseline evidence. PR #8 remains historical evidence, not coordinated promotion proof. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Gate 1 planning and exposure remain blocked.
+**Current boundary:** Gate 0 decisions D-002 through D-007 are resolved and the implementation packet is recorded in [`REPORT.md`](docs/evidence/reliability-gate-0/REPORT.md). Current protected C2 CI evidence is present, but promotion remains blocked by missing production runtime, measured recovery and 28-day baseline evidence. PR #8 remains historical evidence, not coordinated promotion proof. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Gate 1 planning and exposure remain blocked.
 
 ---
 

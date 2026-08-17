@@ -8,10 +8,12 @@ guide is an operational reference, not authorization to deploy. Do not claim a
 release from a local build, `/api/health`, a historical workflow run, or the
 isolated development deployment.
 
-Production promotion remains contingent on all of the following:
+Production promotion remains contingent on all of the following. The current
+C2 authenticated-smoke result is recorded in the
+[protected CI proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md):
 
-- a current successful authenticated-smoke CI result from the secret-backed
-  test environment;
+- continued passing authenticated-smoke CI from the secret-backed test
+  environment;
 - separately authorized production Convex/frontend promotion with matching
   `v1` identity, HTTPS, listener, readiness and PM2-persistence evidence;
 - a measured synthetic restore rehearsal with integrity and RPO/RTO results;

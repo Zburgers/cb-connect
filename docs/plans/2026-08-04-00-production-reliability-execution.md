@@ -583,7 +583,5 @@ git diff --check
 ```
 
 The completed local verification set passed with `npm audit --omit=dev`
-reporting zero vulnerabilities. Production promotion still additionally
-requires a current authenticated CI result, matching production `/api/ready`
-identities, listener/TLS/PM2 persistence evidence, measured recovery evidence,
-the 28-day baseline and an approved Gate 0 report.
+reporting zero vulnerabilities. Current protected authenticated CI evidence is
+recorded in [`c2-protected-2026-08-17.md`](../evidence/reliability-gate-0/c2-protected-2026-08-17.md). Production promotion still additionally requires matching production `/api/ready` identities, listener/TLS/PM2 persistence evidence, measured recovery evidence, the 28-day baseline and an approved Gate 0 report.
