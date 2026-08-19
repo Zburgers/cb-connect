@@ -83,7 +83,7 @@ jobs:
             artifact: artifactPath,
             commit_sha: manifest.commitSha,
             build_id: manifest.buildId,
-            built_at: manifest.builtAt,
+            built_at: new Date(manifest.builtAt).toISOString(),
             compatibility_version: manifest.compatibilityVersion,
           })) console.log(`${key}=${value}`);
           NODE
@@ -187,7 +187,7 @@ jobs:
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
           if (manifest.compatibilityVersion !== 'v1') throw new Error('rollback candidate compatibility is not approved');
           const releaseRoot = manifestPath.replace(/\/release-manifest\.json$/, '');
-          for (const [key, value] of Object.entries({ previous_dir: `${releaseRoot}/extracted`, previous_manifest: manifestPath, previous_commit_sha: manifest.commitSha, previous_build_id: manifest.buildId, previous_built_at: manifest.builtAt, previous_compatibility_version: manifest.compatibilityVersion })) console.log(`${key}=${value}`);
+          for (const [key, value] of Object.entries({ previous_dir: `${releaseRoot}/extracted`, previous_manifest: manifestPath, previous_commit_sha: manifest.commitSha, previous_build_id: manifest.buildId, previous_built_at: new Date(manifest.builtAt).toISOString(), previous_compatibility_version: manifest.compatibilityVersion })) console.log(`${key}=${value}`);
           console.log('available=true');
           NODE
 
@@ -211,7 +211,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Record backend deployment timestamp
-        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
 
       - name: Sync Convex runtime secrets
         env:
@@ -266,7 +266,7 @@ jobs:
           CB_CONNECT_BUILT_AT: ${{ steps.qualified_release.outputs.built_at }}
         run: |
           set -euo pipefail
-          pm2 startOrReload pm2.config.js --update-env
+          PM2_PROCESS_NAME=cb-connect bash scripts/promote-pm2.sh
           pm2 save
 
       - name: Verify qualified release promotion
@@ -316,7 +316,7 @@ jobs:
           RELEASE_REQUIRE_TLS: true
         run: |
           set -euo pipefail
-          pm2 startOrReload pm2.config.js --update-env
+          bash scripts/promote-pm2.sh
           pm2 save
           bash scripts/verify-release.sh "${{ steps.rollback_candidate.outputs.previous_manifest }}" "$CB_CONNECT_PRODUCTION_BASE_URL" "$CB_CONNECT_PRODUCTION_DEPLOYMENT" "$CB_CONNECT_COMPATIBILITY_VERSION"
           ln -sfn "$CB_CONNECT_RELEASE_DIR" "$CB_CONNECT_RELEASE_ROOT/current"
