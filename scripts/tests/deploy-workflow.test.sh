@@ -94,7 +94,7 @@ if rg -q 'npx convex (env set|function-spec|run).*--deployment' "$workflow"; the
   exit 1
 fi
 
-if rg -q 'convex deploy --env-file|Validate explicit Convex release target' "$workflow"; then
+if rg -q 'convex deploy --env-file|Validate explicit Convex release target|convex function-spec' "$workflow"; then
   echo "verified deploy-key releases must not depend on a duplicate deployment selector" >&2
   exit 1
 fi
