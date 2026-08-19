@@ -30,7 +30,8 @@ required_patterns=(
   'git fetch origin main --depth=1'
   'test "\$QUALIFIED_SHA" = "\$\(git rev-parse origin/main\)"'
   'CB_CONNECT_RELEASE_ROOT'
-  '\[\[ "\$CB_CONNECT_RELEASE_ROOT" != /tmp/\* \]\]'
+  'CB_CONNECT_RELEASE_ROOT is not a durable safe path'
+  'mkdir -p "\$CB_CONNECT_RELEASE_ROOT"'
   'Materialize durable immutable release'
   'release_dir="\$releases_dir/\$release_id"'
   'tar --no-same-owner -xzf'
@@ -71,8 +72,8 @@ if rg -q 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBAC
   exit 1
 fi
 
-if grep -Fq 'test "$CB_CONNECT_RELEASE_ROOT" != /tmp/*' "$workflow"; then
-  echo "release-root validation must not allow pathname expansion" >&2
+if rg -q 'test "\$CB_CONNECT_RELEASE_ROOT"|\[\[ "\$CB_CONNECT_RELEASE_ROOT" =~' "$workflow"; then
+  echo "release-root validation must use the explicit safe-path case contract" >&2
   exit 1
 fi
 
