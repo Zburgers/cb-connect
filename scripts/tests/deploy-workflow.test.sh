@@ -17,7 +17,6 @@ required_patterns=(
   "github\.event\.workflow_run\.conclusion == 'success'"
   "github\.event\.workflow_run\.event == 'push'"
   "github\.event\.workflow_run\.head_branch == 'main'"
-  "vars\.PROMOTE_PRODUCTION == 'true'"
   'group: cb-connect-production'
   'cancel-in-progress: false'
   'actions/download-artifact@v4'
@@ -36,8 +35,7 @@ required_patterns=(
   'tar --no-same-owner -xzf'
   'CB_CONNECT_DURABLE_MANIFEST'
   'Resolve verified rollback candidate'
-  'Validate rollback safety precondition'
-  "vars\.ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK != 'true'"
+  'first_release=true'
   'previous_manifest="\$\(dirname "\$previous_dir"\)/release-manifest.json"'
   'Record verified release as rollback candidate'
   'Restore prior verified release after failed promotion'
@@ -67,9 +65,8 @@ if rg -q 'run: npm run build|scripts/package-release\.sh "\$release_dir"|CB_CONN
   exit 1
 fi
 
-convex_opt_in_count="$(rg -c "if: vars\.DEPLOY_CONVEX == 'true'" "$workflow" || true)"
-if [[ "$convex_opt_in_count" -lt 5 ]]; then
-  echo "Convex deployment setup, preflight, sync and release must require explicit DEPLOY_CONVEX opt-in" >&2
+if rg -q 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK' "$workflow"; then
+  echo "qualified main releases must deploy without manual promotion variables" >&2
   exit 1
 fi
 
@@ -84,21 +81,13 @@ if ! rg -q 'if \[\[ -s "\$env_file" \]\]; then' "$workflow"; then
   exit 1
 fi
 
-# The rollback safety precondition must fail before either Convex mutation. A
-# missing durable `current` pointer is the expected first-promotion failure
-# when the explicit override is unset; it must not partially deploy backend
-# code or runtime secrets before failing.
-rollback_guard_line="$(rg -n '^      - name: Validate rollback safety precondition$' "$workflow" | cut -d: -f1)"
-if [[ -z "$rollback_guard_line" ]]; then
-  echo "deploy workflow is missing the rollback safety precondition step" >&2
+# A missing managed `current` pointer is the exact first-release case. Existing
+# pointers still have to resolve inside the managed release root and verify a
+# compatible manifest before deployment continues.
+if ! rg -Uq 'if \[\[ ! -L "\$current_link" \]\]; then[\s\S]{0,180}first_release=true' "$workflow"; then
+  echo "deploy workflow must classify a missing current pointer as the first managed release" >&2
   exit 1
 fi
-while IFS=: read -r mutation_line mutation_text; do
-  if [[ "$mutation_line" -le "$rollback_guard_line" ]]; then
-    echo "Convex mutation appears before rollback safety precondition: $mutation_text" >&2
-    exit 1
-  fi
-done < <(rg -n 'npx convex (env set|deploy)\b' "$workflow")
 
 # `current` deliberately targets the extracted server directory because PM2
 # starts from it. The manifest is one parent directory above; this contract

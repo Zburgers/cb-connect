@@ -20,8 +20,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      vars.PROMOTE_PRODUCTION == 'true'
+      github.event.workflow_run.head_branch == 'main'
     runs-on: self-hosted
     environment: production
     env:
@@ -167,7 +166,11 @@ jobs:
         run: |
           set -euo pipefail
           current_link="$CB_CONNECT_RELEASE_ROOT/current"
-          if [[ ! -L "$current_link" ]]; then echo 'available=false' >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [[ ! -L "$current_link" ]]; then
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'first_release=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           previous_dir="$(readlink -f "$current_link")"
           case "$previous_dir" in "$CB_CONNECT_RELEASE_ROOT"/releases/*/extracted) ;; *) echo 'current release pointer is outside the managed extracted release directory' >&2; exit 1 ;; esac
           previous_manifest="$(dirname "$previous_dir")/release-manifest.json"
@@ -182,19 +185,10 @@ jobs:
           console.log('available=true');
           NODE
 
-      - name: Validate rollback safety precondition
-        if: >-
-          steps.rollback_candidate.outputs.available != 'true' &&
-          vars.ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK != 'true'
-        run: |
-          echo '::error::No verified rollback candidate is available. Set the separately explicit ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK variable to true only for an authorized first promotion.'
-          exit 1
-
       - name: Validate PM2 promotion contract
         run: bash scripts/tests/pm2-config.test.sh
 
       - name: Validate Convex deploy key preflight
-        if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
@@ -202,22 +196,18 @@ jobs:
           test -n "$CONVEX_DEPLOY_KEY"
 
       - name: Setup Node.js for explicit Convex release
-        if: vars.DEPLOY_CONVEX == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20.19.1
           cache: npm
 
       - name: Install explicit Convex release dependencies
-        if: vars.DEPLOY_CONVEX == 'true'
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Record backend deployment timestamp
-        if: vars.DEPLOY_CONVEX == 'true'
         run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Sync Convex runtime secrets
-        if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -246,7 +236,6 @@ jobs:
           fi
 
       - name: Validate explicit Convex release target
-        if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
@@ -257,7 +246,6 @@ jobs:
           test "$CONVEX_DEPLOYMENT" = "$expected"
 
       - name: Deploy explicit Convex compatibility release
-        if: vars.DEPLOY_CONVEX == 'true'
         env:
           CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

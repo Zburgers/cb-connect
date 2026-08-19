@@ -44,6 +44,18 @@ provider-supported restore and integrity checks.
 
 ## Promotion rollback procedure
 
+The first managed release establishes the rollback chain. When
+`$CB_CONNECT_RELEASE_ROOT/current` is absent, deployment may proceed only after
+the new artifact, exact production target and Convex compatibility release
+have passed their normal validation. The workflow writes `current` only after
+live verification succeeds. Every later deployment must verify the prior
+manifest before promotion and uses that release for automatic frontend
+rollback if promotion or readiness verification fails.
+
+Convex schema and function changes must remain backward-compatible with the
+previous frontend. Frontend rollback never attempts to reverse production
+data or an already deployed Convex schema.
+
 1. Stop promotion and record the failing release manifest, readiness response,
    listener state and PM2 persistence result without copying secrets.
 2. Select a prior manifest whose frontend/backend compatibility pair is
