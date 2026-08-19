@@ -8,7 +8,10 @@ import {
   type ReleaseInfo,
 } from "../../../lib/releaseInfo";
 
-const READINESS_TIMEOUT_MS = 1000;
+// Readiness is a deployment gate and performs a real Convex round trip. One
+// second is shorter than the cold/TLS path on the production VPS, producing a
+// false 503 even when the backend is healthy.
+const READINESS_TIMEOUT_MS = 5000;
 const REQUIRED_COMPATIBILITY_VERSION = "v1";
 const DEPLOYMENT_PATTERN =
   /^(dev|preview|test|prod):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
