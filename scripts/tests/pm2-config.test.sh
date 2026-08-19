@@ -4,6 +4,7 @@ set -euo pipefail
 
 pm2_config="pm2.config.js"
 workflow=".github/workflows/deploy.yml"
+promotion_script="scripts/promote-pm2.sh"
 package_json="package.json"
 
 if rg -n '(SECRET|DEPLOY_KEY|CONVEX_DEPLOYMENT|NEXT_PUBLIC_[A-Z_]*URL|https?://)' "$pm2_config"; then
@@ -21,8 +22,28 @@ if rg -n 'sed[[:space:]]+-i|pm2[[:space:]]+delete' "$workflow"; then
   exit 1
 fi
 
-if ! rg -q 'pm2 startOrReload pm2\.config\.js --update-env' "$workflow"; then
-  echo "deploy workflow must use non-destructive PM2 startOrReload with protected environment updates" >&2
+if [[ ! -f "$promotion_script" ]]; then
+  echo "deploy workflow must use the shared PM2 promotion helper" >&2
+  exit 1
+fi
+
+if ! rg -q 'scripts/promote-pm2\.sh' "$workflow"; then
+  echo "deploy workflow must use the shared PM2 promotion helper" >&2
+  exit 1
+fi
+
+if ! rg -q 'pm2 startOrReload pm2\.config\.js --update-env' "$promotion_script"; then
+  echo "PM2 promotion helper must use non-destructive startOrReload for an already immutable process" >&2
+  exit 1
+fi
+
+if ! rg -q 'pm2 delete "\$process_name"' "$promotion_script"; then
+  echo "PM2 promotion helper must replace a stale process definition" >&2
+  exit 1
+fi
+
+if ! rg -q 'pm2 start pm2\.config\.js --update-env' "$promotion_script"; then
+  echo "PM2 promotion helper must start the configured immutable release" >&2
   exit 1
 fi
 

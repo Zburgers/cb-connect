@@ -27,6 +27,7 @@ required_patterns=(
   'run: bash scripts/tests/standalone-runtime.test.sh'
   'name: Upload immutable standalone release'
   'name: cb-connect-release-\$\{\{ github\.sha \}\}'
+  'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
 )
 for pattern in "${required_patterns[@]}"; do
   if ! rg -q "$pattern" "$workflow"; then

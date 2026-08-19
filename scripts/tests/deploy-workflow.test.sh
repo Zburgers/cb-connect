@@ -49,6 +49,7 @@ required_patterns=(
   'npx convex deploy --typecheck disable --codegen enable'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
   'Record backend deployment timestamp'
+  'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
   'npx convex env set --from-file "\$env_file" --force'
 )
 for pattern in "${required_patterns[@]}"; do
