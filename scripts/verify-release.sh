@@ -93,7 +93,9 @@ if [[ -n "${PM2_PROCESS_NAME:-}" ]]; then
 const fs = require('node:fs');
 const dump = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const processName = process.argv[3];
-if (!Array.isArray(dump) || !dump.some((entry) => entry && entry.name === processName && entry.pm2_env && entry.pm2_env.status === 'online')) {
+const isOnline = (entry) =>
+  entry?.status === 'online' || entry?.pm2_env?.status === 'online';
+if (!Array.isArray(dump) || !dump.some((entry) => entry && entry.name === processName && isOnline(entry))) {
   throw new Error('PM2 process is not online and persisted');
 }
 NODE

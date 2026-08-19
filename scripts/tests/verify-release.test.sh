@@ -61,7 +61,7 @@ server_pid=$!
 sleep 1
 
 dump="$root/pm2-dump.json"
-printf '%s\n' '[{"name":"cb-connect","pm2_env":{"status":"online"}}]' > "$dump"
+printf '%s\n' '[{"name":"cb-connect","status":"online"}]' > "$dump"
 PM2_PROCESS_NAME=cb-connect PM2_DUMP_PATH="$dump" bash scripts/verify-release.sh "$manifest" "http://127.0.0.1:$port" dev:hallowed-hummingbird-284 v1
 
 run_expect_fail() {
@@ -97,7 +97,7 @@ wait "$server_pid" 2>/dev/null || true
 node "$root/server.cjs" valid "$port" "$manifest" >"$root/server.log" 2>&1 &
 server_pid=$!
 sleep 1
-printf '%s\n' '[{"name":"other-process","pm2_env":{"status":"online"}}]' > "$dump"
+printf '%s\n' '[{"name":"other-process","status":"online"}]' > "$dump"
 run_expect_fail env PM2_PROCESS_NAME=cb-connect PM2_DUMP_PATH="$dump" bash scripts/verify-release.sh "$manifest" "http://127.0.0.1:$port" dev:hallowed-hummingbird-284 v1
 
 kill "$server_pid" 2>/dev/null || true
