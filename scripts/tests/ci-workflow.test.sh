@@ -64,9 +64,8 @@ if ! rg -q '^    environment: production$' <<<"$release_block"; then
   exit 1
 fi
 
-if ! rg -q '^      - name: Install release policy tools$' <<<"$release_block" ||
-   ! rg -q '^        run: sudo apt-get update && sudo apt-get install --yes ripgrep$' <<<"$release_block"; then
-  echo "release artifact job must install the tools used by its packaging policy tests" >&2
+if rg -q 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; then
+  echo "CI jobs must use runner-provided policy tools instead of network package installs" >&2
   exit 1
 fi
 

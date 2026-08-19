@@ -696,3 +696,17 @@
 - Decisions made: The implementation PR is ready for merge when the final docs-only head has green checks. Gate 0 production promotion remains blocked and all promotion switches remain unset.
 - Unresolved blockers: direct production runtime identity/readiness/PM2/TLS evidence, durable rollback candidate, measured restore and 28-day baseline remain pending; D-012 final retention/deletion scope remains open.
 - Exact next safe action: Push the evidence refresh, verify the final PR checks, then merge PR #17 only as an implementation change through normal review.
+
+---
+
+- Timestamp: 2026-08-19T20:44:06+05:30
+- Agent/session: Codex primary agent; session identifier unavailable
+- Task and plan IDs: Feature-first delivery design and implementation; authenticated onboarding CI regression
+- Starting commit: `e458c9b`
+- Ending commit: `34669cf` before this status entry
+- Work performed: Merged PR #18 and synchronized local main; approved and recorded the feature-first operating design; traced the hosted authenticated-smoke failure to role selection being enabled before Convex client authentication was ready; added a tested readiness contract and gated onboarding role actions; changed successful main CI to deploy Convex and the qualified frontend automatically; allowed an absent managed current pointer to bootstrap the first verified release; retained exact target, artifact, readiness and later rollback checks; reconciled every active roadmap, deployment, decision, issue, reliability and runbook document while preserving historical evidence.
+- Commands and outcomes: Production build passed; typecheck passed; unit suite passed 20 files/107 tests; production audit found 0 vulnerabilities; CI/deploy/package/PM2/release-verification/rehearsal/auth-fixture/release-smoke/standalone-runtime policy suites passed; active Markdown scan found no stale manual-promotion variables or global Gate 1 blocker instructions outside explicitly historical evidence/logs; `git diff --check` passed.
+- Convex deployment class and status: No Convex deployment or production mutation occurred from this branch. GitHub production configuration lacks `CONVEX_DEPLOY_KEY`; a token creation attempt failed closed because the local Convex account has no access to `prod:festive-malamute-715`. No token value was created, printed or persisted.
+- Decisions made: The owner approved automatic Convex plus frontend deployment for every green main merge, automatic first-managed-release bootstrap, continued execution plans before each roadmap area, and the rule that a missing decision blocks only its dependent task. Gate 0 engineering is complete; operational measurement continues without blocking additive/default-off Gate 1 work.
+- Unresolved blockers: Automatic production deployment cannot pass its Convex preflight until an account with access to `prod:festive-malamute-715` creates and stores the production `CONVEX_DEPLOY_KEY`. D-012 remains required only before destructive deletion/migration or final retention behavior.
+- Exact next safe action: Commit this status, push the feature-first branch, obtain green deterministic and authenticated CI, merge, then verify automatic production deployment. If deployment reaches the missing-key preflight, provision the key from an authorized Convex account and rerun the qualified main workflow without weakening target validation.

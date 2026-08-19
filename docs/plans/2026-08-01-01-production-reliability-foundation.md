@@ -18,13 +18,11 @@
 
 **Detailed execution plan:** [2026-08-04 Gate 0 execution plan](2026-08-04-00-production-reliability-execution.md)
 
-**Planning status:** Historical gate-level work packages. The task-sized
-implementation packet is closed and its current outcome is the explicit
-**[BLOCKED Gate 0 report](../evidence/reliability-gate-0/REPORT.md)**. Do not
-execute R1-R7 directly or reopen them as a local queue. Gate 0 can progress
-only through the remaining production, recovery and 28-day baseline evidence,
-followed by an approved report. Current protected C2 authenticated-CI evidence
-is recorded in [`c2-protected-2026-08-17.md`](../evidence/reliability-gate-0/c2-protected-2026-08-17.md). Gate 1 is blocked until that approval exists.
+**Planning status:** Historical gate-level work packages. Gate 0 engineering is
+complete. Automatic deployment, recovery rehearsal and SLO measurement are
+ongoing operations, not blockers for unrelated feature development. Follow
+the [feature-first policy](2026-08-19-feature-first-delivery-design.md); do not
+reopen R1-R7 as a local implementation queue.
 
 ## Entry criteria
 

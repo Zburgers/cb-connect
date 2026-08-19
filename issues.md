@@ -44,11 +44,10 @@ Update with Github issues on the parent repo
 ### Production deployment pipeline is incomplete; frontend service recovered
 **Program gate:** Production Reliability Gate 0
 **Priority:** High
-**Status:** Gate 0 implementation packet complete; production qualification remains blocked
+**Status:** Superseded by automatic qualified-main deployment; missing production Convex deploy key remains the external configuration blocker
 **Detected:** August 1, 2026
 **Files:** `.github/workflows/deploy.yml`, `DEPLOYMENT.md`, `pm2.config.js`, `app/api/health/route.ts`
-**Evidence:** Run `30859913681` proved the stored `CONVEX_DEPLOY_KEY` had an invalid authorization format; the workflow now makes Convex sync/deploy explicit and validates `prod:festive-malamute-715` only under `DEPLOY_CONVEX=true`. Gate 0 commits `5fc3406`, `379e8c6` and `3c1af39` add the versioned backend identity, immutable standalone artifact promotion, post-promotion verifier, rollback guardrail and runbooks. Local package, fake endpoint and synthetic-policy checks pass. The 2026-08-12 review found and fixed workflow ordering so rollback-candidate resolution/guard runs before optional Convex env sync/deploy; `bash scripts/tests/deploy-workflow.test.sh` passes. Owner-supplied production evidence is `https://cb.nakshatraneuratech.dev/api/health=200`, `/api/ready=404`, with an empty `/home/naki/cb-connect-releases`; production remains a pre-candidate and no production deployment or Convex mutation was run. On 2026-08-17, the owner-authorized GitHub environment sync populated the required production runtime configuration without recording secret values.
-**Latest Gate 0 refresh:** [qualification baseline](docs/evidence/reliability-gate-0/qualification-2026-08-04.md) is historical local evidence; [the V1 proof](docs/evidence/reliability-gate-0/v1-dev-proof.md) is isolated-dev evidence only; [the Gate 0 report](docs/evidence/reliability-gate-0/REPORT.md) records the current blocked verdict.
+**Evidence:** The feature-first workflow deploys every qualified `main` release, validates `prod:festive-malamute-715`, permits the first managed release to establish `current`, and retains later frontend rollback. The production GitHub environment still needs a valid `CONVEX_DEPLOY_KEY` from an account with access to the production Convex project. Historical Gate 0 evidence is not a feature-development gate.
 **Exit evidence:** CI gates typecheck/unit/security checks; deployment explicitly targets/version-checks Convex; PM2 uses atomic reload or documented downtime; post-deploy listener, health, commit, backend version, and persistence checks pass; failure triggers a rehearsed rollback; docs match the workflow.
 
 --
@@ -223,11 +222,11 @@ and mandatory for release candidates.
 
 ## 🚀 Active Development
 
-### Reliability-first major-release planning and Gate 0 preflight
+### Feature-first major-release execution
 
-**Status:** Gate 0 implementation packet closed with an explicit blocked promotion verdict; Gate 1 remains unexposed.
+**Status:** Gate 0 engineering complete; Gate 1 additive/default-off execution is next.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Gate 0 decisions D-002 through D-007 are resolved and the implementation packet is recorded in [`REPORT.md`](docs/evidence/reliability-gate-0/REPORT.md). Current protected C2 CI evidence is present, but promotion remains blocked by missing production runtime, measured recovery and 28-day baseline evidence. PR #8 remains historical evidence, not coordinated promotion proof. Resolve D-001 before affected production consent/retention exposure; it does not block unrelated technical preflight work. Gate 1 planning and exposure remain blocked.
+**Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks destructive deletion/migration and final retention behavior, not additive schema, helpers, tests, compatibility, or default-off UI work.
 
 ---
 

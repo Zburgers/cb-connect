@@ -12,16 +12,14 @@
 
 ## Execution boundary and decisions
 
-This plan is dated and implementation-ready, but it is not authorization to
-execute. G1.0 must be rerun immediately before execution and must PASS. The
-current 2026-08-12 pre-plan evidence is expected to be BLOCKED because the
-Gate 0 report is not approved and D-012 is unresolved; that observation is
-recorded separately and is not G1.0's exit criterion.
+This plan is approved for additive, default-off, non-destructive execution.
+G1.0 must be updated to enforce the feature-first boundary: the approved dated
+plan and isolated target are required, while historical Gate 0 measurement is
+not a blocker.
 
-Gate 1 additive schema, pure helpers, tests, capability plumbing and
-non-destructive compatibility work may begin only after Gate 0 approval.
-D-012 blocks hard deletion, destructive migration and production exposure,
-but does not block that safe additive work after Gate 0 approval. D-012's safe
+D-012 blocks hard deletion, destructive migration and final retention
+behavior, but does not block additive schema, pure helpers, tests, capability
+plumbing or non-destructive compatibility work. D-012's safe
 proposed default is: retain original rows, use tombstones for user-visible
 deletion, minimize aggregate evidence, and do not select a final retention
 duration until the owner explicitly approves it. No task below authorizes a
@@ -414,9 +412,7 @@ npm audit --omit=dev
 npm run test:e2e -- --project=release-desktop --project=release-mobile
 ```
 
-The Gate 1 evidence report must include the exact commit, isolated Convex
-deployment, flag value, migration run ID, aggregate audit counts, interrupted
-and resumed migration results, restore rehearsal, browser result and rollback
-result. Do not call Gate 1 executable or production-qualified until G1.0 is
-PASS, Gate 0 is approved, D-012 has the required owner decision for any
-destructive behavior, and all evidence is independently reviewable.
+CI, deployment logs and Git history are the default execution evidence. Any
+separate Gate 1 report should contain only results those systems cannot retain
+safely. D-012 must be resolved before any destructive behavior; it does not
+block the additive tasks that precede it.

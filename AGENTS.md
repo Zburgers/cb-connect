@@ -44,26 +44,23 @@ This repository is a Next.js App Router application for CB Connect, a couples cy
 - Use `color: hsl(var(--foreground))` instead of `hsl(var(--muted-foreground))` for `.phase-badge` to guarantee badge readability on atmospheric-warm cards.
 - The repo currently has minimal root documentation beyond this file and `README.md`, so project-specific instructions should live here.
 
-### Gate 0 execution-log contract
+### Feature-first delivery contract
 
-- Current state: the Gate 0 implementation packet is closed, its report is
-  blocked for production promotion, and Gate 1 is not plan-ready. Do not resume
-  the old first-packet task sequence or create a Gate 1 execution plan from the
-  gate-level document.
-- Before any release or follow-on review, read `README.md`,
-  `docs/plans/README.md`, `docs/evidence/reliability-gate-0/REPORT.md`, and
-  `docs/handoffs/2026-08-06-gate-0-to-gate-1.md`.
-- A push or merge must not imply production promotion. The deployment workflow
-  remains disabled unless `PROMOTE_PRODUCTION=true`; do not set that variable,
-  `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK`, or `DEPLOY_CONVEX` without a
-  separately authorized release operation and the documented prerequisites.
-
-- Before doing Gate 0 work, read `docs/execution/gate-0-agent-log.md`, the plan index, the Gate 0 detailed execution plan, and the decision register.
-- Work only in the dedicated worktree `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0` on branch `gate-0/reliability-2026-08-04` unless the user explicitly approves a replacement.
-- Use the worktree's ignored `.env.local` and its isolated Convex development deployment for local Convex work. Never infer permission to use production or copy production data/secrets into development.
-- Append one `---`-delimited entry to `docs/execution/gate-0-agent-log.md` before every handoff, including read-only reviews and blocked attempts. Never rewrite, reorder, or delete prior entries.
-- Each entry must record timestamp, agent/session identity when available, task/plan IDs, starting and ending commit, files changed, commands and outcomes, Convex deployment class (`dev`, `preview/test`, or `production`) without secrets, decisions made, unresolved blockers, and the exact next safe action.
-- A successful command is evidence only for what it tested. Do not label Gate 0 or production ready unless the plan's complete exit evidence and approvals exist.
+- Read `docs/plans/2026-08-19-feature-first-delivery-design.md` and the current
+  dated execution plan before roadmap implementation.
+- Keep one proper, ordered execution plan per major roadmap area. A missing
+  decision blocks only its dependent task, not unrelated default-off or
+  non-destructive work.
+- Every green `main` CI run automatically deploys Convex and the exact qualified
+  frontend artifact. Preserve exact target validation, secrets isolation,
+  backward-compatible data changes, readiness verification, and previous-
+  release rollback.
+- Gate 0 evidence and `docs/execution/gate-0-agent-log.md` are historical and
+  append-only. Do not use their former promotion switches or blocked status as
+  current operating instructions.
+- D-012 blocks destructive deletion/migration behavior until resolved. It does
+  not block additive Gate 1 schema, helpers, tests, compatibility, or feature-
+  flagged UI work.
 
 ## Available Skills
 

@@ -1,5 +1,9 @@
 # Major-release planning review
 
+> **Historical review:** Superseded for operating policy by the approved
+> 2026-08-19 feature-first delivery design. Findings below describe the plan as
+> it existed on 2026-08-04 and are not current execution blockers.
+
 **Reviewed:** 2026-08-04
 
 **Baseline:** dirty checkout `main` at `05af783`; live `origin/main` refreshed to `d3ef5a7`. Review covers the August major-release program, eight numbered gate documents, research dossier, Shipyard map/guidance, branch state and `issues.md`.

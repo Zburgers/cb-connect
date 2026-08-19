@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { getLocalTimeZone, toLocalDateString } from "@/lib/utils";
 import { Calendar, ArrowRight, Heart } from "lucide-react";
+import { canSelectOnboardingRole } from "@/lib/onboardingReadiness";
 
 type Step = "role" | "period" | "done";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
@@ -25,8 +27,13 @@ export default function OnboardingPage() {
   const [lastPeriodDate, setLastPeriodDate] = useState("");
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
+  const canSelectRole = canSelectOnboardingRole({
+    isLoading: isAuthLoading,
+    isAuthenticated,
+  });
 
   const handleSelectRole = async (role: "primary" | "partner") => {
+    if (!canSelectRole) return;
     setSelectedRole(role);
     setError("");
     setIsSubmitting(true);
@@ -122,7 +129,7 @@ export default function OnboardingPage() {
           <div className="grid gap-4">
             <button
               onClick={() => handleSelectRole("primary")}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !canSelectRole}
               className="glass-card rounded-3xl p-6 text-left hover:ring-2 hover:ring-primary/50 transition-all duration-200 press-feedback disabled:opacity-50 group"
             >
               <div className="flex items-start gap-4">
@@ -140,7 +147,7 @@ export default function OnboardingPage() {
 
             <button
               onClick={() => handleSelectRole("partner")}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !canSelectRole}
               className="glass-card rounded-3xl p-6 text-left hover:ring-2 hover:ring-secondary/50 transition-all duration-200 press-feedback disabled:opacity-50 group"
             >
               <div className="flex items-start gap-4">
@@ -156,9 +163,9 @@ export default function OnboardingPage() {
               </div>
             </button>
 
-            {isSubmitting && (
+            {(isSubmitting || !canSelectRole) && (
               <p className="text-center text-sm text-muted-foreground animate-pulse">
-                Setting up your account…
+                {isSubmitting ? "Setting up your account…" : "Connecting securely…"}
               </p>
             )}
           </div>

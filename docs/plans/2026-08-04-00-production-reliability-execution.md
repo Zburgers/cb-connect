@@ -563,7 +563,7 @@ Tasks that modify `.github/workflows/deploy.yml`, `pm2.config.js`, `package.json
   </steps>
   <verification>
     <command>rg -n "Criterion|Evidence kind|Artifact|P0|P1|Frontend|Backend|Rollback|Verdict|Approver" docs/evidence/reliability-gate-0/REPORT.md</command>
-    <expected>Every Gate 0 criterion is approved with direct evidence or the gate is explicitly blocked; Gate 1 remains unexposed otherwise.</expected>
+    <expected>Historical Gate 0 criteria and evidence boundaries are recorded without becoming a current global feature blocker.</expected>
   </verification>
 </task>
 
@@ -583,5 +583,6 @@ git diff --check
 ```
 
 The completed local verification set passed with `npm audit --omit=dev`
-reporting zero vulnerabilities. Current protected authenticated CI evidence is
-recorded in [`c2-protected-2026-08-17.md`](../evidence/reliability-gate-0/c2-protected-2026-08-17.md). Production promotion still additionally requires matching production `/api/ready` identities, listener/TLS/PM2 persistence evidence, measured recovery evidence, the 28-day baseline and an approved Gate 0 report.
+reporting zero vulnerabilities. This plan is a historical execution record;
+current deployment and feature authority comes from the approved feature-first
+delivery design and workflow.

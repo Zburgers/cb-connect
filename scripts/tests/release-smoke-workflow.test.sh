@@ -20,35 +20,42 @@ required_patterns=(
   'NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}'
   'for project in release-desktop release-mobile'
   'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
-  'sudo apt-get update && sudo apt-get install --yes ripgrep'
+  'browser_path="$(command -v google-chrome)"'
+  "printf 'PLAYWRIGHT_EXECUTABLE_PATH=%s\\n' \"\$browser_path\" >> \"\$GITHUB_ENV\""
+  "grep -Eq '[1-9][0-9]* skipped'"
   'bash scripts/redact-release-artifacts.sh'
   'retention-days: 7'
 )
 
 for pattern in "${required_patterns[@]}"; do
-  if ! rg -Fq "$pattern" "$workflow"; then
+  if ! grep -Fq "$pattern" "$workflow"; then
     echo "authenticated smoke workflow is missing required policy: $pattern" >&2
     exit 1
   fi
 done
 
-if rg -q -- '--project=release-desktop --project=release-mobile' "$workflow"; then
+if grep -Fq 'playwright install --with-deps chromium' "$workflow"; then
+  echo "authenticated smoke must use the runner image browser instead of downloading Chromium" >&2
+  exit 1
+fi
+
+if grep -Eq -- '--project=release-desktop --project=release-mobile' "$workflow"; then
   echo "authenticated smoke must provision and tear down a distinct fixture run per browser project" >&2
   exit 1
 fi
 
-if ! rg -Fq 'await clerkSetup({' e2e/auth.global.teardown.ts; then
+if ! grep -Fq 'await clerkSetup({' e2e/auth.global.teardown.ts; then
   echo "authenticated teardown must initialize the approved Clerk testing handshake" >&2
   exit 1
 fi
 
-if ! rg -Fq 'await clerk.signIn({' e2e/auth.global.teardown.ts ||
-   ! rg -Fq 'cb-connect-e2e+${pair.runId}-primary@example.com' e2e/auth.global.teardown.ts; then
+if ! grep -Fq 'await clerk.signIn({' e2e/auth.global.teardown.ts ||
+   ! grep -Fq 'cb-connect-e2e+${pair.runId}-primary@example.com' e2e/auth.global.teardown.ts; then
   echo "authenticated teardown must reauthenticate the exact deterministic primary fixture" >&2
   exit 1
 fi
 
-if rg -n 'continue-on-error:[[:space:]]*true|--pass-with-no-tests|test\.skip' "$workflow"; then
+if grep -En 'continue-on-error:[[:space:]]*true|--pass-with-no-tests|test\.skip' "$workflow"; then
   echo "authenticated smoke must fail closed; skips and pass-with-no-tests are not allowed" >&2
   exit 1
 fi
@@ -58,13 +65,18 @@ if ! test -x scripts/redact-release-artifacts.sh; then
   exit 1
 fi
 
-if rg -n 'test\.(skip|fixme|fail)' e2e/release-smoke.spec.ts; then
+if grep -En 'test\.(skip|fixme|fail)' e2e/release-smoke.spec.ts; then
   echo "release smoke must contain no skipped, fixme or expected-failure tests" >&2
   exit 1
 fi
 
-if rg -n -A 8 'uses: actions/upload-artifact@' "$workflow" | rg -n 'e2e/\.auth|test-results|playwright-report'; then
+if grep -En -A 8 'uses: actions/upload-artifact@' "$workflow" | grep -En 'e2e/\.auth|test-results|playwright-report'; then
   echo "authenticated smoke must not upload raw browser artifacts" >&2
+  exit 1
+fi
+
+if grep -Fq 'apt-get install --yes ripgrep' "$workflow"; then
+  echo "authenticated smoke must not install a package for policy checks" >&2
   exit 1
 fi
 

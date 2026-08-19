@@ -6,8 +6,8 @@ The sole project owner is the release operator, incident owner and escalation
 authority. Open an incident for any P0, privacy/security concern, release
 identity mismatch, readiness failure, authenticated critical-journey failure,
 duplicate scheduled effect, failed integrity check or material error-budget
-burn. A missing or incomplete baseline is a qualification blocker, not a
-reason to invent an incident metric.
+burn. A missing or incomplete baseline limits reliability claims; it does not
+block unrelated feature development.
 
 ## Response sequence
 
@@ -39,7 +39,7 @@ assigned. An exception cannot silently extend past its expiry.
 ## Evidence boundary
 
 The [redacted telemetry contract](telemetry-contract.md) is the allowlist for
-serialized reliability observations. The first 28-day baseline must report
+serialized reliability observations. The rolling baseline should report
 counts, denominator treatment, exclusions and coverage limitations for every
-SLI in [slo.md](slo.md). Until that report exists, Gate 0 remains blocked for
-production promotion even if local tests and isolated-dev checks pass.
+SLI in [slo.md](slo.md). Missing measurements limit rollout or claims for the
+affected behavior rather than blocking the entire roadmap.
