@@ -233,7 +233,7 @@ jobs:
           fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', { mode: 0o600 });
           NODE
           if [[ -s "$env_file" ]]; then
-            npx convex env set --from-file "$env_file"
+            npx convex env set --from-file "$env_file" --force
           else
             echo 'Skipping Convex runtime secret sync; no optional values are configured.'
           fi

@@ -49,6 +49,7 @@ required_patterns=(
   'npx convex deploy --env-file "\$convex_release_env_file"'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
   'Record backend deployment timestamp'
+  'npx convex env set --from-file "\$env_file" --force'
 )
 for pattern in "${required_patterns[@]}"; do
   if ! rg -q "$pattern" "$workflow"; then
