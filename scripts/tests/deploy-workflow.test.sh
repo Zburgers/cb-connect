@@ -46,7 +46,7 @@ required_patterns=(
   "steps\.promote\.outcome == 'failure' \|\| steps\.verify_promotion\.outcome == 'failure'"
   'always\(\)'
   'Validate Convex deploy key preflight'
-  'npx convex deploy --typecheck enable --codegen enable'
+  'npx convex deploy --typecheck disable --codegen enable'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
   'Record backend deployment timestamp'
   'npx convex env set --from-file "\$env_file" --force'
