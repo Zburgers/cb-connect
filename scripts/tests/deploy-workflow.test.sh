@@ -30,6 +30,7 @@ required_patterns=(
   'git fetch origin main --depth=1'
   'test "\$QUALIFIED_SHA" = "\$\(git rev-parse origin/main\)"'
   'CB_CONNECT_RELEASE_ROOT'
+  '\[\[ "\$CB_CONNECT_RELEASE_ROOT" != /tmp/\* \]\]'
   'Materialize durable immutable release'
   'release_dir="\$releases_dir/\$release_id"'
   'tar --no-same-owner -xzf'
@@ -67,6 +68,11 @@ fi
 
 if rg -q 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK' "$workflow"; then
   echo "qualified main releases must deploy without manual promotion variables" >&2
+  exit 1
+fi
+
+if grep -Fq 'test "$CB_CONNECT_RELEASE_ROOT" != /tmp/*' "$workflow"; then
+  echo "release-root validation must not allow pathname expansion" >&2
   exit 1
 fi
 

@@ -122,7 +122,7 @@ jobs:
           [[ "$CB_CONNECT_PRODUCTION_BASE_URL" == https://* ]]
           [[ "$CB_CONNECT_RELEASE_ROOT" =~ ^/[a-zA-Z0-9._/-]+$ ]]
           test "$CB_CONNECT_RELEASE_ROOT" != '/'
-          test "$CB_CONNECT_RELEASE_ROOT" != /tmp/*
+          [[ "$CB_CONNECT_RELEASE_ROOT" != /tmp/* ]]
           [[ "$CB_CONNECT_RELEASE_ROOT" != "$RUNNER_TEMP"* ]]
           [[ "$CB_CONNECT_RELEASE_ROOT" != "$GITHUB_WORKSPACE"* ]]
           test -d "$CB_CONNECT_RELEASE_ROOT"
