@@ -1,4 +1,11 @@
-# Gate 0 evidence report and promotion verdict
+# Gate 0 historical evidence report
+
+> **Superseded operating status (2026-08-19):** This report preserves the
+> pre-deployment Gate 0 evidence boundary. It is not a current feature or
+> deployment gate. Follow
+> [`2026-08-19-feature-first-delivery-design.md`](../../plans/2026-08-19-feature-first-delivery-design.md)
+> and the current deployment workflow. Operational measurement continues in
+> parallel and D-012 blocks only destructive data-lifecycle work.
 
 **Recorded:** 2026-08-17
 **Worktree:** `/home/naki/Desktop/itsthatnewshit/cb-connect-gate-0`

@@ -2,27 +2,10 @@
 
 ## Current release boundary
 
-Gate 0's implementation packet is complete, but its production promotion
-verdict is **[BLOCKED](docs/evidence/reliability-gate-0/REPORT.md)**. This
-guide is an operational reference, not authorization to deploy. Do not claim a
-release from a local build, `/api/health`, a historical workflow run, or the
-isolated development deployment.
-
-Production promotion remains contingent on all of the following. The current
-C2 authenticated-smoke result is recorded in the
-[protected CI proof](docs/evidence/reliability-gate-0/c2-protected-2026-08-17.md):
-
-- continued passing authenticated-smoke CI from the secret-backed test
-  environment;
-- separately authorized production Convex/frontend promotion with matching
-  `v1` identity, HTTPS, listener, readiness and PM2-persistence evidence;
-- a measured synthetic restore rehearsal with integrity and RPO/RTO results;
-- the 28-day allowlisted SLO baseline; and
-- an approved refreshed Gate 0 report.
-
-The detailed implementation record is in
-[the Gate 0 execution plan](docs/plans/2026-08-04-00-production-reliability-execution.md).
-The current evidence and next-safe-action boundary are in the report above.
+Every successful push-`main` CI run automatically deploys the exact qualified
+Convex and frontend release. There are no manual promotion variables. CI and
+the deployment workflow are the release authority; historical Gate 0 evidence
+does not block shipping or feature development.
 
 ## Automation contract
 
@@ -37,20 +20,10 @@ rejects superseded commits, downloads the C3 artifact by the completed CI run
 ID, and verifies its checksum, commit SHA, CI build ID and approved `v1`
 compatibility identity before any production change. It does not rebuild or
 repackage the frontend on the self-hosted runner. It resolves and validates
-the durable rollback candidate immediately after artifact materialization and
-fails closed before any optional Convex runtime-secret sync or Convex deploy
-when no candidate exists and the first-promotion override is unset.
-
-Production promotion is disabled by default even for a successful `main` CI
-run. An operator must set the repository Actions variable
-`PROMOTE_PRODUCTION=true` for the deployment job to exist (a job-level
-condition cannot rely on an environment-only variable before the job starts).
-Before PM2 is changed, the workflow also requires a checksum-verified
-compatible `current` rollback candidate. A first promotion without one
-additionally requires the separate `ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK=true`
-variable in the production environment. Leave both unset for normal merges and
-whenever production evidence remains blocked; neither variable authorizes a
-release by itself.
+the durable rollback candidate immediately after artifact materialization,
+then runs the validated Convex release before PM2 promotion. A missing managed
+`current` pointer is the first-release bootstrap case; an existing pointer must
+resolve to a checksum-verified compatible release.
 
 Set the protected production Actions variable `CB_CONNECT_RELEASE_ROOT` to a
 pre-provisioned, writable absolute host directory outside both the GitHub
@@ -59,14 +32,13 @@ workflow retains immutable artifact, manifest and extracted candidates below
 `$CB_CONNECT_RELEASE_ROOT/releases`, starts PM2 from the durable extracted
 candidate, and updates `$CB_CONNECT_RELEASE_ROOT/current` only after verified
 promotion. Promotions are serialized. On failure, it restores the last
-checksum-verified compatible candidate; a first release has no automatic
-rollback candidate and fails closed.
+checksum-verified compatible candidate. The first verified release establishes
+the rollback chain.
 
-Convex promotion remains opt-in through `DEPLOY_CONVEX=true`. That path
-requires a non-empty deploy key before installing the qualified commit's
-dependencies for an explicit Convex release; it never rebuilds the frontend.
-No protected preview/test selector or environment is currently configured, so
-this workflow does not claim preview/test promotion evidence.
+Convex deployment requires a non-empty protected `CONVEX_DEPLOY_KEY`, deploys
+the qualified commit, and never rebuilds the frontend. Schema and function
+changes must remain backward-compatible because frontend rollback does not
+reverse production data.
 
 The intended production selector is `prod:festive-malamute-715`; revalidate it
 immediately before any authorized promotion. The shared compatibility tag is

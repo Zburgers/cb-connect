@@ -32,19 +32,18 @@ The numbered gate documents are **gate-level plans**: they lock goals, architect
 3. names exact file paths, verification commands, rollback boundaries and task dependencies;
 4. records the approved branch/worktree and production exposure boundary.
 
-Gate 0 has a completed detailed execution record and an explicit blocked
-promotion report. Gates 1-6 and Research Gate 7 remain deliberately planned
-just in time after their prerequisites produce approved evidence; this
-prevents later plans from guessing contracts that earlier gates are responsible
-for establishing.
+Gate 0 has a completed detailed execution record. Gates 1-6 and Research Gate
+7 retain just-in-time dated execution plans. A missing decision blocks only
+the task that depends on it, so default-off and non-destructive work can
+continue while later exposure decisions remain pending.
 
 ## Current planning readiness
 
 | Lane or gate | Planning status | May implementation start? | Next required artifact |
 |---|---|---|---|
 | Continuous issue remediation | Active | Yes, for independently qualified fixes | Reproduction and acceptance evidence in `issues.md` |
-| Gate 0 reliability | Implementation packet closed; promotion report blocked | No local implementation task remains | Direct C2/production/X1/G2 evidence and an approved Gate 0 report |
-| Gate 1 cycle facts | Dated implementation plan and handoff available; execution blocked | No | Approved Gate 0 report; D-012 approval before destructive migration, hard deletion or production exposure |
+| Gate 0 reliability | Engineering complete; automatic operations active | No local implementation task remains | Ongoing deployment and SLO measurement |
+| Gate 1 cycle facts | Dated implementation plan approved | Yes, additive/default-off work | D-012 before destructive migration or final deletion behavior |
 | Gate 2 four-phase semantics | Gate-level plan only | No | Post-Gate-1 state-contract execution plan |
 | Gate 3 prediction | Gate-level plan only | No | Frozen benchmark and calibration protocol |
 | Gate 4 notifications | Gate-level plan only | No | Approved event/privacy/retention execution plan |
@@ -124,7 +123,7 @@ Engagement, notification-open rate and time-in-app are not proxies for health be
 
 Before starting any numbered phase:
 
-- The preceding phase has an approved evidence report.
+- The preceding domain contract required by this task is implemented and tested.
 - `main`, production frontend and production Convex versions are identified.
 - Relevant open P0/P1 issues have owners and dispositions.
 - Migration, feature-flag and rollback paths are documented.
@@ -149,7 +148,8 @@ Additionally:
 - Migration rehearsal and rollback/kill-switch rehearsal pass.
 - Accessibility and privacy reviews cover every new user-visible surface.
 - The rollout starts disabled/internal, advances through a bounded cohort and pauses on stop conditions.
-- `issues.md`, operator documentation and the phase evidence report are updated.
+- `issues.md` and operator documentation are updated when affected; CI,
+  deployment logs and Git history are the default evidence.
 
 ## Promotion authority
 

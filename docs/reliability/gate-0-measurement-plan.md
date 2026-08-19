@@ -2,7 +2,7 @@
 
 **Decisions:** D-006 and D-007
 **Status:** Approved 2026-08-05 by the sole project owner acting as product, operations and recovery authority
-**Scope:** Define what must be measured and rehearsed before Gate 0 promotion. No target below is evidence of achieved reliability.
+**Scope:** Historical Gate 0 measurement design, now used as ongoing operational guidance. No target below is evidence of achieved reliability.
 
 This contract is approved for Gate 0. The decision register is the approval record. Targets are owner-approved objectives, but are not demonstrated as achieved until measured evidence supports them.
 
@@ -20,7 +20,7 @@ Telemetry may record route/function class, outcome, bounded reason, duration buc
 
 ## Baseline and approval process
 
-Engineering will collect a 28-day baseline after the redacted telemetry contract is deployed. The baseline report must show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. The targets are owner-approved objectives, not demonstrated achievements, until the baseline evidence is reported; a green build or HTTP 200 health response cannot substitute for the baseline.
+Engineering will collect a rolling 28-day baseline after the redacted telemetry contract is deployed. The report should show counts, missing-data treatment, exclusions and confidence/coverage limitations for each SLI. The targets are not demonstrated until measured; the measurement window does not block unrelated default-off feature implementation.
 
 The operator approval must also name the error-budget response: pause non-critical rollout, open an incident, or accept a bounded exception with owner, reason, controls and expiry. Privacy/security review is required for telemetry fields before collection.
 
@@ -40,4 +40,4 @@ Rollback and restore scripts must reject production selectors, unresolved target
 
 ## Approval record
 
-D-006 and D-007 were approved by the sole project owner on 2026-08-05. The 28-day baseline, proposed targets, exclusions, pause/incident response, `dev:hallowed-hummingbird-284` synthetic-only rehearsal target, 24-hour RPO and four-hour RTO are binding Gate 0 objectives. O2 and planning for X1 may proceed; X1 must revalidate that its target remains non-production immediately before rehearsal.
+D-006 and D-007 were approved by the sole project owner on 2026-08-05. The rolling baseline, targets, exclusions, pause/incident response, synthetic-only rehearsal target, 24-hour RPO and four-hour RTO remain operational objectives. They can constrain an affected rollout or reliability claim without blocking unrelated feature work.

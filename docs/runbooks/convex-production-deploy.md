@@ -1,6 +1,9 @@
 # Convex compatibility release runbook
 
-This runbook is the V1 boundary for Gate 0. It does not authorize production deployment by itself. Production execution requires the protected `production` environment, `DEPLOY_CONVEX=true`, a valid deploy key, and a fresh owner review of `prod:festive-malamute-715`.
+Every green `main` release deploys Convex through the protected `production`
+environment before promoting the matching frontend. The workflow requires a
+valid `CONVEX_DEPLOY_KEY` and validates the exact target
+`prod:festive-malamute-715`; there is no manual deployment switch.
 
 ## Immutable target
 

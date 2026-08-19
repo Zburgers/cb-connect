@@ -1,6 +1,8 @@
 # CB Connect major-release plan index
 
-**Status:** Canonical planning dashboard; Gate 0 implementation packet closed 2026-08-06 with an explicit blocked promotion verdict in [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md).
+**Status:** Canonical planning dashboard under the approved
+[feature-first delivery policy](2026-08-19-feature-first-delivery-design.md).
+Gate 0 engineering is complete and Gate 1 additive execution is next.
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -21,8 +23,8 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 | Order | Track | Gate-level plan | Blocking dependency | Planning readiness |
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
-| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Approved Gate 0 report backed by direct CI, production, recovery and baseline evidence | Implementation packet closed; promotion blocked |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [dated plan](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md) | Approved Gate 0 report; D-012 approval is required for destructive migration, hard deletion and production exposure | Dated implementation plan exists; execution awaits Gate 0 approval, then additive work may proceed while destructive work remains blocked |
+| 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Continuous automated deployment and measurement | Engineering complete; operations continue in parallel |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [dated plan](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md) | Approved dated execution plan | Additive/default-off execution ready; D-012 blocks only destructive lifecycle work |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
@@ -32,23 +34,18 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 
 ## Current Gate 0 boundary
 
-The detailed Gate 0 implementation packet is complete; it is no longer a local
-task queue. The authoritative outcome is the explicit **BLOCKED** verdict in
-[`REPORT.md`](../evidence/reliability-gate-0/REPORT.md). The remaining work is
-external evidence and authorization, in this order:
+The detailed Gate 0 implementation packet is complete and historical. Its
+former blocked verdict is preserved in [`REPORT.md`](../evidence/reliability-gate-0/REPORT.md)
+as evidence of the state before automatic deployment. It is not a current
+feature-development gate.
 
 1. C2 is now evidenced by [protected CI run 32010663067](../evidence/reliability-gate-0/c2-protected-2026-08-17.md), which passed deterministic qualification and authenticated desktop/mobile smoke with zero skips. This does not establish production evidence.
-2. Only with separate release authorization, establish direct production V1/V2
-   identity, TLS/listener/readiness and PM2-persistence evidence; do not infer
-   it from an old deploy, build, or dev deployment.
-3. Run and record the approved synthetic restore rehearsal with measured
-   integrity and RPO/RTO results, then collect the 28-day allowlisted SLO
-   baseline.
-4. Refresh the Gate 0 report and obtain an explicit approval. Until then, do
-   not expose or execute Gate 1. Its dated plan may be reviewed, but it is
-   not an authorization to mutate code or data. After Gate 0 approval, safe
-   additive helpers/schema/tests may proceed; D-012 still blocks destructive
-   migration, hard deletion and production exposure.
+2. Automatic `main` deployment now establishes direct production identity,
+   readiness, PM2 persistence, and the managed rollback chain.
+3. Restore rehearsals and SLO measurement continue as operational work and may
+   restrict rollout or claims; they do not block unrelated feature coding.
+4. Gate 1 may execute its approved additive/default-off tasks now. D-012 still
+   blocks destructive migration, hard deletion and final retention behavior.
 
 ## Gate 0 closeout
 
@@ -56,9 +53,8 @@ The implementation sequence G1 → C1/C2/C3 → V1/V2 → X1 → G2 → G3 is
 recorded in the dedicated worktree and append-only execution log. G1, C1, C2,
 C3, V1 isolated-dev identity, V2 implementation and X1 guardrails have
 passing local, protected-CI or synthetic evidence. Production V1/V2 runtime
-evidence, measured X1 restore objectives and the G2 baseline are not available;
-therefore the Gate 0 report is explicitly **BLOCKED** and Gate 1 must remain
-unexposed and its feature flag must remain off.
+evidence and measurement remain useful operational history. Gate 1 code may
+proceed behind its default-off feature flag.
 
 ## Planning policy
 
@@ -66,7 +62,8 @@ unexposed and its feature flag must remain off.
 - A gate becomes implementation-ready only when its blocking decisions are resolved and a dated task-sized execution plan is approved.
 - One execution task equals one bounded test/fail/implement/pass/commit cycle. Tasks sharing a file or interface are sequential unless the plan explicitly proves otherwise.
 - A major architecture, schema, privacy or dependency divergence pauses execution and requires plan revision/reapproval.
-- Gate evidence must distinguish synthetic qualification, local checks, CI, deployment, and authenticated production behavior.
+- CI, deployment logs and Git history are the default evidence. Add a separate
+  artifact only when those systems cannot retain the required result safely.
 - Gate 7 shadow research may remain incomplete indefinitely; Gates 0-6 define major-release completion.
 
 ## Required evidence by gate

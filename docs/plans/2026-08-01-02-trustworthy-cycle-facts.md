@@ -1,11 +1,9 @@
 # Trustworthy Cycle Facts Implementation Plan
 
-> **Codex/Shipyard execution:** This gate-level plan requires an **approved
-> Gate 0 report**, resolved Gate 1 decisions, and a dated approved execution
-> plan. A dated draft now exists at
+> **Codex/Shipyard execution:** Use the approved dated execution plan at
 > [`2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md),
-> but the current Gate 0 report is blocked and D-012 retention authority is
-> pending, so neither this document nor the dated draft is executable.
+> for additive, default-off, non-destructive work. D-012 blocks only the tasks
+> that destroy or permanently delete data.
 
 **Goal:** Ensure period history contains explicit user observations with valid provenance and never silently stores system estimates as facts.
 
@@ -21,10 +19,9 @@
 
 **Next gate:** [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md)
 
-**Planning status:** Gate-level work packages plus a dated non-executable draft. The
-dated plan may be reviewed now, but execution starts only after the Gate 0
-report is approved and D-012 is explicitly resolved before destructive
-migration or deletion behavior. See the
+**Planning status:** Gate-level work packages plus an approved dated execution
+plan. Additive/default-off implementation may start. D-012 must be resolved
+before destructive migration or deletion behavior. See the
 [Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
 current code inventory and decision boundary; it is not an execution plan.
 
@@ -42,7 +39,7 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 
 ## Entry criteria
 
-- Gate 0 deployment/rollback evidence is approved.
+- The dated execution plan and feature-first delivery policy are approved.
 - Production aggregate audit authorization remains read-only and aggregate-only.
 - The migration targets and backup/restore rehearsal are identified.
 - No migration report may contain raw user IDs, dates, notes or event rows.
