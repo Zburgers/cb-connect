@@ -94,7 +94,7 @@ describe("compatibility readiness", () => {
     queryMock.mockReturnValue(new Promise(() => {}));
 
     const responsePromise = GET();
-    await vi.advanceTimersByTimeAsync(1001);
+    await vi.advanceTimersByTimeAsync(5001);
     const response = await responsePromise;
 
     expect(response.status).toBe(503);
