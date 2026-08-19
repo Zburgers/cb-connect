@@ -215,7 +215,6 @@ jobs:
 
       - name: Sync Convex runtime secrets
         env:
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
           CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
@@ -234,9 +233,7 @@ jobs:
           fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', { mode: 0o600 });
           NODE
           if [[ -s "$env_file" ]]; then
-            convex_env_deployment="$CONVEX_DEPLOYMENT"
-            if [[ "$convex_env_deployment" == prod:* ]]; then convex_env_deployment="${convex_env_deployment#prod:}"; fi
-            npx convex env set --from-file "$env_file" --deployment "$convex_env_deployment"
+            npx convex env set --from-file "$env_file"
           else
             echo 'Skipping Convex runtime secret sync; no optional values are configured.'
           fi
@@ -263,9 +260,9 @@ jobs:
           umask 077
           printf 'CONVEX_DEPLOYMENT=%s\n' "$CONVEX_DEPLOYMENT" > "$convex_release_env_file"
           npx convex deploy --env-file "$convex_release_env_file" --typecheck enable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
-          npx convex function-spec --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
+          npx convex function-spec > "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
           rg -q 'getBackendIdentity' "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
-          npx convex run queries/system:getBackendIdentity '{}' --deployment "$CONVEX_DEPLOYMENT" > "$RUNNER_TEMP/cb-connect-backend-identity.json"
+          npx convex run queries/system:getBackendIdentity '{}' > "$RUNNER_TEMP/cb-connect-backend-identity.json"
           rg -q '"compatibilityVersion"[[:space:]]*:[[:space:]]*"v1"' "$RUNNER_TEMP/cb-connect-backend-identity.json"
 
       - name: Promote qualified release with PM2 start-or-reload

@@ -88,6 +88,11 @@ if ! rg -q 'if \[\[ -s "\$env_file" \]\]; then' "$workflow"; then
   exit 1
 fi
 
+if rg -q 'npx convex (env set|function-spec|run).*--deployment' "$workflow"; then
+  echo "deploy-key-authenticated Convex commands must let the key select the deployment" >&2
+  exit 1
+fi
+
 # A missing managed `current` pointer is the exact first-release case. Existing
 # pointers still have to resolve inside the managed release root and verify a
 # compatible manifest before deployment continues.
