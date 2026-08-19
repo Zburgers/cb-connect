@@ -69,6 +69,11 @@ if rg -q 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; th
   exit 1
 fi
 
+if grep -Eq '(^|[[:space:]])rg([[:space:]]|$)' scripts/tests/package-release.test.sh; then
+  echo "release packaging policy test must not depend on runner-specific ripgrep" >&2
+  exit 1
+fi
+
 line_for() {
   rg -n -m 1 "$1" <<<"$qualify_block" | cut -d: -f1
 }

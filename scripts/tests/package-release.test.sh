@@ -18,7 +18,7 @@ if (
   echo "missing standalone output must fail" >&2
   exit 1
 fi
-if ! rg -q 'standalone' "$root/missing.log"; then
+if ! grep -q 'standalone' "$root/missing.log"; then
   echo "missing standalone failure is not explicit" >&2
   exit 1
 fi
@@ -38,7 +38,7 @@ if (
   echo "invalid metadata must fail" >&2
   exit 1
 fi
-if ! rg -q 'commit SHA' "$root/metadata.log"; then
+if ! grep -q 'commit SHA' "$root/metadata.log"; then
   echo "invalid metadata failure is not explicit" >&2
   exit 1
 fi
@@ -67,7 +67,7 @@ if bash scripts/package-release.sh --verify "$manifest" >"$root/checksum.log" 2>
   echo "checksum mismatch must fail" >&2
   exit 1
 fi
-if ! rg -q 'checksum' "$root/checksum.log"; then
+if ! grep -q 'checksum' "$root/checksum.log"; then
   echo "checksum failure is not explicit" >&2
   exit 1
 fi
