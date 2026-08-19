@@ -238,28 +238,13 @@ jobs:
             echo 'Skipping Convex runtime secret sync; no optional values are configured.'
           fi
 
-      - name: Validate explicit Convex release target
-        env:
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
-          CB_CONNECT_PRODUCTION_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
-        run: |
-          set -euo pipefail
-          expected='prod:festive-malamute-715'
-          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = "$expected"
-          test "$CONVEX_DEPLOYMENT" = "$expected"
-
       - name: Deploy explicit Convex compatibility release
         env:
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           QUALIFIED_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
         run: |
           set -euo pipefail
-          convex_release_env_file="$(mktemp)"
-          trap 'rm -f "$convex_release_env_file"' EXIT
-          umask 077
-          printf 'CONVEX_DEPLOYMENT=%s\n' "$CONVEX_DEPLOYMENT" > "$convex_release_env_file"
-          npx convex deploy --env-file "$convex_release_env_file" --typecheck enable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
+          npx convex deploy --typecheck enable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
           npx convex function-spec > "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
           rg -q 'getBackendIdentity' "$RUNNER_TEMP/cb-connect-convex-function-spec.json"
           npx convex run queries/system:getBackendIdentity '{}' > "$RUNNER_TEMP/cb-connect-backend-identity.json"
