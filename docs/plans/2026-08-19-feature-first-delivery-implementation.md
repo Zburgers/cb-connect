@@ -1,5 +1,8 @@
 # Feature-First Delivery Implementation Plan
 
+**Execution status:** Local implementation and complete qualification passed on
+2026-08-19. PR/CI/production verification remain to be recorded.
+
 > **For Codex:** REQUIRED SUB-SKILL: Use `executing-plans` to implement this plan task-by-task.
 
 **Goal:** Make every green `main` merge deploy Convex and the qualified frontend automatically, while ensuring missing future decisions block only the tasks that depend on them.
