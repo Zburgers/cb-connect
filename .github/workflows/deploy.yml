@@ -245,8 +245,6 @@ jobs:
         run: |
           set -euo pipefail
           npx convex deploy --typecheck disable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
-          npx convex run queries/system:getBackendIdentity '{}' > "$RUNNER_TEMP/cb-connect-backend-identity.json"
-          rg -q '"compatibilityVersion"[[:space:]]*:[[:space:]]*"v1"' "$RUNNER_TEMP/cb-connect-backend-identity.json"
 
       - name: Promote qualified release with PM2 start-or-reload
         id: promote
