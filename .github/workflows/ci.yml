@@ -91,8 +91,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Configure runner Chrome
+        run: |
+          set -euo pipefail
+          browser_path="$(command -v google-chrome)"
+          test -x "$browser_path"
+          printf 'PLAYWRIGHT_EXECUTABLE_PATH=%s\n' "$browser_path" >> "$GITHUB_ENV"
 
       - name: Install release policy tools
         run: sudo apt-get update && sudo apt-get install --yes ripgrep

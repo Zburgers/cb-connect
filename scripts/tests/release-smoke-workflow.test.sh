@@ -20,6 +20,8 @@ required_patterns=(
   'NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}'
   'for project in release-desktop release-mobile'
   'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
+  'browser_path="$(command -v google-chrome)"'
+  "printf 'PLAYWRIGHT_EXECUTABLE_PATH=%s\\n' \"\$browser_path\" >> \"\$GITHUB_ENV\""
   'sudo apt-get update && sudo apt-get install --yes ripgrep'
   'bash scripts/redact-release-artifacts.sh'
   'retention-days: 7'
@@ -31,6 +33,11 @@ for pattern in "${required_patterns[@]}"; do
     exit 1
   fi
 done
+
+if rg -Fq 'playwright install --with-deps chromium' "$workflow"; then
+  echo "authenticated smoke must use the runner image browser instead of downloading Chromium" >&2
+  exit 1
+fi
 
 if rg -q -- '--project=release-desktop --project=release-mobile' "$workflow"; then
   echo "authenticated smoke must provision and tear down a distinct fixture run per browser project" >&2
