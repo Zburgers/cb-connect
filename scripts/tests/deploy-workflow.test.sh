@@ -46,7 +46,7 @@ required_patterns=(
   "steps\.promote\.outcome == 'failure' \|\| steps\.verify_promotion\.outcome == 'failure'"
   'always\(\)'
   'Validate Convex deploy key preflight'
-  'npx convex deploy --env-file "\$convex_release_env_file"'
+  'npx convex deploy --typecheck enable --codegen enable'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
   'Record backend deployment timestamp'
   'npx convex env set --from-file "\$env_file" --force'
@@ -91,6 +91,11 @@ fi
 
 if rg -q 'npx convex (env set|function-spec|run).*--deployment' "$workflow"; then
   echo "deploy-key-authenticated Convex commands must let the key select the deployment" >&2
+  exit 1
+fi
+
+if rg -q 'convex deploy --env-file|Validate explicit Convex release target' "$workflow"; then
+  echo "verified deploy-key releases must not depend on a duplicate deployment selector" >&2
   exit 1
 fi
 
