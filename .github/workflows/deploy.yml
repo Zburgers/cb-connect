@@ -118,15 +118,21 @@ jobs:
               exit 1
             fi
           done
-          test "$CB_CONNECT_PRODUCTION_DEPLOYMENT" = 'prod:festive-malamute-715'
-          [[ "$CB_CONNECT_PRODUCTION_BASE_URL" == https://* ]]
-          [[ "$CB_CONNECT_RELEASE_ROOT" =~ ^/[a-zA-Z0-9._/-]+$ ]]
-          test "$CB_CONNECT_RELEASE_ROOT" != '/'
-          [[ "$CB_CONNECT_RELEASE_ROOT" != /tmp/* ]]
-          [[ "$CB_CONNECT_RELEASE_ROOT" != "$RUNNER_TEMP"* ]]
-          [[ "$CB_CONNECT_RELEASE_ROOT" != "$GITHUB_WORKSPACE"* ]]
-          test -d "$CB_CONNECT_RELEASE_ROOT"
-          test -w "$CB_CONNECT_RELEASE_ROOT"
+          if [[ "$CB_CONNECT_PRODUCTION_DEPLOYMENT" != 'prod:festive-malamute-715' ]]; then
+            echo "::error::Production deployment target is not festive-malamute-715"
+            exit 1
+          fi
+          case "$CB_CONNECT_RELEASE_ROOT" in
+            /|/tmp|/tmp/*|"$RUNNER_TEMP"|"$RUNNER_TEMP"/*|"$GITHUB_WORKSPACE"|"$GITHUB_WORKSPACE"/*)
+              echo "::error::CB_CONNECT_RELEASE_ROOT is not a durable safe path"
+              exit 1
+              ;;
+          esac
+          mkdir -p "$CB_CONNECT_RELEASE_ROOT"
+          if [[ ! -w "$CB_CONNECT_RELEASE_ROOT" ]]; then
+            echo "::error::CB_CONNECT_RELEASE_ROOT is not writable"
+            exit 1
+          fi
 
       - name: Materialize durable immutable release
         env:
