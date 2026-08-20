@@ -33,6 +33,15 @@ describe("cycle fact read eligibility", () => {
       false,
     ],
     [
+      {
+        ...exact,
+        legacyReason: "overlap" as const,
+      },
+      "legacy_unknown",
+      true,
+      false,
+    ],
+    [
       { ...exact, tombstoneAt: 1 },
       "exact",
       false,

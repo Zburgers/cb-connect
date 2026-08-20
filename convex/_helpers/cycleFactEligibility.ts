@@ -15,6 +15,13 @@ export type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
 export function getCycleFactReadLabel(
   period: CycleFactLike
 ): CycleFactReadLabel {
+  // A legacy reason is an explicit signal that the row's provenance is not
+  // trustworthy, even if a later writer populated exact-looking certainty
+  // fields. Keep the user-visible label conservative for malformed or
+  // partially annotated historical rows.
+  if (period.legacyReason !== undefined) {
+    return "legacy_unknown";
+  }
   if (
     period.startCertainty === "approximate" ||
     period.endCertainty === "approximate"
