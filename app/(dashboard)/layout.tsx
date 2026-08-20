@@ -29,6 +29,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateUserTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+  const cycleFactsCapability = useQuery(
+    api.queries.capabilities.getCapabilities,
+    isAuthenticated && me?.role ? {} : "skip"
+  );
   const coupleStatus = useQuery(
     api.queries.couples.getCoupleStatus,
     isAuthenticated && me?.role ? {} : "skip"
@@ -113,7 +117,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Page content ─────────────────────────────────────────── */}
-      <main className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28">
+      <main
+        className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28"
+        data-cycle-facts-v1={
+          cycleFactsCapability?.cycleFactsV1 ? "enabled" : "disabled"
+        }
+      >
         {children}
       </main>
 

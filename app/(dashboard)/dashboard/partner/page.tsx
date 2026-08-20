@@ -18,6 +18,10 @@ export default function PartnerPage() {
     // Only run once we know the user exists and has a role
     isAuthenticated && me?.role ? {} : "skip"
   );
+  const cycleFactsCapability = useQuery(
+    api.queries.capabilities.getCapabilities,
+    isAuthenticated && me?.role ? {} : "skip"
+  );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
@@ -218,6 +222,17 @@ export default function PartnerPage() {
           Invite, consent, and sharing settings live here.
         </p>
       </div>
+      {cycleFactsCapability?.cycleFactsV1 && (
+        <div className="contrast-glass rounded-[1.3rem] border border-primary/15 p-4">
+          <p className="text-sm font-semibold text-foreground">
+            Trustworthy cycle facts are enabled
+          </p>
+          <p className="mt-1 text-sm leading-6 text-foreground/75">
+            Assisted dates are labeled by certainty, and your partner keeps the
+            final say over corrections or removal.
+          </p>
+        </div>
+      )}
       {message && (
         <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">
           {message}

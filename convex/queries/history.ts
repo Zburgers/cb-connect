@@ -239,6 +239,7 @@ export const getTimelineHistory = query({
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
         certainty: CycleFactReadLabel;
+        authorityVersion: number;
         legacyReason?:
           | "missing_provenance"
           | "inferred_end"
@@ -267,6 +268,7 @@ export const getTimelineHistory = query({
           source: period.source,
           confirmationStatus: period.confirmationStatus,
           certainty: period.certainty,
+          authorityVersion: period.authorityVersion,
           legacyReason: period.legacyReason,
           createdByUserId: period.createdByUserId,
           updatedByUserId: period.updatedByUserId,
@@ -331,6 +333,7 @@ async function enrichPeriodEvents(
       confirmationStatus:
         period.confirmationStatus ?? ("confirmed" as const),
       certainty: getCycleFactReadLabel(period),
+      authorityVersion: period.authorityVersion ?? 0,
       createdByUserId,
       updatedByUserId,
       createdByName: names.get(createdByUserId) ?? "Partner",
