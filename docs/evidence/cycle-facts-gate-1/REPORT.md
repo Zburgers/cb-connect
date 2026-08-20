@@ -3,6 +3,9 @@
 **Status:** additive implementation qualified locally; production exposure not
 authorized
 
+**Pull request:** [#35](https://github.com/Zburgers/cb-connect/pull/35) — draft
+review and protected qualification pending
+
 **Scope:** Convex-only `CB_CONNECT_CYCLE_FACTS_V1`, default-off behavior,
 certainty-aware reads, bounded legacy metadata, partner authority and
 authenticated release journeys.

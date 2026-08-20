@@ -25,6 +25,7 @@ Update with Github issues on the parent repo
 **Detected:** August 1, 2026
 **Files:** `convex/_helpers/cycleCalculations.ts`, `convex/_helpers/timelinePhases.ts`, `convex/queries/dashboard.ts`, `convex/mutations/periods.ts`, `convex/crons.ts`
 **Evidence:** The Gate 1 implementation removes the cron/inferred-ending fact writer, keeps open-event estimates derived and labeled, bounds legacy classification/annotation, and makes history/prediction reads exclude approximate, legacy-unknown and tombstoned rows from exact-only inputs. The remaining Gate 2 work is the broader rollover/late-state model and any dashboard phase semantics not covered by fact eligibility. See `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
+**PR coverage:** [PR #35](https://github.com/Zburgers/cb-connect/pull/35) covers the Gate 1 persisted-fact portion; the Gate 2 rollover/state work remains open.
 **Consequence:** Late, irregular, missing-log, pregnancy/postpartum, or paused-tracking cases can display fabricated cycle/phase state and pollute future statistics or model data.
 **Exit evidence:** A tested recorded/predicted/late state machine; no wrap without a confirmed start; predictions never mutate observed events; recorded open/end state has precedence in dashboard and history; legacy inferred rows are measured and repaired or explicitly marked uncertain.
 
@@ -37,6 +38,7 @@ Update with Github issues on the parent repo
 **Detected:** August 1, 2026
 **Files:** `convex/mutations/periods.ts`, `convex/schema.ts`, `convex/mutations/periods.test.ts`
 **Evidence:** The Gate 1 implementation adds device-local timezone validation, shared duplicate/overlap/order invariants, factual corrections, bounded legacy audit/annotation, and removes inferred closure and hard deletion. The implementation is locally qualified; production deployment and capability exposure remain unproven. See [GitHub issue #7](https://github.com/Zburgers/cb-connect/issues/7), [PR #8](https://github.com/Zburgers/cb-connect/pull/8), `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
+**PR coverage:** [PR #35](https://github.com/Zburgers/cb-connect/pull/35) implements the remaining Gate 1 invariant and provenance work; production exposure is not claimed.
 **Exit evidence:** One shared backend validator rejects duplicates, overlaps, invalid/future user-local dates, and implausible closure; corrections use the same invariants; migration/report quantifies existing invalid rows; edge and property tests pass.
 
 --
@@ -398,6 +400,8 @@ The app uses `new Date().toISOString().split("T")[0]` and `T00:00:00` date parsi
 - [x] Store/derive dates consistently using browser-local calendar dates and UTC-safe calendar arithmetic
 - [x] Add tests for users near local midnight and non-UTC timezones
 - [x] Avoid mixing browser-local date inputs with UTC `toISOString()` day extraction
+
+**PR coverage:** [PR #35](https://github.com/Zburgers/cb-connect/pull/35) closes the Gate 1 period-date portion; pain-log validation remains separate.
 
 ---
 

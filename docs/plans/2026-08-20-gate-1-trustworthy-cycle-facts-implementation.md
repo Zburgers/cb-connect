@@ -5,7 +5,8 @@
 authority and records the implementation contract; production exposure is not
 authorized. The plan was audited against `main` at
 `15d92b54990cc64368fee34a029d5ddf79921b71`; a material architecture or
-contract change requires plan revision.
+contract change requires plan revision. The branch was subsequently rebased
+onto current `origin/main` at `d69b3cde59e20b59dffe408fde37c917cd3f60e8`.
 
 > **For Codex:** REQUIRED SUB-SKILL: Use
 > `shipyard:shipyard-executing-plans` to implement this plan task-by-task.
