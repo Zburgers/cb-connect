@@ -27,7 +27,7 @@ not_contains() {
 [[ -f "$plan_file" ]] || fail "current implementation plan is missing"
 [[ -f "$release_config" ]] || fail "release Playwright configuration is missing"
 
-contains "$plan_file" '**Status:** Implementation-ready current execution authority.'
+contains "$plan_file" '**Status:** Implemented and locally qualified on 2026-08-20'
 contains "$plan_file" '`CB_CONNECT_CYCLE_FACTS_V1` is Convex-only.'
 contains "$plan_file" 'Unset or any value other than the'
 contains "$plan_file" 'exact string `true` is disabled.'
@@ -36,7 +36,7 @@ contains "$plan_file" 'It does not block an'
 contains "$plan_file" 'additive tombstone, compatibility reads, dry runs, or synthetic migration'
 contains "$plan_file" 'absence of active Gate 0 approval requirements'
 
-contains "$plan_index" 'Gate 1 may execute its approved additive/default-off tasks now.'
+contains "$plan_index" 'Gate 1 additive implementation is locally'
 not_contains "$plan_index" 'Gate 1 remains blocked'
 not_contains "$plan_index" 'Gate 1 is blocked'
 

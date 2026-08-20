@@ -1,7 +1,7 @@
 # Trustworthy Cycle Facts Implementation Plan
 
 > **Codex/Shipyard execution:** Use the approved dated execution plan at
-> [`2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md),
+> [`2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md),
 > for additive, default-off, non-destructive work. D-012 blocks only the tasks
 > that destroy or permanently delete data.
 
@@ -199,7 +199,16 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 
 ## Rollout and rollback
 
-Deploy additive schema and read compatibility first, then dry-run audit, then migration, then guarded new writes, and only afterward remove old write paths. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and exposes only an authenticated boolean capability to the UI. Gate 0 approval is required before additive execution; D-012 approval remains required for hard deletion, destructive migration and production exposure. Stop on count mismatch, invariant rejection spike, unauthorized visibility, migration non-idempotency or inability to restore. Rollback reads to compatible fields; never “undo” by deleting migrated history.
+Deploy additive schema and read compatibility first, then guarded new writes,
+derived-estimate separation, dry-run audit, bounded annotation, and finally the
+default-off UI. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and
+exposes only an authenticated boolean capability to the UI. Historical Gate 0
+approval is not an additive-execution switch under the approved feature-first
+policy; D-012 approval remains required for hard deletion, destructive
+migration and final retention behavior. Stop on count mismatch, invariant
+rejection spike, unauthorized visibility, migration non-idempotency or
+inability to recover. Roll back by disabling the flag and retaining compatible
+reads; never “undo” by deleting annotated history.
 
 ## Exit evidence
 

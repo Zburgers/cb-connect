@@ -113,7 +113,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Approver and authority: Sole project owner, approved directly in the coordinating conversation.
 - Approved on: 2026-08-12.
 - Applies from commit/deployment: Gate 1 additive timezone contract; no production behavior changes until Gate 0 approval and the dated plan entry criteria are met.
-- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md` and `convex/_helpers/calendarDates.ts` tests.
+- Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md` and `convex/_helpers/calendarDates.ts` tests.
 - Review/expiry date: Revalidate on client platform/timezone-library changes or 2026-11-12, whichever comes first.
 
 ## D-009 — Observation certainty, provenance and primary autonomy
@@ -123,7 +123,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Approver and authority: Sole project owner, approved directly in the coordinating conversation.
 - Approved on: 2026-08-12.
 - Applies from commit/deployment: Gate 1 additive schema and write path; pending Gate 0 approval and retention decision.
-- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`.
+- Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md` and `docs/evidence/cycle-facts-gate-1/REPORT.md`.
 - Review/expiry date: Revalidate before Gate 2 prediction/phase exposure or 2026-11-12, whichever comes first.
 
 ## D-010 — Conservative legacy compatibility
@@ -132,8 +132,8 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Alternatives considered: Deleting ambiguous rows, choosing the newest duplicate as truth, and labeling inferred endings confirmed were rejected because each can break history or fabricate health facts.
 - Approver and authority: Sole project owner, approved directly in the coordinating conversation; privacy/retention authority remains required for destructive lifecycle actions.
 - Approved on: 2026-08-12.
-- Applies from commit/deployment: Gate 1 audit/migration only after approved Gate 0 report, retention decision and recovery boundary.
-- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md` and the planned aggregate audit/migration evidence.
+- Applies from commit/deployment: Gate 1 audit/migration implementation is additive and locally qualified; production annotation still requires an approved target, retention decision and recovery boundary.
+- Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`, `docs/evidence/cycle-facts-gate-1/REPORT.md` and `docs/runbooks/cycle-facts-migration.md`.
 - Review/expiry date: Revalidate after the aggregate audit and before any protected migration.
 
 ## D-012 — Retention proposal pending explicit authority
@@ -143,7 +143,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Approver and authority: Proposal drafted by engineering on 2026-08-12; explicit owner/privacy confirmation is still required.
 - Approved on: Pending.
 - Applies from commit/deployment: After Gate 0 approval, additive schema/helpers/tests and non-destructive compatibility are allowed; no hard deletion, destructive migration or production exposure is authorized until this decision is approved.
-- Evidence or runbook: `docs/plans/2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`.
+- Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`.
 - Review/expiry date: Must be resolved before Gate 1 migration or any deletion behavior is enabled.
 
 ## Resolution format

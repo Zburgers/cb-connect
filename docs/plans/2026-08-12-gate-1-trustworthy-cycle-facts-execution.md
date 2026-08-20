@@ -1,5 +1,9 @@
 # Gate 1 Trustworthy Cycle Facts Implementation Plan
 
+**Status:** Superseded on 2026-08-20 by
+[`2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md).
+Retained as planning history; do not execute this file.
+
 > **Codex/Shipyard execution:** Use the native `shipyard:shipyard-executing-plans` skill to execute these tasks in order. Do not use Claude-style `/shipyard:*` commands.
 
 **Goal:** Make cycle history explicit, uncertainty-preserving and correction-safe while keeping legacy data readable and preventing inferred dates from becoming facts.

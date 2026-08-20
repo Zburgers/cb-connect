@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 17, 2026
+**Last Updated:** August 20, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -21,10 +21,10 @@ Update with Github issues on the parent repo
 ### Prediction rollover and inferred period endings can create false history
 **Program gate:** Cycle Facts Gate 1 and Four-Phase State Gate 2
 **Priority:** Critical
-**Status:** Open
+**Status:** Gate 1 portion implemented and locally qualified; Gate 2 rollover/state semantics remain open
 **Detected:** August 1, 2026
 **Files:** `convex/_helpers/cycleCalculations.ts`, `convex/_helpers/timelinePhases.ts`, `convex/queries/dashboard.ts`, `convex/mutations/periods.ts`, `convex/crons.ts`
-**Evidence:** `calculateCycleInfo` uses modulo arithmetic, so the expected start date becomes cycle day 1 and menstruation without a newly recorded event. Dashboard prediction reads only the latest start plus fixed settings. `autoEndPeriods` writes a configured-duration estimate into `periodEvents.endDate`, and preserves an existing self/partner source, making inferred endings indistinguishable from confirmed endings. The timeline also falls back to a predicted end for open events while the dashboard ignores the latest recorded end.
+**Evidence:** The Gate 1 implementation removes the cron/inferred-ending fact writer, keeps open-event estimates derived and labeled, bounds legacy classification/annotation, and makes history/prediction reads exclude approximate, legacy-unknown and tombstoned rows from exact-only inputs. The remaining Gate 2 work is the broader rollover/late-state model and any dashboard phase semantics not covered by fact eligibility. See `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
 **Consequence:** Late, irregular, missing-log, pregnancy/postpartum, or paused-tracking cases can display fabricated cycle/phase state and pollute future statistics or model data.
 **Exit evidence:** A tested recorded/predicted/late state machine; no wrap without a confirmed start; predictions never mutate observed events; recorded open/end state has precedence in dashboard and history; legacy inferred rows are measured and repaired or explicitly marked uncertain.
 
@@ -33,10 +33,10 @@ Update with Github issues on the parent repo
 ### Period mutation invariants allow duplicates, overlaps, future dates, and implausible auto-closure
 **Program gate:** Cycle Facts Gate 1
 **Priority:** High
-**Status:** Open; UTC-based future-date rejection merged in PR #8, but user-local authority and deployment remain unresolved
+**Status:** Gate 1 implementation complete in the feature branch; production deployment/exposure evidence remains separate
 **Detected:** August 1, 2026
 **Files:** `convex/mutations/periods.ts`, `convex/schema.ts`, `convex/mutations/periods.test.ts`
-**Evidence:** PR #8 merged at `d3ef5a7` and added future-date checks across public period writes, but the helper defaults to UTC because period mutations do not supply a persisted user timezone. Main still does not reject duplicate starts or overlaps against closed history; corrections can create either condition; and logging a new start closes any open event on the preceding day regardless of resulting duration. CI passed, but deploy run `30852430655` failed before frontend build/PM2 promotion, so production deployment is unproven. See [GitHub issue #7](https://github.com/Zburgers/cb-connect/issues/7) and [PR #8](https://github.com/Zburgers/cb-connect/pull/8).
+**Evidence:** The Gate 1 implementation adds device-local timezone validation, shared duplicate/overlap/order invariants, factual corrections, bounded legacy audit/annotation, and removes inferred closure and hard deletion. The implementation is locally qualified; production deployment and capability exposure remain unproven. See [GitHub issue #7](https://github.com/Zburgers/cb-connect/issues/7), [PR #8](https://github.com/Zburgers/cb-connect/pull/8), `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
 **Exit evidence:** One shared backend validator rejects duplicates, overlaps, invalid/future user-local dates, and implausible closure; corrections use the same invariants; migration/report quantifies existing invalid rows; edge and property tests pass.
 
 --
@@ -224,9 +224,9 @@ and mandatory for release candidates.
 
 ### Feature-first major-release execution
 
-**Status:** Gate 0 engineering complete; Gate 1 additive/default-off execution is next.
+**Status:** Gate 0 engineering complete; Gate 1 additive/default-off implementation is locally qualified on the feature branch.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks destructive deletion/migration and final retention behavior, not additive schema, helpers, tests, compatibility, or default-off UI work.
+**Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks destructive deletion/migration and final retention behavior, not the qualified additive schema, helpers, tests, compatibility, or default-off UI implementation. Production exposure remains separately unauthorized.
 
 ---
 
@@ -298,7 +298,7 @@ and mandatory for release candidates.
 
 ### Partner signup test fails before reaching the app
 **Priority:** High
-**Status:** Partially resolved
+**Status:** Gate 1 period-date portion resolved in the feature branch; pain-log validation remains separately tracked
 **Detected:** May 20, 2026
 **Evidence:** `e2e/signup-repro.spec.ts`, `playwright.config.ts`, `playwright.local.config.ts`
 
@@ -396,7 +396,7 @@ The app uses `new Date().toISOString().split("T")[0]` and `T00:00:00` date parsi
 
 - [x] Define whether cycle dates are user-local dates or UTC dates
 - [x] Store/derive dates consistently using browser-local calendar dates and UTC-safe calendar arithmetic
-- [ ] Add tests for users near local midnight and non-UTC timezones
+- [x] Add tests for users near local midnight and non-UTC timezones
 - [x] Avoid mixing browser-local date inputs with UTC `toISOString()` day extraction
 
 ---
