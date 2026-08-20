@@ -1,22 +1,28 @@
 export const DEFAULT_TIME_ZONE = "UTC";
 
-export function resolveCalendarTimeZone(timeZone?: string): string {
-  const resolved = timeZone ?? DEFAULT_TIME_ZONE;
-
+function validateCalendarTimeZone(timeZone: string): string {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: resolved }).format();
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
   } catch {
     throw new Error("Time zone must be a valid IANA time zone");
   }
 
-  return resolved;
+  return timeZone;
+}
+
+export function resolveCalendarTimeZone(timeZone?: string): string {
+  if (!timeZone) {
+    throw new Error("Time zone is required for an identified user");
+  }
+
+  return validateCalendarTimeZone(timeZone);
 }
 
 export function toCalendarDateInTimeZone(
   date: Date,
   timeZone = DEFAULT_TIME_ZONE
 ): string {
-  const resolvedTimeZone = resolveCalendarTimeZone(timeZone);
+  const resolvedTimeZone = validateCalendarTimeZone(timeZone);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: resolvedTimeZone,
     year: "numeric",

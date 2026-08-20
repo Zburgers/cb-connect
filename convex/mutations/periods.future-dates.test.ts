@@ -18,7 +18,7 @@ describe("period date boundaries", () => {
 
     const result = await asPrimary.mutation(
       api.mutations.periods.logPeriodStart,
-      { startDate: today }
+      { startDate: today, timeZone: "UTC" }
     );
 
     const event = await t.run(async (ctx) => {
@@ -36,6 +36,13 @@ describe("period date boundaries", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
+    await t.run(async (ctx) => {
+      const primary = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", "primary-clerk"))
+        .unique();
+      await ctx.db.patch(primary._id, { timeZone: "UTC" });
+    });
     const today = toCalendarDateInTimeZone(new Date(), "UTC");
     const tomorrow = addCalendarDays(today, 1);
     const pastStart = addCalendarDays(today, -5);
@@ -52,6 +59,7 @@ describe("period date boundaries", () => {
     await expect(
       asPrimary.mutation(api.mutations.periods.logPeriodStart, {
         startDate: tomorrow,
+        timeZone: "UTC",
       })
     ).rejects.toThrow("Start date cannot be in the future");
 
@@ -64,6 +72,7 @@ describe("period date boundaries", () => {
     await expect(
       asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
         endDate: tomorrow,
+        timeZone: "UTC",
       })
     ).rejects.toThrow("End date cannot be in the future");
 
@@ -77,6 +86,7 @@ describe("period date boundaries", () => {
       asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
         periodEventId: eventId,
         startDate: tomorrow,
+        timeZone: "UTC",
       })
     ).rejects.toThrow("Start date cannot be in the future");
 
@@ -85,6 +95,7 @@ describe("period date boundaries", () => {
         periodEventId: eventId,
         startDate: pastStart,
         endDate: tomorrow,
+        timeZone: "UTC",
       })
     ).rejects.toThrow("End date cannot be in the future");
   });
@@ -100,6 +111,7 @@ describe("period date boundaries", () => {
     await expect(
       asPrimary.mutation(api.mutations.periods.logPeriodStart, {
         startDate: "2099-01-01",
+        timeZone: "UTC",
       })
     ).rejects.toThrow("Start date cannot be in the future");
 
@@ -116,6 +128,7 @@ describe("period date boundaries", () => {
       periodEventId: eventId,
       startDate: correctedStart,
       endDate: correctedEnd,
+      timeZone: "UTC",
     });
 
     const corrected = await t.run(async (ctx) => {
@@ -125,5 +138,42 @@ describe("period date boundaries", () => {
       startDate: correctedStart,
       endDate: correctedEnd,
     });
+  });
+
+  test("rejects an identified primary write without a timezone", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const today = toCalendarDateInTimeZone(new Date(), "UTC");
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: today,
+      })
+    ).rejects.toThrow("Time zone is required for an identified user");
+  });
+
+  test("preserves date-only values when the stored timezone changes", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const startDate = "2026-08-05";
+
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      { startDate, timeZone: "Asia/Kolkata" }
+    );
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: result.eventId,
+      startDate,
+      timeZone: "America/Los_Angeles",
+    });
+
+    const [event, user] = await t.run(async (ctx) => {
+      return await Promise.all([
+        ctx.db.get("periodEvents", result.eventId),
+        ctx.db.get("users", primaryId),
+      ]);
+    });
+    expect(event?.startDate).toBe(startDate);
+    expect(user?.timeZone).toBe("America/Los_Angeles");
   });
 });
