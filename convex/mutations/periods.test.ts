@@ -99,7 +99,7 @@ describe("partner-assisted period logging", () => {
 
     const result = await asPartner.mutation(
       api.mutations.periods.assistLogPeriodStart,
-      { startDate: "2026-06-20" }
+      { startDate: "2026-06-20", startCertainty: "exact" }
     );
 
     const event = await t.run(async (ctx) => {
@@ -112,6 +112,8 @@ describe("partner-assisted period logging", () => {
       updatedByUserId: partnerId,
       source: "partner_assist",
       confirmationStatus: "confirmed",
+      startCertainty: "exact",
+      authorityVersion: 1,
     });
 
     const notification = await t.run(async (ctx) => {
@@ -128,9 +130,9 @@ describe("partner-assisted period logging", () => {
     });
   });
 
-  test("assisted start closes an existing primary period the day before", async () => {
+  test("assisted start does not infer an end for an existing period", async () => {
     const t = convexTest(schema, modules);
-    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
@@ -148,20 +150,25 @@ describe("partner-assisted period logging", () => {
       });
     });
 
-    await asPartner.mutation(api.mutations.periods.assistLogPeriodStart, {
-      startDate: "2026-06-20",
-    });
+    const result = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      {
+        startDate: "2026-06-20",
+      }
+    );
 
     const existing = await t.run(async (ctx) => {
       return await ctx.db.get("periodEvents", existingId);
     });
     expect(existing).toMatchObject({
-      endDate: "2026-06-19",
-      updatedByUserId: partnerId,
+      startDate: "2026-06-01",
+      updatedByUserId: primaryId,
     });
+    expect(existing?.endDate).toBeUndefined();
+    expect(result.eventId).not.toBe(existingId);
   });
 
-  test("assisted start rejects a date that would end the open period before it began", async () => {
+  test("assisted start rejects an exact duplicate of an open fact", async () => {
     const t = convexTest(schema, modules);
     const { asPartner, primaryId } = await seedActiveCouple(t, {
       sharingPhase: true,
@@ -172,6 +179,8 @@ describe("partner-assisted period logging", () => {
       await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-06-20",
+        startCertainty: "exact",
+        authorityVersion: 1,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -181,7 +190,7 @@ describe("partner-assisted period logging", () => {
       asPartner.mutation(api.mutations.periods.assistLogPeriodStart, {
         startDate: "2026-06-20",
       })
-    ).rejects.toThrow("after the current period start");
+    ).rejects.toThrow("DUPLICATE_EXACT_START");
   });
 
   test("assisted end updates the primary user's open period", async () => {
@@ -195,10 +204,12 @@ describe("partner-assisted period logging", () => {
       return await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-06-20",
-        createdByUserId: primaryId,
-        updatedByUserId: primaryId,
-        source: "self",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
         confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        authorityVersion: 1,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -206,6 +217,8 @@ describe("partner-assisted period logging", () => {
 
     await asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
       endDate: "2026-06-24",
+      endCertainty: "approximate",
+      expectedAuthorityVersion: 1,
     });
 
     const event = await t.run(async (ctx) => {
@@ -213,9 +226,138 @@ describe("partner-assisted period logging", () => {
     });
     expect(event).toMatchObject({
       endDate: "2026-06-24",
-      source: "self",
+      source: "partner_assist",
       updatedByUserId: partnerId,
+      endCertainty: "approximate",
+      authorityVersion: 2,
     });
+  });
+
+  test("assisted start rejects when the primary timezone is missing", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodStart, {
+        startDate: "2026-06-20",
+      })
+    ).rejects.toThrow("Time zone is required for an identified user");
+  });
+
+  test("assisted approximate starts are accepted immediately", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+
+    const result = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-06-20", startCertainty: "approximate" }
+    );
+    const event = await t.run(async (ctx) => {
+      return await ctx.db.get("periodEvents", result.eventId);
+    });
+
+    expect(event).toMatchObject({
+      startCertainty: "approximate",
+      authorityVersion: 1,
+    });
+  });
+
+  test("assisted end rejects a stale authority version", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    const eventId = await t.run(async (ctx) => {
+      return await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        authorityVersion: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        endDate: "2026-06-24",
+        expectedAuthorityVersion: 1,
+      })
+    ).rejects.toThrow("STALE_AUTHORITY_VERSION");
+
+    expect(
+      await t.run(async (ctx) => await ctx.db.get("periodEvents", eventId))
+    ).toMatchObject({ authorityVersion: 2 });
+  });
+
+  test("primary correction prevents a partner overwrite", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } =
+      await seedActiveCouple(t, {
+        sharingPhase: true,
+        sharingPeriodWrite: true,
+      });
+    await setPrimaryTimeZone(t);
+    const eventId = await t.run(async (ctx) => {
+      return await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      startCertainty: "exact",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        endDate: "2026-06-24",
+        expectedAuthorityVersion: 2,
+      })
+    ).rejects.toThrow("PRIMARY_AUTHORITY_REQUIRED");
+  });
+
+  test("revoked couples cannot accept partner assistance", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { status: "revoked" });
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodStart, {
+        startDate: "2026-06-20",
+      })
+    ).rejects.toThrow("active couple");
   });
 
   test("primary self logging keeps self attribution", async () => {

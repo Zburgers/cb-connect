@@ -48,6 +48,9 @@ function storedLegacyReason(period: Doc<"periodEvents">) {
 }
 
 function toPeriodEventProjection(period: Doc<"periodEvents">) {
+  const lastWriterIsPrimary =
+    period.updatedByUserId === period.userId ||
+    (period.updatedByUserId === undefined && period.source !== "partner_assist");
   return {
     id: period._id,
     startDate: period.startDate,
@@ -55,8 +58,7 @@ function toPeriodEventProjection(period: Doc<"periodEvents">) {
     startCertainty: period.startCertainty,
     endCertainty: period.endCertainty,
     authorityVersion: period.authorityVersion,
-    lastWriterRole:
-      period.source === "partner_assist" ? ("partner" as const) : ("primary" as const),
+    lastWriterRole: lastWriterIsPrimary ? ("primary" as const) : ("partner" as const),
   };
 }
 
@@ -231,6 +233,7 @@ export const logPeriodEnd = mutation({
 export const assistLogPeriodStart = mutation({
   args: {
     startDate: v.string(),
+    startCertainty: v.optional(cycleFactCertaintyValidator),
   },
   handler: async (ctx, args) => {
     const { partner, primaryMembership, primaryUser } =
@@ -240,19 +243,15 @@ export const assistLogPeriodStart = mutation({
       "Start date",
       resolveCalendarTimeZone(primaryUser.timeZone)
     );
-    const now = Date.now();
+    await requireAllowedPeriodEventWrite(ctx, primaryMembership.userId, {
+      startDate: args.startDate,
+      startCertainty: args.startCertainty ?? "exact",
+      authorityVersion: 1,
+      actorRole: "partner",
+      partnerAccess: "active",
+    });
 
-    const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
-    if (ongoingPeriod) {
-      if (args.startDate <= ongoingPeriod.startDate) {
-        throw new Error("New period start must be after the current period start");
-      }
-      await ctx.db.patch(ongoingPeriod._id, {
-        endDate: addCalendarDays(args.startDate, -1),
-        updatedByUserId: partner._id,
-        updatedAt: now,
-      });
-    }
+    const now = Date.now();
 
     const eventId = await ctx.db.insert("periodEvents", {
       userId: primaryMembership.userId,
@@ -261,6 +260,8 @@ export const assistLogPeriodStart = mutation({
       updatedByUserId: partner._id,
       source: "partner_assist",
       confirmationStatus: "confirmed",
+      startCertainty: args.startCertainty ?? "exact",
+      authorityVersion: 1,
       createdAt: now,
       updatedAt: now,
     });
@@ -283,6 +284,8 @@ export const assistLogPeriodStart = mutation({
 export const assistLogPeriodEnd = mutation({
   args: {
     endDate: v.string(),
+    endCertainty: v.optional(cycleFactCertaintyValidator),
+    expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { partner, primaryMembership, primaryUser } =
@@ -300,10 +303,27 @@ export const assistLogPeriodEnd = mutation({
       throw new Error("End date cannot be before start date");
     }
 
+    const authorityVersion = currentAuthorityVersion(ongoingPeriod);
+    await requireAllowedPeriodEventWrite(ctx, primaryMembership.userId, {
+      startDate: ongoingPeriod.startDate,
+      endDate: args.endDate,
+      startCertainty: storedStartCertainty(ongoingPeriod),
+      endCertainty: args.endCertainty ?? "exact",
+      legacyReason: storedLegacyReason(ongoingPeriod),
+      authorityVersion: authorityVersion + 1,
+      actorRole: "partner",
+      partnerAccess: "active",
+      targetEventId: ongoingPeriod._id,
+      expectedAuthorityVersion:
+        args.expectedAuthorityVersion ?? authorityVersion,
+    });
+
     const now = Date.now();
     await ctx.db.patch(ongoingPeriod._id, {
       endDate: args.endDate,
+      endCertainty: args.endCertainty ?? "exact",
       updatedByUserId: partner._id,
+      authorityVersion: authorityVersion + 1,
       updatedAt: now,
     });
     await ctx.db.insert("notificationLog", {
