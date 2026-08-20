@@ -57,6 +57,15 @@ async function closeExistingPeriod(primary: Page) {
       .click();
     await expect(primary.getByText("Period marked as ended.")).toBeVisible();
   }
+
+  const editButton = primary.getByRole("button", { name: "Edit", exact: true }).first();
+  if (await isVisible(editButton)) {
+    await editButton.click();
+    await primary
+      .getByRole("button", { name: "Delete entry", exact: true })
+      .click();
+    await expect(primary.getByText("Period entry removed.")).toBeVisible();
+  }
 }
 
 async function configureSharing(primary: Page) {

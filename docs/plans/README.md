@@ -24,7 +24,7 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
 | 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Continuous automated deployment and measurement | Engineering complete; operations continue in parallel |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [dated plan](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md) | Approved dated execution plan | Additive/default-off execution ready; D-012 blocks only destructive lifecycle work |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [current implementation plan](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md) | Approved current execution plan | Additive/default-off execution ready; D-012 blocks only destructive lifecycle work |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
@@ -46,6 +46,9 @@ feature-development gate.
    restrict rollout or claims; they do not block unrelated feature coding.
 4. Gate 1 may execute its approved additive/default-off tasks now. D-012 still
    blocks destructive migration, hard deletion and final retention behavior.
+5. Gate 1 implementation remains Convex-only and flag-off by default. A green
+   engineering qualification does not authorize production exposure; rollback
+   is flag-off plus backward-compatible reads.
 
 ## Gate 0 closeout
 

@@ -46,6 +46,25 @@ immediately before any authorized promotion. The shared compatibility tag is
 frontend/backend compatibility signal and must be verified without recording
 response bodies that may reveal operational details.
 
+## Gate 1 trustworthy cycle facts
+
+The `CB_CONNECT_CYCLE_FACTS_V1` capability is a Convex-only, default-off
+setting. An absent value, an empty value or any value other than the exact
+string `true` leaves the existing cycle UI and backward-compatible reads in
+place. It must never be copied into a `NEXT_PUBLIC_*` variable or exposed as
+browser configuration.
+
+Enable the capability only on an explicitly approved non-production Convex
+deployment after its authenticated desktop/mobile qualification is retained.
+Production exposure is a separate rollout decision; this implementation does
+not authorize enabling the flag there. Do not run the metadata migration or
+any destructive migration as part of frontend release promotion.
+
+Rollback is the reversible flag-off path: remove the Convex setting or set it
+to a value other than `true`, then verify that older clients still read the
+additive schema. Frontend rollback remains compatible with the additive
+backend; it does not delete or reverse cycle data.
+
 ## Configuration boundary
 
 Use protected GitHub environments/secrets for runtime configuration. Never

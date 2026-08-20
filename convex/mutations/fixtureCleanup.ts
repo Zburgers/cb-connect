@@ -575,6 +575,33 @@ export const registerFixtureUser = mutation({
     }
 
     if (args.role === "primary") {
+      const existingPeriods = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user_and_start", (q) => q.eq("userId", user._id))
+        .take(100);
+      if (!existingPeriods.some((period) => period.startCertainty === undefined)) {
+        const legacyStart = new Date();
+        legacyStart.setUTCDate(legacyStart.getUTCDate() - 14);
+        const legacyEnd = new Date(legacyStart);
+        legacyEnd.setUTCDate(legacyEnd.getUTCDate() + 1);
+        const startDate = legacyStart.toISOString().slice(0, 10);
+        const endDate = legacyEnd.toISOString().slice(0, 10);
+        const now = Date.now();
+        await ctx.db.insert("periodEvents", {
+          userId: user._id,
+          startDate,
+          endDate,
+          createdByUserId: user._id,
+          updatedByUserId: user._id,
+          source: "self",
+          confirmationStatus: "confirmed",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    if (args.role === "primary") {
       if (args.clerkId !== args.primaryClerkId) {
         throw new Error("fixture_cleanup_identity_mismatch");
       }
