@@ -23,42 +23,74 @@ async function seedAuditRows(t: ReturnType<typeof convexTest>) {
     await ctx.db.insert("periodEvents", {
       userId,
       startDate: "2026-01-01",
+      endDate: "2026-01-02",
       startCertainty: "exact",
+      endCertainty: "exact",
       authorityVersion: 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
     await ctx.db.insert("periodEvents", {
       userId,
-      startDate: "2026-01-02",
+      startDate: "2026-01-10",
+      endDate: "2026-01-11",
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
     await ctx.db.insert("periodEvents", {
       userId,
-      startDate: "2026-01-03",
-      endDate: "2026-01-07",
+      startDate: "2026-01-20",
+      endDate: "2026-01-24",
       startCertainty: "exact",
       source: "system",
       authorityVersion: 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    for (const [startDate, legacyReason] of [
-      ["2026-01-04", "duplicate"],
-      ["2026-01-05", "overlap"],
-      ["2026-01-06", "unprovable"],
+    for (const [startDate, endDate, legacyReason] of [
+      ["2026-01-01", "2026-01-02", undefined],
+      ["2026-01-20", "2026-01-22", undefined],
+      ["2026-03-01", "2026-03-05", "unprovable"],
     ] as const) {
       await ctx.db.insert("periodEvents", {
         userId,
         startDate,
+        ...(endDate ? { endDate } : {}),
         startCertainty: "legacy_unknown",
-        legacyReason,
+        ...(legacyReason ? { legacyReason } : {}),
         authorityVersion: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-02-10",
+      endDate: "2026-02-14",
+      startCertainty: "exact",
+      endCertainty: "exact",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-02-12",
+      endDate: "2026-02-13",
+      startCertainty: "legacy_unknown",
+      legacyReason: undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-04-01",
+      endDate: "2026-04-05",
+      startCertainty: "exact",
+      endCertainty: "exact",
+      source: "system",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
   });
 }
 

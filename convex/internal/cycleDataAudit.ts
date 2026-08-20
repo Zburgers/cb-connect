@@ -9,6 +9,7 @@ import {
 import type { Doc } from "../_generated/dataModel";
 
 const MAX_PAGE_SIZE = 100;
+const MAX_USER_CONTEXT = 100;
 const SUPPRESSED_COUNT = v.union(v.number(), v.literal("<5"));
 
 const auditProgressValidator = v.object({
@@ -47,11 +48,39 @@ function suppressCount(count: number): number | "<5" {
   return count < 5 ? "<5" : count;
 }
 
+function intervalsOverlap(
+  left: Doc<"periodEvents">,
+  right: Doc<"periodEvents">
+): boolean {
+  const leftEnd = left.endDate ?? "9999-12-31";
+  const rightEnd = right.endDate ?? "9999-12-31";
+  return left.startDate <= rightEnd && right.startDate <= leftEnd;
+}
+
 function classifyLegacyReason(
-  period: Doc<"periodEvents">
+  period: Doc<"periodEvents">,
+  userContext: Doc<"periodEvents">[]
 ): AuditReason | null {
   if (period.tombstoneAt !== undefined) return null;
-  if (period.legacyReason !== undefined) return period.legacyReason;
+
+  const peers = userContext.filter(
+    (candidate) =>
+      candidate._id !== period._id && candidate.tombstoneAt === undefined
+  );
+  if (peers.some((candidate) => candidate.startDate === period.startDate)) {
+    return "duplicate";
+  }
+  if (peers.some((candidate) => intervalsOverlap(candidate, period))) {
+    return "overlap";
+  }
+
+  if (
+    period.legacyReason !== undefined &&
+    period.legacyReason !== "duplicate" &&
+    period.legacyReason !== "overlap"
+  ) {
+    return period.legacyReason;
+  }
   if (period.source === "system") return "inferred_end";
   if (
     period.startCertainty === undefined ||
@@ -182,8 +211,20 @@ export const scanPage = internalMutation({
         cursor: args.paginationOpts.cursor,
       });
     const pageCounts = emptyCounts();
+    const userContexts = new Map<string, Doc<"periodEvents">[]>();
+    for (const userId of new Set(page.page.map((period) => period.userId))) {
+      const context = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .order("asc")
+        .take(MAX_USER_CONTEXT);
+      userContexts.set(userId, context);
+    }
     for (const period of page.page) {
-      const reason = classifyLegacyReason(period);
+      const reason = classifyLegacyReason(
+        period,
+        userContexts.get(period.userId) ?? []
+      );
       if (reason) pageCounts[reason] += 1;
     }
 

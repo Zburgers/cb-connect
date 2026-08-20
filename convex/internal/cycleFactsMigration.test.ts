@@ -1,11 +1,19 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
 
 const migration = internal.internal.cycleFactsMigration;
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_BACKEND_DEPLOYMENT", "dev:hallowed-hummingbird-284");
+});
 
 async function seedUser(t: ReturnType<typeof convexTest>, clerkId: string) {
   return await t.run(async (ctx) =>
@@ -83,6 +91,32 @@ describe("cycle facts migration runner", () => {
         runId: "migration-production-target",
         mode: "annotate",
         targetDeployment: "prod:example",
+      })
+    ).rejects.toThrow("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
+  });
+
+  test("rejects a caller label that does not match the server deployment identity", async () => {
+    vi.stubEnv("CB_CONNECT_BACKEND_DEPLOYMENT", "dev:actual-server-deployment");
+    const t = convexTest(schema, modules);
+
+    await expect(
+      t.mutation(migration.start, {
+        runId: "migration-mismatched-server",
+        mode: "annotate",
+        targetDeployment: "dev:caller-supplied-label",
+      })
+    ).rejects.toThrow("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
+  });
+
+  test("rejects annotation even when the actual server identity is production", async () => {
+    vi.stubEnv("CB_CONNECT_BACKEND_DEPLOYMENT", "prod:festive-malamute-715");
+    const t = convexTest(schema, modules);
+
+    await expect(
+      t.mutation(migration.start, {
+        runId: "migration-production-server",
+        mode: "annotate",
+        targetDeployment: "prod:festive-malamute-715",
       })
     ).rejects.toThrow("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
   });

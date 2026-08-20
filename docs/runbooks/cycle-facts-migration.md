@@ -8,12 +8,14 @@ changes `startDate` or `endDate`, deletes rows, or creates inferred endings.
 
 - The default mode is `dry_run`; it reports aggregate progress and performs no
   row writes.
-- Annotation mode requires an explicit non-production Convex deployment
-  selector such as `dev:<deployment>`, `preview:<deployment>`, or
-  `staging:<deployment>`.
-- A `prod:` selector is rejected. Do not run annotation against production
-  until the owner approves the target, recovery boundary, and retention
-  decision under D-012.
+- Annotation mode requires a caller target label that exactly matches the
+  server-side `CB_CONNECT_BACKEND_DEPLOYMENT` identity and that identity must
+  be a validated non-production `dev:`, `preview:` or `staging:` deployment.
+  The caller label is retained as metadata only; it is not the safety control.
+- A production server identity or mismatched caller label fails closed. Do not
+  run annotation against production until D-012 is approved, the target and
+  recovery boundary are explicitly approved, and the separate exposure
+  decision is recorded.
 - Every batch is capped at 100 rows and stores an opaque continuation cursor.
 - Reusing a run ID resumes the same mode/target; changing either is rejected.
 - Outputs contain aggregate counts and progress only. Do not add identifiers,
