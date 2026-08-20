@@ -41,6 +41,9 @@ describe("period date boundaries", () => {
         .query("users")
         .withIndex("by_clerk_id", (q) => q.eq("clerkId", "primary-clerk"))
         .unique();
+      if (!primary) {
+        throw new Error("Primary fixture user was not found");
+      }
       await ctx.db.patch(primary._id, { timeZone: "UTC" });
     });
     const today = toCalendarDateInTimeZone(new Date(), "UTC");
