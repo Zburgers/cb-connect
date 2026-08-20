@@ -21,6 +21,7 @@ import type * as actions_notifications from "../actions/notifications.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as internal_cycleDataAudit from "../internal/cycleDataAudit.js";
+import type * as internal_cycleFactsMigration from "../internal/cycleFactsMigration.js";
 import type * as mutations_couples from "../mutations/couples.js";
 import type * as mutations_fixtureCleanup from "../mutations/fixtureCleanup.js";
 import type * as mutations_messages from "../mutations/messages.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   "internal/cycleDataAudit": typeof internal_cycleDataAudit;
+  "internal/cycleFactsMigration": typeof internal_cycleFactsMigration;
   "mutations/couples": typeof mutations_couples;
   "mutations/fixtureCleanup": typeof mutations_fixtureCleanup;
   "mutations/messages": typeof mutations_messages;

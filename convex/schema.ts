@@ -50,6 +50,19 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_run_id", ["runId"]),
 
+  cycleFactsMigrationRuns: defineTable({
+    runId: v.string(),
+    mode: v.union(v.literal("dry_run"), v.literal("annotate")),
+    targetDeployment: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+    isComplete: v.boolean(),
+    pageSize: v.number(),
+    processedCount: v.number(),
+    annotatedCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_run_id", ["runId"]),
+
   couples: defineTable({
     createdAt: v.number(),
     linkedAt: v.optional(v.number()),
