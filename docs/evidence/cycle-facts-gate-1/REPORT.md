@@ -33,6 +33,12 @@ The following evidence is retained on branch
 - `npx convex codegen` — pass
 - `bash scripts/tests/deploy-workflow.test.sh` — pass
 - `git diff --check` — required before handoff
+- Protected CI run `32393709105` deterministic qualification — pass (build,
+  post-build typecheck, unit tests and dependency policy).
+- The same run's authenticated release smoke stopped fail-closed during
+  `auth.global.setup.ts` link fixture setup with
+  `authenticated_fixture_setup_failed`; no authenticated product journey is
+  claimed from that run.
 
 The exact command for authenticated release qualification is:
 
