@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import {
   mutation,
+  internalMutation,
   type MutationCtx,
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -9,11 +10,14 @@ import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
 } from "../_helpers/calendarDates";
+import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
 import {
   evaluatePeriodEventInvariants,
   type PeriodEventCandidate,
 } from "../_helpers/periodEventInvariants";
 import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
+import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
+import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
@@ -56,6 +60,7 @@ function toPeriodEventProjection(period: Doc<"periodEvents">) {
     startCertainty: period.startCertainty,
     endCertainty: period.endCertainty,
     authorityVersion: period.authorityVersion,
+    primaryCorrectionVersion: period.primaryCorrectionVersion,
     lastWriterRole: lastWriterIsPrimary ? ("primary" as const) : ("partner" as const),
   };
 }
@@ -89,7 +94,8 @@ function requirePrimaryUser(user: Doc<"users">) {
 
 async function findOpenPeriod(
   ctx: MutationCtx,
-  userId: Id<"users">
+  userId: Id<"users">,
+  options: { strict?: boolean } = {}
 ): Promise<Doc<"periodEvents"> | null> {
   const recentPeriods = await ctx.db
     .query("periodEvents")
@@ -97,9 +103,13 @@ async function findOpenPeriod(
     .order("desc")
     .take(100);
 
-  return recentPeriods.find(
+  const openPeriods = recentPeriods.filter(
     (period) => !period.endDate && period.tombstoneAt === undefined
-  ) ?? null;
+  );
+  if (options.strict !== false && openPeriods.length > 1) {
+    throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one open period fact exists");
+  }
+  return openPeriods[0] ?? null;
 }
 
 async function getAssistedLoggingContext(ctx: MutationCtx) {
@@ -152,6 +162,32 @@ export const logPeriodStart = mutation({
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
+    if (!isCycleFactsV1Enabled()) {
+      const ongoingPeriod = await findOpenPeriod(ctx, user._id, { strict: false });
+      if (ongoingPeriod) {
+        if (args.startDate <= ongoingPeriod.startDate) {
+          throw new Error("New period start must be after the current period start");
+        }
+        await ctx.db.patch(ongoingPeriod._id, {
+          endDate: addCalendarDays(args.startDate, -1),
+          updatedByUserId: user._id,
+          updatedAt: Date.now(),
+        });
+      }
+
+      const eventId = await ctx.db.insert("periodEvents", {
+        userId: user._id,
+        startDate: args.startDate,
+        createdByUserId: user._id,
+        updatedByUserId: user._id,
+        source: "self",
+        confirmationStatus: "confirmed",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { eventId };
+    }
+
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,
       startCertainty: args.startCertainty ?? "exact",
@@ -191,6 +227,22 @@ export const logPeriodEnd = mutation({
       await ctx.db.patch(user._id, { timeZone });
     }
     requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
+
+    if (!isCycleFactsV1Enabled()) {
+      const ongoingPeriod = await findOpenPeriod(ctx, user._id, { strict: false });
+      if (!ongoingPeriod) {
+        throw new Error("No ongoing period to end");
+      }
+      if (args.endDate < ongoingPeriod.startDate) {
+        throw new Error("End date cannot be before start date");
+      }
+      await ctx.db.patch(ongoingPeriod._id, {
+        endDate: args.endDate,
+        updatedByUserId: user._id,
+        updatedAt: Date.now(),
+      });
+      return { eventId: ongoingPeriod._id };
+    }
 
     const ongoingPeriod = await findOpenPeriod(ctx, user._id);
 
@@ -241,6 +293,45 @@ export const assistLogPeriodStart = mutation({
       "Start date",
       resolveCalendarTimeZone(primaryUser.timeZone)
     );
+
+    if (!isCycleFactsV1Enabled()) {
+      const now = Date.now();
+      const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId, {
+        strict: false,
+      });
+      if (ongoingPeriod) {
+        if (args.startDate <= ongoingPeriod.startDate) {
+          throw new Error("New period start must be after the current period start");
+        }
+        await ctx.db.patch(ongoingPeriod._id, {
+          endDate: addCalendarDays(args.startDate, -1),
+          updatedByUserId: partner._id,
+          updatedAt: now,
+        });
+      }
+      const eventId = await ctx.db.insert("periodEvents", {
+        userId: primaryMembership.userId,
+        startDate: args.startDate,
+        createdByUserId: partner._id,
+        updatedByUserId: partner._id,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("notificationLog", {
+        userId: primaryMembership.userId,
+        type: "partner_assisted_period_start",
+        payload: {
+          startDate: args.startDate,
+          partnerName: partner.preferredName || partner.name,
+        },
+        sentAt: now,
+        status: "sent",
+      });
+      return { eventId };
+    }
+
     await requireAllowedPeriodEventWrite(ctx, primaryMembership.userId, {
       startDate: args.startDate,
       startCertainty: args.startCertainty ?? "exact",
@@ -293,6 +384,36 @@ export const assistLogPeriodEnd = mutation({
       "End date",
       resolveCalendarTimeZone(primaryUser.timeZone)
     );
+
+    if (!isCycleFactsV1Enabled()) {
+      const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId, {
+        strict: false,
+      });
+      if (!ongoingPeriod) {
+        throw new Error("There is no ongoing period to end");
+      }
+      if (args.endDate < ongoingPeriod.startDate) {
+        throw new Error("End date cannot be before start date");
+      }
+      const now = Date.now();
+      await ctx.db.patch(ongoingPeriod._id, {
+        endDate: args.endDate,
+        updatedByUserId: partner._id,
+        updatedAt: now,
+      });
+      await ctx.db.insert("notificationLog", {
+        userId: primaryMembership.userId,
+        type: "partner_assisted_period_end",
+        payload: {
+          endDate: args.endDate,
+          partnerName: partner.preferredName || partner.name,
+        },
+        sentAt: now,
+        status: "sent",
+      });
+      return { eventId: ongoingPeriod._id };
+    }
+
     const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
     if (!ongoingPeriod) {
       throw new Error("There is no ongoing period to end");
@@ -347,6 +468,7 @@ export const updatePeriodEvent = mutation({
     timeZone: v.optional(v.string()),
     startCertainty: v.optional(cycleFactCertaintyValidator),
     endCertainty: v.optional(cycleFactCertaintyValidator),
+    promoteCertainty: v.optional(v.boolean()),
     expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -369,16 +491,33 @@ export const updatePeriodEvent = mutation({
       }
     }
 
+    if (!isCycleFactsV1Enabled()) {
+      await ctx.db.patch(args.periodEventId, {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        updatedByUserId: user._id,
+        confirmationStatus: "confirmed",
+        updatedAt: Date.now(),
+      });
+      return { success: true };
+    }
+
     const authorityVersion = currentAuthorityVersion(period);
-    const endCertainty =
-      args.endDate === undefined
-        ? undefined
-        : args.endCertainty ?? "exact";
+    const { startCertainty, endCertainty, legacyReason } =
+      resolveCycleFactCorrection({
+        existingStartCertainty: storedStartCertainty(period),
+        existingEndCertainty: storedEndCertainty(period),
+        existingEndDate: period.endDate,
+        existingLegacyReason: period.legacyReason,
+        correctedEndDate: args.endDate,
+        promoteCertainty: args.promoteCertainty === true,
+      });
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,
       endDate: args.endDate,
-      startCertainty: args.startCertainty ?? "exact",
+      startCertainty,
       endCertainty,
+      legacyReason,
       authorityVersion: authorityVersion + 1,
       actorRole: "primary",
       targetEventId: period._id,
@@ -389,12 +528,13 @@ export const updatePeriodEvent = mutation({
     await ctx.db.patch(args.periodEventId, {
       startDate: args.startDate,
       endDate: args.endDate,
-      startCertainty: args.startCertainty ?? "exact",
+      startCertainty,
       endCertainty,
-      legacyReason: undefined,
+      legacyReason,
       updatedByUserId: user._id,
       confirmationStatus: "confirmed",
       authorityVersion: authorityVersion + 1,
+      primaryCorrectionVersion: authorityVersion + 1,
       updatedAt: Date.now(),
     });
     return { success: true };
@@ -412,6 +552,11 @@ export const deletePeriodEvent = mutation({
     const period = await ctx.db.get("periodEvents", args.periodEventId);
     if (!period || period.userId !== user._id) {
       throw new Error("You can only delete your own period entries");
+    }
+
+    if (!isCycleFactsV1Enabled()) {
+      await ctx.db.delete("periodEvents", args.periodEventId);
+      return { success: true };
     }
 
     const authorityVersion = currentAuthorityVersion(period);
@@ -435,9 +580,46 @@ export const deletePeriodEvent = mutation({
       tombstoneAt,
       tombstoneAuthorityVersion: authorityVersion + 1,
       updatedByUserId: user._id,
+      primaryCorrectionVersion: authorityVersion + 1,
       updatedAt: tombstoneAt,
     });
     return { success: true };
+  },
+});
+
+export const autoEndPeriods = internalMutation({
+  handler: async (ctx) => {
+    if (isCycleFactsV1Enabled()) {
+      return { endedCount: 0 };
+    }
+
+    const openPeriods = await ctx.db
+      .query("periodEvents")
+      .filter((q) => q.eq(q.field("endDate"), undefined))
+      .collect();
+
+    let endedCount = 0;
+    for (const period of openPeriods) {
+      const settings = await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", period.userId))
+        .unique();
+      const periodLength = settings?.periodLength ?? 5;
+      const expectedEndDate = addCalendarDays(period.startDate, periodLength - 1);
+      const today = toCalendarDateString();
+
+      if (expectedEndDate < today) {
+        await ctx.db.patch(period._id, {
+          endDate: expectedEndDate,
+          ...(period.source === undefined && { source: "system" as const }),
+          updatedAt: Date.now(),
+        });
+        endedCount++;
+      }
+    }
+
+    console.log(`autoEndPeriods: closed ${endedCount} open period(s)`);
+    return { endedCount };
   },
 });
 

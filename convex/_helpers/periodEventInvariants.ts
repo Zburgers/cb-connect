@@ -25,6 +25,7 @@ export type PeriodEventProjection = CycleFactSemanticsInput & {
   startDate: string;
   endDate?: string;
   lastWriterRole?: PeriodEventActorRole;
+  primaryCorrectionVersion?: number;
 };
 
 export type PeriodEventInvariantErrorCode =
@@ -38,6 +39,7 @@ export type PeriodEventInvariantErrorCode =
   | "AUTHORITY_VERSION_REQUIRED"
   | "STALE_AUTHORITY_VERSION"
   | "PRIMARY_AUTHORITY_REQUIRED"
+  | "OPEN_EVENT_EXISTS"
   | "DUPLICATE_EXACT_START"
   | "EXACT_INTERVAL_OVERLAP";
 
@@ -143,16 +145,28 @@ export function evaluatePeriodEventInvariants(
     }
     if (
       candidate.actorRole === "partner" &&
-      target.lastWriterRole === "primary"
+      target.primaryCorrectionVersion !== undefined
     ) {
       return failure(
         "PRIMARY_AUTHORITY_REQUIRED",
-        "Primary-authored period facts cannot be overwritten by a partner"
+        "Primary-corrected period facts cannot be overwritten by a partner"
       );
     }
   }
 
   if (!isExactEvidence(candidate)) {
+    if (
+      candidate.endDate === undefined &&
+      existingEvents.some(
+        (existing) =>
+          existing.id !== candidate.targetEventId && existing.endDate === undefined
+      )
+    ) {
+      return failure(
+        "OPEN_EVENT_EXISTS",
+        "Only one active open period fact is allowed"
+      );
+    }
     return { allowed: true };
   }
 
@@ -172,6 +186,19 @@ export function evaluatePeriodEventInvariants(
         "Exact period facts cannot overlap"
       );
     }
+  }
+
+  if (
+    candidate.endDate === undefined &&
+    existingEvents.some(
+      (existing) =>
+        existing.id !== candidate.targetEventId && existing.endDate === undefined
+    )
+  ) {
+    return failure(
+      "OPEN_EVENT_EXISTS",
+      "Only one active open period fact is allowed"
+    );
   }
 
   return { allowed: true };

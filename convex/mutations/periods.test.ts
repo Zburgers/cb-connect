@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import schema from "../schema";
@@ -7,6 +7,14 @@ import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
 
 type TestBackend = ReturnType<typeof convexTest>;
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 async function setPrimaryTimeZone(t: TestBackend) {
   await t.run(async (ctx) => {
@@ -130,14 +138,14 @@ describe("partner-assisted period logging", () => {
     });
   });
 
-  test("assisted start does not infer an end for an existing period", async () => {
+  test("assisted start rejects a second open period regardless of certainty", async () => {
     const t = convexTest(schema, modules);
     const { asPartner, primaryId } = await seedActiveCouple(t, {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
     await setPrimaryTimeZone(t);
-    const existingId = await t.run(async (ctx) => {
+    await t.run(async (ctx) => {
       return await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-06-01",
@@ -150,22 +158,11 @@ describe("partner-assisted period logging", () => {
       });
     });
 
-    const result = await asPartner.mutation(
-      api.mutations.periods.assistLogPeriodStart,
-      {
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodStart, {
         startDate: "2026-06-20",
-      }
-    );
-
-    const existing = await t.run(async (ctx) => {
-      return await ctx.db.get("periodEvents", existingId);
-    });
-    expect(existing).toMatchObject({
-      startDate: "2026-06-01",
-      updatedByUserId: primaryId,
-    });
-    expect(existing?.endDate).toBeUndefined();
-    expect(result.eventId).not.toBe(existingId);
+      })
+    ).rejects.toThrow("OPEN_EVENT_EXISTS");
   });
 
   test("assisted start rejects an exact duplicate of an open fact", async () => {
@@ -231,6 +228,31 @@ describe("partner-assisted period logging", () => {
       endCertainty: "approximate",
       authorityVersion: 2,
     });
+  });
+
+  test("assisted end can close a primary-started event", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    const result = await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-06-20",
+      startCertainty: "exact",
+      timeZone: "UTC",
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        endDate: "2026-06-24",
+        expectedAuthorityVersion: 1,
+      })
+    ).resolves.toMatchObject({ eventId: result.eventId });
+
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", result.eventId))
+    ).toMatchObject({ userId: primaryId, endDate: "2026-06-24" });
   });
 
   test("assisted start rejects when the primary timezone is missing", async () => {
@@ -508,6 +530,47 @@ describe("primary cycle fact writes", () => {
     });
   });
 
+  test("preserves approximate correction unless exactness is explicitly confirmed", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const result = await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-07-01",
+      startCertainty: "approximate",
+      timeZone: "UTC",
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: result.eventId,
+      startDate: "2026-07-02",
+      endDate: "2026-07-05",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", result.eventId))
+    ).toMatchObject({
+      startCertainty: "approximate",
+      endCertainty: "approximate",
+      authorityVersion: 2,
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: result.eventId,
+      startDate: "2026-07-02",
+      endDate: "2026-07-05",
+      timeZone: "UTC",
+      promoteCertainty: true,
+      expectedAuthorityVersion: 2,
+    });
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", result.eventId))
+    ).toMatchObject({
+      startCertainty: "exact",
+      endCertainty: "exact",
+      authorityVersion: 3,
+    });
+  });
+
   test("rejects an exact start that overlaps an existing exact open fact", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary } = await seedActiveCouple(t);
@@ -579,7 +642,7 @@ describe("primary cycle fact writes", () => {
     });
   });
 
-  test("allows an approximate start to coexist with exact evidence", async () => {
+  test("rejects a second approximate open start", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary } = await seedActiveCouple(t);
     await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
@@ -594,7 +657,39 @@ describe("primary cycle fact writes", () => {
         startCertainty: "approximate",
         timeZone: "UTC",
       })
-    ).resolves.toMatchObject({ eventId: expect.any(String) });
+    ).rejects.toThrow("OPEN_EVENT_EXISTS");
+  });
+
+  test("refuses to end an ambiguous legacy set of open rows", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-01",
+        startCertainty: "legacy_unknown",
+        legacyReason: "missing_provenance",
+        authorityVersion: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-05",
+        startCertainty: "legacy_unknown",
+        legacyReason: "missing_provenance",
+        authorityVersion: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+        endDate: "2026-06-06",
+        timeZone: "UTC",
+      })
+    ).rejects.toThrow("AMBIGUOUS_OPEN_PERIOD");
   });
 
   test("tombstones a primary event without deleting its row", async () => {
@@ -624,17 +719,48 @@ describe("primary cycle fact writes", () => {
     });
   });
 
-  test("does not retain a physical period delete path", async () => {
+  test("keeps physical deletion only in the flag-off compatibility branch", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile(
       new URL("./periods.ts", import.meta.url),
       "utf8"
     );
-    expect(source).not.toContain('ctx.db.delete("periodEvents"');
+    expect(source).toContain('ctx.db.delete("periodEvents"');
+    expect(source).toContain("if (!isCycleFactsV1Enabled())");
+    expect(source).toContain("tombstoneByUserId");
   });
 });
 
 describe("derived period endings", () => {
+  test("flag-off writes retain legacy auto-close and physical-delete behavior", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    const first = await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-06-01",
+      timeZone: "UTC",
+    });
+    const second = await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-06-20",
+      timeZone: "UTC",
+    });
+
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", first.eventId))
+    ).toMatchObject({ endDate: "2026-06-19" });
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", first.eventId))
+    ).not.toHaveProperty("startCertainty");
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: second.eventId,
+    });
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", second.eventId))
+    ).toBeNull();
+  });
+
   test("a later primary start does not patch an observed end", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
@@ -671,7 +797,7 @@ describe("derived period endings", () => {
     });
   });
 
-  test("no cron or mutation path remains for inferred period endings", async () => {
+  test("retains a flag-gated compatibility path for inferred period endings", async () => {
     const fs = await import("node:fs/promises");
     const periodsSource = await fs.readFile(
       new URL("./periods.ts", import.meta.url),
@@ -682,9 +808,9 @@ describe("derived period endings", () => {
       "utf8"
     );
 
-    expect(periodsSource).not.toContain("autoEndPeriods");
-    expect(periodsSource).not.toContain("expectedEndDate");
-    expect(cronsSource).not.toContain("auto end periods");
-    expect(cronsSource).not.toContain("autoEndPeriods");
+    expect(periodsSource).toContain("autoEndPeriods");
+    expect(periodsSource).toContain("isCycleFactsV1Enabled");
+    expect(cronsSource).toContain("auto end periods");
+    expect(cronsSource).toContain("autoEndPeriods");
   });
 });

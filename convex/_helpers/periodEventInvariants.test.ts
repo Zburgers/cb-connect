@@ -34,7 +34,7 @@ describe("period event invariants", () => {
   ])("rejects %s with a stable code", (_name, overrides, code) => {
     expect(
       evaluatePeriodEventInvariants(
-        { ...exactCandidate, ...overrides },
+        { ...exactCandidate, endDate: undefined, ...overrides },
         []
       )
     ).toMatchObject({ allowed: false, code });
@@ -61,10 +61,25 @@ describe("period event invariants", () => {
       "legacy-unknown candidate",
       { startCertainty: "legacy_unknown", endCertainty: undefined, legacyReason: "overlap" },
     ],
-  ])("allows %s to coexist with exact evidence", (_name, overrides) => {
+  ])("rejects %s when it would create a second open event", (_name, overrides) => {
     expect(
       evaluatePeriodEventInvariants(
-        { ...exactCandidate, ...overrides },
+        { ...exactCandidate, endDate: undefined, ...overrides },
+        [{ ...exactExisting, endDate: undefined }]
+      )
+    ).toMatchObject({ allowed: false, code: "OPEN_EVENT_EXISTS" });
+  });
+
+  test("allows a closed approximate fact to coexist with exact evidence", () => {
+    expect(
+      evaluatePeriodEventInvariants(
+        {
+          ...exactCandidate,
+          startDate: "2026-08-10",
+          endDate: "2026-08-12",
+          startCertainty: "approximate",
+          endCertainty: "approximate",
+        },
         [exactExisting]
       )
     ).toEqual({ allowed: true });
@@ -101,9 +116,31 @@ describe("period event invariants", () => {
           targetEventId: exactExisting.id,
           expectedAuthorityVersion: exactExisting.authorityVersion,
         },
-        [exactExisting]
+        [{ ...exactExisting, primaryCorrectionVersion: 2 }]
       )
     ).toMatchObject({ allowed: false, code: "PRIMARY_AUTHORITY_REQUIRED" });
+  });
+
+  test("allows a partner to end a primary-started open event", () => {
+    expect(
+      evaluatePeriodEventInvariants(
+        {
+          ...exactCandidate,
+          endDate: "2026-08-04",
+          actorRole: "partner",
+          targetEventId: "primary-start",
+          expectedAuthorityVersion: 1,
+          partnerAccess: "active",
+        },
+        [{
+          ...exactExisting,
+          id: "primary-start",
+          endDate: undefined,
+          authorityVersion: 1,
+          lastWriterRole: "primary",
+        }]
+      )
+    ).toEqual({ allowed: true });
   });
 
   test("allows a primary correction after partner assistance", () => {
