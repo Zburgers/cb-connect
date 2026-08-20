@@ -630,3 +630,58 @@ describe("primary cycle fact writes", () => {
     expect(source).not.toContain('ctx.db.delete("periodEvents"');
   });
 });
+
+describe("derived period endings", () => {
+  test("a later primary start does not patch an observed end", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const existingId = await t.run(async (ctx) => {
+      return await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-01",
+        endDate: "2026-06-05",
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-06-20",
+      startCertainty: "exact",
+      timeZone: "UTC",
+    });
+
+    expect(
+      await t.run(async (ctx) => await ctx.db.get("periodEvents", existingId))
+    ).toMatchObject({
+      startDate: "2026-06-01",
+      endDate: "2026-06-05",
+      endCertainty: "exact",
+      authorityVersion: 2,
+    });
+  });
+
+  test("no cron or mutation path remains for inferred period endings", async () => {
+    const fs = await import("node:fs/promises");
+    const periodsSource = await fs.readFile(
+      new URL("./periods.ts", import.meta.url),
+      "utf8"
+    );
+    const cronsSource = await fs.readFile(
+      new URL("../crons.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(periodsSource).not.toContain("autoEndPeriods");
+    expect(periodsSource).not.toContain("expectedEndDate");
+    expect(cronsSource).not.toContain("auto end periods");
+    expect(cronsSource).not.toContain("autoEndPeriods");
+  });
+});

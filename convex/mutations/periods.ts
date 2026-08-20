@@ -1,12 +1,10 @@
 import { v } from "convex/values";
 import {
   mutation,
-  internalMutation,
   type MutationCtx,
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
-import { addCalendarDays, toCalendarDateString } from "../_helpers/cycleCalculations";
 import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
@@ -440,45 +438,6 @@ export const deletePeriodEvent = mutation({
       updatedAt: tombstoneAt,
     });
     return { success: true };
-  },
-});
-
-export const autoEndPeriods = internalMutation({
-  handler: async (ctx) => {
-    // Find all ongoing (open) periods
-    const openPeriods = await ctx.db
-      .query("periodEvents")
-      .filter((q) => q.eq(q.field("endDate"), undefined))
-      .collect();
-
-    let endedCount = 0;
-
-    for (const period of openPeriods) {
-      // Get the user's cycle settings
-      const settings = await ctx.db
-        .query("cycleSettings")
-        .withIndex("by_user", (q) => q.eq("userId", period.userId))
-        .unique();
-
-      const periodLength = settings?.periodLength ?? 5;
-
-      // Calculate expected end date
-      const expectedEndDate = addCalendarDays(period.startDate, periodLength - 1);
-      const today = toCalendarDateString();
-
-      // If past the expected end date, auto-close it
-      if (expectedEndDate < today) {
-        await ctx.db.patch(period._id, {
-          endDate: expectedEndDate,
-          ...(period.source === undefined && { source: "system" as const }),
-          updatedAt: Date.now(),
-        });
-        endedCount++;
-      }
-    }
-
-    console.log(`autoEndPeriods: closed ${endedCount} open period(s)`);
-    return { endedCount };
   },
 });
 
