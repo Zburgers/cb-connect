@@ -12,6 +12,7 @@
     "lint": "npm run typecheck",
     "test:unit": "vitest run",
     "test:ci-workflow": "bash scripts/tests/ci-workflow.test.sh",
+    "test:cycle-facts-plan": "bash scripts/tests/cycle-facts-plan.test.sh",
     "test:e2e": "playwright test",
     "test:e2e:release": "playwright test --config=playwright.release.config.ts"
   },
