@@ -26,7 +26,7 @@ Engineering must not invent names, credentials, jurisdictions, legal conclusions
 | D-009 | Exact observation certainty, provenance, confirmation and `legacy_unknown` schema/mapping | Product, engineering and privacy | Gate 1 schema/migration | Resolved 2026-08-12 | Partner assistance is accepted immediately; primary user's later correction/deletion is authoritative; approximate dates remain explicit approximate facts and never become exact implicitly |
 | D-010 | Treatment of suspected auto-ended, duplicate, overlapping and ambiguous legacy rows | Product, engineering, privacy/legal | Gate 1 production migration | Resolved 2026-08-12 for conservative policy; aggregate audit still required | Preserve ambiguous rows as explicit `legacy_unknown`; exclude them from high-confidence facts/prediction until corrected; never fabricate confirmation or delete history silently |
 | D-011 | Clinical/content reviewer and approval process for phase, Late and relationship-guidance copy | Product owner and qualified reviewer | Only affected health-adjacent copy exposure | Deferred until Gate 2 copy task | — |
-| D-012 | Data retention/deletion rules for users, couples, messages, notifications, snapshots and research artifacts | Privacy/legal and product owner | Destructive deletion/migration and final retention behavior only | Required before affected task | Safe proposal: retain user-visible cycle history until explicit primary deletion; use tombstones; block destructive behavior pending confirmation |
+| D-012 | Data retention/deletion rules for users, couples, messages, notifications, snapshots and research artifacts | Privacy/legal and product owner | Destructive deletion/migration, final retention behavior and production exposure | Required before affected task | Safe proposal: retain user-visible cycle history until explicit primary deletion; use tombstones; block destructive behavior and production exposure pending confirmation |
 | D-013 | Prediction benchmark dataset authority, consent basis, calibration split and preregistration approver | Product, privacy and engineering/statistical reviewer | Gate 3 benchmark/promotion | Deferred until Gate 2 evidence | Criteria may not be loosened after results |
 | D-014 | Apple, Google and EAS account ownership, bundle/package IDs, signing recovery and supported OS matrix | Mobile release owner/product | Gates 5-6 | Deferred until Gate 4 evidence | — |
 | D-015 | Pilot cohort sizes, staffing, observation windows and staged rollout percentages | Product owner and operator | Only the affected pilot/store rollout | Deferred until affected pilot | — |
@@ -112,7 +112,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Alternatives considered: Backend UTC, runner timezone and browser locale strings were rejected because they can shift a user's calendar date or vary by execution environment.
 - Approver and authority: Sole project owner, approved directly in the coordinating conversation.
 - Approved on: 2026-08-12.
-- Applies from commit/deployment: Gate 1 additive timezone contract; no production behavior changes until Gate 0 approval and the dated plan entry criteria are met.
+- Applies from commit/deployment: Gate 1 additive timezone contract under the August 19 feature-first policy; production exposure remains separately blocked by D-012 and its exposure decision.
 - Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md` and `convex/_helpers/calendarDates.ts` tests.
 - Review/expiry date: Revalidate on client platform/timezone-library changes or 2026-11-12, whichever comes first.
 
@@ -122,7 +122,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Alternatives considered: Treating partner assistance as pending until primary confirmation was rejected by the owner; silently treating approximate input as exact was rejected because it pollutes later reliability and prediction work.
 - Approver and authority: Sole project owner, approved directly in the coordinating conversation.
 - Approved on: 2026-08-12.
-- Applies from commit/deployment: Gate 1 additive schema and write path; pending Gate 0 approval and retention decision.
+- Applies from commit/deployment: Gate 1 additive schema and write path under the August 19 feature-first policy; immediate partner assistance is allowed, while production exposure remains blocked by D-012 and its exposure decision.
 - Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md` and `docs/evidence/cycle-facts-gate-1/REPORT.md`.
 - Review/expiry date: Revalidate before Gate 2 prediction/phase exposure or 2026-11-12, whichever comes first.
 
@@ -142,7 +142,7 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Alternatives considered: Automatic deletion on age alone and irreversible legacy cleanup were rejected while the owner has not confirmed retention duration, deletion scope or legal basis.
 - Approver and authority: Proposal drafted by engineering on 2026-08-12; explicit owner/privacy confirmation is still required.
 - Approved on: Pending.
-- Applies from commit/deployment: After Gate 0 approval, additive schema/helpers/tests and non-destructive compatibility are allowed; no hard deletion, destructive migration or production exposure is authorized until this decision is approved.
+- Applies from commit/deployment: Under the August 19 feature-first policy, additive schema/helpers/tests and non-destructive compatibility are allowed; no hard deletion, destructive migration or production exposure is authorized until this decision is approved.
 - Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`.
 - Review/expiry date: Must be resolved before Gate 1 migration or any deletion behavior is enabled.
 

@@ -2,9 +2,10 @@
 
 **Status:** Canonical planning dashboard under the approved
 [feature-first delivery policy](2026-08-19-feature-first-delivery-design.md).
-Gate 0 engineering is complete. Gate 1 additive implementation is locally
-qualified on the current feature branch; production exposure remains a
-separate decision.
+Gate 0 engineering is complete. Gate 1 implementation is complete for
+deterministic qualification; authenticated desktop/mobile qualification is
+pending on the current feature branch. Gate 1 is not qualified and production
+exposure remains blocked by D-012 plus a separate exposure decision.
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -26,7 +27,7 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
 | 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Continuous automated deployment and measurement | Engineering complete; operations continue in parallel |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [current implementation plan](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md) | Approved current execution plan | Locally qualified additive/default-off implementation; production exposure and D-012 destructive lifecycle work remain separate |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [current implementation plan](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md) | Approved current execution plan | Deterministic qualification passed; authenticated desktop/mobile qualification pending; D-012 blocks production exposure and destructive lifecycle work |
 | 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
 | 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
@@ -46,9 +47,10 @@ feature-development gate.
    readiness, PM2 persistence, and the managed rollback chain.
 3. Restore rehearsals and SLO measurement continue as operational work and may
    restrict rollout or claims; they do not block unrelated feature coding.
-4. Gate 1's approved additive/default-off implementation is locally qualified.
-   D-012 still blocks destructive migration, hard deletion and final retention
-   behavior.
+4. Gate 1's additive/default-off implementation is complete for deterministic
+   qualification, but authenticated desktop/mobile qualification is pending.
+   D-012 blocks production exposure, destructive migration, hard deletion and
+   final retention behavior.
 5. Gate 1 implementation remains Convex-only and flag-off by default. A green
    engineering qualification does not authorize production exposure; rollback
    is flag-off plus backward-compatible reads.

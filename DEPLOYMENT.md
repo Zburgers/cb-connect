@@ -56,9 +56,10 @@ browser configuration.
 
 Enable the capability only on an explicitly approved non-production Convex
 deployment after its authenticated desktop/mobile qualification is retained.
-Production exposure is a separate rollout decision; this implementation does
-not authorize enabling the flag there. Do not run the metadata migration or
-any destructive migration as part of frontend release promotion.
+Production exposure is blocked until D-012 is approved and a separate rollout
+decision is recorded; this implementation does not authorize enabling the flag
+there. Do not run the metadata migration or any destructive migration as part
+of frontend release promotion.
 
 Rollback is the reversible flag-off path: remove the Convex setting or set it
 to a value other than `true`, then verify that older clients still read the

@@ -21,9 +21,9 @@ G1.0 must be updated to enforce the feature-first boundary: the approved dated
 plan and isolated target are required, while historical Gate 0 measurement is
 not a blocker.
 
-D-012 blocks hard deletion, destructive migration and final retention
-behavior, but does not block additive schema, pure helpers, tests, capability
-plumbing or non-destructive compatibility work. D-012's safe
+D-012 blocks production exposure, hard deletion, destructive migration and
+final retention behavior, but does not block additive schema, pure helpers,
+tests, capability plumbing or non-destructive compatibility work. D-012's safe
 proposed default is: retain original rows, use tombstones for user-visible
 deletion, minimize aggregate evidence, and do not select a final retention
 duration until the owner explicitly approves it. No task below authorizes a

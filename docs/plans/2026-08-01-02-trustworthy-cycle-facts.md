@@ -2,8 +2,8 @@
 
 > **Codex/Shipyard execution:** Use the approved dated execution plan at
 > [`2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md),
-> for additive, default-off, non-destructive work. D-012 blocks only the tasks
-> that destroy or permanently delete data.
+> for additive, default-off, non-destructive work. D-012 blocks production
+> exposure and the tasks that destroy or permanently delete data.
 
 **Goal:** Ensure period history contains explicit user observations with valid provenance and never silently stores system estimates as facts.
 
@@ -20,8 +20,9 @@
 **Next gate:** [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md)
 
 **Planning status:** Gate-level work packages plus an approved dated execution
-plan. Additive/default-off implementation may start. D-012 must be resolved
-before destructive migration or deletion behavior. See the
+plan. Additive/default-off implementation may start. Authenticated
+qualification is still pending. D-012 must be resolved before production
+exposure, destructive migration or deletion behavior. See the
 [Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
 current code inventory and decision boundary; it is not an execution plan.
 
@@ -204,8 +205,8 @@ derived-estimate separation, dry-run audit, bounded annotation, and finally the
 default-off UI. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and
 exposes only an authenticated boolean capability to the UI. Historical Gate 0
 approval is not an additive-execution switch under the approved feature-first
-policy; D-012 approval remains required for hard deletion, destructive
-migration and final retention behavior. Stop on count mismatch, invariant
+policy; D-012 approval remains required for production exposure, hard deletion,
+destructive migration and final retention behavior. Stop on count mismatch, invariant
 rejection spike, unauthorized visibility, migration non-idempotency or
 inability to recover. Roll back by disabling the flag and retaining compatible
 reads; never “undo” by deleting annotated history.

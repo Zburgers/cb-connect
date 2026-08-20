@@ -1,9 +1,10 @@
 # Gate 1 Trustworthy Cycle Facts Implementation Plan
 
-**Status:** Implemented and locally qualified on 2026-08-20 in the isolated
+**Status:** Implementation complete; deterministic qualification passed;
+authenticated qualification pending in the isolated
 `gate-1/trustworthy-cycle-facts` worktree. This remains the current execution
-authority and records the implementation contract; production exposure is not
-authorized. The plan was audited against `main` at
+authority and records the implementation contract; Gate 1 is not qualified and
+production exposure is not authorized. The plan was audited against `main` at
 `15d92b54990cc64368fee34a029d5ddf79921b71`; a material architecture or
 contract change requires plan revision. The branch was subsequently rebased
 onto current `origin/main` at `d69b3cde59e20b59dffe408fde37c917cd3f60e8`.
@@ -42,11 +43,11 @@ Vitest/convex-test, Clerk-authenticated Playwright, GitHub Actions.
   correction or tombstone has final authority.
 - D-010 is settled: ambiguous legacy rows remain readable as
   `legacy_unknown` and cannot enter exact-only prediction inputs.
-- D-012 blocks hard deletion, destructive migration, final retention-duration
-  claims, and production execution of lifecycle cleanup. It does not block an
-  additive tombstone, compatibility reads, dry runs, or synthetic migration
-  tests. Task 8 cannot be run against production without a separately approved
-  target and recovery boundary.
+- D-012 blocks destructive deletion/migration, final retention-duration claims,
+  production exposure, and production execution of lifecycle cleanup. Additive
+  tombstones, compatibility reads, dry runs, and synthetic migration tests are
+  allowed; no production target may be annotated without D-012 approval and a
+  separately approved recovery boundary.
 - `CB_CONNECT_CYCLE_FACTS_V1` is Convex-only. Unset or any value other than the
   exact string `true` is disabled. No `NEXT_PUBLIC_` mirror is permitted.
 - No task may emit raw cycle dates, row IDs, notes, Clerk identities, auth
@@ -328,9 +329,12 @@ the task order.
 | G1.11 | `3341363` | Authenticated Convex capability and flagged UI |
 | G1.12 | `1156636` | Release qualification, policy checks and evidence report |
 
-`286959e` and `5b3afb3` are test-fixture alignment follow-ups. The focused
-qualification results and the separate production-exposure boundary are
-recorded in [`docs/evidence/cycle-facts-gate-1/REPORT.md`](../evidence/cycle-facts-gate-1/REPORT.md).
+`286959e` and `5b3afb3` are test-fixture alignment follow-ups. Deterministic
+qualification passed at the current PR head; authenticated desktop/mobile
+qualification remains pending because retained release smoke stopped at
+fixture linking before exercising a product journey. The results and separate
+production-exposure boundary are recorded in
+[`docs/evidence/cycle-facts-gate-1/REPORT.md`](../evidence/cycle-facts-gate-1/REPORT.md).
 
 ## Phase verification and exit criteria
 
@@ -351,10 +355,12 @@ git diff --check
 
 Gate 1 engineering is complete only when every command exits 0, authenticated
 desktop/mobile tests have zero skips, generated Convex APIs are current, and
-the feature remains default-off. Production exposure is a separate rollout
-decision. D-012 must be resolved before hard deletion, destructive migration,
-or final retention behavior; Task 9 production execution additionally needs
-an approved target, dry-run result, and recovery boundary.
+the feature remains default-off. The current PR is not Gate 1 qualified until
+that authenticated evidence is retained. Production exposure is blocked until
+D-012 is approved and a separate exposure decision is recorded; D-012 must
+also be resolved before hard deletion, destructive migration, or final
+retention behavior. Task 9 production execution additionally needs an
+approved target, dry-run result, and recovery boundary.
 
 ## Execution handoff
 

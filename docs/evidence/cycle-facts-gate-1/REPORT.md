@@ -1,7 +1,8 @@
 # Gate 1 trustworthy cycle facts — engineering qualification report
 
-**Status:** additive implementation qualified locally; production exposure not
-authorized
+**Status:** implementation complete; deterministic qualification passed;
+authenticated qualification pending; Gate 1 not qualified and production
+exposure blocked
 
 **Pull request:** [#35](https://github.com/Zburgers/cb-connect/pull/35) — draft
 review and protected qualification pending
@@ -29,16 +30,17 @@ The following evidence is retained on branch
 - `npm run test:cycle-facts-plan` — pass
 - focused Convex fact semantics, invariants, mutations, migration, reads and
   capability tests — pass
-- `npm run typecheck` — pass after generated API refresh
-- `npx convex codegen` — pass
+- `npm run typecheck` — pass against the committed generated definitions
+- `npx convex codegen` — blocked in this local shell because
+  `CONVEX_DEPLOYMENT` is unset; no deployment or secret was supplied
 - `bash scripts/tests/deploy-workflow.test.sh` — pass
 - `git diff --check` — required before handoff
-- Protected CI run `32393709105` deterministic qualification — pass (build,
+- Protected CI run `32394057909` deterministic qualification — pass (build,
   post-build typecheck, unit tests and dependency policy).
 - The same run's authenticated release smoke stopped fail-closed during
   `auth.global.setup.ts` link fixture setup with
   `authenticated_fixture_setup_failed`; no authenticated product journey is
-  claimed from that run.
+  claimed from that run and no zero-skip desktop/mobile evidence exists.
 
 The exact command for authenticated release qualification is:
 
@@ -55,11 +57,12 @@ artifacts.
 
 ## Release and rollout decision
 
-This report does not authorize production enablement. Production remains
-flag-off until authenticated desktop/mobile evidence is retained and the
-separate exposure decision is approved. The automatic qualified-main workflow
-may deploy the additive, backward-compatible code path; it must not enable a
-production capability value or execute a destructive cycle-data migration.
+This report does not qualify Gate 1 or authorize production enablement.
+Production remains flag-off until authenticated desktop/mobile evidence is
+retained, D-012 is approved, and the separate exposure decision is recorded.
+The automatic qualified-main workflow may deploy the additive,
+backward-compatible code path; it must not enable a production capability
+value or execute a destructive cycle-data migration.
 
 ## Required handoff artifacts
 

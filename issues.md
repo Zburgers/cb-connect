@@ -21,10 +21,10 @@ Update with Github issues on the parent repo
 ### Prediction rollover and inferred period endings can create false history
 **Program gate:** Cycle Facts Gate 1 and Four-Phase State Gate 2
 **Priority:** Critical
-**Status:** Gate 1 portion implemented and locally qualified; Gate 2 rollover/state semantics remain open
+**Status:** Gate 1 implementation complete for deterministic qualification; authenticated qualification pending; Gate 2 rollover/state semantics remain open
 **Detected:** August 1, 2026
 **Files:** `convex/_helpers/cycleCalculations.ts`, `convex/_helpers/timelinePhases.ts`, `convex/queries/dashboard.ts`, `convex/mutations/periods.ts`, `convex/crons.ts`
-**Evidence:** The Gate 1 implementation removes the cron/inferred-ending fact writer, keeps open-event estimates derived and labeled, bounds legacy classification/annotation, and makes history/prediction reads exclude approximate, legacy-unknown and tombstoned rows from exact-only inputs. The remaining Gate 2 work is the broader rollover/late-state model and any dashboard phase semantics not covered by fact eligibility. See `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
+**Evidence:** The Gate 1 enabled path removes inferred-ending writes, keeps open-event estimates derived and labeled, bounds legacy classification/annotation, and makes history/prediction reads exclude approximate, legacy-unknown and tombstoned rows from exact-only inputs. Deterministic qualification passed; authenticated qualification remains pending. The remaining Gate 2 work is the broader rollover/late-state model and any dashboard phase semantics not covered by fact eligibility. See `docs/evidence/cycle-facts-gate-1/REPORT.md` and the current dated plan.
 **PR coverage:** [PR #35](https://github.com/Zburgers/cb-connect/pull/35) covers the Gate 1 persisted-fact portion; the Gate 2 rollover/state work remains open.
 **Consequence:** Late, irregular, missing-log, pregnancy/postpartum, or paused-tracking cases can display fabricated cycle/phase state and pollute future statistics or model data.
 **Exit evidence:** A tested recorded/predicted/late state machine; no wrap without a confirmed start; predictions never mutate observed events; recorded open/end state has precedence in dashboard and history; legacy inferred rows are measured and repaired or explicitly marked uncertain.
@@ -226,9 +226,9 @@ and mandatory for release candidates.
 
 ### Feature-first major-release execution
 
-**Status:** Gate 0 engineering complete; Gate 1 additive/default-off implementation is locally qualified on the feature branch.
+**Status:** Gate 0 engineering complete; Gate 1 additive/default-off implementation is deterministic-qualified on the feature branch, with authenticated qualification pending.
 **Canonical index:** `docs/plans/README.md`
-**Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks destructive deletion/migration and final retention behavior, not the qualified additive schema, helpers, tests, compatibility, or default-off UI implementation. Production exposure remains separately unauthorized.
+**Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks production exposure, destructive deletion/migration and final retention behavior, not safe additive schema, helpers, tests, compatibility, or default-off UI implementation. Authenticated qualification remains required before calling Gate 1 qualified.
 
 ---
 
