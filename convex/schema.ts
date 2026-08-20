@@ -35,6 +35,21 @@ export default defineSchema({
     cleanedAt: v.optional(v.number()),
   }).index("by_run_id", ["runId"]),
 
+  cycleDataAuditRuns: defineTable({
+    runId: v.string(),
+    cursor: v.optional(v.string()),
+    isComplete: v.boolean(),
+    pageSize: v.number(),
+    processedCount: v.number(),
+    missingProvenance: v.number(),
+    inferredEnd: v.number(),
+    duplicate: v.number(),
+    overlap: v.number(),
+    unprovable: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_run_id", ["runId"]),
+
   couples: defineTable({
     createdAt: v.number(),
     linkedAt: v.optional(v.number()),
