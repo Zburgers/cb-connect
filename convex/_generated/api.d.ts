@@ -13,6 +13,7 @@ import type * as _helpers_calendarDates from "../_helpers/calendarDates.js";
 import type * as _helpers_clerkWebhook from "../_helpers/clerkWebhook.js";
 import type * as _helpers_coupleSpace from "../_helpers/coupleSpace.js";
 import type * as _helpers_cycleCalculations from "../_helpers/cycleCalculations.js";
+import type * as _helpers_cycleFactEligibility from "../_helpers/cycleFactEligibility.js";
 import type * as _helpers_cycleFactSemantics from "../_helpers/cycleFactSemantics.js";
 import type * as _helpers_periodEventInvariants from "../_helpers/periodEventInvariants.js";
 import type * as _helpers_timelinePhases from "../_helpers/timelinePhases.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/clerkWebhook": typeof _helpers_clerkWebhook;
   "_helpers/coupleSpace": typeof _helpers_coupleSpace;
   "_helpers/cycleCalculations": typeof _helpers_cycleCalculations;
+  "_helpers/cycleFactEligibility": typeof _helpers_cycleFactEligibility;
   "_helpers/cycleFactSemantics": typeof _helpers_cycleFactSemantics;
   "_helpers/periodEventInvariants": typeof _helpers_periodEventInvariants;
   "_helpers/timelinePhases": typeof _helpers_timelinePhases;

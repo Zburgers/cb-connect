@@ -7,6 +7,15 @@ import {
   getTimelinePhaseForDate,
   type TimelinePhase,
 } from "../_helpers/timelinePhases";
+import {
+  getCycleFactReadLabel,
+  isHistoryVisible,
+  selectLatestPredictionFact,
+  type CycleFactReadLabel,
+} from "../_helpers/cycleFactEligibility";
+
+const MAX_PERIOD_HISTORY_ROWS = 100;
+const MAX_PAIN_HISTORY_ROWS = 1000;
 
 export const getPainHistory = query({
   args: {
@@ -45,10 +54,9 @@ export const getPainHistory = query({
       .withIndex("by_user_and_date", (q) =>
         q.eq("userId", targetUserId).gte("date", args.startDate)
       )
-      .filter((q) => q.lte(q.field("date"), args.endDate))
-      .collect();
+      .take(MAX_PAIN_HISTORY_ROWS);
 
-    return logs;
+    return logs.filter((log) => log.date <= args.endDate);
   },
 });
 
@@ -84,9 +92,13 @@ export const getPeriodHistory = query({
       .query("periodEvents")
       .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
       .order("desc")
-      .collect();
+      .take(MAX_PERIOD_HISTORY_ROWS);
 
-    return await enrichPeriodEvents(ctx, periods, user._id);
+    return await enrichPeriodEvents(
+      ctx,
+      periods.filter(isHistoryVisible),
+      user._id
+    );
   },
 });
 
@@ -116,11 +128,13 @@ export const getPredictionInputsForUser = internalQuery({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .unique();
 
-    const recentPeriod = await ctx.db
+    const recentPeriods = await ctx.db
       .query("periodEvents")
       .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
       .order("desc")
-      .first();
+      .take(MAX_PERIOD_HISTORY_ROWS);
+
+    const recentPeriod = selectLatestPredictionFact(recentPeriods);
 
     if (!recentPeriod) {
       return null;
@@ -188,7 +202,8 @@ export const getTimelineHistory = query({
           .query("periodEvents")
           .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
           .order("desc")
-          .collect()
+          .take(MAX_PERIOD_HISTORY_ROWS)
+          .then((rows) => rows.filter(isHistoryVisible))
       : [];
 
     const painLogs = canViewPain
@@ -197,8 +212,8 @@ export const getTimelineHistory = query({
           .withIndex("by_user_and_date", (q) =>
             q.eq("userId", targetUserId).gte("date", args.startDate)
           )
-          .filter((q) => q.lte(q.field("date"), args.endDate))
-          .collect()
+          .take(MAX_PAIN_HISTORY_ROWS)
+          .then((rows) => rows.filter((log) => log.date <= args.endDate))
       : [];
 
     const cycleSettings = canViewPhase
@@ -223,6 +238,13 @@ export const getTimelineHistory = query({
         endDate?: string;
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
+        certainty: CycleFactReadLabel;
+        legacyReason?:
+          | "missing_provenance"
+          | "inferred_end"
+          | "duplicate"
+          | "overlap"
+          | "unprovable";
         createdByUserId: Id<"users">;
         updatedByUserId: Id<"users">;
         createdByName: string;
@@ -244,6 +266,8 @@ export const getTimelineHistory = query({
           endDate: period.endDate,
           source: period.source,
           confirmationStatus: period.confirmationStatus,
+          certainty: period.certainty,
+          legacyReason: period.legacyReason,
           createdByUserId: period.createdByUserId,
           updatedByUserId: period.updatedByUserId,
           createdByName: period.createdByName,
@@ -306,6 +330,7 @@ async function enrichPeriodEvents(
       source: period.source ?? ("self" as const),
       confirmationStatus:
         period.confirmationStatus ?? ("confirmed" as const),
+      certainty: getCycleFactReadLabel(period),
       createdByUserId,
       updatedByUserId,
       createdByName: names.get(createdByUserId) ?? "Partner",
