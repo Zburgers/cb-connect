@@ -11,6 +11,75 @@ import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
 } from "../_helpers/calendarDates";
+import {
+  evaluatePeriodEventInvariants,
+  type PeriodEventCandidate,
+} from "../_helpers/periodEventInvariants";
+import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
+
+const cycleFactCertaintyValidator = v.union(
+  v.literal("exact"),
+  v.literal("approximate")
+);
+
+function currentAuthorityVersion(period: Doc<"periodEvents">): number {
+  return period.authorityVersion ?? 0;
+}
+
+function storedStartCertainty(
+  period: Doc<"periodEvents">
+): CycleFactCertainty {
+  return period.startCertainty ?? "legacy_unknown";
+}
+
+function storedEndCertainty(
+  period: Doc<"periodEvents">
+): CycleFactCertainty | undefined {
+  if (period.endDate === undefined) return undefined;
+  return period.endCertainty ?? "legacy_unknown";
+}
+
+function storedLegacyReason(period: Doc<"periodEvents">) {
+  const startUnknown = storedStartCertainty(period) === "legacy_unknown";
+  const endUnknown = storedEndCertainty(period) === "legacy_unknown";
+  return startUnknown || endUnknown
+    ? period.legacyReason ?? "missing_provenance"
+    : undefined;
+}
+
+function toPeriodEventProjection(period: Doc<"periodEvents">) {
+  return {
+    id: period._id,
+    startDate: period.startDate,
+    endDate: period.endDate,
+    startCertainty: period.startCertainty,
+    endCertainty: period.endCertainty,
+    authorityVersion: period.authorityVersion,
+    lastWriterRole:
+      period.source === "partner_assist" ? ("partner" as const) : ("primary" as const),
+  };
+}
+
+async function requireAllowedPeriodEventWrite(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  candidate: PeriodEventCandidate
+) {
+  const existingEvents = await ctx.db
+    .query("periodEvents")
+    .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
+    .order("desc")
+    .take(100);
+  const result = evaluatePeriodEventInvariants(
+    candidate,
+    existingEvents
+      .filter((period) => period.tombstoneAt === undefined)
+      .map(toPeriodEventProjection)
+  );
+  if (!result.allowed) {
+    throw new Error(`${result.code}: ${result.message}`);
+  }
+}
 
 function requirePrimaryUser(user: Doc<"users">) {
   if (user.role !== "primary") {
@@ -28,7 +97,9 @@ async function findOpenPeriod(
     .order("desc")
     .take(100);
 
-  return recentPeriods.find((period) => !period.endDate) ?? null;
+  return recentPeriods.find(
+    (period) => !period.endDate && period.tombstoneAt === undefined
+  ) ?? null;
 }
 
 async function getAssistedLoggingContext(ctx: MutationCtx) {
@@ -70,6 +141,7 @@ export const logPeriodStart = mutation({
   args: {
     startDate: v.string(),
     timeZone: v.optional(v.string()),
+    startCertainty: v.optional(cycleFactCertaintyValidator),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -80,20 +152,12 @@ export const logPeriodStart = mutation({
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
-    // Check for ongoing periods - close them first
-    const ongoingPeriod = await findOpenPeriod(ctx, user._id);
-
-    if (ongoingPeriod) {
-      if (args.startDate <= ongoingPeriod.startDate) {
-        throw new Error("New period start must be after the current period start");
-      }
-      // Auto-end the ongoing period the day before new one starts
-      await ctx.db.patch(ongoingPeriod._id, {
-        endDate: addCalendarDays(args.startDate, -1),
-        updatedByUserId: user._id,
-        updatedAt: Date.now(),
-      });
-    }
+    await requireAllowedPeriodEventWrite(ctx, user._id, {
+      startDate: args.startDate,
+      startCertainty: args.startCertainty ?? "exact",
+      authorityVersion: 1,
+      actorRole: "primary",
+    });
 
     const eventId = await ctx.db.insert("periodEvents", {
       userId: user._id,
@@ -102,6 +166,8 @@ export const logPeriodStart = mutation({
       updatedByUserId: user._id,
       source: "self",
       confirmationStatus: "confirmed",
+      startCertainty: args.startCertainty ?? "exact",
+      authorityVersion: 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -114,6 +180,8 @@ export const logPeriodEnd = mutation({
   args: {
     endDate: v.string(),
     timeZone: v.optional(v.string()),
+    endCertainty: v.optional(cycleFactCertaintyValidator),
+    expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -134,9 +202,25 @@ export const logPeriodEnd = mutation({
       throw new Error("End date cannot be before start date");
     }
 
+    const authorityVersion = currentAuthorityVersion(ongoingPeriod);
+    await requireAllowedPeriodEventWrite(ctx, user._id, {
+      startDate: ongoingPeriod.startDate,
+      endDate: args.endDate,
+      startCertainty: storedStartCertainty(ongoingPeriod),
+      endCertainty: args.endCertainty ?? "exact",
+      legacyReason: storedLegacyReason(ongoingPeriod),
+      authorityVersion: authorityVersion + 1,
+      actorRole: "primary",
+      targetEventId: ongoingPeriod._id,
+      expectedAuthorityVersion:
+        args.expectedAuthorityVersion ?? authorityVersion,
+    });
+
     await ctx.db.patch(ongoingPeriod._id, {
       endDate: args.endDate,
+      endCertainty: args.endCertainty ?? "exact",
       updatedByUserId: user._id,
+      authorityVersion: authorityVersion + 1,
       updatedAt: Date.now(),
     });
 
@@ -243,6 +327,9 @@ export const updatePeriodEvent = mutation({
     startDate: v.string(),
     endDate: v.optional(v.string()),
     timeZone: v.optional(v.string()),
+    startCertainty: v.optional(cycleFactCertaintyValidator),
+    endCertainty: v.optional(cycleFactCertaintyValidator),
+    expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -264,11 +351,32 @@ export const updatePeriodEvent = mutation({
       }
     }
 
+    const authorityVersion = currentAuthorityVersion(period);
+    const endCertainty =
+      args.endDate === undefined
+        ? undefined
+        : args.endCertainty ?? "exact";
+    await requireAllowedPeriodEventWrite(ctx, user._id, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      startCertainty: args.startCertainty ?? "exact",
+      endCertainty,
+      authorityVersion: authorityVersion + 1,
+      actorRole: "primary",
+      targetEventId: period._id,
+      expectedAuthorityVersion:
+        args.expectedAuthorityVersion ?? authorityVersion,
+    });
+
     await ctx.db.patch(args.periodEventId, {
       startDate: args.startDate,
       endDate: args.endDate,
+      startCertainty: args.startCertainty ?? "exact",
+      endCertainty,
+      legacyReason: undefined,
       updatedByUserId: user._id,
       confirmationStatus: "confirmed",
+      authorityVersion: authorityVersion + 1,
       updatedAt: Date.now(),
     });
     return { success: true };
@@ -278,6 +386,7 @@ export const updatePeriodEvent = mutation({
 export const deletePeriodEvent = mutation({
   args: {
     periodEventId: v.id("periodEvents"),
+    expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -287,7 +396,29 @@ export const deletePeriodEvent = mutation({
       throw new Error("You can only delete your own period entries");
     }
 
-    await ctx.db.delete("periodEvents", args.periodEventId);
+    const authorityVersion = currentAuthorityVersion(period);
+    await requireAllowedPeriodEventWrite(ctx, user._id, {
+      startDate: period.startDate,
+      endDate: period.endDate,
+      startCertainty: storedStartCertainty(period),
+      endCertainty: storedEndCertainty(period),
+      legacyReason: storedLegacyReason(period),
+      authorityVersion: authorityVersion + 1,
+      actorRole: "primary",
+      targetEventId: period._id,
+      expectedAuthorityVersion:
+        args.expectedAuthorityVersion ?? authorityVersion,
+    });
+
+    const tombstoneAt = Date.now();
+    await ctx.db.patch(args.periodEventId, {
+      authorityVersion: authorityVersion + 1,
+      tombstoneByUserId: user._id,
+      tombstoneAt,
+      tombstoneAuthorityVersion: authorityVersion + 1,
+      updatedByUserId: user._id,
+      updatedAt: tombstoneAt,
+    });
     return { success: true };
   },
 });

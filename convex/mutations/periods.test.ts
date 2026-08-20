@@ -6,6 +6,20 @@ import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
 
+type TestBackend = ReturnType<typeof convexTest>;
+
+async function setPrimaryTimeZone(t: TestBackend) {
+  await t.run(async (ctx) => {
+    const primary = (await ctx.db.query("users").take(10)).find(
+      (user) => user.clerkId === "primary-clerk"
+    );
+    if (!primary) {
+      throw new Error("Primary fixture user was not found");
+    }
+    await ctx.db.patch(primary._id, { timeZone: "UTC" });
+  });
+}
+
 describe("partner-assisted period logging", () => {
   test("partner cannot use primary-only self logging or cycle settings", async () => {
     const t = convexTest(schema, modules);
@@ -81,6 +95,7 @@ describe("partner-assisted period logging", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
+    await setPrimaryTimeZone(t);
 
     const result = await asPartner.mutation(
       api.mutations.periods.assistLogPeriodStart,
@@ -119,6 +134,7 @@ describe("partner-assisted period logging", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
+    await setPrimaryTimeZone(t);
     const existingId = await t.run(async (ctx) => {
       return await ctx.db.insert("periodEvents", {
         userId: primaryId,
@@ -151,6 +167,7 @@ describe("partner-assisted period logging", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
+    await setPrimaryTimeZone(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("periodEvents", {
         userId: primaryId,
@@ -173,6 +190,7 @@ describe("partner-assisted period logging", () => {
       sharingPhase: true,
       sharingPeriodWrite: true,
     });
+    await setPrimaryTimeZone(t);
     const eventId = await t.run(async (ctx) => {
       return await ctx.db.insert("periodEvents", {
         userId: primaryId,
@@ -206,6 +224,7 @@ describe("partner-assisted period logging", () => {
 
     const result = await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
       startDate: "2026-06-20",
+      timeZone: "UTC",
     });
     const event = await t.run(async (ctx) => {
       return await ctx.db.get("periodEvents", result.eventId);
@@ -270,6 +289,8 @@ describe("period corrections", () => {
       periodEventId: eventId,
       startDate: "2026-06-19",
       endDate: "2026-06-23",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 0,
     });
 
     const corrected = await t.run(async (ctx) => {
@@ -285,9 +306,185 @@ describe("period corrections", () => {
 
     await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
       periodEventId: eventId,
+      expectedAuthorityVersion: 1,
     });
     expect(
       await t.run(async (ctx) => await ctx.db.get("periodEvents", eventId))
-    ).toBeNull();
+    ).toMatchObject({
+      tombstoneByUserId: primaryId,
+      tombstoneAuthorityVersion: 2,
+    });
+  });
+});
+
+describe("primary cycle fact writes", () => {
+  test("writes an exact start with explicit certainty and authority", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      {
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }
+    );
+    const event = await t.run(async (ctx) => {
+      return await ctx.db.get("periodEvents", result.eventId);
+    });
+
+    expect(event).toMatchObject({
+      userId: primaryId,
+      startCertainty: "exact",
+      authorityVersion: 1,
+    });
+  });
+
+  test("writes an approximate start without promoting it to exact evidence", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      {
+        startDate: "2026-07-01",
+        startCertainty: "approximate",
+        timeZone: "UTC",
+      }
+    );
+    const event = await t.run(async (ctx) => {
+      return await ctx.db.get("periodEvents", result.eventId);
+    });
+
+    expect(event).toMatchObject({
+      startCertainty: "approximate",
+      authorityVersion: 1,
+    });
+  });
+
+  test("rejects an exact start that overlaps an existing exact open fact", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-07-01",
+      startCertainty: "exact",
+      timeZone: "UTC",
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: "2026-07-03",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      })
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
+  test("rejects a stale primary correction", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      {
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }
+    );
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: result.eventId,
+        startDate: "2026-07-02",
+        startCertainty: "exact",
+        timeZone: "UTC",
+        expectedAuthorityVersion: 0,
+      })
+    ).rejects.toThrow("STALE_AUTHORITY_VERSION");
+  });
+
+  test("records an explicit end and advances authority", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      {
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }
+    );
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      endDate: "2026-07-05",
+      endCertainty: "exact",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+
+    const event = await t.run(async (ctx) => {
+      return await ctx.db.get("periodEvents", result.eventId);
+    });
+    expect(event).toMatchObject({
+      endDate: "2026-07-05",
+      endCertainty: "exact",
+      authorityVersion: 2,
+    });
+  });
+
+  test("allows an approximate start to coexist with exact evidence", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-07-01",
+      startCertainty: "exact",
+      timeZone: "UTC",
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: "2026-07-03",
+        startCertainty: "approximate",
+        timeZone: "UTC",
+      })
+    ).resolves.toMatchObject({ eventId: expect.any(String) });
+  });
+
+  test("tombstones a primary event without deleting its row", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const result = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      {
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }
+    );
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: result.eventId,
+      expectedAuthorityVersion: 1,
+    });
+
+    const event = await t.run(async (ctx) => {
+      return await ctx.db.get("periodEvents", result.eventId);
+    });
+    expect(event).toMatchObject({
+      startDate: "2026-07-01",
+      tombstoneByUserId: primaryId,
+      tombstoneAuthorityVersion: 2,
+    });
+  });
+
+  test("does not retain a physical period delete path", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile(
+      new URL("./periods.ts", import.meta.url),
+      "utf8"
+    );
+    expect(source).not.toContain('ctx.db.delete("periodEvents"');
   });
 });
