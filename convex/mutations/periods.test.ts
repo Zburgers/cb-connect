@@ -235,9 +235,12 @@ describe("partner-assisted period logging", () => {
 
   test("assisted start rejects when the primary timezone is missing", async () => {
     const t = convexTest(schema, modules);
-    const { asPartner } = await seedActiveCouple(t, {
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
       sharingPhase: true,
       sharingPeriodWrite: true,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: undefined });
     });
 
     await expect(

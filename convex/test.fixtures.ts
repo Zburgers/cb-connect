@@ -14,6 +14,7 @@ export async function seedUser(
       email: `${args.clerkId}@example.test`,
       name: args.name,
       role: args.role,
+      timeZone: "UTC",
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     });

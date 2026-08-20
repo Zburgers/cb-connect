@@ -145,7 +145,10 @@ describe("period date boundaries", () => {
 
   test("rejects an identified primary write without a timezone", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary } = await seedActiveCouple(t);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: undefined });
+    });
     const today = toCalendarDateInTimeZone(new Date(), "UTC");
 
     await expect(
