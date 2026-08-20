@@ -107,6 +107,33 @@ export default defineSchema({
     confirmationStatus: v.optional(
       v.union(v.literal("confirmed"), v.literal("unreviewed"))
     ),
+    startCertainty: v.optional(
+      v.union(
+        v.literal("exact"),
+        v.literal("approximate"),
+        v.literal("legacy_unknown")
+      )
+    ),
+    endCertainty: v.optional(
+      v.union(
+        v.literal("exact"),
+        v.literal("approximate"),
+        v.literal("legacy_unknown")
+      )
+    ),
+    legacyReason: v.optional(
+      v.union(
+        v.literal("missing_provenance"),
+        v.literal("inferred_end"),
+        v.literal("duplicate"),
+        v.literal("overlap"),
+        v.literal("unprovable")
+      )
+    ),
+    authorityVersion: v.optional(v.number()),
+    tombstoneByUserId: v.optional(v.id("users")),
+    tombstoneAt: v.optional(v.number()),
+    tombstoneAuthorityVersion: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
