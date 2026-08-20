@@ -165,7 +165,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
     );
     if (!assistedFact) throw new Error("assisted_cycle_fact_missing");
 
-    await test.step("primary correction takes authority", async () => {
+    await test.step("primary correction preserves uncertainty by default", async () => {
       const factCard = primary
         .locator("div.contrast-glass")
         .filter({ hasText: "Approximate observation" })
@@ -173,6 +173,24 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
       await factCard.getByRole("button", { name: "Edit", exact: true }).click();
       const dates = factCard.locator('input[type="date"]');
       await dates.nth(0).fill(localDateDaysAgo(3));
+      await factCard
+        .getByRole("button", { name: "Save correction", exact: true })
+        .click();
+      await expect(primary.getByText("Correction saved.")).toBeVisible();
+      await expect(
+        primary.getByText("Approximate observation", { exact: true }),
+      ).toBeVisible();
+    });
+
+    await test.step("primary explicitly confirms exactness before promotion", async () => {
+      const factCard = primary
+        .locator("div.contrast-glass")
+        .filter({ hasText: "Approximate observation" })
+        .last();
+      await factCard.getByRole("button", { name: "Edit", exact: true }).click();
+      await factCard
+        .getByRole("checkbox", { name: "Confirm this date is exact" })
+        .check();
       await factCard
         .getByRole("button", { name: "Save correction", exact: true })
         .click();

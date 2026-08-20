@@ -150,7 +150,8 @@ function TimelineEntry({
     periodEventId: Id<"periodEvents">,
     startDate: string,
     endDate: string | undefined,
-    authorityVersion: number
+    authorityVersion: number,
+    promoteCertainty: boolean
   ) => Promise<void>;
   onDelete: (
     periodEventId: Id<"periodEvents">,
@@ -161,6 +162,7 @@ function TimelineEntry({
   const [isEditing, setIsEditing] = useState(false);
   const [editStartDate, setEditStartDate] = useState(period?.startDate ?? "");
   const [editEndDate, setEditEndDate] = useState(period?.endDate ?? "");
+  const [promoteCertainty, setPromoteCertainty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editorMessage, setEditorMessage] = useState("");
 
@@ -173,7 +175,8 @@ function TimelineEntry({
         period.id,
         editStartDate,
         editEndDate || undefined,
-        period.authorityVersion
+        period.authorityVersion,
+        promoteCertainty
       );
       setIsEditing(false);
     } catch (error) {
@@ -298,6 +301,7 @@ function TimelineEntry({
                   onClick={() => {
                     setEditStartDate(period.startDate);
                     setEditEndDate(period.endDate ?? "");
+                    setPromoteCertainty(false);
                     setEditorMessage("");
                     setIsEditing(true);
                   }}
@@ -339,6 +343,26 @@ function TimelineEntry({
                     />
                   </label>
                 </div>
+                {showFactSemantics && period.certainty !== "exact" && (
+                  <label className="flex items-start gap-3 rounded-xl border border-foreground/10 p-3 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={promoteCertainty}
+                      onChange={(event) =>
+                        setPromoteCertainty(event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block font-semibold">
+                        Confirm this date is exact
+                      </span>
+                      <span className="mt-1 block text-xs text-foreground/60">
+                        Leave unchecked to preserve the existing uncertainty.
+                      </span>
+                    </span>
+                  </label>
+                )}
                 {editorMessage && (
                   <p className="text-xs font-medium text-destructive" role="alert">
                     {editorMessage}
@@ -359,6 +383,7 @@ function TimelineEntry({
                       setIsEditing(false);
                       setEditStartDate(period.startDate);
                       setEditEndDate(period.endDate ?? "");
+                      setPromoteCertainty(false);
                       setEditorMessage("");
                     }}
                     disabled={isSaving}
@@ -523,7 +548,8 @@ export default function LogPage() {
     periodEventId: Id<"periodEvents">,
     correctedStartDate: string,
     correctedEndDate: string | undefined,
-    authorityVersion: number
+    authorityVersion: number,
+    promoteCertainty: boolean
   ) => {
     await updatePeriodEvent({
       periodEventId,
@@ -532,8 +558,7 @@ export default function LogPage() {
       timeZone: getLocalTimeZone(),
       ...(cycleFactsEnabled
         ? {
-            startCertainty: "exact",
-            ...(correctedEndDate ? { endCertainty: "exact" } : {}),
+            ...(promoteCertainty ? { promoteCertainty: true } : {}),
             expectedAuthorityVersion: authorityVersion,
           }
         : {}),
