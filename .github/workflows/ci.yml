@@ -164,7 +164,7 @@ jobs:
         run: |
           set -euo pipefail
           identity_output="$RUNNER_TEMP/cb-connect-test-backend-identity.txt"
-          npx convex run queries/system:getBackendIdentity '{}' --deployment "$CONVEX_TEST_DEPLOYMENT" > "$identity_output"
+          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
           node - "$identity_output" <<'NODE'
           const fs = require('node:fs');
           const text = fs.readFileSync(process.argv[2], 'utf8');

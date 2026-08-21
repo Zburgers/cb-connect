@@ -34,7 +34,7 @@ required_patterns=(
   'CB_CONNECT_BACKEND_DEPLOYED_AT='
   'npx convex env set --from-file "$env_file" --force'
   'npx convex deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"'
-  'npx convex run queries/system:getBackendIdentity '\''{}'\'' --deployment "$CONVEX_TEST_DEPLOYMENT"'
+  'npx convex run queries/system:getBackendIdentity '\''{}'\'''
   'for project in release-desktop release-mobile'
   'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
   'browser_path="$(command -v google-chrome)"'
