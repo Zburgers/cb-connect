@@ -112,6 +112,23 @@ jobs:
       - name: Validate authenticated smoke deployment contract
         run: bash scripts/tests/release-smoke-workflow.test.sh
 
+      - name: Preflight authenticated test Convex deploy key target
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CONVEX_DEPLOY_KEY"
+          identity_output="$RUNNER_TEMP/cb-connect-test-deploy-key-target.txt"
+          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
+          node - "$identity_output" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          if (!text.includes('dev:hallowed-hummingbird-284')) {
+            throw new Error('convex_test_deploy_key_target_failed');
+          }
+          NODE
+
       - name: Sync authenticated test Convex runtime config
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}

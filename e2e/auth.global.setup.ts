@@ -55,11 +55,6 @@ async function signIn(
         frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
       },
     });
-    await page.goto(`${environment.baseUrl}/dashboard`);
-    await page.waitForURL(/\/dashboard|\/onboarding/, { timeout: 30000 });
-    await expect(
-      page.getByText(/Welcome|Private observatory/i).first(),
-    ).toBeVisible({ timeout: 30000 });
   } catch {
     throw new Error(failureReason);
   }

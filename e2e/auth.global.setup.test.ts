@@ -35,6 +35,7 @@ const registerConvexFixtureUser = vi.fn();
 const signIn = vi.fn();
 const clerkSetup = vi.fn();
 const close = vi.fn();
+const navigationEvents: string[] = [];
 
 function locator() {
   return {
@@ -45,9 +46,11 @@ function locator() {
   };
 }
 
-function page(token: string) {
+function page(token: string, name: string) {
   return {
-    goto: vi.fn(),
+    goto: vi.fn(async (url: string) => {
+      navigationEvents.push(`${name}:${url}`);
+    }),
     waitForURL: vi.fn(),
     evaluate: vi.fn().mockResolvedValue(token),
     getByText: vi.fn(() => locator()),
@@ -57,8 +60,8 @@ function page(token: string) {
 }
 
 vi.mock("@playwright/test", () => {
-  const primaryPage = page("primary-convex-token");
-  const partnerPage = page("partner-convex-token");
+  const primaryPage = page("primary-convex-token", "primary");
+  const partnerPage = page("partner-convex-token", "partner");
   const primaryContext = {
     newPage: vi.fn().mockResolvedValue(primaryPage),
     storageState: vi.fn(),
@@ -106,11 +109,14 @@ vi.mock("./support/authEnvironment", () => ({
 describe("authenticated fixture global setup", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    navigationEvents.length = 0;
   });
 
   test("creates the durable run before dashboard work and cleans it when partner sign-in fails", async () => {
     cleanupConvexFixturePair.mockResolvedValue(undefined);
-    beginConvexFixtureRun.mockResolvedValue(undefined);
+    beginConvexFixtureRun.mockImplementation(async () => {
+      navigationEvents.push("begin");
+    });
     deleteUser.mockResolvedValue(undefined);
     signIn
       .mockResolvedValueOnce(undefined)
@@ -129,6 +135,10 @@ describe("authenticated fixture global setup", () => {
       fixturePair,
       "primary-convex-token",
     );
+    expect(navigationEvents.indexOf("primary:/onboarding")).toBeGreaterThan(
+      navigationEvents.indexOf("begin"),
+    );
+    expect(navigationEvents).not.toContain("primary:/dashboard");
 
     expect(cleanupConvexFixturePair).toHaveBeenCalledWith(
       environment,

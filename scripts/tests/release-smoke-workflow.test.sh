@@ -28,6 +28,7 @@ required_patterns=(
   'CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true'
   'Record authenticated test backend deployment timestamp'
   'Validate authenticated smoke deployment contract'
+  'Preflight authenticated test Convex deploy key target'
   'Sync authenticated test Convex runtime config'
   'Deploy authenticated test Convex backend'
   'Verify authenticated test Convex backend identity'
@@ -50,6 +51,47 @@ for pattern in "${required_patterns[@]}"; do
     exit 1
   fi
 done
+
+line_number() {
+  local pattern="$1"
+  local file="$2"
+  grep -nF "$pattern" "$file" | head -n 1 | cut -d: -f1
+}
+
+preflight_line="$(line_number 'Preflight authenticated test Convex deploy key target' "$workflow")"
+preflight_run_line="$(line_number "npx convex run queries/system:getBackendIdentity '{}'" "$workflow")"
+env_set_line="$(line_number 'npx convex env set --from-file "$env_file" --force' "$workflow")"
+deploy_line="$(line_number 'npx convex deploy --typecheck disable --codegen enable' "$workflow")"
+identity_line="$(line_number 'Verify authenticated test Convex backend identity' "$workflow")"
+if (( preflight_line >= env_set_line || preflight_line >= deploy_line )); then
+  echo "deploy-key target preflight must precede Convex mutations" >&2
+  exit 1
+fi
+if (( preflight_run_line >= env_set_line || preflight_run_line >= deploy_line )); then
+  echo "deploy-key identity query must precede Convex mutations" >&2
+  exit 1
+fi
+if (( deploy_line >= identity_line )); then
+  echo "backend identity verification must follow deployment" >&2
+  exit 1
+fi
+
+setup_file="e2e/auth.global.setup.ts"
+primary_sign_in_line="$(line_number 'await signIn(primaryPage, environment, pair.primary' "$setup_file")"
+fixture_run_line="$(line_number 'await beginConvexFixtureRun(environment, pair!, token)' "$setup_file")"
+cleanup_install_line="$(line_number 'services.cleanupApplicationData = (fixturePair)' "$setup_file")"
+primary_onboarding_line="$(line_number '      primaryPage,' "$setup_file")"
+link_line="$(line_number 'await linkCouple(primaryPage, partnerPage)' "$setup_file")"
+storage_line="$(line_number 'await saveStorageState(primaryContext' "$setup_file")"
+mapfile -t registration_lines < <(grep -n 'await registerConvexFixtureUser' "$setup_file" | cut -d: -f1)
+if (( primary_sign_in_line >= fixture_run_line || fixture_run_line >= cleanup_install_line || cleanup_install_line >= primary_onboarding_line )); then
+  echo "fixture run and cleanup must precede primary application navigation" >&2
+  exit 1
+fi
+if (( ${#registration_lines[@]} != 2 || link_line >= registration_lines[0] || registration_lines[0] >= registration_lines[1] || registration_lines[1] >= storage_line )); then
+  echo "fixture registration ordering is unsafe" >&2
+  exit 1
+fi
 
 if grep -Fq 'playwright install --with-deps chromium' "$workflow"; then
   echo "authenticated smoke must use the runner image browser instead of downloading Chromium" >&2
