@@ -199,13 +199,13 @@ describe("cycle facts migration runner", () => {
     const scanRows = await t.run(async (ctx) =>
       ctx.db
         .query("cycleFactScanRows")
-        .withIndex("by_run_user_scan_end", (q) =>
+        .withIndex("by_run_user_end", (q) =>
           q.eq("runType", "migration")
             .eq("runId", "migration-late-conflicts")
             .eq("userId", userId)
+            .eq("active", true)
             .gte("scanEndDate", "2026-03-001")
         )
-        .filter((q) => q.eq(q.field("active"), true))
         .collect()
     );
     expect(scanRows.map((row) => row.startDate)).toEqual([

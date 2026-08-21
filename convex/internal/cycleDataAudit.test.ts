@@ -142,12 +142,12 @@ describe("bounded cycle data audit", () => {
     const workRows = await t.run(async (ctx) =>
       ctx.db
         .query("cycleFactScanRows")
-        .withIndex("by_run_user_scan_end", (q) =>
+        .withIndex("by_run_user_end", (q) =>
           q.eq("runType", "audit")
             .eq("runId", "cycle-audit-end-index")
             .eq("userId", userId)
+            .eq("active", true)
         )
-        .filter((q) => q.eq(q.field("active"), true))
         .collect()
     );
     expect(
