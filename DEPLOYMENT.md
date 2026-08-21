@@ -82,7 +82,9 @@ git diff --check
 ```
 
 The authenticated release smoke must run only through its approved
-secret-backed fixture environment and its dedicated configuration:
+secret-backed fixture environment and its dedicated configuration. The CI job
+deploys the checked-out commit to the shared test deployment before Playwright
+starts, then verifies the backend identity contract:
 
 ```bash
 npm run test:e2e:release -- e2e/release-smoke.spec.ts --project=release-desktop
@@ -93,6 +95,12 @@ Missing fixture configuration is a failure, not a reason to add static
 credentials, reuse production accounts, or skip the test. Ordinary
 `npm run test:e2e` uses the default non-release Playwright configuration and
 does not provision Gate 0 fixture users.
+
+The shared authenticated test deployment is `dev:hallowed-hummingbird-284`.
+Its Convex deploy key is consumed through `CONVEX_DEPLOY_KEY` inside the
+protected `cb-connect-auth-test` GitHub environment. Runs against that target
+must serialize so concurrent PRs do not deploy different commits into the same
+backend at once.
 
 ## Promotion, rollback and recovery
 

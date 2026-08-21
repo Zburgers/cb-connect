@@ -37,28 +37,32 @@ async function signIn(
   page: Page,
   environment: AuthEnvironment,
   user: { email?: string; password?: string },
-  afterAuthenticated?: () => Promise<void>,
+  failureReason: string,
 ) {
-  if (!user.email) {
-    throw new Error("authenticated_fixture_setup_failed");
-  }
+  try {
+    if (!user.email) {
+      throw new Error(failureReason);
+    }
 
-  process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
-  await page.goto(`${environment.baseUrl}/`);
-  await clerk.signIn({
-    page,
-    emailAddress: user.email,
-    setupClerkTestingTokenOptions: {
-      frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
-    },
-  });
-  await afterAuthenticated?.();
-  await page.goto(`${environment.baseUrl}/dashboard`);
-  await page.waitForURL(/\/dashboard|\/onboarding/, { timeout: 30000 });
-  await expect(
-    page.getByText(/Welcome|Private observatory/i).first(),
-  ).toBeVisible({ timeout: 30000 });
+    process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY =
+      environment.clerkPublishableKey;
+    await page.goto(`${environment.baseUrl}/`);
+    await clerk.signIn({
+      page,
+      emailAddress: user.email,
+      setupClerkTestingTokenOptions: {
+        frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
+      },
+    });
+    await page.goto(`${environment.baseUrl}/dashboard`);
+    await page.waitForURL(/\/dashboard|\/onboarding/, { timeout: 30000 });
+    await expect(
+      page.getByText(/Welcome|Private observatory/i).first(),
+    ).toBeVisible({ timeout: 30000 });
+  } catch {
+    throw new Error(failureReason);
+  }
 }
 
 async function convexAuthToken(page: Page): Promise<string> {
@@ -81,46 +85,69 @@ async function convexAuthToken(page: Page): Promise<string> {
 async function completeOnboarding(
   page: Page,
   role: "primary" | "partner",
+  failureReason: string,
   reportStage: (stage: string) => void = () => undefined,
 ) {
-  reportStage(`${role}-onboarding-load`);
-  await page.goto("/onboarding");
-  if (role === "primary") {
-    reportStage("primary-onboarding-role");
-    await page.getByRole("button", { name: /I track my cycle/i }).click();
-    reportStage("primary-onboarding-date");
-    const periodDateInput = page.locator('input[type="date"]');
-    await expect(periodDateInput).toBeVisible({ timeout: 60000 });
-    await periodDateInput.fill(syntheticPastDate());
-    reportStage("primary-onboarding-submit");
-    await page.getByRole("button", { name: /start tracking/i }).click();
-    reportStage("primary-onboarding-redirect");
-    await page.waitForURL(/\/dashboard/, { timeout: 30000 });
-    return;
-  }
+  try {
+    reportStage(`${role}-onboarding-load`);
+    await page.goto("/onboarding");
+    if (role === "primary") {
+      reportStage("primary-onboarding-role");
+      await page.getByRole("button", { name: /I track my cycle/i }).click();
+      reportStage("primary-onboarding-date");
+      const periodDateInput = page.locator('input[type="date"]');
+      await expect(periodDateInput).toBeVisible({ timeout: 60000 });
+      await periodDateInput.fill(syntheticPastDate());
+      reportStage("primary-onboarding-submit");
+      await page.getByRole("button", { name: /start tracking/i }).click();
+      reportStage("primary-onboarding-redirect");
+      await page.waitForURL(/\/dashboard/, { timeout: 30000 });
+      return;
+    }
 
-  reportStage("partner-onboarding-role");
-  await page.getByRole("button", { name: /I support my partner/i }).click();
-  reportStage("partner-onboarding-redirect");
-  await page.waitForURL(/\/dashboard\/partner/, { timeout: 30000 });
+    reportStage("partner-onboarding-role");
+    await page.getByRole("button", { name: /I support my partner/i }).click();
+    reportStage("partner-onboarding-redirect");
+    await page.waitForURL(/\/dashboard\/partner/, { timeout: 30000 });
+  } catch {
+    throw new Error(failureReason);
+  }
 }
 
 async function linkCouple(primaryPage: Page, partnerPage: Page): Promise<void> {
   await primaryPage.goto("/dashboard/partner");
-  await primaryPage
-    .getByRole("button", { name: /generate pairing code/i })
-    .click();
-  const code = (await primaryPage.getByText(/^\d{6}$/).last().textContent())?.trim();
+  const generateCodeButton = primaryPage.getByRole("button", {
+    name: /generate pairing code/i,
+  });
+  await expect(generateCodeButton).toBeVisible({ timeout: 30000 });
+  await generateCodeButton.click();
+  const codeLocator = primaryPage.getByText(/^\d{6}$/).last();
+  await expect(codeLocator).toBeVisible({ timeout: 30000 });
+  const code = (await codeLocator.textContent())?.trim();
   if (!code || !/^\d{6}$/.test(code)) {
-    throw new Error("authenticated_fixture_setup_failed");
+    throw new Error("pairing_code_creation_failed");
   }
 
-  await partnerPage.goto("/dashboard/partner");
-  await partnerPage.locator("#partner-code").fill(code);
-  await partnerPage.getByRole("button", { name: /link account/i }).click();
-  await expect(partnerPage.getByText("Successfully linked!")).toBeVisible({
-    timeout: 30000,
-  });
+  try {
+    await partnerPage.goto("/dashboard/partner");
+    const partnerCodeInput = partnerPage.locator("#partner-code");
+    await expect(partnerCodeInput).toBeVisible({ timeout: 30000 });
+    await partnerCodeInput.fill(code);
+    const linkButton = partnerPage.getByRole("button", { name: /link account/i });
+    await expect(linkButton).toBeVisible({ timeout: 30000 });
+    await linkButton.click();
+    await expect(partnerPage.getByText("Successfully linked!")).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(
+      primaryPage.getByRole("heading", { name: "Your locket is connected" }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(
+      partnerPage.getByRole("heading", { name: "Your locket is connected" }),
+    ).toBeVisible({ timeout: 30000 });
+  } catch {
+    throw new Error("pairing_code_consumption_failed");
+  }
 }
 
 async function saveStorageState(
@@ -160,11 +187,29 @@ export default async function globalSetup(_config: FullConfig) {
   let pair: ProvisionedFixturePair | null = null;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
   let setupStage = "provision";
+  let setupReason = "unknown";
 
   const services: FixtureServices = { ...clerkServices };
   let primaryConvexAuthToken: string | null = null;
+  const safeSetupReasons = new Set([
+    "authenticated_fixture_setup_failed",
+    "authenticated_fixture_convex_token_missing",
+    "fixture_provisioning_failed",
+    "clerk_testing_token_failed",
+    "browser_launch_failed",
+    "primary_sign_in_failed",
+    "primary_onboarding_failed",
+    "partner_sign_in_failed",
+    "partner_onboarding_failed",
+    "pairing_code_creation_failed",
+    "pairing_code_consumption_failed",
+    "fixture_registration_failed",
+    "fixture_storage_state_failed",
+    "fixture_run_begin_failed",
+  ]);
 
   try {
+    setupReason = "fixture_provisioning_failed";
     pair = await provisionFixturePair(environment, services, {
       passwordFactory: () => randomBytes(24).toString("base64url"),
     });
@@ -172,11 +217,13 @@ export default async function globalSetup(_config: FullConfig) {
     process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
     setupStage = "clerk-testing";
+    setupReason = "clerk_testing_token_failed";
     await clerkSetup({
       frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
     });
 
     setupStage = "browser";
+    setupReason = "browser_launch_failed";
     browser = await chromium.launch({
       ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
         ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
@@ -192,53 +239,79 @@ export default async function globalSetup(_config: FullConfig) {
     const partnerPage = await partnerContext.newPage();
 
     setupStage = "primary-sign-in";
-    await signIn(primaryPage, environment, pair.primary, async () => {
-      const token = await convexAuthToken(primaryPage);
-      primaryConvexAuthToken = token;
-      await beginConvexFixtureRun(
-        environment,
-        pair!,
-        token,
-      );
-      // The durable run exists before the dashboard can call ensureUser.
-      // From this point every failure can clean partially-created app data.
-      services.cleanupApplicationData = (fixturePair) =>
-        cleanupConvexFixturePair(
-          environment,
-          fixturePair,
-          token,
-        );
-    });
+    setupReason = "primary_sign_in_failed";
+    await signIn(primaryPage, environment, pair.primary, setupReason);
+
+    setupStage = "fixture-run-begin";
+    setupReason = "fixture_run_begin_failed";
+    const token = await convexAuthToken(primaryPage);
+    primaryConvexAuthToken = token;
+    await beginConvexFixtureRun(environment, pair!, token);
+    // The durable run exists before the dashboard can call ensureUser.
+    // From this point every failure can clean partially-created app data.
+    services.cleanupApplicationData = (fixturePair) =>
+      cleanupConvexFixturePair(environment, fixturePair, token);
+
     setupStage = "primary-onboarding";
-    await completeOnboarding(primaryPage, "primary", (stage) => {
-      setupStage = stage;
-    });
+    setupReason = "primary_onboarding_failed";
+    await completeOnboarding(
+      primaryPage,
+      "primary",
+      setupReason,
+      (stage) => {
+        setupStage = stage;
+      },
+    );
+
     setupStage = "partner-sign-in";
-    await signIn(partnerPage, environment, pair.partner);
+    setupReason = "partner_sign_in_failed";
+    await signIn(partnerPage, environment, pair.partner, setupReason);
+
     setupStage = "partner-onboarding";
-    await completeOnboarding(partnerPage, "partner", (stage) => {
-      setupStage = stage;
-    });
+    setupReason = "partner_onboarding_failed";
+    await completeOnboarding(
+      partnerPage,
+      "partner",
+      setupReason,
+      (stage) => {
+        setupStage = stage;
+      },
+    );
+
     setupStage = "link";
-    await linkCouple(primaryPage, partnerPage);
+    setupReason = "pairing_code_creation_failed";
+    try {
+      await linkCouple(primaryPage, partnerPage);
+    } catch (error) {
+      if (error instanceof Error && safeSetupReasons.has(error.message)) {
+        setupReason = error.message;
+      }
+      throw error;
+    }
+
     setupStage = "primary-register";
     if (!primaryConvexAuthToken) {
       throw new Error("authenticated_fixture_convex_token_missing");
     }
+    setupReason = "fixture_registration_failed";
     await registerConvexFixtureUser(
       environment,
       pair,
       pair.primary,
       primaryConvexAuthToken,
     );
+
     setupStage = "partner-register";
+    setupReason = "fixture_registration_failed";
     await registerConvexFixtureUser(
       environment,
       pair,
       pair.partner,
       await convexAuthToken(partnerPage),
     );
+
     setupStage = "storage-state";
+    setupReason = "fixture_storage_state_failed";
     await saveStorageState(primaryContext, environment.primaryStorageStatePath);
     await saveStorageState(partnerContext, environment.partnerStorageStatePath);
     await writeRestrictedManifest(environment, pair);
@@ -251,8 +324,12 @@ export default async function globalSetup(_config: FullConfig) {
     await partnerContext.close();
     await primaryContext.close();
     await browser.close();
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && safeSetupReasons.has(error.message)) {
+      setupReason = error.message;
+    }
     console.error(`authenticated_fixture_setup_stage:${setupStage}`);
+    console.error(`authenticated_fixture_setup_reason:${setupReason}`);
     if (pair) {
       await services.cleanupApplicationData?.(pair).catch(() => undefined);
       await clerkServices.deleteUser(pair.partner.clerkId).catch(() => undefined);

@@ -48,6 +48,7 @@ async function convexAuthToken(page: Page): Promise<string> {
 export default async function globalTeardown() {
   const environment = loadAuthEnvironment();
   let teardownStage = "manifest-read";
+  let teardownReason = "manifest-read";
   let manifestText: string;
   try {
     manifestText = await readFile(
@@ -60,6 +61,7 @@ export default async function globalTeardown() {
 
   let parsedManifest: unknown;
   try {
+    teardownReason = "manifest-parse";
     parsedManifest = JSON.parse(manifestText);
   } catch {
     throw new Error("authenticated_fixture_cleanup_failed");
@@ -83,10 +85,12 @@ export default async function globalTeardown() {
   process.env.CLERK_SECRET_KEY = environment.clerkSecretKey;
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = environment.clerkPublishableKey;
   teardownStage = "clerk-testing";
+  teardownReason = "clerk_testing_token_failed";
   await clerkSetup({
     frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
   });
   teardownStage = "browser-launch";
+  teardownReason = "browser_launch_failed";
   const browser = await chromium.launch({
     ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
       ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
@@ -98,6 +102,7 @@ export default async function globalTeardown() {
   const page = await context.newPage();
   try {
     teardownStage = "primary-sign-in";
+    teardownReason = "primary_sign_in_failed";
     await page.goto(`${environment.baseUrl}/`);
     await clerk.signIn({
       page,
@@ -107,12 +112,14 @@ export default async function globalTeardown() {
       },
     });
     teardownStage = "primary-token";
+    teardownReason = "primary_token_failed";
     const authToken = await convexAuthToken(page);
     // Stop the app before deleting rows so its reactive ensureUser call cannot
     // recreate the authenticated primary during the cleanup/status interval.
     await context.close();
     await browser.close();
     teardownStage = "fixture-cleanup";
+    teardownReason = "fixture_cleanup_failed";
     const result = await cleanupFixturePair(
       pair,
       {
@@ -129,6 +136,7 @@ export default async function globalTeardown() {
       throw new Error("authenticated_fixture_cleanup_failed");
     }
     teardownStage = "zero-status";
+    teardownReason = "cleanup_status_failed";
     const status = await getConvexFixtureCleanupStatus(
       environment,
       pair,
@@ -138,6 +146,7 @@ export default async function globalTeardown() {
       throw new Error("authenticated_fixture_cleanup_failed");
     }
     teardownStage = "evidence-write";
+    teardownReason = "evidence_write_failed";
     const evidenceDirectory = "docs/evidence/reliability-gate-0";
     await mkdir(evidenceDirectory, { recursive: true });
     await writeFile(
@@ -157,9 +166,11 @@ export default async function globalTeardown() {
       { encoding: "utf8", mode: 0o600 },
     );
     teardownStage = "auth-artifact-remove";
+    teardownReason = "auth_artifact_remove_failed";
     await rm(environment.storageDir, { recursive: true, force: true });
   } catch {
     console.error(`authenticated_fixture_teardown_stage:${teardownStage}`);
+    console.error(`authenticated_fixture_teardown_reason:${teardownReason}`);
     await context.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
     throw new Error("authenticated_fixture_cleanup_failed");
