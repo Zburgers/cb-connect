@@ -13,7 +13,7 @@
 ## Authority, baseline, and non-goals
 
 - Implementation base: branch `gate-1/trustworthy-cycle-facts`, exact PR #35 head `2220a64b6a832c708dbd32e589b52e5af8be1d66`.
-- Review source: the 13 live unresolved GitHub review threads fetched on 2026-08-21. Re-fetch before implementation and before requesting re-review; do not assume this snapshot remains complete.
+- Review source: the 14 live unresolved GitHub review threads fetched on 2026-08-21. Re-fetch before implementation and before requesting re-review; do not assume this snapshot remains complete.
 - Planning-only handoff: this document does not authorize a merge, deployment, production flag change, migration, thread resolution/reply, or production data operation.
 - Preserve optional `periodEvents` fields and flag-off legacy rows. Do not backfill certainty by inference and do not rewrite dates.
 - D-012 remains unresolved. This plan adopts the narrow consistent contract: D-012 blocks destructive migration, hard deletion under Gate 1 semantics, final retention behavior, and production **feature exposure**. It does not block deployment of additive/default-off compatibility code. Any broader interpretation requires owner/privacy approval and a plan revision.
@@ -298,8 +298,8 @@ Do not create an abstraction merely to rename existing functions. Each new inter
     <step>Run both release projects in flag-off and enabled modes using approved Clerk/Convex fixtures. Missing setup, skips, or fixture-stage failure is red external evidence, not a fake green.</step>
     <step>Update the evidence report with exact SHA, commands, CI run IDs, projects, skip count, and retained redacted artifacts. Separate deterministic, authenticated, deployment, and production evidence.</step>
     <step>Re-fetch unresolved PR #35 threads and map each to code/test evidence. Do not resolve or reply unless separately authorized.</step>
-    <step>Freeze provisional Gate 2 worktrees based on `a6d3966`. After Gate 1 remediation lands on `main`, rebase/cherry-pick Gate 2 in dependency order and rerun all Gate 2 focused/full tests. In particular, adapt `cycleState` and `cycleReadModel` to Task 5's purpose-aware interfaces.</step>
-    <step>Preserve `gate-2/evidence` commit `3c8e74d` as historical provisional evidence; do not claim it qualifies the rebased code. Create new evidence only after requalification.</step>
+    <step>Freeze the current provisional Gate 2 stack at PR #36 head `2944afe` over Gate 1 head `2220a64`. After Gate 1 remediation lands on `main`, rebase/cherry-pick Gate 2 in dependency order and rerun all Gate 2 focused/full tests. In particular, adapt `cycleState` and `cycleReadModel` to Task 5's purpose-aware interfaces.</step>
+    <step>Preserve the current Gate 2 report as provisional evidence only; do not claim it qualifies the rebased code. Create a new evidence identity after requalification, retaining the old `3c8e74d` material only as historical context if encountered.</step>
   </steps>
   <verification>
     <command>npm run test:unit -- --run &amp;&amp; npm run typecheck &amp;&amp; npm run build &amp;&amp; npm run test:cycle-facts-plan &amp;&amp; bash scripts/tests/ci-workflow.test.sh &amp;&amp; bash scripts/tests/deploy-workflow.test.sh &amp;&amp; git diff --check</command>
@@ -324,7 +324,7 @@ Do not create an abstraction merely to rename existing functions. Each new inter
 - Flag-off and enabled authenticated Playwright results for `release-desktop` and `release-mobile`, with zero skips required for a pass.
 - Actual non-production Convex identity proof for migration tests, with secrets and raw provider responses excluded.
 - No production flag enablement, migration, merge, deployment, push, thread reply, or thread resolution unless separately authorized.
-- Gate 2 old base (`a6d3966`), final Gate 1/main base, rebase mapping, and fresh post-rebase qualification; prior `3c8e74d` evidence labeled provisional/historical.
+- Current Gate 2 provisional base (PR #36 `2944afe` over Gate 1 `2220a64`), final Gate 1/main base, rebase mapping, and fresh post-rebase qualification; any prior `3c8e74d` evidence is labeled provisional/historical.
 
 ## Risks and blockers
 
@@ -334,4 +334,4 @@ Do not create an abstraction merely to rename existing functions. Each new inter
 - **Rollback risk:** Flag-off is credible only when both writes and prediction/notification reads follow legacy semantics. Test both against the same deployment artifact.
 - **Authority blocker:** D-012 and a separate exposure decision still block production feature exposure and destructive lifecycle behavior.
 - **External-evidence blocker:** Approved Clerk/Convex fixture identity and credentials are required for authenticated desktop/mobile qualification. A setup failure remains a blocker, not a skip or policy-test pass.
-- **Gate 2 blocker:** Every provisional Gate 2 branch predates final PR #35 remediation and must be rebased/requalified after Gate 1 lands.
+- **Gate 2 blocker:** The published Gate 2 stack is based on pre-remediation PR #35 head `2220a64` and must be rebased/requalified after Gate 1 remediation lands.
