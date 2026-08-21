@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { readCycleFactsCapability } from "./cycleFactsCapability";
+import {
+  type CycleFactsCapability,
+  readCycleFactsCapability,
+} from "./cycleFactsCapability";
 
 describe("cycle facts client capability compatibility", () => {
   test("treats a missing capability query as unavailable", () => {
@@ -32,5 +35,16 @@ describe("cycle facts client capability compatibility", () => {
         data: { cycleFactsV1: true },
       }),
     ).toEqual({ cycleFactsV1: true });
+  });
+
+  test("preserves the optional cycle state capability from an extended response", () => {
+    const response: CycleFactsCapability = {
+      cycleFactsV1: true,
+      cycleStateV1: false,
+    };
+
+    expect(
+      readCycleFactsCapability({ status: "success", data: response }),
+    ).toEqual(response);
   });
 });

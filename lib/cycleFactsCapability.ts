@@ -7,7 +7,10 @@ import {
 
 import { api } from "../convex/_generated/api";
 
-export type CycleFactsCapability = { cycleFactsV1: boolean };
+export type CycleFactsCapability = {
+  cycleFactsV1: boolean;
+  cycleStateV1?: boolean;
+};
 
 export function readCycleFactsCapability(
   result: UseQueryResult<CycleFactsCapability>,
