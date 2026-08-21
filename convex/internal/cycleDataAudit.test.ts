@@ -95,6 +95,77 @@ async function seedAuditRows(t: ReturnType<typeof convexTest>) {
 }
 
 describe("bounded cycle data audit", () => {
+  test("derives conflicts from raw rows after the first page", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", {
+        clerkId: "audit-late-conflicts",
+        email: "audit-late-conflicts@example.test",
+        name: "Audit Late Conflicts",
+        role: "primary",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      })
+    );
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index++) {
+        await ctx.db.insert("periodEvents", {
+          userId,
+          startDate: `2026-01-${String(index + 1).padStart(3, "0")}`,
+          endDate: `2026-01-${String(index + 1).padStart(3, "0")}`,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+      await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-001",
+        endDate: "2026-02-002",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-001",
+        endDate: "2026-02-003",
+        legacyReason: "duplicate",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-010",
+        endDate: "2026-02-012",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-011",
+        endDate: "2026-02-013",
+        legacyReason: "overlap",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await t.mutation(internal.internal.cycleDataAudit.start, {
+      runId: "cycle-audit-late-conflicts",
+    });
+    let cursor: string | null = null;
+    let result;
+    do {
+      result = await t.mutation(internal.internal.cycleDataAudit.scanPage, {
+        runId: "cycle-audit-late-conflicts",
+        paginationOpts: { numItems: 100, cursor },
+      });
+      cursor = result.cursor;
+    } while (!result.isComplete);
+
+    expect(result.suppressedCounts.duplicate).toBe("<5");
+    expect(result.suppressedCounts.overlap).toBe("<5");
+  });
+
   test("returns only suppressed reason counts, cursor, and completion", async () => {
     const t = convexTest(schema, modules);
     await seedAuditRows(t);

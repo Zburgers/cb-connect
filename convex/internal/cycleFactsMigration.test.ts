@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { modules } from "../test.setup";
 
@@ -46,6 +47,62 @@ async function insertLegacyPeriod(
 }
 
 describe("cycle facts migration runner", () => {
+  test("annotates raw conflicts after the first page", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "migration-late-conflicts");
+    const lateIds: Id<"periodEvents">[] = [];
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index++) {
+        await ctx.db.insert("periodEvents", {
+          userId,
+          startDate: `2026-01-${String(index + 1).padStart(3, "0")}`,
+          endDate: `2026-01-${String(index + 1).padStart(3, "0")}`,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+      lateIds.push(await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-001",
+        endDate: "2026-02-002",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      lateIds.push(await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-001",
+        endDate: "2026-02-003",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+    });
+
+    await t.mutation(migration.start, {
+      runId: "migration-late-conflicts",
+      mode: "annotate",
+      targetDeployment: "dev:hallowed-hummingbird-284",
+    });
+    let cursor: string | null = null;
+    let result;
+    do {
+      result = await t.mutation(migration.processBatch, {
+        runId: "migration-late-conflicts",
+        paginationOpts: { numItems: 100, cursor },
+      });
+      cursor = result.cursor;
+    } while (!result.isComplete);
+
+    expect(result.annotatedCount).toBeGreaterThanOrEqual(2);
+    const lateRows = await t.run(async (ctx) =>
+      Promise.all(lateIds.map((id) => ctx.db.get("periodEvents", id)))
+    );
+    expect(lateRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ legacyReason: "duplicate" }),
+      ])
+    );
+  });
+
   test("defaults to a dry run and leaves legacy rows unchanged", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "migration-dry-run");

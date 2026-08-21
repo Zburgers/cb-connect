@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
@@ -99,6 +99,35 @@ describe("period history attribution", () => {
 });
 
 describe("fact-aware history and prediction reads", () => {
+  test("flag-off prediction keeps the newest legacy row without certainty", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId }
+    );
+
+    expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
+  });
+
   test("keeps uncertain history visible but excludes it from prediction", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

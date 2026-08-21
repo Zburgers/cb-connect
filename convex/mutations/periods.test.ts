@@ -485,6 +485,24 @@ describe("period corrections", () => {
 });
 
 describe("primary cycle fact writes", () => {
+  test("enabled period end requires an explicit target event and authority version", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: "2026-07-01",
+      startCertainty: "exact",
+      timeZone: "UTC",
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+        endDate: "2026-07-05",
+        endCertainty: "exact",
+        timeZone: "UTC",
+      })
+    ).rejects.toThrow("TARGET_EVENT_REQUIRED");
+  });
+
   test("writes an exact start with explicit certainty and authority", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

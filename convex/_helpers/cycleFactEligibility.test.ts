@@ -90,4 +90,14 @@ describe("cycle fact read eligibility", () => {
     expect(getCycleFactReadLabel(period)).toBe("approximate");
     expect(isPredictionEligible(period)).toBe(false);
   });
+
+  test("uses an exact start for prediction even when the end is approximate", () => {
+    expect(
+      isPredictionEligible({
+        ...exact,
+        endDate: "2026-07-05",
+        endCertainty: "approximate",
+      })
+    ).toBe(true);
+  });
 });
