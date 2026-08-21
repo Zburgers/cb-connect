@@ -7,11 +7,23 @@ exposure blocked
 **Pull request:** [#35](https://github.com/Zburgers/cb-connect/pull/35) — draft
 review and protected qualification pending
 
-**Local qualification implementation SHA:** `8ee068eb8bae7509a0da513a522f28262e156347`
+**Recorded local qualification SHA:** `8ee068eb8bae7509a0da513a522f28262e156347`
 
-This SHA is the exact code head used for the deterministic checks below. The
-current branch head is later because it adds only the local Clerk keyless
-artifact ignore rule; that change does not alter application behavior.
+This SHA is the exact code head used for the retained deterministic local
+checks below. It is historical evidence and is not silently reassigned to
+later commits.
+
+**Reviewed PR head at the start of this reconciliation:**
+`3b98006f879d9a22e3e56fcd5bfaa7c3f70d3fd2`. The branch subsequently added
+application, client-capability, test, and documentation changes after the
+recorded local qualification; the current PR head is tracked separately by
+GitHub and is not qualified by the retained local result.
+
+**Current protected CI for the reviewed head:** run `32451060427` passed
+deterministic qualification and the repository's generic authenticated
+release smoke; the production-configured immutable release check was skipped.
+This generic smoke is not Gate-1-specific desktop/mobile qualification, which
+remains pending.
 
 **Scope:** Convex-only `CB_CONNECT_CYCLE_FACTS_V1`, default-off behavior,
 certainty-aware reads, bounded legacy metadata, partner authority and
