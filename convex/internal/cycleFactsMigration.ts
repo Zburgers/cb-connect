@@ -8,6 +8,11 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import {
+  classifyLegacyCycleFact,
+  deriveRawConflictFacts,
+  type LegacyClassificationReason,
+} from "../_helpers/legacyCycleFactClassification";
 
 const MAX_PAGE_SIZE = 100;
 const MAX_USER_CONTEXT = 100;
@@ -24,12 +29,7 @@ const migrationProgressValidator = v.object({
   annotatedCount: v.number(),
 });
 
-type MigrationReason =
-  | "missing_provenance"
-  | "inferred_end"
-  | "duplicate"
-  | "overlap"
-  | "unprovable";
+type MigrationReason = LegacyClassificationReason;
 
 type Certainty = "exact" | "approximate" | "legacy_unknown";
 
@@ -43,53 +43,6 @@ function isNonProductionTarget(targetDeployment: string | undefined): boolean {
       actualDeployment
     )
   );
-}
-
-function intervalsOverlap(
-  left: Doc<"periodEvents">,
-  right: Doc<"periodEvents">
-): boolean {
-  const leftEnd = left.endDate ?? "9999-12-31";
-  const rightEnd = right.endDate ?? "9999-12-31";
-  return left.startDate <= rightEnd && right.startDate <= leftEnd;
-}
-
-function classifyLegacyReason(
-  period: Doc<"periodEvents">,
-  userContext: Doc<"periodEvents">[]
-): MigrationReason | null {
-  if (period.tombstoneAt !== undefined) return null;
-  const peers = userContext.filter(
-    (candidate) =>
-      candidate._id !== period._id && candidate.tombstoneAt === undefined
-  );
-  if (peers.some((candidate) => candidate.startDate === period.startDate)) {
-    return "duplicate";
-  }
-  if (peers.some((candidate) => intervalsOverlap(candidate, period))) {
-    return "overlap";
-  }
-  if (
-    period.legacyReason !== undefined &&
-    period.legacyReason !== "duplicate" &&
-    period.legacyReason !== "overlap"
-  ) {
-    return period.legacyReason;
-  }
-  if (period.source === "system") return "inferred_end";
-  if (
-    period.startCertainty === undefined ||
-    (period.endDate !== undefined && period.endCertainty === undefined)
-  ) {
-    return "missing_provenance";
-  }
-  if (
-    period.startCertainty === "legacy_unknown" ||
-    period.endCertainty === "legacy_unknown"
-  ) {
-    return "unprovable";
-  }
-  return null;
 }
 
 type AnnotationPatch = {
@@ -230,9 +183,10 @@ export const processBatch = internalMutation({
       userContexts.set(userId, context);
     }
     for (const period of page.page) {
-      const reason = classifyLegacyReason(
+      const context = userContexts.get(period.userId) ?? [];
+      const reason = classifyLegacyCycleFact(
         period,
-        userContexts.get(period.userId) ?? []
+        deriveRawConflictFacts(period, context)
       );
       if (!reason) continue;
       const patch = annotationPatch(period, reason);
