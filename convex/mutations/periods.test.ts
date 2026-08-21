@@ -213,6 +213,7 @@ describe("partner-assisted period logging", () => {
     });
 
     await asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+      periodEventId: eventId,
       endDate: "2026-06-24",
       endCertainty: "approximate",
       expectedAuthorityVersion: 1,
@@ -245,6 +246,7 @@ describe("partner-assisted period logging", () => {
 
     await expect(
       asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        periodEventId: result.eventId,
         endDate: "2026-06-24",
         expectedAuthorityVersion: 1,
       })
@@ -318,6 +320,7 @@ describe("partner-assisted period logging", () => {
 
     await expect(
       asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        periodEventId: eventId,
         endDate: "2026-06-24",
         expectedAuthorityVersion: 1,
       })
@@ -361,6 +364,7 @@ describe("partner-assisted period logging", () => {
 
     await expect(
       asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+        periodEventId: eventId,
         endDate: "2026-06-24",
         expectedAuthorityVersion: 2,
       })
@@ -647,6 +651,7 @@ describe("primary cycle fact writes", () => {
     );
 
     await asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      periodEventId: result.eventId,
       endDate: "2026-07-05",
       endCertainty: "exact",
       expectedAuthorityVersion: 1,
@@ -681,11 +686,11 @@ describe("primary cycle fact writes", () => {
     ).rejects.toThrow("OPEN_EVENT_EXISTS");
   });
 
-  test("refuses to end an ambiguous legacy set of open rows", async () => {
+  test("targets one row when multiple legacy open rows exist", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("periodEvents", {
+    const [firstId] = await t.run(async (ctx) => {
+      const firstId = await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-06-01",
         startCertainty: "legacy_unknown",
@@ -703,14 +708,16 @@ describe("primary cycle fact writes", () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      return [firstId];
     });
 
-    await expect(
-      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
-        endDate: "2026-06-06",
-        timeZone: "UTC",
-      })
-    ).rejects.toThrow("AMBIGUOUS_OPEN_PERIOD");
+    await expect(asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      periodEventId: firstId,
+      endDate: "2026-06-06",
+      endCertainty: "approximate",
+      expectedAuthorityVersion: 0,
+      timeZone: "UTC",
+    })).resolves.toMatchObject({ eventId: firstId });
   });
 
   test("tombstones a primary event without deleting its row", async () => {

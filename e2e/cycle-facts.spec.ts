@@ -203,6 +203,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
     await test.step("stale and revoked partner writes are rejected", async () => {
       await expect(
         partnerClient.mutation(api.mutations.periods.assistLogPeriodEnd, {
+          periodEventId: assistedFact._id,
           endDate: localDateDaysAgo(0),
           expectedAuthorityVersion: assistedFact.authorityVersion,
         }),
@@ -217,6 +218,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
 
       await expect(
         partnerClient.mutation(api.mutations.periods.assistLogPeriodEnd, {
+          periodEventId: assistedFact._id,
           endDate: localDateDaysAgo(0),
           expectedAuthorityVersion: assistedFact.authorityVersion + 1,
         }),

@@ -532,6 +532,7 @@ export default function LogPage() {
             endDate: selectedDate,
             ...(cycleFactsEnabled
               ? {
+                  periodEventId: ongoingPeriod._id,
                   endCertainty: selectedCertainty,
                   expectedAuthorityVersion: ongoingPeriod.authorityVersion ?? 0,
                 }
@@ -543,6 +544,7 @@ export default function LogPage() {
             timeZone: getLocalTimeZone(),
             ...(cycleFactsEnabled
               ? {
+                  periodEventId: ongoingPeriod._id,
                   endCertainty: selectedCertainty,
                   expectedAuthorityVersion: ongoingPeriod.authorityVersion ?? 0,
                 }

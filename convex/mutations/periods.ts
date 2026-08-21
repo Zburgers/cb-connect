@@ -68,22 +68,56 @@ function toPeriodEventProjection(period: Doc<"periodEvents">) {
 async function requireAllowedPeriodEventWrite(
   ctx: MutationCtx,
   userId: Id<"users">,
-  candidate: PeriodEventCandidate
+  candidate: PeriodEventCandidate,
+  targetedPeriod?: Doc<"periodEvents">
 ) {
   const existingEvents = await ctx.db
     .query("periodEvents")
     .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
     .order("desc")
     .take(100);
-  const result = evaluatePeriodEventInvariants(
-    candidate,
-    existingEvents
-      .filter((period) => period.tombstoneAt === undefined)
-      .map(toPeriodEventProjection)
-  );
+  const projections = existingEvents
+    .filter((period) => period.tombstoneAt === undefined)
+    .map(toPeriodEventProjection);
+  if (
+    targetedPeriod &&
+    targetedPeriod.tombstoneAt === undefined &&
+    !projections.some((period) => period.id === targetedPeriod._id)
+  ) {
+    projections.push(toPeriodEventProjection(targetedPeriod));
+  }
+  const result = evaluatePeriodEventInvariants(candidate, projections);
   if (!result.allowed) {
     throw new Error(`${result.code}: ${result.message}`);
   }
+}
+
+async function requireTargetedOpenPeriod(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  periodEventId: Id<"periodEvents"> | undefined,
+  expectedAuthorityVersion: number | undefined
+): Promise<Doc<"periodEvents">> {
+  if (periodEventId === undefined) {
+    throw new Error("TARGET_EVENT_REQUIRED");
+  }
+  if (expectedAuthorityVersion === undefined) {
+    throw new Error("AUTHORITY_VERSION_REQUIRED");
+  }
+  const period = await ctx.db.get("periodEvents", periodEventId);
+  if (!period || period.userId !== userId) {
+    throw new Error("TARGET_EVENT_NOT_FOUND");
+  }
+  if (period.tombstoneAt !== undefined) {
+    throw new Error("TARGET_EVENT_TOMBSTONED");
+  }
+  if (period.endDate !== undefined) {
+    throw new Error("TARGET_EVENT_NOT_OPEN");
+  }
+  if (currentAuthorityVersion(period) !== expectedAuthorityVersion) {
+    throw new Error("STALE_AUTHORITY_VERSION");
+  }
+  return period;
 }
 
 function requirePrimaryUser(user: Doc<"users">) {
@@ -217,6 +251,7 @@ export const logPeriodEnd = mutation({
     endDate: v.string(),
     timeZone: v.optional(v.string()),
     endCertainty: v.optional(cycleFactCertaintyValidator),
+    periodEventId: v.optional(v.id("periodEvents")),
     expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -244,7 +279,12 @@ export const logPeriodEnd = mutation({
       return { eventId: ongoingPeriod._id };
     }
 
-    const ongoingPeriod = await findOpenPeriod(ctx, user._id);
+    const ongoingPeriod = await requireTargetedOpenPeriod(
+      ctx,
+      user._id,
+      args.periodEventId,
+      args.expectedAuthorityVersion
+    );
 
     if (!ongoingPeriod) {
       throw new Error("No ongoing period to end");
@@ -264,9 +304,8 @@ export const logPeriodEnd = mutation({
       authorityVersion: authorityVersion + 1,
       actorRole: "primary",
       targetEventId: ongoingPeriod._id,
-      expectedAuthorityVersion:
-        args.expectedAuthorityVersion ?? authorityVersion,
-    });
+      expectedAuthorityVersion: args.expectedAuthorityVersion,
+    }, ongoingPeriod);
 
     await ctx.db.patch(ongoingPeriod._id, {
       endDate: args.endDate,
@@ -374,6 +413,7 @@ export const assistLogPeriodEnd = mutation({
   args: {
     endDate: v.string(),
     endCertainty: v.optional(cycleFactCertaintyValidator),
+    periodEventId: v.optional(v.id("periodEvents")),
     expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -414,10 +454,12 @@ export const assistLogPeriodEnd = mutation({
       return { eventId: ongoingPeriod._id };
     }
 
-    const ongoingPeriod = await findOpenPeriod(ctx, primaryMembership.userId);
-    if (!ongoingPeriod) {
-      throw new Error("There is no ongoing period to end");
-    }
+    const ongoingPeriod = await requireTargetedOpenPeriod(
+      ctx,
+      primaryMembership.userId,
+      args.periodEventId,
+      args.expectedAuthorityVersion
+    );
     if (args.endDate < ongoingPeriod.startDate) {
       throw new Error("End date cannot be before start date");
     }
@@ -433,9 +475,8 @@ export const assistLogPeriodEnd = mutation({
       actorRole: "partner",
       partnerAccess: "active",
       targetEventId: ongoingPeriod._id,
-      expectedAuthorityVersion:
-        args.expectedAuthorityVersion ?? authorityVersion,
-    });
+      expectedAuthorityVersion: args.expectedAuthorityVersion,
+    }, ongoingPeriod);
 
     const now = Date.now();
     await ctx.db.patch(ongoingPeriod._id, {
