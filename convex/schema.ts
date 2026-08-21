@@ -38,6 +38,9 @@ export default defineSchema({
   cycleDataAuditRuns: defineTable({
     runId: v.string(),
     cursor: v.optional(v.string()),
+    currentUserId: v.optional(v.id("users")),
+    userCursor: v.optional(v.string()),
+    globalComplete: v.optional(v.boolean()),
     isComplete: v.boolean(),
     pageSize: v.number(),
     processedCount: v.number(),
@@ -55,6 +58,9 @@ export default defineSchema({
     mode: v.union(v.literal("dry_run"), v.literal("annotate")),
     targetDeployment: v.optional(v.string()),
     cursor: v.optional(v.string()),
+    currentUserId: v.optional(v.id("users")),
+    userCursor: v.optional(v.string()),
+    globalComplete: v.optional(v.boolean()),
     isComplete: v.boolean(),
     pageSize: v.number(),
     processedCount: v.number(),
@@ -62,6 +68,80 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_run_id", ["runId"]),
+
+  cycleFactScanUsers: defineTable({
+    runType: v.union(v.literal("audit"), v.literal("migration")),
+    runId: v.string(),
+    userId: v.id("users"),
+    status: v.union(v.literal("pending"), v.literal("done")),
+  })
+    .index("by_run_and_user", ["runType", "runId", "userId"])
+    .index("by_run_and_status", ["runType", "runId", "status"]),
+
+  cycleFactScanRows: defineTable({
+    runType: v.union(v.literal("audit"), v.literal("migration")),
+    runId: v.string(),
+    periodEventId: v.id("periodEvents"),
+    userId: v.id("users"),
+    startDate: v.string(),
+    scanEndDate: v.string(),
+    active: v.boolean(),
+    endDate: v.optional(v.string()),
+    startCertainty: v.optional(
+      v.union(
+        v.literal("exact"),
+        v.literal("approximate"),
+        v.literal("legacy_unknown")
+      )
+    ),
+    endCertainty: v.optional(
+      v.union(
+        v.literal("exact"),
+        v.literal("approximate"),
+        v.literal("legacy_unknown")
+      )
+    ),
+    legacyReason: v.optional(
+      v.union(
+        v.literal("missing_provenance"),
+        v.literal("inferred_end"),
+        v.literal("duplicate"),
+        v.literal("overlap"),
+        v.literal("unprovable")
+      )
+    ),
+    source: v.optional(
+      v.union(
+        v.literal("self"),
+        v.literal("partner_assist"),
+        v.literal("system")
+      )
+    ),
+    classificationReason: v.optional(
+      v.union(
+        v.literal("missing_provenance"),
+        v.literal("inferred_end"),
+        v.literal("duplicate"),
+        v.literal("overlap"),
+        v.literal("unprovable")
+      )
+    ),
+  })
+    .index("by_run_and_event", ["runType", "runId", "periodEventId"])
+    .index("by_run_user_start", [
+      "runType",
+      "runId",
+      "userId",
+      "startDate",
+      "active",
+    ])
+    .index("by_run_user_end", [
+      "runType",
+      "runId",
+      "userId",
+      "active",
+      "scanEndDate",
+    ]),
 
   couples: defineTable({
     createdAt: v.number(),

@@ -95,6 +95,73 @@ async function seedAuditRows(t: ReturnType<typeof convexTest>) {
 }
 
 describe("bounded cycle data audit", () => {
+  test("expires closed work by end date while retaining open work", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) =>
+      ctx.db.insert("users", {
+        clerkId: "audit-end-index",
+        email: "audit-end-index@example.test",
+        name: "Audit End Index",
+        role: "primary",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      })
+    );
+    await t.run(async (ctx) => {
+      for (const [startDate, endDate] of [
+        ["2026-01-01", "2026-01-02"],
+        ["2026-01-10", "2026-01-11"],
+        ["2026-02-01", undefined],
+        ["2026-02-02", undefined],
+      ] as const) {
+        await ctx.db.insert("periodEvents", {
+          userId,
+          startDate,
+          ...(endDate ? { endDate } : {}),
+          startCertainty: "exact",
+          ...(endDate ? { endCertainty: "exact" as const } : {}),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    });
+
+    await t.mutation(internal.internal.cycleDataAudit.start, {
+      runId: "cycle-audit-end-index",
+    });
+    let cursor: string | null = null;
+    let result;
+    do {
+      result = await t.mutation(internal.internal.cycleDataAudit.scanPage, {
+        runId: "cycle-audit-end-index",
+        paginationOpts: { numItems: 100, cursor },
+      });
+      cursor = result.cursor;
+    } while (!result.isComplete);
+
+    const workRows = await t.run(async (ctx) =>
+      ctx.db
+        .query("cycleFactScanRows")
+        .withIndex("by_run_user_end", (q) =>
+          q.eq("runType", "audit")
+            .eq("runId", "cycle-audit-end-index")
+            .eq("userId", userId)
+        )
+        .collect()
+    );
+    expect(
+      workRows.find((row) => row.startDate === "2026-01-10")
+    ).not.toHaveProperty("classificationReason");
+    expect(
+      workRows.find((row) => row.startDate === "2026-02-02")
+    ).toMatchObject({ classificationReason: "overlap" });
+    expect(
+      await t.query(internal.internal.cycleDataAudit.getProgress, {
+        runId: "cycle-audit-end-index",
+      })
+    ).toEqual(result);
+  });
+
   test("derives conflicts from raw rows after the first page", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.run(async (ctx) =>

@@ -10,12 +10,10 @@ import {
 import type { Doc } from "../_generated/dataModel";
 import {
   classifyLegacyCycleFact,
-  deriveRawConflictFacts,
   type LegacyClassificationReason,
 } from "../_helpers/legacyCycleFactClassification";
 
 const MAX_PAGE_SIZE = 100;
-const MAX_USER_CONTEXT = 100;
 const migrationModeValidator = v.union(
   v.literal("dry_run"),
   v.literal("annotate")
@@ -132,6 +130,7 @@ export const start = internalMutation({
       pageSize: MAX_PAGE_SIZE,
       processedCount: 0,
       annotatedCount: 0,
+      globalComplete: false,
       createdAt: now,
       updatedAt: now,
     });
@@ -161,52 +160,200 @@ export const processBatch = internalMutation({
     }
     if (run.isComplete) return toProgress(run);
 
-    const page = await ctx.db
-      .query("periodEvents")
-      .order("asc")
-      .paginate({
-        numItems: Math.min(
-          Math.max(args.paginationOpts.numItems, 1),
-          MAX_PAGE_SIZE
-        ),
-        cursor: args.paginationOpts.cursor,
-      });
+    const pageSize = Math.min(
+      Math.max(args.paginationOpts.numItems, 1),
+      MAX_PAGE_SIZE
+    );
+    let globalCursor = run.cursor ?? null;
+    let globalComplete = run.globalComplete ?? false;
+    let currentUserId = run.currentUserId;
+    let userCursor = run.userCursor ?? null;
 
-    let batchAnnotatedCount = 0;
-    const userContexts = new Map<string, Doc<"periodEvents">[]>();
-    for (const userId of new Set(page.page.map((period) => period.userId))) {
-      const context = await ctx.db
-        .query("periodEvents")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .order("asc")
-        .take(MAX_USER_CONTEXT);
-      userContexts.set(userId, context);
-    }
-    for (const period of page.page) {
-      const context = userContexts.get(period.userId) ?? [];
-      const reason = classifyLegacyCycleFact(
-        period,
-        deriveRawConflictFacts(period, context)
-      );
-      if (!reason) continue;
-      const patch = annotationPatch(period, reason);
-      if (Object.keys(patch).length === 0) continue;
-      batchAnnotatedCount += 1;
-      if (run.mode === "annotate") {
-        await ctx.db.patch(period._id, patch);
+    if (!currentUserId) {
+      let pendingUser = await ctx.db
+        .query("cycleFactScanUsers")
+        .withIndex("by_run_and_status", (q) =>
+          q.eq("runType", "migration").eq("runId", args.runId).eq("status", "pending")
+        )
+        .first();
+      if (!pendingUser && !globalComplete) {
+        const discoveryPage = await ctx.db
+          .query("periodEvents")
+          .order("asc")
+          .paginate({ numItems: pageSize, cursor: globalCursor });
+        globalCursor = discoveryPage.continueCursor;
+        globalComplete = discoveryPage.isDone;
+        const discoveredUsers = new Set(discoveryPage.page.map((row) => row.userId));
+        for (const userId of discoveredUsers) {
+          const existingUser = await ctx.db
+            .query("cycleFactScanUsers")
+            .withIndex("by_run_and_user", (q) =>
+              q.eq("runType", "migration").eq("runId", args.runId).eq("userId", userId)
+            )
+            .unique();
+          if (!existingUser) {
+            await ctx.db.insert("cycleFactScanUsers", {
+              runType: "migration",
+              runId: args.runId,
+              userId,
+              status: "pending",
+            });
+          }
+        }
+        pendingUser = await ctx.db
+          .query("cycleFactScanUsers")
+          .withIndex("by_run_and_status", (q) =>
+            q.eq("runType", "migration").eq("runId", args.runId).eq("status", "pending")
+          )
+          .first();
+      }
+      if (pendingUser) {
+        currentUserId = pendingUser.userId;
+        userCursor = null;
+      } else if (globalComplete) {
+        await ctx.db.patch(run._id, {
+          cursor: globalCursor ?? undefined,
+          globalComplete: true,
+          isComplete: true,
+          updatedAt: Date.now(),
+        });
+        return toProgress({
+          ...run,
+          cursor: globalCursor ?? undefined,
+          globalComplete: true,
+          isComplete: true,
+        });
       }
     }
+    if (!currentUserId) {
+      throw new Error("CYCLE_FACTS_MIGRATION_SCAN_STATE_INVALID");
+    }
+    const activeUserId = currentUserId;
+    const page = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_start", (q) => q.eq("userId", activeUserId))
+      .order("asc")
+      .paginate({ numItems: pageSize, cursor: userCursor });
 
+    let batchAnnotatedCount = 0;
+    for (const period of page.page) {
+      const existingWork = await ctx.db
+        .query("cycleFactScanRows")
+        .withIndex("by_run_and_event", (q) =>
+          q.eq("runType", "migration").eq("runId", args.runId).eq("periodEventId", period._id)
+        )
+        .unique();
+      if (existingWork) continue;
+      const duplicatePeer = period.tombstoneAt === undefined
+        ? await ctx.db
+            .query("cycleFactScanRows")
+            .withIndex("by_run_user_start", (q) =>
+              q.eq("runType", "migration")
+                .eq("runId", args.runId)
+                .eq("userId", activeUserId)
+                .eq("startDate", period.startDate)
+                .eq("active", true)
+            )
+            .first()
+        : null;
+      const overlapPeer = period.tombstoneAt === undefined
+        ? await ctx.db
+            .query("cycleFactScanRows")
+            .withIndex("by_run_user_end", (q) =>
+              q.eq("runType", "migration")
+                .eq("runId", args.runId)
+                .eq("userId", activeUserId)
+                .eq("active", true)
+                .gte("scanEndDate", period.startDate)
+            )
+            .first()
+        : null;
+      const reason = classifyLegacyCycleFact(period, {
+        duplicate: duplicatePeer !== null,
+        overlap: overlapPeer !== null,
+      });
+      const patch = reason ? annotationPatch(period, reason) : {};
+      if (Object.keys(patch).length > 0) {
+        batchAnnotatedCount += 1;
+        if (run.mode === "annotate") await ctx.db.patch(period._id, patch);
+      }
+      await ctx.db.insert("cycleFactScanRows", {
+        runType: "migration",
+        runId: args.runId,
+        periodEventId: period._id,
+        userId: activeUserId,
+        startDate: period.startDate,
+        scanEndDate: period.endDate ?? "9999-12-31",
+        active: period.tombstoneAt === undefined,
+        endDate: period.endDate,
+        startCertainty: period.startCertainty,
+        endCertainty: period.endCertainty,
+        legacyReason: period.legacyReason,
+        source: period.source,
+        classificationReason: reason ?? undefined,
+      });
+    }
+
+    const userDone = page.isDone;
+    if (userDone) {
+      const userState = await ctx.db
+        .query("cycleFactScanUsers")
+        .withIndex("by_run_and_user", (q) =>
+          q.eq("runType", "migration").eq("runId", args.runId).eq("userId", activeUserId)
+        )
+        .unique();
+      if (userState) await ctx.db.patch(userState._id, { status: "done" });
+      currentUserId = undefined;
+      userCursor = null;
+    } else {
+      userCursor = page.continueCursor;
+    }
+    if (userDone && !globalComplete) {
+      const discoveryPage = await ctx.db
+        .query("periodEvents")
+        .order("asc")
+        .paginate({ numItems: pageSize, cursor: globalCursor });
+      globalCursor = discoveryPage.continueCursor;
+      globalComplete = discoveryPage.isDone;
+      const discoveredUsers = new Set(discoveryPage.page.map((row) => row.userId));
+      for (const userId of discoveredUsers) {
+        const existingUser = await ctx.db
+          .query("cycleFactScanUsers")
+          .withIndex("by_run_and_user", (q) =>
+            q.eq("runType", "migration").eq("runId", args.runId).eq("userId", userId)
+          )
+          .unique();
+        if (!existingUser) {
+          await ctx.db.insert("cycleFactScanUsers", {
+            runType: "migration",
+            runId: args.runId,
+            userId,
+            status: "pending",
+          });
+        }
+      }
+    }
+    const pendingAfterPage = await ctx.db
+      .query("cycleFactScanUsers")
+      .withIndex("by_run_and_status", (q) =>
+        q.eq("runType", "migration").eq("runId", args.runId).eq("status", "pending")
+      )
+      .first();
+    const isComplete =
+      userDone && globalComplete && pendingAfterPage === null;
     const updatedRun = {
-      cursor: page.continueCursor,
-      isComplete: page.isDone,
+      cursor: globalCursor ?? undefined,
+      currentUserId,
+      userCursor: userCursor ?? undefined,
+      globalComplete,
+      isComplete,
       processedCount: run.processedCount + page.page.length,
       annotatedCount: run.annotatedCount + batchAnnotatedCount,
       updatedAt: Date.now(),
     };
     await ctx.db.patch(run._id, updatedRun);
 
-    if (args.scheduleNext && !page.isDone) {
+    if (args.scheduleNext && !updatedRun.isComplete) {
       await ctx.scheduler.runAfter(
         0,
         internal.internal.cycleFactsMigration.processBatch,
@@ -214,7 +361,7 @@ export const processBatch = internalMutation({
           runId: args.runId,
           paginationOpts: {
             numItems: MAX_PAGE_SIZE,
-            cursor: page.continueCursor,
+            cursor: globalCursor,
           },
           scheduleNext: true,
         }
@@ -223,8 +370,8 @@ export const processBatch = internalMutation({
 
     return {
       mode: run.mode,
-      cursor: page.continueCursor,
-      isComplete: page.isDone,
+      cursor: globalCursor,
+      isComplete: updatedRun.isComplete,
       processedCount: updatedRun.processedCount,
       annotatedCount: updatedRun.annotatedCount,
     };

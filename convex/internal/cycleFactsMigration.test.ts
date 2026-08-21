@@ -47,6 +47,77 @@ async function insertLegacyPeriod(
 }
 
 describe("cycle facts migration runner", () => {
+  test("does not annotate a closed non-overlap but annotates an open overlap", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "migration-end-index");
+    const ids = await t.run(async (ctx) => {
+      const first = await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-01-01",
+        endDate: "2026-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const second = await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-01-01",
+        endDate: "2026-01-01",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const closedLater = await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-01-10",
+        endDate: "2026-01-11",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const openLater = await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-01",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const openOverlap = await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-02-02",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { first, second, closedLater, openLater, openOverlap };
+    });
+
+    await t.mutation(migration.start, {
+      runId: "migration-end-index",
+      mode: "annotate",
+      targetDeployment: "dev:hallowed-hummingbird-284",
+    });
+    let cursor: string | null = null;
+    let result;
+    do {
+      result = await t.mutation(migration.processBatch, {
+        runId: "migration-end-index",
+        paginationOpts: { numItems: 100, cursor },
+      });
+      cursor = result.cursor;
+    } while (!result.isComplete);
+
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", ids.closedLater))
+    ).not.toHaveProperty("legacyReason");
+    expect(
+      await t.run(async (ctx) => ctx.db.get("periodEvents", ids.openOverlap))
+    ).toMatchObject({ legacyReason: "overlap" });
+  });
+
   test("annotates raw conflicts after the first page", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "migration-late-conflicts");
@@ -250,6 +321,10 @@ describe("cycle facts migration runner", () => {
       annotatedCount: 101,
       isComplete: true,
     });
+    await expect(t.mutation(migration.processBatch, {
+      runId: "migration-bounded",
+      paginationOpts: { numItems: 100, cursor: second.cursor },
+    })).resolves.toEqual(second);
   });
 
   test("does not rewrite already annotated rows", async () => {
