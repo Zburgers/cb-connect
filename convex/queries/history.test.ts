@@ -1,10 +1,18 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+});
 
 describe("period history attribution", () => {
   test("legacy events render with safe defaults and owner correction", async () => {

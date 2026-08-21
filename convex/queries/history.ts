@@ -10,9 +10,10 @@ import {
 import {
   getCycleFactReadLabel,
   isHistoryVisible,
-  selectLatestPredictionFact,
+  selectPredictionAnchor,
   type CycleFactReadLabel,
 } from "../_helpers/cycleFactEligibility";
+import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 
 const MAX_PERIOD_HISTORY_ROWS = 100;
 const MAX_PAIN_HISTORY_ROWS = 1000;
@@ -134,7 +135,10 @@ export const getPredictionInputsForUser = internalQuery({
       .order("desc")
       .take(MAX_PERIOD_HISTORY_ROWS);
 
-    const recentPeriod = selectLatestPredictionFact(recentPeriods);
+    const recentPeriod = selectPredictionAnchor(
+      recentPeriods,
+      isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
+    );
 
     if (!recentPeriod) {
       return null;

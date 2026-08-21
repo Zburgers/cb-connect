@@ -11,6 +11,7 @@ export interface CycleFactLike {
 }
 
 export type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
+export type PredictionSelectionMode = "legacy" | "cycle_facts_v1";
 
 export function getCycleFactReadLabel(
   period: CycleFactLike
@@ -41,12 +42,29 @@ export function isHistoryVisible(period: CycleFactLike): boolean {
   return period.tombstoneAt === undefined;
 }
 
-export function isPredictionEligible(period: CycleFactLike): boolean {
+export function isStartAnchorEligible(period: CycleFactLike): boolean {
   return (
     isHistoryVisible(period) &&
     period.legacyReason === undefined &&
-    getCycleFactReadLabel(period) === "exact"
+    period.startCertainty === "exact"
   );
+}
+
+export function isExactCoverageEligible(
+  period: CycleFactLike,
+  date: string = period.startDate
+): boolean {
+  if (!isStartAnchorEligible(period)) return false;
+  if (date <= period.startDate) return true;
+  return (
+    period.endDate !== undefined &&
+    period.endCertainty === "exact" &&
+    date <= period.endDate
+  );
+}
+
+export function isPredictionEligible(period: CycleFactLike): boolean {
+  return isStartAnchorEligible(period);
 }
 
 export function selectLatestPredictionFact<T extends CycleFactLike>(
@@ -54,7 +72,25 @@ export function selectLatestPredictionFact<T extends CycleFactLike>(
 ): T | null {
   let latest: T | null = null;
   for (const period of periods) {
-    if (!isPredictionEligible(period)) continue;
+    if (!isStartAnchorEligible(period)) continue;
+    if (!latest || period.startDate > latest.startDate) {
+      latest = period;
+    }
+  }
+  return latest;
+}
+
+export function selectPredictionAnchor<T extends CycleFactLike>(
+  periods: T[],
+  mode: PredictionSelectionMode
+): T | null {
+  if (mode === "legacy") {
+    return periods.find(isHistoryVisible) ?? null;
+  }
+
+  let latest: T | null = null;
+  for (const period of periods) {
+    if (!isStartAnchorEligible(period)) continue;
     if (!latest || period.startDate > latest.startDate) {
       latest = period;
     }

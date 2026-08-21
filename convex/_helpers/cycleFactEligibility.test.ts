@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   getCycleFactReadLabel,
+  isExactCoverageEligible,
   isHistoryVisible,
   isPredictionEligible,
+  selectPredictionAnchor,
   selectLatestPredictionFact,
 } from "./cycleFactEligibility.ts";
 
@@ -81,14 +83,27 @@ describe("cycle fact read eligibility", () => {
     ).toMatchObject({ id: "newest-exact", startDate: "2026-08-15" });
   });
 
-  test("does not treat an approximate end as exact evidence", () => {
+  test("legacy selection keeps the newest visible row in query order", () => {
+    expect(
+      selectPredictionAnchor(
+        [
+          { ...exact, startDate: "2026-08-01", startCertainty: undefined },
+          { ...exact, id: "older", startDate: "2026-07-01" },
+        ],
+        "legacy"
+      )
+    ).toMatchObject({ startDate: "2026-08-01", startCertainty: undefined });
+  });
+
+  test("does not treat an approximate end as exact coverage", () => {
     const period = {
       ...exact,
       endDate: "2026-07-05",
       endCertainty: "approximate" as const,
     };
     expect(getCycleFactReadLabel(period)).toBe("approximate");
-    expect(isPredictionEligible(period)).toBe(false);
+    expect(isPredictionEligible(period)).toBe(true);
+    expect(isExactCoverageEligible(period, "2026-07-05")).toBe(false);
   });
 
   test("uses an exact start for prediction even when the end is approximate", () => {
