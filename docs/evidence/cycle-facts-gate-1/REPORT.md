@@ -7,6 +7,11 @@ exposure blocked
 **Pull request:** [#35](https://github.com/Zburgers/cb-connect/pull/35) — draft
 review and protected qualification pending
 
+**Local qualification implementation SHA:** `dc838e1df382687e52c79941b7484b085159db3c`
+
+This SHA is the exact branch head used for the deterministic checks below;
+the evidence-only update that records them is a later commit.
+
 **Scope:** Convex-only `CB_CONNECT_CYCLE_FACTS_V1`, default-off behavior,
 certainty-aware reads, bounded legacy metadata, partner authority and
 authenticated release journeys.
@@ -34,20 +39,28 @@ authenticated release journeys.
 The following evidence is retained on branch
 `gate-1/trustworthy-cycle-facts`:
 
+- `npm run test:unit -- --run` — pass, 29 files and 207 tests
+- `npm run typecheck` — pass
+- inert-URL `npm run build` — pass
 - `npm run test:cycle-facts-plan` — pass
-- focused Convex fact semantics, invariants, mutations, migration, reads and
-  capability tests — pass
-- `npm run typecheck` — pass against the committed generated definitions
-- `npx convex codegen` — blocked in this local shell because
-  `CONVEX_DEPLOYMENT` is unset; no deployment or secret was supplied
+- `bash scripts/tests/ci-workflow.test.sh` — pass
 - `bash scripts/tests/deploy-workflow.test.sh` — pass
-- `git diff --check` — required before handoff
-- Protected CI run `32394057909` deterministic qualification — pass (build,
-  post-build typecheck, unit tests and dependency policy).
-- The same run's authenticated release smoke stopped fail-closed during
-  `auth.global.setup.ts` link fixture setup with
-  `authenticated_fixture_setup_failed`; no authenticated product journey is
-  claimed from that run and no zero-skip desktop/mobile evidence exists.
+- `bash scripts/tests/standalone-runtime.test.sh` — pass
+- `bash scripts/tests/pm2-config.test.sh` — pass
+- `bash scripts/tests/verify-release.test.sh` — pass
+- `bash scripts/tests/rehearse-rollback.test.sh` — pass
+- `npx playwright test e2e/cycle-facts.spec.ts --config=playwright.release.config.ts --list` — pass, 2 collected tests across desktop/mobile
+- `git diff --check` — pass
+- `npx convex codegen` — blocked because `CONVEX_DEPLOYMENT` is unset; no
+  deployment or secret was supplied
+- local server health smoke — pass; readiness could not establish backend
+  connectivity with inert qualification URLs; the server was stopped cleanly
+
+The two release E2E journeys collect successfully, but the approved fixture
+inputs are unavailable in this shell (`CLERK_TEST_ENVIRONMENT_NAME`, Clerk
+credentials, Convex deployment and expected flag mode are unset). Authenticated
+qualification therefore remains fixture-stage blocked; no desktop/mobile
+journey or zero-skip qualification claim is made.
 
 The exact command for authenticated release qualification is:
 
@@ -77,3 +90,10 @@ Retain redacted desktop and mobile Playwright results with zero skips, the
 deployment-policy result, generated Convex API state, and the exact qualified
 commit SHA. Do not retain storage states, tokens, user identifiers, dates,
 health values or raw provider responses in this report.
+
+## Gate 2 handoff
+
+The provisional Gate 2 PR #36 head remains `2944afe` over the pre-remediation
+Gate 1 head `2220a64`. After PR #35 lands, Gate 2 must be rebased or
+cherry-picked in dependency order and fully requalified; this report does not
+qualify the provisional Gate 2 stack.

@@ -55,3 +55,11 @@ destructive cleanup step in this runbook.
 - D-012: additive/default-off deployment is separate from blocked destructive
   migration, hard deletion, final retention behavior and production feature
   exposure.
+
+## Latest local verification
+
+The deterministic implementation checks were run at branch head
+`dc838e1df382687e52c79941b7484b085159db3c`: unit, typecheck, inert-URL build,
+policy, CI/deploy workflow, standalone runtime, PM2, release verification,
+rollback rehearsal and bounded audit/migration tests passed. Convex codegen
+was not run to completion because no deployment identity was configured.
