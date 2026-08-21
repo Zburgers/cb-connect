@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { TimelinePhase } from "@/convex/_helpers/timelinePhases";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
 
 /* ── Types ── */
 const PAIN_TAG_LABELS: Record<string, string> = {
@@ -452,9 +453,8 @@ function TimelineEntry({
 export default function LogPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const me            = useQuery(api.queries.users.getMe, isLoaded && isSignedIn ? {} : "skip");
-  const cycleFactsCapability = useQuery(
-    api.queries.capabilities.getCapabilities,
-    isLoaded && isSignedIn && me?.role ? {} : "skip"
+  const cycleFactsCapability = useCycleFactsCapability(
+    isLoaded && isSignedIn && Boolean(me?.role),
   );
   const coupleStatus  = useQuery(api.queries.couples.getCoupleStatus, isLoaded && isSignedIn ? {} : "skip");
   const periodHistory = useQuery(api.queries.history.getPeriodHistory, isLoaded && isSignedIn ? {} : "skip");

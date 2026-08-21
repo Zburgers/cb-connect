@@ -5,6 +5,7 @@ import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
 import { copyToClipboard, shareText } from "@/lib/utils";
 import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
@@ -18,9 +19,8 @@ export default function PartnerPage() {
     // Only run once we know the user exists and has a role
     isAuthenticated && me?.role ? {} : "skip"
   );
-  const cycleFactsCapability = useQuery(
-    api.queries.capabilities.getCapabilities,
-    isAuthenticated && me?.role ? {} : "skip"
+  const cycleFactsCapability = useCycleFactsCapability(
+    isAuthenticated && Boolean(me?.role),
   );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
