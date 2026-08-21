@@ -7,10 +7,11 @@ exposure blocked
 **Pull request:** [#35](https://github.com/Zburgers/cb-connect/pull/35) — draft
 review and protected qualification pending
 
-**Local qualification implementation SHA:** `dc838e1df382687e52c79941b7484b085159db3c`
+**Local qualification implementation SHA:** `8ee068eb8bae7509a0da513a522f28262e156347`
 
-This SHA is the exact branch head used for the deterministic checks below;
-the evidence-only update that records them is a later commit.
+This SHA is the exact code head used for the deterministic checks below. The
+current branch head is later because it adds only the local Clerk keyless
+artifact ignore rule; that change does not alter application behavior.
 
 **Scope:** Convex-only `CB_CONNECT_CYCLE_FACTS_V1`, default-off behavior,
 certainty-aware reads, bounded legacy metadata, partner authority and
