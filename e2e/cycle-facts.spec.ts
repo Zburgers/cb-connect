@@ -189,7 +189,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
         .last();
       await factCard.getByRole("button", { name: "Edit", exact: true }).click();
       await factCard
-        .getByRole("checkbox", { name: "Confirm this date is exact" })
+        .getByRole("checkbox", { name: "Confirm this start date is exact" })
         .check();
       await factCard
         .getByRole("button", { name: "Save correction", exact: true })

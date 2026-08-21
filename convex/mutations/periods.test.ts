@@ -456,6 +456,7 @@ describe("period corrections", () => {
       periodEventId: eventId,
       startDate: "2026-06-19",
       endDate: "2026-06-23",
+      endCertainty: "approximate",
       timeZone: "UTC",
       expectedAuthorityVersion: 0,
     });
@@ -561,6 +562,7 @@ describe("primary cycle fact writes", () => {
       periodEventId: result.eventId,
       startDate: "2026-07-02",
       endDate: "2026-07-05",
+      endCertainty: "approximate",
       timeZone: "UTC",
       expectedAuthorityVersion: 1,
     });
@@ -577,7 +579,8 @@ describe("primary cycle fact writes", () => {
       startDate: "2026-07-02",
       endDate: "2026-07-05",
       timeZone: "UTC",
-      promoteCertainty: true,
+      promoteStartCertainty: true,
+      promoteEndCertainty: true,
       expectedAuthorityVersion: 2,
     });
     expect(

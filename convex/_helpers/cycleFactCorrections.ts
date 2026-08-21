@@ -9,7 +9,9 @@ export type CycleFactCorrectionInput = {
   existingEndDate?: string;
   existingLegacyReason?: LegacyCycleFactReason;
   correctedEndDate?: string;
-  promoteCertainty: boolean;
+  correctedEndCertainty?: CycleFactCertainty;
+  promoteStartCertainty: boolean;
+  promoteEndCertainty: boolean;
 };
 
 export type CycleFactCorrection = {
@@ -21,27 +23,28 @@ export type CycleFactCorrection = {
 export function resolveCycleFactCorrection(
   input: CycleFactCorrectionInput
 ): CycleFactCorrection {
-  if (input.promoteCertainty) {
-    return {
-      startCertainty: "exact",
-      endCertainty: input.correctedEndDate === undefined ? undefined : "exact",
-      legacyReason: undefined,
-    };
-  }
-
-  const startCertainty = input.existingStartCertainty;
+  const startCertainty = input.promoteStartCertainty
+    ? "exact"
+    : input.existingStartCertainty;
   const endCertainty =
     input.correctedEndDate === undefined
       ? undefined
       : input.existingEndDate === undefined
-        ? startCertainty
-        : input.existingEndCertainty ?? "legacy_unknown";
+        ? input.promoteEndCertainty
+          ? "exact"
+          : input.correctedEndCertainty ?? "approximate"
+        : input.promoteEndCertainty
+          ? "exact"
+          : input.existingEndCertainty ?? "legacy_unknown";
+  const hasUnknownField =
+    startCertainty === "legacy_unknown" ||
+    (input.correctedEndDate !== undefined &&
+      endCertainty === "legacy_unknown");
   const legacyReason =
-    input.existingLegacyReason ??
-    (startCertainty === "legacy_unknown" ||
-    (input.existingEndDate !== undefined && endCertainty === "legacy_unknown")
-      ? "missing_provenance"
-      : undefined);
+    input.existingLegacyReason === "missing_provenance" && !hasUnknownField
+      ? undefined
+      : input.existingLegacyReason ??
+        (hasUnknownField ? "missing_provenance" : undefined);
 
   return { startCertainty, endCertainty, legacyReason };
 }

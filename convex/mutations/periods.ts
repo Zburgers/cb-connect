@@ -468,7 +468,8 @@ export const updatePeriodEvent = mutation({
     timeZone: v.optional(v.string()),
     startCertainty: v.optional(cycleFactCertaintyValidator),
     endCertainty: v.optional(cycleFactCertaintyValidator),
-    promoteCertainty: v.optional(v.boolean()),
+    promoteStartCertainty: v.optional(v.boolean()),
+    promoteEndCertainty: v.optional(v.boolean()),
     expectedAuthorityVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -503,6 +504,14 @@ export const updatePeriodEvent = mutation({
     }
 
     const authorityVersion = currentAuthorityVersion(period);
+    if (
+      args.endDate !== undefined &&
+      period.endDate === undefined &&
+      args.endCertainty === undefined &&
+      args.promoteEndCertainty !== true
+    ) {
+      throw new Error("END_CERTAINTY_REQUIRED");
+    }
     const { startCertainty, endCertainty, legacyReason } =
       resolveCycleFactCorrection({
         existingStartCertainty: storedStartCertainty(period),
@@ -510,7 +519,9 @@ export const updatePeriodEvent = mutation({
         existingEndDate: period.endDate,
         existingLegacyReason: period.legacyReason,
         correctedEndDate: args.endDate,
-        promoteCertainty: args.promoteCertainty === true,
+        correctedEndCertainty: args.endCertainty,
+        promoteStartCertainty: args.promoteStartCertainty === true,
+        promoteEndCertainty: args.promoteEndCertainty === true,
       });
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,

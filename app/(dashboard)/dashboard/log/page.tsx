@@ -88,6 +88,8 @@ type PeriodTimelineMetadata = {
   id: Id<"periodEvents">;
   startDate: string;
   endDate?: string;
+  startCertainty?: "exact" | "approximate" | "legacy_unknown";
+  endCertainty?: "exact" | "approximate" | "legacy_unknown";
   source: "self" | "partner_assist" | "system";
   confirmationStatus: "confirmed" | "unreviewed";
   certainty: "exact" | "approximate" | "legacy_unknown";
@@ -151,7 +153,9 @@ function TimelineEntry({
     startDate: string,
     endDate: string | undefined,
     authorityVersion: number,
-    promoteCertainty: boolean
+    promoteStartCertainty: boolean,
+    promoteEndCertainty: boolean,
+    endCertainty: "exact" | "approximate"
   ) => Promise<void>;
   onDelete: (
     periodEventId: Id<"periodEvents">,
@@ -162,7 +166,11 @@ function TimelineEntry({
   const [isEditing, setIsEditing] = useState(false);
   const [editStartDate, setEditStartDate] = useState(period?.startDate ?? "");
   const [editEndDate, setEditEndDate] = useState(period?.endDate ?? "");
-  const [promoteCertainty, setPromoteCertainty] = useState(false);
+  const [promoteStartCertainty, setPromoteStartCertainty] = useState(false);
+  const [promoteEndCertainty, setPromoteEndCertainty] = useState(false);
+  const [editEndCertainty, setEditEndCertainty] = useState<
+    "exact" | "approximate"
+  >(period?.endCertainty === "exact" ? "exact" : "approximate");
   const [isSaving, setIsSaving] = useState(false);
   const [editorMessage, setEditorMessage] = useState("");
 
@@ -176,7 +184,9 @@ function TimelineEntry({
         editStartDate,
         editEndDate || undefined,
         period.authorityVersion,
-        promoteCertainty
+        promoteStartCertainty,
+        promoteEndCertainty,
+        editEndCertainty
       );
       setIsEditing(false);
     } catch (error) {
@@ -301,7 +311,11 @@ function TimelineEntry({
                   onClick={() => {
                     setEditStartDate(period.startDate);
                     setEditEndDate(period.endDate ?? "");
-                    setPromoteCertainty(false);
+                    setPromoteStartCertainty(false);
+                    setPromoteEndCertainty(false);
+                    setEditEndCertainty(
+                      period.endCertainty === "exact" ? "exact" : "approximate"
+                    );
                     setEditorMessage("");
                     setIsEditing(true);
                   }}
@@ -343,22 +357,42 @@ function TimelineEntry({
                     />
                   </label>
                 </div>
-                {showFactSemantics && period.certainty !== "exact" && (
+                {showFactSemantics && period.startCertainty !== "exact" && (
                   <label className="flex items-start gap-3 rounded-xl border border-foreground/10 p-3 text-sm text-foreground">
                     <input
                       type="checkbox"
-                      checked={promoteCertainty}
+                      checked={promoteStartCertainty}
                       onChange={(event) =>
-                        setPromoteCertainty(event.target.checked)
+                        setPromoteStartCertainty(event.target.checked)
                       }
                       className="mt-0.5 h-4 w-4"
                     />
                     <span>
                       <span className="block font-semibold">
-                        Confirm this date is exact
+                        Confirm this start date is exact
                       </span>
                       <span className="mt-1 block text-xs text-foreground/60">
                         Leave unchecked to preserve the existing uncertainty.
+                      </span>
+                    </span>
+                  </label>
+                )}
+                {showFactSemantics && editEndDate && period.endCertainty !== "exact" && (
+                  <label className="flex items-start gap-3 rounded-xl border border-foreground/10 p-3 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={promoteEndCertainty}
+                      onChange={(event) =>
+                        setPromoteEndCertainty(event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block font-semibold">
+                        Confirm this end date is exact
+                      </span>
+                      <span className="mt-1 block text-xs text-foreground/60">
+                        Leave unchecked to save this end as approximate.
                       </span>
                     </span>
                   </label>
@@ -383,7 +417,11 @@ function TimelineEntry({
                       setIsEditing(false);
                       setEditStartDate(period.startDate);
                       setEditEndDate(period.endDate ?? "");
-                      setPromoteCertainty(false);
+                      setPromoteStartCertainty(false);
+                      setPromoteEndCertainty(false);
+                      setEditEndCertainty(
+                        period.endCertainty === "exact" ? "exact" : "approximate"
+                      );
                       setEditorMessage("");
                     }}
                     disabled={isSaving}
@@ -549,7 +587,9 @@ export default function LogPage() {
     correctedStartDate: string,
     correctedEndDate: string | undefined,
     authorityVersion: number,
-    promoteCertainty: boolean
+    promoteStartCertainty: boolean,
+    promoteEndCertainty: boolean,
+    endCertainty: "exact" | "approximate"
   ) => {
     await updatePeriodEvent({
       periodEventId,
@@ -558,7 +598,11 @@ export default function LogPage() {
       timeZone: getLocalTimeZone(),
       ...(cycleFactsEnabled
         ? {
-            ...(promoteCertainty ? { promoteCertainty: true } : {}),
+            ...(promoteStartCertainty
+              ? { promoteStartCertainty: true }
+              : {}),
+            ...(promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+            ...(correctedEndDate ? { endCertainty } : {}),
             expectedAuthorityVersion: authorityVersion,
           }
         : {}),

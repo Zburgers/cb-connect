@@ -240,6 +240,8 @@ export const getTimelineHistory = query({
         id: Id<"periodEvents">;
         startDate: string;
         endDate?: string;
+        startCertainty?: "exact" | "approximate" | "legacy_unknown";
+        endCertainty?: "exact" | "approximate" | "legacy_unknown";
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
         certainty: CycleFactReadLabel;
@@ -269,6 +271,8 @@ export const getTimelineHistory = query({
           id: period._id,
           startDate: period.startDate,
           endDate: period.endDate,
+          startCertainty: period.startCertainty,
+          endCertainty: period.endCertainty,
           source: period.source,
           confirmationStatus: period.confirmationStatus,
           certainty: period.certainty,

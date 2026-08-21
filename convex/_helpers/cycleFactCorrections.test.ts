@@ -3,13 +3,31 @@ import { describe, expect, test } from "vitest";
 import { resolveCycleFactCorrection } from "./cycleFactCorrections";
 
 describe("cycle fact correction certainty", () => {
+  test("promotes start and end certainty independently", () => {
+    expect(
+      resolveCycleFactCorrection({
+        existingStartCertainty: "approximate",
+        existingEndCertainty: "approximate",
+        existingEndDate: "2026-08-04",
+        correctedEndDate: "2026-08-05",
+        promoteStartCertainty: true,
+        promoteEndCertainty: false,
+      } as never)
+    ).toEqual({
+      startCertainty: "exact",
+      endCertainty: "approximate",
+      legacyReason: undefined,
+    });
+  });
+
   test("preserves approximate certainty when correcting an open fact", () => {
     expect(
       resolveCycleFactCorrection({
         existingStartCertainty: "approximate",
         existingEndDate: undefined,
         correctedEndDate: "2026-08-05",
-        promoteCertainty: false,
+        promoteStartCertainty: false,
+        promoteEndCertainty: false,
       })
     ).toEqual({
       startCertainty: "approximate",
@@ -26,7 +44,8 @@ describe("cycle fact correction certainty", () => {
         existingEndDate: "2026-08-04",
         existingLegacyReason: "missing_provenance",
         correctedEndDate: "2026-08-05",
-        promoteCertainty: false,
+        promoteStartCertainty: false,
+        promoteEndCertainty: false,
       })
     ).toEqual({
       startCertainty: "legacy_unknown",
@@ -43,7 +62,8 @@ describe("cycle fact correction certainty", () => {
         existingEndDate: "2026-08-04",
         existingLegacyReason: undefined,
         correctedEndDate: "2026-08-05",
-        promoteCertainty: true,
+        promoteStartCertainty: true,
+        promoteEndCertainty: true,
       })
     ).toEqual({
       startCertainty: "exact",
