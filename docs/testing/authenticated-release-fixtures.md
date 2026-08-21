@@ -1,20 +1,20 @@
-# Authenticated release-fixture proposal
+# Authenticated release-fixture contract
 
 **Decision:** D-004 and D-005
 **Status:** Approved 2026-08-05 by the sole project and environment owner
-**Scope:** Gate 0 qualification only. Production accounts and production Convex data are explicitly out of scope.
+**Scope:** Authenticated release qualification only. Production accounts and production Convex data are explicitly out of scope.
 
-This contract is approved for Gate 0. The decision register is the approval record.
+This contract is the approved operating policy for `cb-connect-auth-test`. The decision register is the approval record.
 
-## Proposed isolated environments
+## Approved isolated environments
 
-Use the dedicated non-production Clerk instance labeled `holy clerk` and isolated Convex deployment `dev:hallowed-hummingbird-284`, owned by the sole project owner. The test deployment must contain synthetic fixtures only and is independently addressable from `prod:festive-malamute-715`.
+Use the dedicated non-production Clerk instance labeled `holy clerk` and the isolated Convex deployment `dev:hallowed-hummingbird-284`. The deployment is persistent and shared across PR qualification runs, so authenticated jobs must serialize access before deploying backend code.
 
-The GitHub Actions job should use a protected environment named `cb-connect-auth-test` with access limited to the approved environment owner and release workflow. Values belong in the environment secret store; this document records names and handling rules only.
+The GitHub Actions job must run inside the protected environment `cb-connect-auth-test`. That environment stores the approved test configuration names and the deploy key secret. This document records names and handling rules only.
 
-Proposed secret/configuration names:
+Required names:
 
-- `CLERK_TEST_ENVIRONMENT_NAME` (must be the approved `holy clerk` identity)
+- `CLERK_TEST_ENVIRONMENT_NAME` must equal `holy clerk`
 - `CLERK_TEST_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY`
 - `CLERK_TEST_FRONTEND_API_URL`
@@ -23,26 +23,38 @@ Proposed secret/configuration names:
 - `NEXT_PUBLIC_TEST_CONVEX_URL`
 - `NEXT_PUBLIC_TEST_CONVEX_SITE_URL`
 
-The environment owner must confirm whether Clerk's supported test-user mechanism is the Backend API, a dashboard-managed fixture set or another approved interface. The adapter must not silently fall back to production credentials.
+The CI job exposes `CONVEX_TEST_DEPLOY_KEY` to the Convex CLI as `CONVEX_DEPLOY_KEY`. It must not be echoed, printed, or committed.
+
+## Deployment-before-E2E contract
+
+Before authenticated Playwright starts, the CI job must:
+
+1. Fail closed if the deploy key or approved test target is missing.
+2. Synchronize only the test-safe Convex runtime configuration required by the fixture harness.
+3. Deploy the checked-out commit to `dev:hallowed-hummingbird-284`.
+4. Verify the deployed backend identity and compatibility contract before browser execution.
+5. Reuse the same fixture pair for desktop and mobile projects.
+
+The test deployment must contain synthetic fixtures only and must never be confused with `prod:festive-malamute-715`.
 
 ## Provisioning and cleanup contract
 
 1. Derive a run-scoped fixture namespace from the CI run identifier; do not use a real person's email address or a shared static password.
-2. Provision exactly one primary and one partner in the isolated Clerk instance, then create/link a synthetic couple in the isolated Convex deployment.
+2. Provision exactly one primary and one partner in the isolated Clerk instance, then create and link a synthetic couple in the isolated Convex deployment.
 3. Persist only restricted Playwright storage state under the CI workspace. Never commit it or include it in ordinary logs.
 4. On success, failure or cancellation, retry cleanup idempotently: revoke/delete the two test users, remove the synthetic couple and remove run-scoped application data.
 5. If provisioning or cleanup cannot prove that it is targeting the isolated environment, fail closed and do not mutate any account.
 
-## Rate limits and retries
+## Rate limits, retries and concurrency
 
 - Provision at most one fixture pair per CI run and reuse it across browser projects.
-- Serialize fixture provisioning by environment to avoid Clerk rate-limit bursts.
+- Serialize fixture provisioning and deployment by environment to avoid concurrent mutation of the shared test backend.
 - Retry only transient failures with bounded exponential backoff; never retry invalid credentials, authorization failures or an ambiguous target.
 - Cleanup retries must be safe when one resource was already removed. Report the resource class and run ID, not tokens or personal data.
 
 ## Artifact handling
 
-- Upload traces, screenshots and videos only on failure, to a private restricted artifact store with a proposed seven-day retention.
+- Upload traces, screenshots and videos only on failure, to a private restricted artifact store with a seven-day retention.
 - Before upload, redact cookies, authorization headers, Clerk IDs, email addresses, pairing codes, message text, period dates, pain values and notification payloads.
 - Do not print environment variables, storage-state JSON, raw request bodies or Convex URLs that include credentials.
 - The environment owner must approve the redaction test cases and retention period before the authenticated suite becomes a release gate.

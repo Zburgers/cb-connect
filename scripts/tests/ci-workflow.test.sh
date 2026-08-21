@@ -28,6 +28,19 @@ required_patterns=(
   'name: Upload immutable standalone release'
   'name: cb-connect-release-\$\{\{ github\.sha \}\}'
   'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
+  'environment: cb-connect-auth-test'
+  'concurrency:'
+  'group: cb-connect-auth-test'
+  'cancel-in-progress: false'
+  'Record authenticated test backend deployment timestamp'
+  'Validate authenticated smoke deployment contract'
+  'Sync authenticated test Convex runtime config'
+  'Deploy authenticated test Convex backend'
+  'Verify authenticated test Convex backend identity'
+  'CONVEX_DEPLOY_KEY: \$\{\{ secrets\.CONVEX_TEST_DEPLOY_KEY \}\}'
+  'CB_CONNECT_BACKEND_DEPLOYMENT: dev:hallowed-hummingbird-284'
+  'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1'
+  'CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true'
 )
 for pattern in "${required_patterns[@]}"; do
   if ! rg -q "$pattern" "$workflow"; then

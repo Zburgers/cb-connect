@@ -58,6 +58,9 @@ jobs:
     needs: qualify
     runs-on: ubuntu-latest
     environment: cb-connect-auth-test
+    concurrency:
+      group: cb-connect-auth-test
+      cancel-in-progress: false
     timeout-minutes: 20
     env:
       CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
@@ -65,8 +68,13 @@ jobs:
       NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
       CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
       CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
       NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
       NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+      CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+      CB_CONNECT_BACKEND_DEPLOYMENT: dev:hallowed-hummingbird-284
+      CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
+      CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true
       CB_CONNECT_RELEASE_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
 
@@ -98,8 +106,96 @@ jobs:
           test -x "$browser_path"
           printf 'PLAYWRIGHT_EXECUTABLE_PATH=%s\n' "$browser_path" >> "$GITHUB_ENV"
 
-      - name: Validate authenticated smoke policy
+      - name: Record authenticated test backend deployment timestamp
+        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+
+      - name: Validate authenticated smoke deployment contract
         run: bash scripts/tests/release-smoke-workflow.test.sh
+
+      - name: Preflight authenticated test Convex deploy key target
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CONVEX_DEPLOY_KEY"
+          identity_output="$RUNNER_TEMP/cb-connect-test-deploy-key-target.txt"
+          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
+          node - "$identity_output" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          if (!text.includes('dev:hallowed-hummingbird-284')) {
+            throw new Error('convex_test_deploy_key_target_failed');
+          }
+          NODE
+
+      - name: Sync authenticated test Convex runtime config
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CONVEX_DEPLOY_KEY"
+          test -n "$CONVEX_TEST_DEPLOYMENT"
+          test "$CLERK_TEST_ENVIRONMENT_NAME" = "holy clerk"
+          test "$CONVEX_TEST_DEPLOYMENT" = "dev:hallowed-hummingbird-284"
+          test "$NEXT_PUBLIC_TEST_CONVEX_URL" = "https://hallowed-hummingbird-284.convex.cloud"
+          test "$NEXT_PUBLIC_TEST_CONVEX_SITE_URL" = "https://hallowed-hummingbird-284.convex.site"
+          test "$CLERK_TEST_FRONTEND_API_URL" = "https://holy-clam-29.clerk.accounts.dev"
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+          umask 077
+          node - "$env_file" <<'NODE'
+          const fs = require('node:fs');
+          const names = [
+            'CLERK_FRONTEND_API_URL',
+            'CB_CONNECT_BACKEND_DEPLOYMENT',
+            'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION',
+            'CB_CONNECT_BACKEND_DEPLOYED_AT',
+            'CB_CONNECT_FIXTURE_CLEANUP_ENABLED',
+          ];
+          const content = names
+            .filter((name) => process.env[name])
+            .map((name) => `${name}=${process.env[name]}`)
+            .join('\n');
+          fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', {
+            mode: 0o600,
+          });
+          NODE
+          if [[ ! -s "$env_file" ]]; then
+            echo "::error::Missing required authenticated test Convex runtime configuration"
+            exit 1
+          fi
+          npx convex env set --from-file "$env_file" --force
+
+      - name: Deploy authenticated test Convex backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          npx convex deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"
+
+      - name: Verify authenticated test Convex backend identity
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          identity_output="$RUNNER_TEMP/cb-connect-test-backend-identity.txt"
+          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
+          node - "$identity_output" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          const expectations = [
+            'dev:hallowed-hummingbird-284',
+            'v1',
+            process.env.CB_CONNECT_BACKEND_DEPLOYED_AT,
+          ];
+          for (const expected of expectations) {
+            if (!expected || !text.includes(expected)) {
+              throw new Error('convex_test_identity_failed');
+            }
+          }
+          NODE
 
       - name: Run authenticated release smoke
         shell: bash

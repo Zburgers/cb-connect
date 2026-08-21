@@ -17,7 +17,15 @@ The workflow rejects any target other than the approved selector and passes the 
 
 ## Preview/test rehearsal
 
-Before any production execution, deploy the same commit to an explicitly named preview/test deployment with its own deploy key. Verify `getBackendIdentity`, the `v1` compatibility tag, and the generated function specification. Keep synthetic data only; never use production users or production data for this rehearsal.
+Before any production execution, deploy the same commit to the approved
+preview/test deployment `dev:hallowed-hummingbird-284` with its own deploy key
+provided through `CONVEX_DEPLOY_KEY`. Verify `getBackendIdentity`, the `v1`
+compatibility tag, and the generated function specification. Keep synthetic
+data only; never use production users or production data for this rehearsal.
+
+The rehearsal target is shared and persistent, so concurrent qualification
+runs must serialize before deployment. Do not use `cancel-in-progress: true`
+for this environment because it can strand synthetic fixtures mid-cleanup.
 
 ## Production stop conditions
 
