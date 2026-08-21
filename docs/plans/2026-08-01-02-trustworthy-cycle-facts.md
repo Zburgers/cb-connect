@@ -21,8 +21,9 @@
 
 **Planning status:** Gate-level work packages plus an approved dated execution
 plan. Additive/default-off implementation may start. Authenticated
-qualification is still pending. D-012 must be resolved before production
-exposure, destructive migration or deletion behavior. See the
+qualification is still pending. Additive/default-off deployment is allowed;
+D-012 must be resolved before destructive migration, hard deletion, final
+retention behavior or production feature exposure. See the
 [Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
 current code inventory and decision boundary; it is not an execution plan.
 

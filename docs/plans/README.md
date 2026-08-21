@@ -49,11 +49,15 @@ feature-development gate.
    restrict rollout or claims; they do not block unrelated feature coding.
 4. Gate 1's additive/default-off implementation is complete for deterministic
    qualification, but authenticated desktop/mobile qualification is pending.
-   D-012 blocks production exposure, destructive migration, hard deletion and
-   final retention behavior.
+   Additive/default-off deployment is separate; D-012 blocks destructive
+   migration, hard deletion, final retention behavior and production feature
+   exposure until approval plus a separate exposure decision.
 5. Gate 1 implementation remains Convex-only and flag-off by default. A green
    engineering qualification does not authorize production exposure; rollback
    is flag-off plus backward-compatible reads.
+6. D-008 makes the validated device-local IANA timezone authoritative for
+   date-bearing writes; D-009 keeps certainty explicit and primary correction
+   or tombstone authority final.
 
 ## Gate 0 closeout
 

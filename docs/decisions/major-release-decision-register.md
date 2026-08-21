@@ -142,9 +142,9 @@ The fixture and measurement proposals were approved by the sole project owner on
 - Alternatives considered: Automatic deletion on age alone and irreversible legacy cleanup were rejected while the owner has not confirmed retention duration, deletion scope or legal basis.
 - Approver and authority: Proposal drafted by engineering on 2026-08-12; explicit owner/privacy confirmation is still required.
 - Approved on: Pending.
-- Applies from commit/deployment: Under the August 19 feature-first policy, additive schema/helpers/tests and non-destructive compatibility are allowed; no hard deletion, destructive migration or production exposure is authorized until this decision is approved.
+- Applies from commit/deployment: Additive/default-off deployment is allowed; destructive migration, hard deletion, final retention behavior and production feature exposure remain blocked until D-012 is approved and the separate exposure decision is recorded.
 - Evidence or runbook: `docs/plans/2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`.
-- Review/expiry date: Must be resolved before Gate 1 migration or any deletion behavior is enabled.
+- Review/expiry date: Must be resolved before destructive migration, hard deletion, final retention behavior or production feature exposure is enabled.
 
 ## Resolution format
 

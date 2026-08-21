@@ -46,8 +46,10 @@ Vitest/convex-test, Clerk-authenticated Playwright, GitHub Actions.
 - D-012 blocks destructive deletion/migration, final retention-duration claims,
   production exposure, and production execution of lifecycle cleanup. Additive
   tombstones, compatibility reads, dry runs, and synthetic migration tests are
-  allowed; no production target may be annotated without D-012 approval and a
-  separately approved recovery boundary.
+  allowed. Server-attested non-production identity is required for annotation;
+  caller targetDeployment is metadata/typo validation only. No production target
+  may be annotated without D-012 approval and a separately approved recovery
+  boundary.
 - `CB_CONNECT_CYCLE_FACTS_V1` is Convex-only. Unset or any value other than the
   exact string `true` is disabled. No `NEXT_PUBLIC_` mirror is permitted.
 - No task may emit raw cycle dates, row IDs, notes, Clerk identities, auth

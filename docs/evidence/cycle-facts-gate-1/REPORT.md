@@ -21,6 +21,13 @@ authenticated release journeys.
 - Flag-off behavior keeps the existing UI and read paths available.
 - Flag-off rollback is the approved reversible action; it does not delete or
   reverse cycle data.
+- D-012 blocks destructive migration, hard deletion, final retention behavior
+  and production feature exposure; additive/default-off deployment remains
+  separate.
+- D-008: validated device-local IANA timezone is authoritative for date-bearing
+  writes; no silent UTC fallback is allowed for an identified user.
+- D-009: certainty remains explicit, approximate values are not implicitly
+  promoted, and primary correction or tombstone authority is final.
 
 ## Local evidence
 
