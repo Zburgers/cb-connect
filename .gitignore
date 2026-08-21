@@ -21,3 +21,6 @@ graphify-out/.graphify_root
 .antigravitycli/
 .claude/
 .codex/
+
+# clerk configuration (can include secrets)
+/.clerk/
