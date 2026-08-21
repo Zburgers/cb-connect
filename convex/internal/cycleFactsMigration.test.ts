@@ -14,6 +14,12 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.stubEnv("CB_CONNECT_BACKEND_DEPLOYMENT", "dev:hallowed-hummingbird-284");
+  vi.stubEnv("CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT", "dev");
+  vi.stubEnv(
+    "CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT",
+    "dev:hallowed-hummingbird-284"
+  );
+  vi.stubEnv("CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY", "true");
 });
 
 async function seedUser(t: ReturnType<typeof convexTest>, clerkId: string) {
@@ -234,6 +240,32 @@ describe("cycle facts migration runner", () => {
         targetDeployment: "dev:caller-supplied-label",
       })
     ).rejects.toThrow("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
+  });
+
+  test("attests a non-production identity and rejects resume after identity drift", async () => {
+    vi.stubEnv("CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT", "dev");
+    vi.stubEnv(
+      "CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT",
+      "dev:hallowed-hummingbird-284"
+    );
+    vi.stubEnv("CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY", "true");
+    const t = convexTest(schema, modules);
+
+    await expect(t.mutation(migration.start, {
+      runId: "migration-identity-drift",
+      mode: "annotate",
+      targetDeployment: "dev:hallowed-hummingbird-284",
+    })).resolves.toEqual({ started: true, mode: "annotate" });
+
+    vi.stubEnv(
+      "CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT",
+      "dev:replacement-deployment"
+    );
+    await expect(t.mutation(migration.start, {
+      runId: "migration-identity-drift",
+      mode: "annotate",
+      targetDeployment: "dev:hallowed-hummingbird-284",
+    })).rejects.toThrow("CYCLE_FACTS_MIGRATION_IDENTITY_DRIFT");
   });
 
   test("rejects annotation even when the actual server identity is production", async () => {

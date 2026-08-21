@@ -57,6 +57,10 @@ export default defineSchema({
     runId: v.string(),
     mode: v.union(v.literal("dry_run"), v.literal("annotate")),
     targetDeployment: v.optional(v.string()),
+    attestedDeployment: v.optional(v.string()),
+    attestedEnvironment: v.optional(
+      v.union(v.literal("dev"), v.literal("preview"), v.literal("staging"))
+    ),
     cursor: v.optional(v.string()),
     currentUserId: v.optional(v.id("users")),
     userCursor: v.optional(v.string()),

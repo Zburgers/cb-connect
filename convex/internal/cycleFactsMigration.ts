@@ -31,15 +31,43 @@ type MigrationReason = LegacyClassificationReason;
 
 type Certainty = "exact" | "approximate" | "legacy_unknown";
 
-function isNonProductionTarget(targetDeployment: string | undefined): boolean {
-  const actualDeployment = process.env.CB_CONNECT_BACKEND_DEPLOYMENT;
+type AttestedEnvironment = "dev" | "preview" | "staging";
+
+type ServerAttestedMigrationIdentity = {
+  deployment: string;
+  environment: AttestedEnvironment;
+};
+
+function readServerAttestedMigrationIdentity(
+  environment: NodeJS.ProcessEnv = process.env
+): ServerAttestedMigrationIdentity | null {
+  const attestedEnvironment = environment.CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT;
+  const attestedDeployment = environment.CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT;
+  const backendDeployment = environment.CB_CONNECT_BACKEND_DEPLOYMENT;
+  if (
+    environment.CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY !== "true" ||
+    (attestedEnvironment !== "dev" &&
+      attestedEnvironment !== "preview" &&
+      attestedEnvironment !== "staging") ||
+    attestedDeployment === undefined ||
+    backendDeployment !== attestedDeployment ||
+    !new RegExp(
+      `^${attestedEnvironment}:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`
+    ).test(attestedDeployment)
+  ) {
+    return null;
+  }
+  return { deployment: attestedDeployment, environment: attestedEnvironment };
+}
+
+function isSameAttestedIdentity(
+  run: Doc<"cycleFactsMigrationRuns">,
+  identity: ServerAttestedMigrationIdentity | null
+): boolean {
   return (
-    targetDeployment !== undefined &&
-    actualDeployment !== undefined &&
-    targetDeployment === actualDeployment &&
-    /^(dev|preview|staging):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(
-      actualDeployment
-    )
+    identity !== null &&
+    run.attestedDeployment === identity.deployment &&
+    run.attestedEnvironment === identity.environment
   );
 }
 
@@ -103,15 +131,15 @@ export const start = internalMutation({
   }),
   handler: async (ctx, args) => {
     const mode = args.mode ?? "dry_run";
-    if (mode === "annotate" && !isNonProductionTarget(args.targetDeployment)) {
-      throw new Error("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
-    }
-
     const existing = await ctx.db
       .query("cycleFactsMigrationRuns")
       .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
       .unique();
+    const identity = readServerAttestedMigrationIdentity();
     if (existing) {
+      if (existing.mode === "annotate" && !isSameAttestedIdentity(existing, identity)) {
+        throw new Error("CYCLE_FACTS_MIGRATION_IDENTITY_DRIFT");
+      }
       if (
         existing.mode !== mode ||
         existing.targetDeployment !== args.targetDeployment
@@ -121,11 +149,24 @@ export const start = internalMutation({
       return { started: false, mode: existing.mode };
     }
 
+    if (
+      mode === "annotate" &&
+      (identity === null || args.targetDeployment !== identity.deployment)
+    ) {
+      throw new Error("CYCLE_FACTS_MIGRATION_TARGET_REQUIRED");
+    }
+
     const now = Date.now();
     await ctx.db.insert("cycleFactsMigrationRuns", {
       runId: args.runId,
       mode,
       targetDeployment: args.targetDeployment,
+      ...(mode === "annotate" && identity !== null
+        ? {
+            attestedDeployment: identity.deployment,
+            attestedEnvironment: identity.environment,
+          }
+        : {}),
       isComplete: false,
       pageSize: MAX_PAGE_SIZE,
       processedCount: 0,
