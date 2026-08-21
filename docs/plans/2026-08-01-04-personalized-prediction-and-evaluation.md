@@ -23,6 +23,8 @@
 ## Entry criteria
 
 - Gates 1–2 facts/eligibility/state invariants are approved.
+- Gate 3 start-to-start inputs use Gate 1 `isStartAnchorEligible`; exact
+  coverage uses the separate `isExactCoverageEligible` contract.
 - No historical evaluation will use recomputed future inputs.
 - Analysis access, research consent and de-identification rules are approved.
 - Candidate promotion criteria below are preregistered before benchmark results are viewed.

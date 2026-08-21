@@ -4,7 +4,7 @@ import {
   getCycleFactReadLabel,
   isExactCoverageEligible,
   isHistoryVisible,
-  isPredictionEligible,
+  isStartAnchorEligible,
   selectPredictionAnchor,
   selectLatestPredictionFact,
 } from "./cycleFactEligibility.ts";
@@ -50,11 +50,11 @@ describe("cycle fact read eligibility", () => {
       false,
     ],
   ])(
-    "classifies %s as %s, visible=%s, predictionEligible=%s",
+    "classifies %s as %s, visible=%s, startAnchorEligible=%s",
     (period, label, visible, eligible) => {
       expect(getCycleFactReadLabel(period)).toBe(label);
       expect(isHistoryVisible(period)).toBe(visible);
-      expect(isPredictionEligible(period)).toBe(eligible);
+      expect(isStartAnchorEligible(period)).toBe(eligible);
     }
   );
 
@@ -102,13 +102,13 @@ describe("cycle fact read eligibility", () => {
       endCertainty: "approximate" as const,
     };
     expect(getCycleFactReadLabel(period)).toBe("approximate");
-    expect(isPredictionEligible(period)).toBe(true);
+    expect(isStartAnchorEligible(period)).toBe(true);
     expect(isExactCoverageEligible(period, "2026-07-05")).toBe(false);
   });
 
   test("uses an exact start for prediction even when the end is approximate", () => {
     expect(
-      isPredictionEligible({
+      isStartAnchorEligible({
         ...exact,
         endDate: "2026-07-05",
         endCertainty: "approximate",

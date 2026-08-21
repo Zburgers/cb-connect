@@ -63,10 +63,6 @@ export function isExactCoverageEligible(
   );
 }
 
-export function isPredictionEligible(period: CycleFactLike): boolean {
-  return isStartAnchorEligible(period);
-}
-
 export function selectLatestPredictionFact<T extends CycleFactLike>(
   periods: T[]
 ): T | null {

@@ -26,6 +26,15 @@ exposure, destructive migration or deletion behavior. See the
 [Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
 current code inventory and decision boundary; it is not an execution plan.
 
+### Eligibility contract
+
+Gate 1 exposes two distinct read policies. `isStartAnchorEligible` accepts a
+visible, non-legacy row with an exact start for prediction and state anchoring;
+an approximate or unknown end does not invalidate that start.
+`isExactCoverageEligible` is stricter: coverage after the start requires an
+exact end, so an approximate or unknown end never claims Recorded coverage.
+Whole-row labels remain conservative through `getCycleFactReadLabel`.
+
 ## Required detailed execution order
 
 1. Establish timezone storage, default/change behavior and authoritative user-local `today` from F6/D-008.
