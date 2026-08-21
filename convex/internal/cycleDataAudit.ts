@@ -245,13 +245,13 @@ export const scanPage = internalMutation({
       const overlapPeer = period.tombstoneAt === undefined
         ? await ctx.db
             .query("cycleFactScanRows")
-            .withIndex("by_run_user_end", (q) =>
+            .withIndex("by_run_user_scan_end", (q) =>
               q.eq("runType", "audit")
                 .eq("runId", args.runId)
                 .eq("userId", activeUserId)
-                .eq("active", true)
                 .gte("scanEndDate", period.startDate)
             )
+            .filter((q) => q.eq(q.field("active"), true))
             .first()
         : null;
       const reason = classifyLegacyCycleFact(period, {

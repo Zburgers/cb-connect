@@ -152,6 +152,20 @@ describe("cycle facts migration runner", () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }));
+      lateIds.push(await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-03-001",
+        endDate: "2026-03-005",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      lateIds.push(await ctx.db.insert("periodEvents", {
+        userId,
+        startDate: "2026-03-004",
+        endDate: "2026-03-006",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
     });
 
     await t.mutation(migration.start, {
@@ -169,15 +183,35 @@ describe("cycle facts migration runner", () => {
       cursor = result.cursor;
     } while (!result.isComplete);
 
-    expect(result.annotatedCount).toBeGreaterThanOrEqual(2);
+    expect(result).toMatchObject({
+      processedCount: 104,
+      annotatedCount: 104,
+      isComplete: true,
+    });
     const lateRows = await t.run(async (ctx) =>
       Promise.all(lateIds.map((id) => ctx.db.get("periodEvents", id)))
     );
-    expect(lateRows).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ legacyReason: "duplicate" }),
-      ])
+    expect(lateRows[0]).toMatchObject({ legacyReason: "missing_provenance" });
+    expect(lateRows[1]).toMatchObject({ legacyReason: "duplicate" });
+    expect(lateRows[2]).toMatchObject({ legacyReason: "missing_provenance" });
+    expect(lateRows[3]).toMatchObject({ legacyReason: "overlap" });
+
+    const scanRows = await t.run(async (ctx) =>
+      ctx.db
+        .query("cycleFactScanRows")
+        .withIndex("by_run_user_scan_end", (q) =>
+          q.eq("runType", "migration")
+            .eq("runId", "migration-late-conflicts")
+            .eq("userId", userId)
+            .gte("scanEndDate", "2026-03-001")
+        )
+        .filter((q) => q.eq(q.field("active"), true))
+        .collect()
     );
+    expect(scanRows.map((row) => row.startDate)).toEqual([
+      "2026-03-001",
+      "2026-03-004",
+    ]);
   });
 
   test("defaults to a dry run and leaves legacy rows unchanged", async () => {

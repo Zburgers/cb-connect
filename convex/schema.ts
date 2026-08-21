@@ -145,6 +145,13 @@ export default defineSchema({
       "userId",
       "active",
       "scanEndDate",
+    ])
+    .index("by_run_user_scan_end", [
+      "runType",
+      "runId",
+      "userId",
+      "scanEndDate",
+      "active",
     ]),
 
   couples: defineTable({
