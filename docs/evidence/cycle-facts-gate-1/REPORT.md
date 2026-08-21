@@ -94,7 +94,8 @@ health values or raw provider responses in this report.
 
 ## Gate 2 handoff
 
-The stacked Gate 2 PR #36 head is `96357af` over the current Gate 1 branch
-head `0a5fc10`. It remains provisional until PR #35 is approved/merged and
-the resulting final base is verified and fully requalified; this report does
-not qualify the Gate 2 stack.
+The stacked Gate 2 PR #36 is published over the current Gate 1 branch at
+`https://github.com/Zburgers/cb-connect/pull/36`. Its current head and exact
+base relationship must be checked on GitHub at review time. It remains
+provisional until PR #35 is approved/merged and the resulting final base is
+verified and fully requalified; this report does not qualify the Gate 2 stack.
