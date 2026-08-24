@@ -14,6 +14,10 @@ import {
   type CycleFactReadLabel,
 } from "../_helpers/cycleFactEligibility";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
+import {
+  projectPartnerPeriodHistory,
+  projectPrimaryPeriodHistory,
+} from "../_helpers/historyProjections";
 
 const MAX_PERIOD_HISTORY_ROWS = 100;
 const MAX_PAIN_HISTORY_ROWS = 1000;
@@ -98,7 +102,8 @@ export const getPeriodHistory = query({
     return await enrichPeriodEvents(
       ctx,
       periods.filter(isHistoryVisible),
-      user._id
+      user._id,
+      user.role === "partner" ? "partner" : "primary"
     );
   },
 });
@@ -252,15 +257,20 @@ export const getTimelineHistory = query({
           | "duplicate"
           | "overlap"
           | "unprovable";
-        createdByUserId: Id<"users">;
-        updatedByUserId: Id<"users">;
         createdByName: string;
         updatedByName: string;
+        createdByViewer: boolean;
+        updatedByViewer: boolean;
         canCorrect: boolean;
       };
     }> = [];
 
-    const enrichedPeriods = await enrichPeriodEvents(ctx, periods, user._id);
+    const enrichedPeriods = await enrichPeriodEvents(
+      ctx,
+      periods,
+      user._id,
+      user.role === "partner" ? "partner" : "primary"
+    );
     for (const period of enrichedPeriods) {
       timelineEntries.push({
         date: period.startDate,
@@ -278,10 +288,10 @@ export const getTimelineHistory = query({
           certainty: period.certainty,
           authorityVersion: period.authorityVersion,
           legacyReason: period.legacyReason,
-          createdByUserId: period.createdByUserId,
-          updatedByUserId: period.updatedByUserId,
           createdByName: period.createdByName,
           updatedByName: period.updatedByName,
+          createdByViewer: period.createdByViewer,
+          updatedByViewer: period.updatedByViewer,
           canCorrect: period.canCorrect,
         },
       });
@@ -311,7 +321,8 @@ export const getTimelineHistory = query({
 async function enrichPeriodEvents(
   ctx: QueryCtx,
   periods: Doc<"periodEvents">[],
-  viewerId: Id<"users">
+  viewerId: Id<"users">,
+  viewerRole: "primary" | "partner"
 ) {
   const userIds = new Set<Id<"users">>();
   for (const period of periods) {
@@ -335,7 +346,7 @@ async function enrichPeriodEvents(
   return periods.map((period) => {
     const createdByUserId = period.createdByUserId ?? period.userId;
     const updatedByUserId = period.updatedByUserId ?? period.userId;
-    return {
+    const enrichedPeriod = {
       ...period,
       source: period.source ?? ("self" as const),
       confirmationStatus:
@@ -348,5 +359,9 @@ async function enrichPeriodEvents(
       updatedByName: names.get(updatedByUserId) ?? "Partner",
       canCorrect: period.userId === viewerId,
     };
+
+    return viewerRole === "partner"
+      ? projectPartnerPeriodHistory(enrichedPeriod, viewerId)
+      : projectPrimaryPeriodHistory(enrichedPeriod, viewerId);
   });
 }

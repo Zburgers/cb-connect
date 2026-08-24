@@ -101,24 +101,23 @@ type PeriodTimelineMetadata = {
     | "overlap"
     | "unprovable";
   authorityVersion: number;
-  createdByUserId: Id<"users">;
-  updatedByUserId: Id<"users">;
   createdByName: string;
   updatedByName: string;
+  createdByViewer: boolean;
+  updatedByViewer: boolean;
   canCorrect: boolean;
 };
 
 function attributionCopy(
   period: PeriodTimelineMetadata,
-  viewerId: Id<"users">,
   partnerView: boolean
 ) {
   if (period.source === "system") return "Auto-ended by CB Connect";
   if (period.source === "partner_assist") {
-    if (period.updatedByUserId === viewerId && period.createdByUserId !== viewerId) {
+    if (period.updatedByViewer && !period.createdByViewer) {
       return `Added by ${period.createdByName} · Corrected by you`;
     }
-    if (partnerView && period.createdByUserId === viewerId) {
+    if (partnerView && period.createdByViewer) {
       return "Added by you for your partner";
     }
     return `Added by ${period.createdByName}`;
@@ -134,7 +133,6 @@ function TimelineEntry({
   period,
   isOngoing,
   isFirst,
-  viewerId,
   partnerView,
   showFactSemantics,
   onSaveCorrection,
@@ -146,7 +144,6 @@ function TimelineEntry({
   period?: PeriodTimelineMetadata;
   isOngoing?: boolean;
   isFirst?: boolean;
-  viewerId: Id<"users">;
   partnerView: boolean;
   showFactSemantics: boolean;
   onSaveCorrection: (
@@ -289,7 +286,7 @@ function TimelineEntry({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-medium text-foreground/75">
-                  {attributionCopy(period, viewerId, partnerView)}
+                  {attributionCopy(period, partnerView)}
                 </p>
                 {showFactSemantics && (
                   <p className="mt-1 text-xs text-foreground/60">
@@ -970,7 +967,6 @@ export default function LogPage() {
                 period={entry.period}
                 isOngoing={entry.isOngoing}
                 isFirst={i > 0}
-                viewerId={me._id}
                 partnerView={isPartnerView}
                 showFactSemantics={cycleFactsEnabled}
                 onSaveCorrection={handleSaveCorrection}

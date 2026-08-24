@@ -72,6 +72,14 @@ describe("period history attribution", () => {
       createdByName: "Partner Person",
       canCorrect: false,
     });
+    expect(history[0]).not.toHaveProperty("userId");
+    expect(history[0]).not.toHaveProperty("createdByUserId");
+    expect(history[0]).not.toHaveProperty("updatedByUserId");
+    expect(history[0]).not.toHaveProperty("_creationTime");
+    expect(history[0]).not.toHaveProperty("createdAt");
+    expect(history[0]).not.toHaveProperty("updatedAt");
+    expect(history[0]).not.toHaveProperty("tombstoneByUserId");
+    expect(history[0]).toHaveProperty("authorityVersion");
     expect(timeline[0]).toMatchObject({
       type: "period",
       period: {
@@ -80,9 +88,17 @@ describe("period history attribution", () => {
         confirmationStatus: "confirmed",
         createdByName: "Partner Person",
         updatedByName: "Partner Person",
+        createdByViewer: true,
+        updatedByViewer: true,
         canCorrect: false,
       },
     });
+    expect(timeline[0].period).not.toHaveProperty("userId");
+    expect(timeline[0].period).not.toHaveProperty("createdByUserId");
+    expect(timeline[0].period).not.toHaveProperty("updatedByUserId");
+    expect(timeline[0].period).not.toHaveProperty("_creationTime");
+    expect(timeline[0].period).not.toHaveProperty("createdAt");
+    expect(timeline[0].period).not.toHaveProperty("updatedAt");
   });
 
   test("partner receives no period history when phase sharing is disabled", async () => {
