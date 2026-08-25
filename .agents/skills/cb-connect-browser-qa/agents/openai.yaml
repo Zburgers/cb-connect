@@ -1,0 +1,7 @@
+interface:
+  display_name: "CB Connect Browser QA"
+  short_description: "Run safe CB Connect browser and CLI QA workflows"
+  default_prompt: "Use $cb-connect-browser-qa to validate this CB Connect flow through the right browser and CLI QA tracks."
+
+policy:
+  allow_implicit_invocation: true
