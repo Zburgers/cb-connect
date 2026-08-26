@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *"queries/system:getBackendIdentity"* ]]; then
+  printf '%s\n' "${FAKE_CONVEX_IDENTITY:?}"
+else
+  printf '%s\n' "${FAKE_CONVEX_OPERATION_LOG:?}" > "${FAKE_CONVEX_OPERATION_FILE:?}"
+fi

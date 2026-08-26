@@ -40,9 +40,13 @@ the qualified commit, and never rebuilds the frontend. Schema and function
 changes must remain backward-compatible because frontend rollback does not
 reverse production data.
 
-The intended production selector is `prod:festive-malamute-715`; revalidate it
-immediately before any authorized promotion. The shared compatibility tag is
-`v1`. `GET /api/health` is liveness only. `GET /api/ready` is the
+The intended production selector is `prod:festive-malamute-715`. All stateful
+Convex operations must run through `scripts/convex-safe-exec` with explicit
+`test` or `production` mode; the wrapper binds the selector and credential
+class in the same process and verifies effective backend identity immediately
+before and after the operation. Production mode additionally requires
+`CB_CONNECT_PROTECTED_EXECUTION=1`. The shared compatibility tag is `v1`.
+`GET /api/health` is liveness only. `GET /api/ready` is the
 frontend/backend compatibility signal and must be verified without recording
 response bodies that may reveal operational details.
 
@@ -120,7 +124,9 @@ The shared authenticated test deployment is `dev:hallowed-hummingbird-284`.
 Its Convex deploy key is consumed through `CONVEX_DEPLOY_KEY` inside the
 protected `cb-connect-auth-test` GitHub environment. Runs against that target
 must serialize so concurrent PRs do not deploy different commits into the same
-backend at once.
+backend at once. CI invokes `scripts/convex-safe-exec test` for identity
+checks, runtime configuration, and deployment; a caller-side preflight is not
+considered sufficient.
 
 ## Promotion, rollback and recovery
 

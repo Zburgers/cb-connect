@@ -279,7 +279,7 @@ Use the **playwright-cli** skill for browser automation and E2E testing:
 
 ### Convex
 ```bash
-npx convex deploy
+bash scripts/convex-safe-exec production -- deploy
 ```
 
 ### Next.js (Vercel or custom)

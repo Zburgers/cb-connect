@@ -216,6 +216,9 @@ jobs:
       - name: Sync Convex runtime secrets
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: production
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CB_CONNECT_PROTECTED_EXECUTION: '1'
           CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
           CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
           CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT: production
@@ -236,7 +239,7 @@ jobs:
           fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', { mode: 0o600 });
           NODE
           if [[ -s "$env_file" ]]; then
-            npx convex env set --from-file "$env_file" --force
+            bash scripts/convex-safe-exec production -- env set --from-file "$env_file" --force
           else
             echo 'Skipping Convex runtime secret sync; no optional values are configured.'
           fi
@@ -244,10 +247,13 @@ jobs:
       - name: Deploy explicit Convex compatibility release
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: production
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
+          CB_CONNECT_PROTECTED_EXECUTION: '1'
           QUALIFIED_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
         run: |
           set -euo pipefail
-          npx convex deploy --typecheck disable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
+          bash scripts/convex-safe-exec production -- deploy --typecheck disable --codegen enable --message "cb-connect ${QUALIFIED_SHA}"
 
       - name: Promote qualified release with PM2 start-or-reload
         id: promote
