@@ -1,8 +1,8 @@
-import { ConvexHttpClient } from "convex/browser";
 import { type Page, expect } from "@playwright/test";
 
 import { api } from "../convex/_generated/api";
 import { getApprovedReleaseFixture, test } from "./fixtures";
+import { getAuthenticatedConvexClient } from "./support/authenticatedClient";
 
 function localDateDaysAgo(days: number): string {
   const date = new Date();
@@ -64,25 +64,6 @@ async function removeExistingPrimaryPeriod(primary: Page): Promise<void> {
     .getByRole("button", { name: "Delete entry", exact: true })
     .click();
   await expect(primary.getByText("Period entry removed.")).toBeVisible();
-}
-
-async function getAuthenticatedClient(page: Page): Promise<ConvexHttpClient> {
-  const convexUrl = process.env.NEXT_PUBLIC_TEST_CONVEX_URL?.trim();
-  if (!convexUrl) throw new Error("authenticated_fixture_convex_url_missing");
-  const token = await page.evaluate(async () => {
-    const clerk = (window as Window & {
-      Clerk?: {
-        session?: {
-          getToken: (options: { template: string }) => Promise<string | null>;
-        };
-      };
-    }).Clerk;
-    return (await clerk?.session?.getToken({ template: "convex" })) ?? null;
-  });
-  if (!token) throw new Error("authenticated_fixture_convex_token_missing");
-  const client = new ConvexHttpClient(convexUrl);
-  client.setAuth(token);
-  return client;
 }
 
 test("cycle facts release qualification is explicit and non-skipping", async ({
@@ -155,7 +136,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
       ).toBeVisible();
     });
 
-    const partnerClient = await getAuthenticatedClient(partner);
+    const partnerClient = await getAuthenticatedConvexClient(partner);
     const staleFacts = await partnerClient.query(
       api.queries.history.getPeriodHistory,
       {},
@@ -225,7 +206,7 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
           endDate: localDateDaysAgo(0),
           expectedAuthorityVersion: assistedFact.authorityVersion + 1,
         }),
-      ).rejects.toThrow("Assisted period logging is not enabled");
+      ).rejects.toThrow("You are not part of an active couple");
     });
 
     await test.step("primary tombstone removes the fact from history", async () => {
