@@ -4,6 +4,12 @@ import { motion } from "framer-motion";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { X } from "lucide-react";
+import {
+  cycleStateCopy,
+  getPublicSupportCopy,
+  type ExplicitUserReport,
+  type CycleStateCopyState,
+} from "./cycleStateCopy";
 
 interface NutritionTip {
   _id: any;
@@ -13,20 +19,22 @@ interface NutritionTip {
 
 interface NutritionSuggestionsProps {
   tips: NutritionTip[];
-  phase: string;
+  phase?: string | null;
+  state?: CycleStateCopyState;
+  explicitReport?: ExplicitUserReport | null;
 }
 
-const phaseWhisper: Record<string, string> = {
-  menstruation: "Your body is asking for warmth.",
-  follicular:   "Light and nourishing suits you right now.",
-  ovulation:    "Energy is high — feed it well.",
-  luteal:       "Comfort and steadiness, not stimulation.",
-};
-
-export default function NutritionSuggestions({ tips, phase }: NutritionSuggestionsProps) {
+export default function NutritionSuggestions({
+  tips,
+  phase,
+  state = "calendar_estimate",
+  explicitReport,
+}: NutritionSuggestionsProps) {
   const hideTip = useMutation(api.mutations.misc.hideNutritionTip);
+  const supportCopy = getPublicSupportCopy({ state, explicitReport });
+  const showCalendarTips = supportCopy.key === "calendarEstimate";
 
-  if (tips.length === 0) return null;
+  if (tips.length === 0 && showCalendarTips) return null;
 
   return (
     <div
@@ -34,13 +42,12 @@ export default function NutritionSuggestions({ tips, phase }: NutritionSuggestio
       style={{ borderRadius: "var(--radius-xl)" }}
     >
       <div className="p-6">
-        {/* Phase whisper header */}
         <div className="mb-5">
           <p
             className="text-xs font-semibold uppercase tracking-[0.22em]"
             style={{ color: "hsl(var(--muted-foreground))" }}
           >
-            A quiet suggestion
+            {supportCopy.copy.label}
           </p>
           <p
             className="mt-2 font-display"
@@ -51,13 +58,27 @@ export default function NutritionSuggestions({ tips, phase }: NutritionSuggestio
               color: "hsl(var(--foreground))",
             }}
           >
-            {phaseWhisper[phase] ?? "Nourish what's asking for care."}
+            {supportCopy.copy.title}
           </p>
+          <p
+            className="mt-2 text-sm leading-6"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          >
+            {supportCopy.copy.text}
+          </p>
+          {showCalendarTips && phase === "ovulation" && (
+            <p
+              className="mt-2 text-xs leading-5"
+              style={{ color: "hsl(var(--muted-foreground))" }}
+            >
+              {cycleStateCopy.estimatedOvulationDisclaimer.text}
+            </p>
+          )}
         </div>
 
-        {/* Tips — whispered, not listed */}
-        <div className="space-y-3">
-          {tips.map((tip, i) => (
+        {showCalendarTips && (
+          <div className="space-y-3">
+            {tips.map((tip, i) => (
             <motion.div
               key={tip._id}
               className="group flex items-start justify-between gap-3 rounded-[1.2rem] p-4"
@@ -105,8 +126,9 @@ export default function NutritionSuggestions({ tips, phase }: NutritionSuggestio
                 <X className="h-3.5 w-3.5" />
               </motion.button>
             </motion.div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

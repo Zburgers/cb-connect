@@ -23,7 +23,11 @@ Required names:
 - `NEXT_PUBLIC_TEST_CONVEX_URL`
 - `NEXT_PUBLIC_TEST_CONVEX_SITE_URL`
 
-The CI job exposes `CONVEX_TEST_DEPLOY_KEY` to the Convex CLI as `CONVEX_DEPLOY_KEY`. It must not be echoed, printed, or committed.
+The CI job exposes `CONVEX_TEST_DEPLOY_KEY` to the Convex CLI as
+`CONVEX_DEPLOY_KEY`. The safe executor validates its non-secret deployment
+prefix (`dev:hallowed-hummingbird-284|...`) and rejects `CONVEX_DEPLOYMENT`
+because that CLI selector can redirect a development target to its associated
+production deployment. The key must not be echoed, printed, or committed.
 
 ## Deployment-before-E2E contract
 

@@ -4,7 +4,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import {
-  getTimelinePhaseForDate,
+  getTimelineStateForDate,
+  type TimelineStateMetadata,
   type TimelinePhase,
 } from "../_helpers/timelinePhases";
 import {
@@ -115,7 +116,7 @@ export const getCycleSettings = query({
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
     if (!user) {
-      return { cycleLength: 28, periodLength: 5 };
+      return { cycleLength: 28, periodLength: 5, predictionPaused: false };
     }
 
     const settings = await ctx.db
@@ -123,7 +124,15 @@ export const getCycleSettings = query({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
 
-    return settings ?? { cycleLength: 28, periodLength: 5 };
+    if (!settings) {
+      return { cycleLength: 28, periodLength: 5, predictionPaused: false };
+    }
+
+    return {
+      cycleLength: settings.cycleLength,
+      periodLength: settings.periodLength,
+      predictionPaused: settings.predictionPaused ?? false,
+    };
   },
 });
 
@@ -237,10 +246,14 @@ export const getTimelineHistory = query({
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
+    const timelineTimeZone = (await ctx.db.get("users", targetUserId))?.timeZone ?? "";
 
     const timelineEntries: Array<{
       date: string;
       phase: TimelinePhase;
+      status?: TimelineStateMetadata["status"];
+      evidence?: TimelineStateMetadata["evidence"];
+      reason?: TimelineStateMetadata["reason"];
       type: "period" | "pain";
       isOngoing?: boolean;
       pain?: { score: number; tags?: string[]; note?: string };
@@ -269,9 +282,19 @@ export const getTimelineHistory = query({
       false,
     );
     for (const period of enrichedPeriods) {
+      const state = getTimelineStateForDate(
+        period.startDate,
+        periods,
+        cycleLength,
+        periodLength,
+        timelineTimeZone,
+      );
       timelineEntries.push({
         date: period.startDate,
         phase: "menstruation",
+        status: state.status,
+        evidence: state.evidence,
+        reason: state.reason,
         type: "period",
         isOngoing: !period.endDate,
         period: {
@@ -298,16 +321,25 @@ export const getTimelineHistory = query({
     }
 
     for (const pain of painLogs) {
+      const state = canViewPhase
+        ? getTimelineStateForDate(
+            pain.date,
+            periods,
+            cycleLength,
+            periodLength,
+            timelineTimeZone,
+          )
+        : null;
       timelineEntries.push({
         date: pain.date,
-        phase: canViewPhase
-          ? getTimelinePhaseForDate(
-              pain.date,
-              periods,
-              cycleLength,
-              periodLength
-            )
-          : "private",
+        phase: state?.phase ?? "private",
+        ...(state
+          ? {
+              status: state.status,
+              evidence: state.evidence,
+              reason: state.reason,
+            }
+          : {}),
         type: "pain",
         pain: { score: pain.painScore, tags: pain.tags, note: pain.note },
       });

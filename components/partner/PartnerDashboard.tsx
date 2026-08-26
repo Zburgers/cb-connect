@@ -2,6 +2,11 @@
 
 import { motion } from "framer-motion";
 import { Heart, Shield, Info } from "lucide-react";
+import {
+  getPartnerCyclePresentation,
+  isPartnerCycleStateExposed,
+  type PartnerCyclePresentation,
+} from "./partnerCyclePresentation";
 import PartnerPulse from "./PartnerPulse";
 
 interface PartnerDashboardProps {
@@ -15,7 +20,103 @@ function getPainConfig(score: number) {
   return             { bg: "bg-destructive/10", icon: "text-destructive", text: "text-destructive" };
 }
 
+export function PartnerCycleStateCard({
+  presentation,
+}: {
+  presentation: PartnerCyclePresentation;
+}) {
+  if (!presentation.visible) {
+    return (
+      <div
+        className="contrast-glass rounded-[1.5rem] p-6"
+        role="status"
+        aria-label="Partner cycle sharing"
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Cycle sharing
+        </p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {presentation.emptyState}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="contrast-glass rounded-[1.5rem] p-6"
+      data-cycle-state={presentation.status ?? undefined}
+      role="status"
+      aria-label="Partner cycle state"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            Shared cycle state · v{presentation.version}
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-foreground">
+            {presentation.statusLabel}
+          </h2>
+        </div>
+        <span className="rounded-full bg-secondary/10 px-3 py-1.5 text-xs font-semibold text-secondary">
+          {presentation.evidenceLabel}
+        </span>
+      </div>
+
+      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        {presentation.phaseLabel && (
+          <div>
+            <dt className="text-muted-foreground">Phase</dt>
+            <dd className="mt-1 font-semibold text-foreground">
+              {presentation.phaseLabel}
+            </dd>
+          </div>
+        )}
+        {presentation.cycleDay !== null && (
+          <div>
+            <dt className="text-muted-foreground">Cycle day</dt>
+            <dd className="mt-1 font-semibold text-foreground">
+              {presentation.cycleDay}
+            </dd>
+          </div>
+        )}
+        {presentation.bounds && (
+          <div className="sm:col-span-2">
+            <dt className="text-muted-foreground">Calendar bounds</dt>
+            <dd className="mt-1 text-foreground">
+              {presentation.bounds.earliestDate}–{presentation.bounds.latestDate}
+              <span className="text-muted-foreground">
+                {` · expected ${presentation.bounds.expectedDate}`}
+              </span>
+            </dd>
+          </div>
+        )}
+        {presentation.basisCount !== null && (
+          <div>
+            <dt className="text-muted-foreground">Evidence basis</dt>
+            <dd className="mt-1 font-semibold text-foreground">
+              {presentation.basisCount}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-muted-foreground">State reason</dt>
+          <dd className="mt-1 font-mono text-xs text-foreground">
+            {presentation.reason}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 export default function PartnerDashboard({ data, partnerPresent = false }: PartnerDashboardProps) {
+  const showCycleStateV1 = isPartnerCycleStateExposed(data.cycleStateV1Exposed);
+  const partnerProjection = showCycleStateV1
+    ? data.cycleStateV1 ?? null
+    : null;
+  const partnerPresentation = getPartnerCyclePresentation(partnerProjection);
+
   if (!data.hasData) {
     return (
       <motion.div
@@ -42,6 +143,9 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
             {data.message || "Waiting for your partner to set up their account."}
           </p>
         </div>
+        {showCycleStateV1 && (
+          <PartnerCycleStateCard presentation={partnerPresentation} />
+        )}
       </motion.div>
     );
   }
@@ -64,11 +168,15 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
         </p>
       </div>
 
-      <PartnerPulse
-        cycleInfo={data.cycleInfo}
-        painData={data.painData}
-        partnerPresent={partnerPresent}
-      />
+      {showCycleStateV1 ? (
+        <PartnerCycleStateCard presentation={partnerPresentation} />
+      ) : (
+        <PartnerPulse
+          cycleInfo={data.cycleInfo}
+          painData={data.painData}
+          partnerPresent={partnerPresent}
+        />
+      )}
 
       {/* Pain status card */}
       {data.painData && (() => {
@@ -126,7 +234,7 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
       )}
 
       {/* How to help tip */}
-      {data.painTip && (
+      {!showCycleStateV1 && data.painTip && (
         <motion.div
           className="bento-cell-warm p-6"
           style={{ borderRadius: "var(--radius-xl)" }}

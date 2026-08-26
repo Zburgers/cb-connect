@@ -122,6 +122,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         data-cycle-facts-v1={
           cycleFactsCapability?.cycleFactsV1 ? "enabled" : "disabled"
         }
+        data-cycle-state-v1={
+          cycleFactsCapability?.cycleFactsV1 && cycleFactsCapability?.cycleStateV1
+            ? "enabled"
+            : "disabled"
+        }
       >
         {children}
       </main>

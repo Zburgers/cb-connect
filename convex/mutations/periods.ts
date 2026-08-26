@@ -679,6 +679,7 @@ export const updateCycleSettings = mutation({
   args: {
     cycleLength: v.optional(v.number()),
     periodLength: v.optional(v.number()),
+    predictionPaused: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -701,6 +702,27 @@ export const updateCycleSettings = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
 
+    const pauseStartedAt =
+      args.predictionPaused === true
+        ? existing?.predictionPaused === true &&
+          existing.predictionPausedAt !== undefined
+          ? existing.predictionPausedAt
+          : Date.now()
+        : undefined;
+
+    const pausePatch =
+      args.predictionPaused === undefined
+        ? {}
+        : args.predictionPaused
+          ? {
+              predictionPaused: true,
+              predictionPausedAt: pauseStartedAt,
+            }
+          : {
+              predictionPaused: false,
+              predictionPausedAt: undefined,
+            };
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         ...(args.cycleLength !== undefined && {
@@ -709,15 +731,30 @@ export const updateCycleSettings = mutation({
         ...(args.periodLength !== undefined && {
           periodLength: args.periodLength,
         }),
+        ...pausePatch,
         lastUpdatedAt: Date.now(),
       });
     } else {
-      await ctx.db.insert("cycleSettings", {
+      const baseSettings = {
         userId: user._id,
         cycleLength: args.cycleLength ?? 28,
         periodLength: args.periodLength ?? 5,
         lastUpdatedAt: Date.now(),
-      });
+      };
+      if (args.predictionPaused === true) {
+        await ctx.db.insert("cycleSettings", {
+          ...baseSettings,
+          predictionPaused: true,
+          predictionPausedAt: pauseStartedAt,
+        });
+      } else if (args.predictionPaused === false) {
+        await ctx.db.insert("cycleSettings", {
+          ...baseSettings,
+          predictionPaused: false,
+        });
+      } else {
+        await ctx.db.insert("cycleSettings", baseSettings);
+      }
     }
   },
 });

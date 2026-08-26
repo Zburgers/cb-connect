@@ -6,6 +6,7 @@ export async function seedUser(
     clerkId: string;
     name: string;
     role: "primary" | "partner";
+    fixtureRunId?: string;
   }
 ) {
   return await t.run(async (ctx) => {
@@ -14,6 +15,9 @@ export async function seedUser(
       email: `${args.clerkId}@example.test`,
       name: args.name,
       role: args.role,
+      ...(args.fixtureRunId === undefined
+        ? {}
+        : { fixtureRunId: args.fixtureRunId }),
       timeZone: "UTC",
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -26,17 +30,24 @@ export async function seedActiveCouple(
   options: {
     sharingPhase?: boolean;
     sharingPeriodWrite?: boolean;
+    fixtureRunId?: string | null;
   } = {}
 ) {
+  const fixtureRunId =
+    options.fixtureRunId === null
+      ? undefined
+      : options.fixtureRunId ?? "unit-test-run";
   const primaryId = await seedUser(t, {
     clerkId: "primary-clerk",
     name: "Primary Person",
     role: "primary",
+    ...(fixtureRunId === undefined ? {} : { fixtureRunId }),
   });
   const partnerId = await seedUser(t, {
     clerkId: "partner-clerk",
     name: "Partner Person",
     role: "partner",
+    ...(fixtureRunId === undefined ? {} : { fixtureRunId }),
   });
 
   const coupleId = await t.run(async (ctx) => {

@@ -1,25 +1,39 @@
+import { addCalendarDays, type CyclePhase } from "./cycleCalculations.ts";
 import {
-  addCalendarDays,
-  calculateCycleInfo,
-  type CyclePhase,
-} from "./cycleCalculations.ts";
+  createLegacyPredictionBounds,
+} from "./predictionBounds";
+import {
+  reduceCycleState,
+  type CycleState,
+} from "./cycleState";
+import {
+  isExactCoverageEligible,
+  isStartAnchorEligible,
+  selectLatestPredictionFact,
+  type CycleFactLike,
+} from "./cycleFactEligibility";
 
 export type TimelinePhase = CyclePhase | "private" | "unknown";
 
-export interface PeriodLike {
-  startDate: string;
-  endDate?: string;
+export interface PeriodLike extends CycleFactLike {
+  _id?: string;
+  coversTargetDate?: boolean;
 }
+
+export type TimelineStateMetadata = {
+  status: CycleState["status"];
+  evidence: CycleState["evidence"];
+  reason: CycleState["reason"];
+};
+
+export type TimelineState = TimelineStateMetadata & {
+  phase: TimelinePhase;
+};
 
 export type PeriodEndProjection = {
   endDate: string;
   kind: "observed" | "estimated";
 };
-
-function parseCalendarDate(dateString: string): Date {
-  const [year, month, day] = dateString.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-}
 
 export function getPeriodEndProjection(
   period: PeriodLike,
@@ -34,21 +48,6 @@ export function getPeriodEndProjection(
   };
 }
 
-function getRecordedPeriodLength(period: PeriodLike, fallbackPeriodLength: number): number {
-  if (!period.endDate) {
-    return fallbackPeriodLength;
-  }
-
-  const dayCount =
-    Math.floor(
-      (parseCalendarDate(period.endDate).getTime() -
-        parseCalendarDate(period.startDate).getTime()) /
-        (24 * 60 * 60 * 1000)
-    ) + 1;
-
-  return Math.max(dayCount, 1);
-}
-
 export function findLatestPeriodStartDate(periods: PeriodLike[]): string | null {
   let latestStartDate: string | null = null;
 
@@ -61,43 +60,73 @@ export function findLatestPeriodStartDate(periods: PeriodLike[]): string | null 
   return latestStartDate;
 }
 
+function toEligibleFact(period: PeriodLike, index: number, targetDate: string) {
+  const exactCoverage = isExactCoverageEligible(period, targetDate);
+
+  return {
+    id: period.id ?? period._id ?? `timeline-period-${index}`,
+    startDate: period.startDate,
+    ...(exactCoverage && period.endDate !== undefined
+      ? { endDate: period.endDate }
+      : {}),
+    ...(exactCoverage && period.startDate === targetDate
+      ? { coversTargetDate: true }
+      : {}),
+  };
+}
+
+function phaseForState(state: CycleState): TimelinePhase {
+  if (state.status === "recorded_period" || state.status === "estimated") {
+    return state.phase;
+  }
+  return "unknown";
+}
+
+export function getTimelineStateForDate(
+  targetDate: string,
+  periods: PeriodLike[],
+  cycleLength: number,
+  periodLength: number,
+  timeZone = "UTC",
+): TimelineState {
+  const eligiblePeriods = periods.filter(isStartAnchorEligible);
+  const latestPeriod = selectLatestPredictionFact(eligiblePeriods);
+  const bounds = latestPeriod
+    ? createLegacyPredictionBounds({
+        expectedDate: addCalendarDays(latestPeriod.startDate, cycleLength),
+      })
+    : null;
+  const state = reduceCycleState({
+    targetDate,
+    timeZone,
+    paused: false,
+    eligibleFacts: eligiblePeriods.map((period, index) =>
+      toEligibleFact(period, index, targetDate)
+    ),
+    bounds,
+    cycleLength,
+    periodLength,
+  });
+
+  return {
+    phase: phaseForState(state),
+    status: state.status,
+    evidence: state.evidence,
+    reason: state.reason,
+  };
+}
+
 export function getTimelinePhaseForDate(
   targetDate: string,
   periods: PeriodLike[],
   cycleLength: number,
   periodLength: number
 ): CyclePhase | "unknown" {
-  let latestPeriod: PeriodLike | null = null;
-  let latestPeriodStartDate: string | null = null;
-
-  for (const period of periods) {
-    const effectiveEndDate = getPeriodEndProjection(period, periodLength).endDate;
-
-    if (targetDate >= period.startDate && targetDate <= effectiveEndDate) {
-      return "menstruation";
-    }
-
-    if (period.startDate <= targetDate) {
-      if (!latestPeriodStartDate || period.startDate > latestPeriodStartDate) {
-        latestPeriod = period;
-        latestPeriodStartDate = period.startDate;
-      }
-    }
-  }
-
-  if (!latestPeriodStartDate || !latestPeriod) {
-    return "unknown";
-  }
-
-  const effectivePeriodLength =
-    latestPeriod.endDate && targetDate > latestPeriod.endDate
-      ? getRecordedPeriodLength(latestPeriod, periodLength)
-      : periodLength;
-
-  return calculateCycleInfo(
-    latestPeriodStartDate,
+  const state = getTimelineStateForDate(
+    targetDate,
+    periods,
     cycleLength,
-    effectivePeriodLength,
-    targetDate
-  ).phase;
+    periodLength,
+  );
+  return state.phase === "private" ? "unknown" : state.phase;
 }

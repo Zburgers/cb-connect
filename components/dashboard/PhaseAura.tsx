@@ -8,13 +8,15 @@ import { api } from "@/convex/_generated/api";
 import { getPainSeverityBucket } from "@/lib/utils";
 import { getPhaseAsset } from "@/lib/phaseAssets";
 import { getNudgeMessage, NUDGE_EMOJIS } from "@/lib/nudges.mjs";
+import type { CycleStatePresentation } from "./cycleStatePresentation";
 
 interface PhaseAuraProps {
-  phase: string;
-  cycleDay: number;
-  description: string;
-  daysUntilNextPeriod: number;
-  nextPeriodStart: string;
+  presentation?: CycleStatePresentation;
+  phase?: string;
+  cycleDay?: number;
+  description?: string;
+  daysUntilNextPeriod?: number;
+  nextPeriodStart?: string;
   painScore?: number | null;
   perspective?: "primary" | "partner";
   partnerPresent?: boolean;
@@ -54,6 +56,7 @@ function painPhrase(score?: number | null) {
 }
 
 export default function PhaseAura({
+  presentation,
   phase,
   cycleDay,
   description,
@@ -63,8 +66,32 @@ export default function PhaseAura({
   perspective = "primary",
   partnerPresent = false,
 }: PhaseAuraProps) {
-  const copy  = phaseCopy[phase] ?? phaseCopy.follicular;
+  const legacyPhase = phase ?? "follicular";
+  const displayPhase = presentation ? presentation.phase : legacyPhase;
+  const copy = presentation
+    ? {
+        title: presentation.title,
+        tone: presentation.text,
+        action: presentation.text,
+      }
+    : phaseCopy[legacyPhase] ?? phaseCopy.follicular;
   const pain  = painPhrase(painScore);
+  const phaseChipLabel = presentation
+    ? [presentation.statusLabel, presentation.phaseLabel]
+        .filter(Boolean)
+        .join(" · ")
+    : `${legacyPhase.charAt(0).toUpperCase() + legacyPhase.slice(1)} Phase`;
+  const phaseAsset = presentation
+    ? presentation.phase
+      ? getPhaseAsset(presentation.phase)
+      : null
+    : getPhaseAsset(legacyPhase);
+  const hasCountdown = presentation
+    ? presentation.daysUntilNextPeriod !== null &&
+      presentation.nextPeriodStart !== null
+    : daysUntilNextPeriod !== undefined && nextPeriodStart !== undefined;
+  const countdownDays = presentation?.daysUntilNextPeriod ?? daysUntilNextPeriod;
+  const countdownStart = presentation?.nextPeriodStart ?? nextPeriodStart;
   const presenceLabel = perspective === "partner" ? "Both online now" : "Partner online now";
   const nudgeTarget = perspective === "partner" ? "your partner" : "partner";
   const [sendingEmoji, setSendingEmoji] = useState<string | null>(null);
@@ -93,7 +120,7 @@ export default function PhaseAura({
 
   return (
     <div
-      data-phase={phase}
+      data-phase={presentation ? displayPhase ?? "unknown" : legacyPhase}
       className="phase-aura-card bento-cell-warm relative isolate overflow-hidden"
       style={{
         borderRadius: "var(--radius-xl)",
@@ -269,20 +296,20 @@ export default function PhaseAura({
 
           {/* Phase label pill — own row, below badge */}
           <div>
-            <span className="phase-chip capitalize">
-              {phase.charAt(0).toUpperCase() + phase.slice(1)} Phase
-            </span>
+            <span className="phase-chip capitalize">{phaseChipLabel}</span>
           </div>
 
           {/* Generated phase asset + huge phase title */}
           <div className="pt-1">
-            <div className="phase-art-frame" aria-hidden="true">
-              <img
-                src={getPhaseAsset(phase)}
-                alt=""
-                className="phase-art-image"
-              />
-            </div>
+            {phaseAsset && (
+              <div className="phase-art-frame" aria-hidden="true">
+                <img
+                  src={phaseAsset}
+                  alt=""
+                  className="phase-art-image"
+                />
+              </div>
+            )}
 
             <motion.h2
               key={copy.title}
@@ -308,7 +335,11 @@ export default function PhaseAura({
             className="max-w-sm text-sm leading-6"
             style={{ color: "hsl(var(--muted-foreground))" }}
           >
-            {perspective === "partner" ? copy.action : copy.tone}
+            {presentation
+              ? presentation.text
+              : perspective === "partner"
+                ? copy.action
+                : copy.tone}
           </p>
         </div>
 
@@ -319,8 +350,24 @@ export default function PhaseAura({
             <div className="flex items-start gap-3">
               <CalendarDays className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
               <div>
-                <p className="font-semibold text-foreground">Cycle day {cycleDay}</p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>
+                {presentation?.cycleDay !== null &&
+                presentation?.cycleDay !== undefined ? (
+                  <p className="font-semibold text-foreground">
+                    Cycle day {presentation.cycleDay}
+                  </p>
+                ) : presentation ? (
+                  <p className="font-semibold text-foreground">
+                    {presentation.statusLabel}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                  {presentation?.evidenceLabel ?? description}
+                </p>
+                {presentation?.disclaimer && (
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {presentation.disclaimer}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -337,22 +384,24 @@ export default function PhaseAura({
           </div>
 
           {/* Countdown — high-contrast tile */}
-          <motion.div
-            key={daysUntilNextPeriod}
-            className="rounded-[1.4rem] p-4 bg-foreground text-background"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4 }}
-          >
-            <p
-              className="font-data font-semibold leading-none"
-              style={{ fontSize: "2.5rem", letterSpacing: "-0.04em" }}
+          {hasCountdown && (
+            <motion.div
+              key={countdownDays}
+              className="rounded-[1.4rem] p-4 bg-foreground text-background"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4 }}
             >
-              {daysUntilNextPeriod}
-            </p>
-            <p className="mt-1 text-sm opacity-80">days until predicted period</p>
-            <p className="mt-2 text-xs opacity-60">Estimated: {nextPeriodStart}</p>
-          </motion.div>
+              <p
+                className="font-data font-semibold leading-none"
+                style={{ fontSize: "2.5rem", letterSpacing: "-0.04em" }}
+              >
+                {countdownDays}
+              </p>
+              <p className="mt-1 text-sm opacity-80">days until predicted period</p>
+              <p className="mt-2 text-xs opacity-60">Estimated: {countdownStart}</p>
+            </motion.div>
+          )}
         </div>
       </div>
     </div>
