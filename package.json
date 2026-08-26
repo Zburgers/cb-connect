@@ -15,6 +15,7 @@
     "test:cycle-facts-plan": "bash scripts/tests/cycle-facts-plan.test.sh",
     "test:convex-safe-exec": "bash scripts/tests/convex-safe-exec.test.sh",
     "test:convex-command-policy": "bash scripts/tests/convex-command-policy.test.sh",
+    "test:fixture-evidence-boundary": "bash scripts/tests/fixture-evidence-boundary.test.sh",
     "test:e2e": "playwright test",
     "test:e2e:release": "playwright test --config=playwright.release.config.ts"
   },
@@ -22,7 +23,7 @@
     "@clerk/nextjs": "^7.3.3",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
-    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-select": "^1.2.6",
     "@radix-ui/react-slider": "^1.2.3",
     "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-switch": "^1.1.3",
