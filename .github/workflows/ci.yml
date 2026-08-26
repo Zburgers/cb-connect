@@ -203,7 +203,7 @@ jobs:
           exit "$status"
 
       - name: Run isolated Gates 0-2 matrix
-        if: github.event_name == 'pull_request' && github.head_ref == 'gate-2/four-phase-state-semantics'
+        if: github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -212,7 +212,7 @@ jobs:
           bash scripts/run-gates-0-2-qa.sh
 
       - name: Prepare redacted Gates 0-2 evidence
-        if: always() && github.event_name == 'pull_request' && github.head_ref == 'gate-2/four-phase-state-semantics'
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -237,7 +237,7 @@ jobs:
             > "$safe_root/qualification.env"
 
       - name: Upload redacted Gates 0-2 evidence
-        if: always() && github.event_name == 'pull_request' && github.head_ref == 'gate-2/four-phase-state-semantics'
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
         uses: actions/upload-artifact@v4
         with:
           name: cb-connect-gates-0-2-qa-${{ github.sha }}
