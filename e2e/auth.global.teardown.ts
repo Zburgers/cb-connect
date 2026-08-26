@@ -147,7 +147,9 @@ export default async function globalTeardown() {
     }
     teardownStage = "evidence-write";
     teardownReason = "evidence_write_failed";
-    const evidenceDirectory = "docs/evidence/reliability-gate-0";
+    const evidenceRoot =
+      process.env.CB_CONNECT_RELEASE_EVIDENCE_DIR?.trim() || "e2e/.evidence";
+    const evidenceDirectory = `${evidenceRoot}/${environment.runId}`;
     await mkdir(evidenceDirectory, { recursive: true });
     await writeFile(
       `${evidenceDirectory}/e2-live-proof.md`,
