@@ -1,10 +1,14 @@
 # Gates 0–2 remediation incident preservation
 
-## I0 status
+## I0 status at invalidation
 
-**I0 remains open.** This file preserves the invalidated remediation incident
-as evidence. It is not QA Run 2 evidence and does not authorize merge,
-deployment, rollback, feature exposure, or production repair.
+**Status at invalidation: OPEN.** This file preserves the state of the
+invalidated remediation campaign as historical evidence. The deployment-
+selector control was subsequently remediated and closed by Gates 0–2
+remediation run 2. See
+`docs/evidence/gates-0-2-remediation-run-2/REPORT.md` for the current readiness
+authority. This historical report does not authorize merge, deployment,
+rollback, feature exposure, or production repair.
 
 The fuller invalidated remediation report remains preserved at Git commit
 `2fc028d9246cd958d60b59480245d810f8f81ecd`.
