@@ -34,16 +34,30 @@ if [[ "$credential_class" != "$required_class" ]]; then
   exit 65
 fi
 
-deployment_vars=(
-  CONVEX_DEPLOYMENT
-  CONVEX_TEST_DEPLOYMENT
-  CB_CONNECT_TEST_DEPLOYMENT
-  CB_CONNECT_BACKEND_DEPLOYMENT
-  CB_CONNECT_PRODUCTION_DEPLOYMENT
-)
-if [[ -z "${CONVEX_DEPLOYMENT:-}" ]]; then
-  echo 'convex-safe-exec requires an explicit deployment target' >&2
+deploy_key="${CONVEX_DEPLOY_KEY:-}"
+if [[ -z "$deploy_key" ]]; then
+  echo 'convex-safe-exec requires a bound Convex deploy credential' >&2
   exit 65
+fi
+credential_target="${deploy_key%%|*}"
+if [[ "$deploy_key" != *'|'* || "$credential_target" != "$approved_target" ]]; then
+  echo 'convex-safe-exec rejected a deploy credential for the wrong target' >&2
+  exit 65
+fi
+
+# Convex interprets CONVEX_DEPLOYMENT as a project/development selector and can
+# redirect a development deployment to its associated production deployment.
+# It is therefore never allowed in the executor context. The deploy key's
+# associated deployment is the sole CLI target authority.
+if [[ -n "${CONVEX_DEPLOYMENT:-}" ]]; then
+  echo 'convex-safe-exec rejects CONVEX_DEPLOYMENT; use the bound target credential' >&2
+  exit 65
+fi
+
+if [[ "$mode" == 'test' ]]; then
+  deployment_vars=(CONVEX_TEST_DEPLOYMENT CB_CONNECT_TEST_DEPLOYMENT CB_CONNECT_BACKEND_DEPLOYMENT)
+else
+  deployment_vars=(CB_CONNECT_PRODUCTION_DEPLOYMENT CB_CONNECT_BACKEND_DEPLOYMENT)
 fi
 for name in "${deployment_vars[@]}"; do
   value="${!name:-}"
@@ -53,14 +67,6 @@ for name in "${deployment_vars[@]}"; do
   fi
 done
 
-if [[ -n "${CONVEX_DEPLOY_KEY:-}" && -z "${CB_CONNECT_CONVEX_CREDENTIAL_CLASS:-}" ]]; then
-  echo 'convex-safe-exec requires an explicitly classified Convex credential' >&2
-  exit 65
-fi
-if [[ -z "${CONVEX_DEPLOY_KEY:-}" ]]; then
-  echo 'convex-safe-exec requires a bound Convex deploy credential' >&2
-  exit 65
-fi
 if [[ "$mode" == 'test' && -n "${CB_CONNECT_PRODUCTION_DEPLOYMENT:-}" ]]; then
   echo 'convex-safe-exec rejected production context in test mode' >&2
   exit 65
@@ -84,8 +90,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-export CONVEX_DEPLOYMENT="$approved_target"
 
 verify_identity() {
   local identity

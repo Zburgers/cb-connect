@@ -116,7 +116,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
-          CONVEX_DEPLOYMENT: dev:hallowed-hummingbird-284
         shell: bash
         run: |
           set -euo pipefail
@@ -126,7 +125,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
-          CONVEX_DEPLOYMENT: dev:hallowed-hummingbird-284
         shell: bash
         run: |
           set -euo pipefail
@@ -167,7 +165,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
-          CONVEX_DEPLOYMENT: dev:hallowed-hummingbird-284
         run: |
           set -euo pipefail
           bash scripts/convex-safe-exec test -- deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"
@@ -176,7 +173,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
-          CONVEX_DEPLOYMENT: dev:hallowed-hummingbird-284
         run: |
           set -euo pipefail
           bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'

@@ -217,7 +217,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: production
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CB_CONNECT_PROTECTED_EXECUTION: '1'
           CB_CONNECT_BACKEND_DEPLOYMENT: ${{ vars.CB_CONNECT_PRODUCTION_DEPLOYMENT }}
           CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
@@ -248,7 +247,6 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: production
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_DEPLOYMENT }}
           CB_CONNECT_PROTECTED_EXECUTION: '1'
           QUALIFIED_SHA: ${{ steps.qualified_release.outputs.commit_sha }}
         run: |
