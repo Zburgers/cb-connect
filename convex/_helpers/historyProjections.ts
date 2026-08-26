@@ -8,8 +8,7 @@ type PeriodAttribution = {
   updatedByViewer: boolean;
 };
 
-type PeriodHistoryFields = {
-  _id: Id<"periodEvents">;
+type PeriodHistoryPresentation = {
   startDate: string;
   endDate?: string;
   startCertainty?: "exact" | "approximate" | "legacy_unknown";
@@ -17,27 +16,23 @@ type PeriodHistoryFields = {
   source: "self" | "partner_assist" | "system";
   confirmationStatus: "confirmed" | "unreviewed";
   certainty: CycleFactReadLabel;
-  authorityVersion: number;
-  legacyReason?:
-    | "missing_provenance"
-    | "inferred_end"
-    | "duplicate"
-    | "overlap"
-    | "unprovable";
   createdByName: string;
   updatedByName: string;
   canCorrect: boolean;
 };
 
-/**
- * Fields intentionally shared by the primary and partner history screens.
- *
- * The event id is retained because the authorized partner end-write contract
- * is targeted and stale-safe. The authority version is retained for the same
- * reason. Attribution is viewer-relative so the partner never receives actor
- * or owner ids.
- */
-export type SharedPeriodHistory = PeriodHistoryFields & PeriodAttribution;
+export type PartnerReadOnlyPeriodHistory = PeriodHistoryPresentation &
+  PeriodAttribution & {
+    _id?: Id<"periodEvents">;
+    authorityVersion?: number;
+  };
+
+export type PartnerWritablePeriodHistory = PartnerReadOnlyPeriodHistory & {
+  _id: Id<"periodEvents">;
+  authorityVersion: number;
+};
+
+export type SharedPeriodHistory = PartnerWritablePeriodHistory;
 
 export type PrimaryPeriodHistory = SharedPeriodHistory & {
   createdByUserId: Id<"users">;
@@ -48,8 +43,8 @@ export type PartnerPeriodHistory = SharedPeriodHistory;
 
 type EnrichedPeriod = Doc<"periodEvents"> &
   Partial<PeriodAttribution> & {
-    source: PeriodHistoryFields["source"];
-    confirmationStatus: PeriodHistoryFields["confirmationStatus"];
+    source: PeriodHistoryPresentation["source"];
+    confirmationStatus: PeriodHistoryPresentation["confirmationStatus"];
     certainty: CycleFactReadLabel;
     authorityVersion: number;
     canCorrect: boolean;
@@ -59,13 +54,13 @@ type EnrichedPeriod = Doc<"periodEvents"> &
 
 function projectPeriodHistory(
   period: EnrichedPeriod,
-  viewerId: Id<"users">
-): SharedPeriodHistory {
+  viewerId: Id<"users">,
+  includeWriteMetadata: boolean,
+): PartnerReadOnlyPeriodHistory | PartnerWritablePeriodHistory {
   const createdByUserId = period.createdByUserId ?? period.userId;
   const updatedByUserId = period.updatedByUserId ?? period.userId;
 
-  return {
-    _id: period._id,
+  const presentation: PartnerReadOnlyPeriodHistory = {
     startDate: period.startDate,
     endDate: period.endDate,
     startCertainty: period.startCertainty,
@@ -73,21 +68,27 @@ function projectPeriodHistory(
     source: period.source,
     confirmationStatus: period.confirmationStatus,
     certainty: period.certainty,
-    authorityVersion: period.authorityVersion,
-    legacyReason: period.legacyReason,
     createdByName: period.createdByName,
     updatedByName: period.updatedByName,
     createdByViewer: createdByUserId === viewerId,
     updatedByViewer: updatedByUserId === viewerId,
     canCorrect: period.userId === viewerId,
   };
+
+  return includeWriteMetadata
+    ? { ...presentation, _id: period._id, authorityVersion: period.authorityVersion }
+    : presentation;
 }
 
 export function projectPrimaryPeriodHistory(
   period: EnrichedPeriod,
   viewerId: Id<"users">
 ): PrimaryPeriodHistory {
-  const shared = projectPeriodHistory(period, viewerId);
+  const shared = projectPeriodHistory(
+    period,
+    viewerId,
+    true,
+  ) as PartnerWritablePeriodHistory;
   return {
     ...shared,
     createdByUserId: period.createdByUserId ?? period.userId,
@@ -97,7 +98,8 @@ export function projectPrimaryPeriodHistory(
 
 export function projectPartnerPeriodHistory(
   period: EnrichedPeriod,
-  viewerId: Id<"users">
-): PartnerPeriodHistory {
-  return projectPeriodHistory(period, viewerId);
+  viewerId: Id<"users">,
+  includeWriteMetadata = false,
+): PartnerReadOnlyPeriodHistory | PartnerWritablePeriodHistory {
+  return projectPeriodHistory(period, viewerId, includeWriteMetadata);
 }

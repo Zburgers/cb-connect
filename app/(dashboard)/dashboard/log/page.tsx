@@ -86,7 +86,7 @@ function downloadCsv(filename: string, rows: unknown[][]) {
 }
 
 type PeriodTimelineMetadata = {
-  id: Id<"periodEvents">;
+  id?: Id<"periodEvents">;
   startDate: string;
   endDate?: string;
   startCertainty?: "exact" | "approximate" | "legacy_unknown";
@@ -94,13 +94,7 @@ type PeriodTimelineMetadata = {
   source: "self" | "partner_assist" | "system";
   confirmationStatus: "confirmed" | "unreviewed";
   certainty: "exact" | "approximate" | "legacy_unknown";
-  legacyReason?:
-    | "missing_provenance"
-    | "inferred_end"
-    | "duplicate"
-    | "overlap"
-    | "unprovable";
-  authorityVersion: number;
+  authorityVersion?: number;
   createdByName: string;
   updatedByName: string;
   createdByViewer: boolean;
@@ -173,7 +167,7 @@ function TimelineEntry({
   const [editorMessage, setEditorMessage] = useState("");
 
   const saveCorrection = async () => {
-    if (!period || !editStartDate) return;
+    if (!period || !editStartDate || !period.id || period.authorityVersion === undefined) return;
     setIsSaving(true);
     setEditorMessage("");
     try {
@@ -197,7 +191,7 @@ function TimelineEntry({
   };
 
   const deleteEntry = async () => {
-    if (!period) return;
+    if (!period || !period.id || period.authorityVersion === undefined) return;
     setIsSaving(true);
     setEditorMessage("");
     try {

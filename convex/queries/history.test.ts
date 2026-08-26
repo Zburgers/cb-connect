@@ -41,7 +41,7 @@ describe("period history attribution", () => {
     });
   });
 
-  test("partner visibility and timeline metadata use primary sharing settings", async () => {
+  test("writable partner history carries only stale-safe target metadata", async () => {
     const t = convexTest(schema, modules);
     const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
       sharingPhase: true,
@@ -80,10 +80,11 @@ describe("period history attribution", () => {
     expect(history[0]).not.toHaveProperty("updatedAt");
     expect(history[0]).not.toHaveProperty("tombstoneByUserId");
     expect(history[0]).toHaveProperty("authorityVersion");
+    expect(history[0]).toHaveProperty("_id");
+    expect(history[0]).not.toHaveProperty("legacyReason");
     expect(timeline[0]).toMatchObject({
       type: "period",
       period: {
-        id: eventId,
         source: "partner_assist",
         confirmationStatus: "confirmed",
         createdByName: "Partner Person",
@@ -99,6 +100,34 @@ describe("period history attribution", () => {
     expect(timeline[0].period).not.toHaveProperty("_creationTime");
     expect(timeline[0].period).not.toHaveProperty("createdAt");
     expect(timeline[0].period).not.toHaveProperty("updatedAt");
+    expect(timeline[0].period).not.toHaveProperty("authorityVersion");
+    expect(timeline[0].period).not.toHaveProperty("legacyReason");
+  });
+
+  test("read-only partner history has presentation only", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: false,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        endDate: "2026-06-24",
+        legacyReason: "duplicate",
+        authorityVersion: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const history = await asPartner.query(api.queries.history.getPeriodHistory, {});
+    expect(history).toHaveLength(1);
+    expect(history[0]).not.toHaveProperty("_id");
+    expect(history[0]).not.toHaveProperty("authorityVersion");
+    expect(history[0]).not.toHaveProperty("legacyReason");
+    expect(history[0]).toMatchObject({ startDate: "2026-06-20", endDate: "2026-06-24" });
   });
 
   test("partner receives no period history when phase sharing is disabled", async () => {

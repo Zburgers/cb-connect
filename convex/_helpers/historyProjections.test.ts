@@ -37,8 +37,30 @@ const enrichedPeriod = {
 };
 
 describe("role-specific period history projections", () => {
-  test("partner projection preserves shared history and targeted write fields", () => {
+  test("partner read-only projection excludes write and audit metadata", () => {
     const result = projectPartnerPeriodHistory(enrichedPeriod, partnerId);
+
+    expect(result).toMatchObject({
+      startDate: "2026-06-20",
+      endDate: "2026-06-24",
+      source: "partner_assist",
+      certainty: "approximate",
+      createdByName: "Partner Person",
+      updatedByName: "Primary Person",
+      createdByViewer: true,
+      updatedByViewer: false,
+      canCorrect: false,
+    });
+    expect(result).not.toHaveProperty("_id");
+    expect(result).not.toHaveProperty("authorityVersion");
+    expect(result).not.toHaveProperty("legacyReason");
+    expect(result).not.toHaveProperty("userId");
+    expect(result).not.toHaveProperty("createdByUserId");
+    expect(result).not.toHaveProperty("updatedByUserId");
+  });
+
+  test("partner writable projection carries only stale-safe target metadata", () => {
+    const result = projectPartnerPeriodHistory(enrichedPeriod, partnerId, true);
 
     expect(result).toMatchObject({
       _id: eventId,
@@ -60,6 +82,7 @@ describe("role-specific period history projections", () => {
     expect(result).not.toHaveProperty("createdAt");
     expect(result).not.toHaveProperty("updatedAt");
     expect(result).not.toHaveProperty("primaryCorrectionVersion");
+    expect(result).not.toHaveProperty("legacyReason");
     expect(result).not.toHaveProperty("tombstoneByUserId");
     expect(result).not.toHaveProperty("tombstoneAt");
     expect(result).not.toHaveProperty("tombstoneAuthorityVersion");

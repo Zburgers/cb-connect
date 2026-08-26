@@ -73,6 +73,7 @@ export const getPeriodHistory = query({
     }
 
     let targetUserId = user._id;
+    let partnerCanWrite = false;
     if (user.role === "partner") {
       const coupleData = await getCoupleForUser(ctx, user._id);
       if (!coupleData) {
@@ -91,6 +92,7 @@ export const getPeriodHistory = query({
       }
 
       targetUserId = primaryMembership.userId;
+      partnerCanWrite = primaryMembership.sharingPeriodWrite ?? false;
     }
 
     const periods = await ctx.db
@@ -103,7 +105,8 @@ export const getPeriodHistory = query({
       ctx,
       periods.filter(isHistoryVisible),
       user._id,
-      user.role === "partner" ? "partner" : "primary"
+      user.role === "partner" ? "partner" : "primary",
+      partnerCanWrite,
     );
   },
 });
@@ -242,7 +245,7 @@ export const getTimelineHistory = query({
       isOngoing?: boolean;
       pain?: { score: number; tags?: string[]; note?: string };
       period?: {
-        id: Id<"periodEvents">;
+        id?: Id<"periodEvents">;
         startDate: string;
         endDate?: string;
         startCertainty?: "exact" | "approximate" | "legacy_unknown";
@@ -250,13 +253,6 @@ export const getTimelineHistory = query({
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
         certainty: CycleFactReadLabel;
-        authorityVersion: number;
-        legacyReason?:
-          | "missing_provenance"
-          | "inferred_end"
-          | "duplicate"
-          | "overlap"
-          | "unprovable";
         createdByName: string;
         updatedByName: string;
         createdByViewer: boolean;
@@ -269,7 +265,8 @@ export const getTimelineHistory = query({
       ctx,
       periods,
       user._id,
-      user.role === "partner" ? "partner" : "primary"
+      user.role === "partner" ? "partner" : "primary",
+      false,
     );
     for (const period of enrichedPeriods) {
       timelineEntries.push({
@@ -278,7 +275,7 @@ export const getTimelineHistory = query({
         type: "period",
         isOngoing: !period.endDate,
         period: {
-          id: period._id,
+          ...(user.role === "partner" ? {} : { id: period._id }),
           startDate: period.startDate,
           endDate: period.endDate,
           startCertainty: period.startCertainty,
@@ -286,8 +283,11 @@ export const getTimelineHistory = query({
           source: period.source,
           confirmationStatus: period.confirmationStatus,
           certainty: period.certainty,
-          authorityVersion: period.authorityVersion,
-          legacyReason: period.legacyReason,
+          ...(user.role === "partner"
+            ? {}
+            : {
+                authorityVersion: period.authorityVersion,
+              }),
           createdByName: period.createdByName,
           updatedByName: period.updatedByName,
           createdByViewer: period.createdByViewer,
@@ -322,7 +322,8 @@ async function enrichPeriodEvents(
   ctx: QueryCtx,
   periods: Doc<"periodEvents">[],
   viewerId: Id<"users">,
-  viewerRole: "primary" | "partner"
+  viewerRole: "primary" | "partner",
+  partnerCanWrite: boolean,
 ) {
   const userIds = new Set<Id<"users">>();
   for (const period of periods) {
@@ -361,7 +362,7 @@ async function enrichPeriodEvents(
     };
 
     return viewerRole === "partner"
-      ? projectPartnerPeriodHistory(enrichedPeriod, viewerId)
+      ? projectPartnerPeriodHistory(enrichedPeriod, viewerId, partnerCanWrite)
       : projectPrimaryPeriodHistory(enrichedPeriod, viewerId);
   });
 }

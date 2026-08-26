@@ -201,6 +201,9 @@ test("cycle facts release qualification is explicit and non-skipping", async ({
     });
 
     await test.step("stale and revoked partner writes are rejected", async () => {
+      if (!assistedFact._id || assistedFact.authorityVersion === undefined) {
+        throw new Error("assisted_fact_write_metadata_missing");
+      }
       await expect(
         partnerClient.mutation(api.mutations.periods.assistLogPeriodEnd, {
           periodEventId: assistedFact._id,
