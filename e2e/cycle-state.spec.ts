@@ -221,7 +221,7 @@ async function assertPrimaryState(
 ): Promise<void> {
   const state = page.locator(`[data-cycle-state="${status}"]`);
   await expect(state).toHaveCount(1);
-  await expect(page.getByText(label, { exact: true })).toBeVisible();
+  await expect(state).toContainText(label);
 }
 
 async function assertNoBiologicalProjection(page: Page): Promise<void> {
