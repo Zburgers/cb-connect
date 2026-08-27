@@ -5,13 +5,18 @@ set -euo pipefail
 # synthetic fixture pair and isolated storage state.
 
 : "${CONVEX_DEPLOY_KEY:?missing CONVEX_DEPLOY_KEY}"
-: "${CB_CONNECT_CONVEX_CREDENTIAL_CLASS:?missing CB_CONNECT_CONVEX_CREDENTIAL_CLASS}"
 : "${CONVEX_TEST_DEPLOYMENT:?missing CONVEX_TEST_DEPLOYMENT}"
 : "${NEXT_PUBLIC_TEST_CONVEX_URL:?missing NEXT_PUBLIC_TEST_CONVEX_URL}"
 : "${CLERK_TEST_ENVIRONMENT_NAME:?missing CLERK_TEST_ENVIRONMENT_NAME}"
 : "${CLERK_TEST_SECRET_KEY:?missing CLERK_TEST_SECRET_KEY}"
 : "${NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY:?missing NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY}"
 : "${CLERK_TEST_FRONTEND_API_URL:?missing CLERK_TEST_FRONTEND_API_URL}"
+
+if [[ -n "${CB_CONNECT_CONVEX_CREDENTIAL_CLASS:-}" && "${CB_CONNECT_CONVEX_CREDENTIAL_CLASS}" != "test" ]]; then
+  echo "refusing Gates 0-2 QA with a non-test Convex credential class" >&2
+  exit 65
+fi
+export CB_CONNECT_CONVEX_CREDENTIAL_CLASS=test
 
 if [[ "${CONVEX_TEST_DEPLOYMENT}" != "dev:hallowed-hummingbird-284" ]]; then
   echo "refusing Gates 0-2 QA against an unapproved Convex deployment" >&2
