@@ -1,6 +1,7 @@
 "use client";
 
 import { Lightbulb } from "lucide-react";
+import { getPublicSupportCopy } from "./cycleStateCopy";
 
 interface TipsCardProps {
   tip: {
@@ -11,6 +12,10 @@ interface TipsCardProps {
 }
 
 export default function TipsCard({ tip }: TipsCardProps) {
+  const supportCopy = getPublicSupportCopy({
+    state: "calendar_estimate",
+  });
+
   return (
     <div className="glass-card rounded-3xl p-6 bg-gradient-to-br from-primary/5 to-secondary/5
       border-0 shadow-lg animate-slide-up">
@@ -18,7 +23,12 @@ export default function TipsCard({ tip }: TipsCardProps) {
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
           <Lightbulb className="w-5 h-5 text-primary" />
         </div>
-        <h3 className="text-lg font-semibold text-foreground">{tip.title}</h3>
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">{tip.title}</h3>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {supportCopy.copy.label}
+          </p>
+        </div>
       </div>
 
       <ul className="space-y-3">

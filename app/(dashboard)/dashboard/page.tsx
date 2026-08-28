@@ -14,6 +14,11 @@ import NutritionSuggestions from "@/components/dashboard/NutritionSuggestions";
 import OnboardingFlow from "@/components/dashboard/OnboardingFlow";
 import PartnerDashboard from "@/components/partner/PartnerDashboard";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
+import { getCycleStateCopyState } from "@/components/dashboard/cycleStatePresentation";
+import {
+  isPrimaryCycleState,
+} from "@/convex/_helpers/partnerCycleProjection";
+import type { CycleState } from "@/convex/_helpers/cycleState";
 
 export default function DashboardPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -23,9 +28,24 @@ export default function DashboardPage() {
     isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
   );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+  const capabilities = useQuery(
+    api.queries.capabilities.getCapabilities,
+    isAuthenticated && me?.role ? {} : "skip"
+  );
   const partnerPresent = usePartnerPresence(isAuthenticated).isPresent;
+  const cycleStateEnabled = capabilities?.cycleStateV1 === true;
+  const cycleState: CycleState | null = isPrimaryCycleState(data?.cycleStateV1)
+    ? data.cycleStateV1
+    : null;
+  const showCycleStateV1 =
+    capabilities?.cycleFactsV1 === true && cycleStateEnabled && cycleState != null;
 
-  if (isLoading || data === undefined || me === undefined) {
+  if (
+    isLoading ||
+    data === undefined ||
+    me === undefined ||
+    (isAuthenticated && Boolean(me?.role) && capabilities === undefined)
+  ) {
     return <DashboardSkeleton />;
   }
 
@@ -62,7 +82,8 @@ export default function DashboardPage() {
 
   return (
     <div
-      data-phase={data.cycleInfo?.phase ?? "follicular"}
+      data-phase={showCycleStateV1 ? cycleState?.phase ?? "unknown" : data.cycleInfo?.phase ?? "follicular"}
+      data-cycle-state={showCycleStateV1 ? cycleState?.status : undefined}
       className="space-y-6 animate-fade-in"
     >
       <div>
@@ -77,7 +98,14 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {data.cycleInfo && (
+      {showCycleStateV1 ? (
+        <CurrentPhase
+          cycleStateV1={cycleState}
+          cycleInfo={data.cycleInfo}
+          painScore={data.painData?.score ?? null}
+          partnerPresent={partnerPresent}
+        />
+      ) : data.cycleInfo ? (
         <CurrentPhase
           phase={data.cycleInfo.phase}
           cycleDay={data.cycleInfo.cycleDay}
@@ -87,7 +115,7 @@ export default function DashboardPage() {
           painScore={data.painData?.score ?? null}
           partnerPresent={partnerPresent}
         />
-      )}
+      ) : null}
 
       {/* Partner Status Card - Always shown */}
       <PartnerStatusCard />
@@ -102,6 +130,7 @@ export default function DashboardPage() {
         <NutritionSuggestions
           tips={data.nutritionTips}
           phase={data.cycleInfo.phase}
+          state={showCycleStateV1 && cycleState ? getCycleStateCopyState(cycleState) : undefined}
         />
       )}
     </div>

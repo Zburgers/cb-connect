@@ -277,6 +277,8 @@ export default defineSchema({
     userId: v.id("users"),
     cycleLength: v.number(),
     periodLength: v.number(),
+    predictionPaused: v.optional(v.boolean()),
+    predictionPausedAt: v.optional(v.number()),
     lastUpdatedAt: v.number(),
   }).index("by_user", ["userId"]),
 

@@ -51,6 +51,11 @@ describe("partner-assisted period logging", () => {
         cycleLength: 30,
       })
     ).rejects.toThrow("Only the primary user");
+    await expect(
+      asPartner.mutation(api.mutations.periods.updateCycleSettings, {
+        predictionPaused: true,
+      })
+    ).rejects.toThrow("Only the primary user");
   });
 
   test("partner cannot assist-log without an active couple", async () => {
@@ -408,6 +413,126 @@ describe("partner-assisted period logging", () => {
       source: "self",
       confirmationStatus: "confirmed",
     });
+  });
+});
+
+describe("prediction pause cycle settings", () => {
+  test("pausing preserves existing lengths and records a timestamp", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 31,
+        periodLength: 6,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: true,
+    });
+
+    const settings = await t.run(async (ctx) =>
+      await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .unique()
+    );
+
+    expect(settings).toMatchObject({
+      cycleLength: 31,
+      periodLength: 6,
+      predictionPaused: true,
+    });
+    expect(settings?.predictionPausedAt).toEqual(expect.any(Number));
+  });
+
+  test("resuming clears the pause timestamp without changing lengths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 31,
+        periodLength: 6,
+        predictionPaused: true,
+        predictionPausedAt: 123,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: false,
+    });
+
+    const settings = await t.run(async (ctx) =>
+      await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .unique()
+    );
+
+    expect(settings).toMatchObject({
+      cycleLength: 31,
+      periodLength: 6,
+      predictionPaused: false,
+    });
+    expect(settings?.predictionPausedAt).toBeUndefined();
+  });
+
+  test("re-saving an already paused setting preserves its start timestamp", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 31,
+        periodLength: 6,
+        predictionPaused: true,
+        predictionPausedAt: 123,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: true,
+    });
+
+    const settings = await t.run(async (ctx) =>
+      await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .unique()
+    );
+
+    expect(settings?.predictionPausedAt).toBe(123);
+  });
+
+  test("pausing without an existing row creates default lengths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: true,
+    });
+
+    const settings = await t.run(async (ctx) =>
+      await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .unique()
+    );
+
+    expect(settings).toMatchObject({
+      cycleLength: 28,
+      periodLength: 5,
+      predictionPaused: true,
+    });
+    expect(settings?.predictionPausedAt).toEqual(expect.any(Number));
   });
 });
 

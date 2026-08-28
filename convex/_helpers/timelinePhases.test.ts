@@ -4,12 +4,22 @@ import {
   findLatestPeriodStartDate,
   getPeriodEndProjection,
   getTimelinePhaseForDate,
+  getTimelineStateForDate,
 } from "./timelinePhases.ts";
+import { buildCycleReadModel } from "./cycleReadModel";
+
+const exactPeriod = {
+  id: "period-1",
+  startDate: "2026-05-01",
+  endDate: "2026-05-05",
+  startCertainty: "exact" as const,
+  endCertainty: "exact" as const,
+};
 
 test("pain log on day 25 of a 28-day cycle resolves to luteal", () => {
   const phase = getTimelinePhaseForDate(
     "2026-05-25",
-    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    [exactPeriod],
     28,
     5
   );
@@ -20,7 +30,7 @@ test("pain log on day 25 of a 28-day cycle resolves to luteal", () => {
 test("dates inside a logged period stay menstruation", () => {
   const phase = getTimelinePhaseForDate(
     "2026-05-03",
-    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    [exactPeriod],
     28,
     5
   );
@@ -31,7 +41,7 @@ test("dates inside a logged period stay menstruation", () => {
 test("mid-cycle dates resolve to ovulation", () => {
   const phase = getTimelinePhaseForDate(
     "2026-05-15",
-    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    [exactPeriod],
     28,
     5
   );
@@ -42,7 +52,7 @@ test("mid-cycle dates resolve to ovulation", () => {
 test("post-period pre-ovulation dates resolve to follicular", () => {
   const phase = getTimelinePhaseForDate(
     "2026-05-10",
-    [{ startDate: "2026-05-01", endDate: "2026-05-05" }],
+    [exactPeriod],
     28,
     5
   );
@@ -50,15 +60,102 @@ test("post-period pre-ovulation dates resolve to follicular", () => {
   expect(phase).toBe("follicular");
 });
 
-test("explicit short end dates stop menstruation fallback from overrunning", () => {
-  const phase = getTimelinePhaseForDate(
-    "2026-05-05",
-    [{ startDate: "2026-05-01", endDate: "2026-05-03" }],
+test("exact coverage keeps a closed event Recorded through its observed end", () => {
+  const state = getTimelineStateForDate(
+    "2026-05-03",
+    [{ ...exactPeriod, endDate: "2026-05-03" }],
     28,
-    5
+    5,
   );
 
-  expect(phase).toBe("follicular");
+  expect(state).toMatchObject({
+    phase: "menstruation",
+    status: "recorded_period",
+    evidence: "RECORDED_EXACT",
+    reason: "CONFIRMED_EVENT_COVERS_TODAY",
+  });
+});
+
+test("approximate end is coverage only on the exact observed start date", () => {
+  const period = {
+    ...exactPeriod,
+    endCertainty: "approximate" as const,
+  };
+
+  expect(
+    getTimelineStateForDate("2026-05-01", [period], 28, 5)
+  ).toMatchObject({
+    status: "recorded_period",
+    evidence: "RECORDED_EXACT",
+  });
+  expect(
+    getTimelineStateForDate("2026-05-03", [period], 28, 5)
+  ).toMatchObject({
+    status: "estimated",
+    evidence: "CALENDAR_ESTIMATE",
+  });
+});
+
+test("timeline and dashboard adapters agree for approximate-end coverage", () => {
+  const period = {
+    ...exactPeriod,
+    endCertainty: "approximate" as const,
+  };
+  const dashboardState = buildCycleReadModel({
+    targetDate: "2026-05-03",
+    timeZone: "UTC",
+    cycleLength: 28,
+    periodLength: 5,
+    periods: [period],
+  }).cycleStateV1;
+  const timelineState = getTimelineStateForDate(
+    "2026-05-03",
+    [period],
+    28,
+    5,
+  );
+
+  expect(timelineState).toMatchObject({
+    status: dashboardState.status,
+    evidence: dashboardState.evidence,
+    reason: dashboardState.reason,
+  });
+});
+
+test("dates after the latest configured bound are Late without a phase", () => {
+  const state = getTimelineStateForDate(
+    "2026-06-02",
+    [exactPeriod],
+    28,
+    5,
+  );
+
+  expect(state).toMatchObject({
+    phase: "unknown",
+    status: "late_or_uncertain",
+    evidence: "TIMING_UNCERTAINTY",
+    reason: "AFTER_LATEST_BOUND",
+  });
+});
+
+test.each([
+  ["approximate", { startCertainty: "approximate" as const }],
+  ["legacy unknown", { startCertainty: "legacy_unknown" as const, legacyReason: "duplicate" as const }],
+  ["tombstoned", { tombstoneAt: 123 }],
+])("%s facts remain Unknown rather than exact evidence", (_label, overrides) => {
+  const state = getTimelineStateForDate(
+    "2026-05-03",
+    [{ ...exactPeriod, ...overrides }],
+    28,
+    5,
+  );
+
+  expect(state).toMatchObject({
+    phase: "unknown",
+    status: "insufficient_data",
+    evidence: "UNAVAILABLE",
+    reason: "NO_ELIGIBLE_FACT",
+  });
 });
 
 test("latest period selection uses max startDate, not insertion order", () => {

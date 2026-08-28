@@ -6,9 +6,11 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
-import { copyToClipboard, shareText } from "@/lib/utils";
+import { copyToClipboard, shareText, toLocalDateString } from "@/lib/utils";
 import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
+import { PartnerCycleStateCard } from "@/components/partner/PartnerDashboard";
+import { getPartnerCyclePresentation } from "@/components/partner/partnerCyclePresentation";
 
 export default function PartnerPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -21,6 +23,12 @@ export default function PartnerPage() {
   );
   const cycleFactsCapability = useCycleFactsCapability(
     isAuthenticated && Boolean(me?.role),
+  );
+  const partnerDashboardData = useQuery(
+    api.queries.dashboard.getDashboardData,
+    isAuthenticated && me?.role === "partner"
+      ? { todayDate: toLocalDateString() }
+      : "skip",
   );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
@@ -77,6 +85,14 @@ export default function PartnerPage() {
 
   // Waiting for couple status
   if (coupleStatus === undefined) return <LoadingSpinner />;
+
+  const showPartnerCycleState =
+    me.role === "partner" &&
+    partnerDashboardData?.cycleStateV1Exposed === true;
+  const partnerProjection = showPartnerCycleState
+    ? partnerDashboardData?.cycleStateV1 ?? null
+    : null;
+  const partnerPresentation = getPartnerCyclePresentation(partnerProjection);
 
   const handleCopyCode = async (codeToCopy: string) => {
     const success = await copyToClipboard(codeToCopy);
@@ -232,6 +248,9 @@ export default function PartnerPage() {
             final say over corrections or removal.
           </p>
         </div>
+      )}
+      {showPartnerCycleState && (
+        <PartnerCycleStateCard presentation={partnerPresentation} />
       )}
       {message && (
         <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">
