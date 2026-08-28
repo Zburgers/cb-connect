@@ -42,10 +42,13 @@ reverse production data.
 
 The intended production selector is `prod:festive-malamute-715`. All stateful
 Convex operations must run through `scripts/convex-safe-exec` with explicit
-`test` or `production` mode; the wrapper binds the selector and credential
-class in the same process and verifies effective backend identity immediately
-before and after the operation. Production mode additionally requires
-`CB_CONNECT_PROTECTED_EXECUTION=1`. The shared compatibility tag is `v1`.
+`test` or `production` mode. The wrapper validates the deployment prefix of
+the bound `CONVEX_DEPLOY_KEY`, credential class, and non-CLI consistency
+variables in the same process; it rejects `CONVEX_DEPLOYMENT`, which can
+redirect a development selector to production, and verifies effective backend
+identity immediately before and after the operation. Production mode
+additionally requires `CB_CONNECT_PROTECTED_EXECUTION=1`. The shared
+compatibility tag is `v1`.
 `GET /api/health` is liveness only. `GET /api/ready` is the
 frontend/backend compatibility signal and must be verified without recording
 response bodies that may reveal operational details.

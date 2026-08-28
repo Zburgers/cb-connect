@@ -83,6 +83,41 @@ if rg -n 'CB_CONNECT_CYCLE_FACTS_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_FACTS_V1' .gith
   exit 1
 fi
 
+if rg -n 'CB_CONNECT_CYCLE_STATE_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_STATE_V1' .github/workflows/ci.yml "$workflow"; then
+  echo "cycle state capability must remain an optional Convex-only setting" >&2
+  exit 1
+fi
+
+cycle_state_sources=(
+  convex
+  app
+  components
+  lib
+)
+if rg -n 'NEXT_PUBLIC[^[:space:]]*CYCLE_STATE_V1' "${cycle_state_sources[@]}"; then
+  echo "cycle state capability must not have a NEXT_PUBLIC mirror" >&2
+  exit 1
+fi
+
+if ! rg -q 'CB_CONNECT_CYCLE_STATE_V1' convex/_helpers/cycleStateFlag.ts || \
+   ! rg -q '=== "true"' convex/_helpers/cycleStateFlag.ts; then
+  echo "cycle state capability must be server-side and exact-true default-off" >&2
+  exit 1
+fi
+
+for pattern in \
+  'flag-off rollback' \
+  'backward-compatible reads' \
+  'stop conditions' \
+  'no data reversal' \
+  'D-011' \
+  'D-015'; do
+  if ! rg -qi "$pattern" docs/runbooks/cycle-state-rollout.md; then
+    echo "cycle state runbook is missing rollout policy: $pattern" >&2
+    exit 1
+  fi
+done
+
 for pattern in \
   'CB_CONNECT_CYCLE_FACTS_V1' \
   'flag-off' \

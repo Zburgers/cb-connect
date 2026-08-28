@@ -181,6 +181,104 @@ describe("fact-aware history and prediction reads", () => {
     expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
   });
 
+  test("historical timeline state ignores today's prediction pause", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 28,
+        periodLength: 5,
+        predictionPaused: true,
+        predictionPausedAt: 999,
+        lastUpdatedAt: 999,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-01",
+        endDate: "2026-06-05",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-06-15",
+        painScore: 3,
+        tags: ["cramps"],
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const timeline = await asPrimary.query(
+      api.queries.history.getTimelineHistory,
+      { startDate: "2026-06-15", endDate: "2026-06-15" },
+    );
+
+    const painEntry = timeline.find((entry) => entry.type === "pain");
+    expect(painEntry).toBeDefined();
+    expect(painEntry).toMatchObject({
+      date: "2026-06-15",
+      type: "pain",
+      phase: "ovulation",
+      status: "estimated",
+      evidence: "CALENDAR_ESTIMATE",
+      reason: "ELIGIBLE_FACT_WITHIN_LATEST_BOUND",
+    });
+    expect(painEntry?.status).not.toBe("prediction_paused");
+  });
+
+  test("history and dashboard agree that an approximate end is not exact coverage", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-01",
+        endDate: "2026-06-05",
+        startCertainty: "exact",
+        endCertainty: "approximate",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-06-03",
+        painScore: 2,
+        tags: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const [dashboard, timeline] = await Promise.all([
+      asPrimary.query(api.queries.dashboard.getDashboardData, {
+        todayDate: "2026-06-03",
+      }),
+      asPrimary.query(api.queries.history.getTimelineHistory, {
+        startDate: "2026-06-03",
+        endDate: "2026-06-03",
+      }),
+    ]);
+    const painEntry = timeline.find((entry) => entry.type === "pain");
+
+    expect(dashboard.cycleStateV1).toMatchObject({
+      status: "estimated",
+      evidence: "CALENDAR_ESTIMATE",
+    });
+    expect(painEntry).toMatchObject({
+      status: dashboard.cycleStateV1?.status,
+      evidence: dashboard.cycleStateV1?.evidence,
+      reason: dashboard.cycleStateV1?.reason,
+    });
+  });
+
   test("keeps uncertain history visible but excludes it from prediction", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
@@ -248,5 +346,66 @@ describe("fact-aware history and prediction reads", () => {
     expect(
       await asPartner.query(api.queries.history.getPeriodHistory, {})
     ).toEqual([]);
+  });
+});
+
+describe("cycle settings pause compatibility", () => {
+  test("normalizes a legacy settings row without pause as active", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 31,
+        periodLength: 6,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await expect(
+      asPrimary.query(api.queries.history.getCycleSettings, {})
+    ).resolves.toEqual({
+      cycleLength: 31,
+      periodLength: 6,
+      predictionPaused: false,
+    });
+  });
+
+  test("returns an explicitly paused settings row", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 31,
+        periodLength: 6,
+        predictionPaused: true,
+        predictionPausedAt: 123,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await expect(
+      asPrimary.query(api.queries.history.getCycleSettings, {})
+    ).resolves.toEqual({
+      cycleLength: 31,
+      periodLength: 6,
+      predictionPaused: true,
+    });
+  });
+
+  test("returns an active default when no settings row exists", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.query(api.queries.history.getCycleSettings, {})
+    ).resolves.toEqual({
+      cycleLength: 28,
+      periodLength: 5,
+      predictionPaused: false,
+    });
   });
 });

@@ -43,6 +43,7 @@ export default function SettingsPage() {
 
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
+  const [predictionPaused, setPredictionPaused] = useState(false);
   const [preferredName, setPreferredName] = useState("");
   const [gender, setGender] =
     useState<(typeof GENDER_OPTIONS)[number]["value"]>("prefer_not_to_say");
@@ -56,6 +57,7 @@ export default function SettingsPage() {
     if (cycleSettings) {
       setCycleLength(cycleSettings.cycleLength);
       setPeriodLength(cycleSettings.periodLength);
+      setPredictionPaused(cycleSettings.predictionPaused ?? false);
     }
   }, [cycleSettings]);
 
@@ -80,6 +82,7 @@ export default function SettingsPage() {
   }
 
   const isLinked = Boolean(coupleStatus?.isLinked);
+  const isPrimary = me.role === "primary";
   const phaseShared = Boolean(isLinked && coupleStatus?.sharingSettings?.phase);
   const painShared = Boolean(isLinked && coupleStatus?.sharingSettings?.pain);
   const periodWriteAllowed = Boolean(
@@ -90,8 +93,8 @@ export default function SettingsPage() {
     setIsSaving(true);
     setSaved(false);
     try {
-      if (me.role === "primary") {
-        await updateSettings({ cycleLength, periodLength });
+      if (isPrimary) {
+        await updateSettings({ cycleLength, periodLength, predictionPaused });
       }
       await updatePreferences({
         preferredName,
@@ -198,7 +201,7 @@ export default function SettingsPage() {
         </div>
       </GlassPanel>
 
-      {me.role === "primary" && (
+      {isPrimary && (
         <GlassPanel variant="quiet" className="space-y-6 p-6">
           <h2 className="text-lg font-semibold text-foreground">Cycle Settings</h2>
 
@@ -239,6 +242,24 @@ export default function SettingsPage() {
               <span>8 days</span>
             </div>
           </div>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
+            <input
+              type="checkbox"
+              checked={predictionPaused}
+              onChange={(event) => setPredictionPaused(event.target.checked)}
+              className="mt-1 h-4 w-4 accent-primary"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-foreground">
+                Pause cycle predictions
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-muted-foreground">
+                Pause estimated cycle guidance until you turn it back on. Recorded period
+                history remains available.
+              </span>
+            </span>
+          </label>
 
           <button
             onClick={handleSave}
