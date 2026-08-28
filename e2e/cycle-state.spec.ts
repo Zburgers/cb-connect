@@ -455,7 +455,13 @@ test("cycle state release qualification is explicit and non-skipping", async ({
       await primary.getByRole("button", { name: "Close partner access", exact: true }).click();
       await expect(primary.getByText("Partner access revoked.")).toBeVisible();
       await partner.goto("/dashboard");
-      await assertPrivacySafePartnerEmptyState(partner);
+      await expect(
+        partner.getByText("Not linked to a partner yet.", { exact: true }),
+      ).toBeVisible();
+      await expect(partner.locator("[data-cycle-state]")).toHaveCount(0);
+      await expect(
+        partner.getByRole("status", { name: "Partner cycle sharing" }),
+      ).toHaveCount(0);
       await assertPartnerPayloadHasNoCycleState(partnerClient, dates.today);
     });
   } finally {
