@@ -61,7 +61,7 @@ jobs:
     concurrency:
       group: cb-connect-auth-test
       cancel-in-progress: false
-    timeout-minutes: 20
+    timeout-minutes: 90
     env:
       CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
       CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
@@ -112,26 +112,22 @@ jobs:
       - name: Validate authenticated smoke deployment contract
         run: bash scripts/tests/release-smoke-workflow.test.sh
 
+      - name: Validate fixture evidence boundary
+        run: bash scripts/tests/fixture-evidence-boundary.test.sh
+
       - name: Preflight authenticated test Convex deploy key target
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$CONVEX_DEPLOY_KEY"
-          identity_output="$RUNNER_TEMP/cb-connect-test-deploy-key-target.txt"
-          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
-          node - "$identity_output" <<'NODE'
-          const fs = require('node:fs');
-          const text = fs.readFileSync(process.argv[2], 'utf8');
-          if (!text.includes('dev:hallowed-hummingbird-284')) {
-            throw new Error('convex_test_deploy_key_target_failed');
-          }
-          NODE
+          bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
 
       - name: Sync authenticated test Convex runtime config
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         shell: bash
         run: |
           set -euo pipefail
@@ -166,36 +162,23 @@ jobs:
             echo "::error::Missing required authenticated test Convex runtime configuration"
             exit 1
           fi
-          npx convex env set --from-file "$env_file" --force
+          bash scripts/convex-safe-exec test -- env set --from-file "$env_file" --force
 
       - name: Deploy authenticated test Convex backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         run: |
           set -euo pipefail
-          npx convex deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"
+          bash scripts/convex-safe-exec test -- deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"
 
       - name: Verify authenticated test Convex backend identity
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         run: |
           set -euo pipefail
-          identity_output="$RUNNER_TEMP/cb-connect-test-backend-identity.txt"
-          npx convex run queries/system:getBackendIdentity '{}' > "$identity_output"
-          node - "$identity_output" <<'NODE'
-          const fs = require('node:fs');
-          const text = fs.readFileSync(process.argv[2], 'utf8');
-          const expectations = [
-            'dev:hallowed-hummingbird-284',
-            'v1',
-            process.env.CB_CONNECT_BACKEND_DEPLOYED_AT,
-          ];
-          for (const expected of expectations) {
-            if (!expected || !text.includes(expected)) {
-              throw new Error('convex_test_identity_failed');
-            }
-          }
-          NODE
+          bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
 
       - name: Run authenticated release smoke
         shell: bash
@@ -218,6 +201,49 @@ jobs:
           done
           printf '%s\n' "$status" > "$RUNNER_TEMP/cb-connect-release-smoke.status"
           exit "$status"
+
+      - name: Run isolated Gates 0-2 matrix
+        if: github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CB_CONNECT_QA_EVIDENCE_DIR="$RUNNER_TEMP/cb-connect-gates-0-2-qa"
+          export CB_CONNECT_QA_RUN_ID="qa-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          bash scripts/run-gates-0-2-qa.sh
+
+      - name: Prepare redacted Gates 0-2 evidence
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/cb-connect-gates-0-2-qa"
+          safe_root="$RUNNER_TEMP/cb-connect-gates-0-2-qa-redacted"
+          mkdir -p "$safe_root"
+          if [[ -f "$source_root/summary.tsv" ]]; then
+            cp "$source_root/summary.tsv" "$safe_root/summary.tsv"
+          fi
+          if [[ -d "$source_root" ]]; then
+            while IFS= read -r file; do
+              relative="${file#${source_root}/}"
+              destination="$safe_root/$relative"
+              mkdir -p "$(dirname "$destination")"
+              cp "$file" "$destination"
+            done < <(find "$source_root" -type f \( -name 'lane.env' -o -name 'e2-live-proof.md' \))
+          fi
+          printf '%s\n' \
+            "qualified_source_sha=${GITHUB_SHA}" \
+            "approved_convex_target=dev:hallowed-hummingbird-284" \
+            "approved_clerk_environment=holy clerk" \
+            > "$safe_root/qualification.env"
+
+      - name: Upload redacted Gates 0-2 evidence
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-gates-0-2-qa-${{ github.sha }}
+          path: ${{ runner.temp }}/cb-connect-gates-0-2-qa-redacted
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Create redacted failure artifact
         if: failure()

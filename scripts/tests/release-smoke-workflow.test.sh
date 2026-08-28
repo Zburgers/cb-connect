@@ -33,9 +33,9 @@ required_patterns=(
   'Deploy authenticated test Convex backend'
   'Verify authenticated test Convex backend identity'
   'CB_CONNECT_BACKEND_DEPLOYED_AT='
-  'npx convex env set --from-file "$env_file" --force'
-  'npx convex deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"'
-  'npx convex run queries/system:getBackendIdentity '\''{}'\'''
+  'bash scripts/convex-safe-exec test -- env set --from-file "$env_file" --force'
+  'bash scripts/convex-safe-exec test -- deploy --typecheck disable --codegen enable --message "cb-connect-auth-test $GITHUB_SHA"'
+  'bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '\''{}'\'''
   'for project in release-desktop release-mobile'
   'CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
   'browser_path="$(command -v google-chrome)"'
@@ -59,9 +59,9 @@ line_number() {
 }
 
 preflight_line="$(line_number 'Preflight authenticated test Convex deploy key target' "$workflow")"
-preflight_run_line="$(line_number "npx convex run queries/system:getBackendIdentity '{}'" "$workflow")"
-env_set_line="$(line_number 'npx convex env set --from-file "$env_file" --force' "$workflow")"
-deploy_line="$(line_number 'npx convex deploy --typecheck disable --codegen enable' "$workflow")"
+preflight_run_line="$(line_number "bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'" "$workflow")"
+env_set_line="$(line_number 'bash scripts/convex-safe-exec test -- env set --from-file "$env_file" --force' "$workflow")"
+deploy_line="$(line_number 'bash scripts/convex-safe-exec test -- deploy --typecheck disable --codegen enable' "$workflow")"
 identity_line="$(line_number 'Verify authenticated test Convex backend identity' "$workflow")"
 if (( preflight_line >= env_set_line || preflight_line >= deploy_line )); then
   echo "deploy-key target preflight must precede Convex mutations" >&2

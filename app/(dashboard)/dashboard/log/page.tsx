@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { TimelinePhase } from "@/convex/_helpers/timelinePhases";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
 
 /* ── Types ── */
 const PAIN_TAG_LABELS: Record<string, string> = {
@@ -85,29 +86,32 @@ function downloadCsv(filename: string, rows: unknown[][]) {
 }
 
 type PeriodTimelineMetadata = {
-  id: Id<"periodEvents">;
+  id?: Id<"periodEvents">;
   startDate: string;
   endDate?: string;
+  startCertainty?: "exact" | "approximate" | "legacy_unknown";
+  endCertainty?: "exact" | "approximate" | "legacy_unknown";
   source: "self" | "partner_assist" | "system";
   confirmationStatus: "confirmed" | "unreviewed";
-  createdByUserId: Id<"users">;
-  updatedByUserId: Id<"users">;
+  certainty: "exact" | "approximate" | "legacy_unknown";
+  authorityVersion?: number;
   createdByName: string;
   updatedByName: string;
+  createdByViewer: boolean;
+  updatedByViewer: boolean;
   canCorrect: boolean;
 };
 
 function attributionCopy(
   period: PeriodTimelineMetadata,
-  viewerId: Id<"users">,
   partnerView: boolean
 ) {
   if (period.source === "system") return "Auto-ended by CB Connect";
   if (period.source === "partner_assist") {
-    if (period.updatedByUserId === viewerId && period.createdByUserId !== viewerId) {
+    if (period.updatedByViewer && !period.createdByViewer) {
       return `Added by ${period.createdByName} · Corrected by you`;
     }
-    if (partnerView && period.createdByUserId === viewerId) {
+    if (partnerView && period.createdByViewer) {
       return "Added by you for your partner";
     }
     return `Added by ${period.createdByName}`;
@@ -123,8 +127,8 @@ function TimelineEntry({
   period,
   isOngoing,
   isFirst,
-  viewerId,
   partnerView,
+  showFactSemantics,
   onSaveCorrection,
   onDelete,
 }: {
@@ -134,31 +138,47 @@ function TimelineEntry({
   period?: PeriodTimelineMetadata;
   isOngoing?: boolean;
   isFirst?: boolean;
-  viewerId: Id<"users">;
   partnerView: boolean;
+  showFactSemantics: boolean;
   onSaveCorrection: (
     periodEventId: Id<"periodEvents">,
     startDate: string,
-    endDate?: string
+    endDate: string | undefined,
+    authorityVersion: number,
+    promoteStartCertainty: boolean,
+    promoteEndCertainty: boolean,
+    endCertainty: "exact" | "approximate"
   ) => Promise<void>;
-  onDelete: (periodEventId: Id<"periodEvents">) => Promise<void>;
+  onDelete: (
+    periodEventId: Id<"periodEvents">,
+    authorityVersion: number
+  ) => Promise<void>;
 }) {
   const bandColor = PHASE_BAND_COLORS[phase] ?? PHASE_BAND_COLORS.follicular;
   const [isEditing, setIsEditing] = useState(false);
   const [editStartDate, setEditStartDate] = useState(period?.startDate ?? "");
   const [editEndDate, setEditEndDate] = useState(period?.endDate ?? "");
+  const [promoteStartCertainty, setPromoteStartCertainty] = useState(false);
+  const [promoteEndCertainty, setPromoteEndCertainty] = useState(false);
+  const [editEndCertainty, setEditEndCertainty] = useState<
+    "exact" | "approximate"
+  >(period?.endCertainty === "exact" ? "exact" : "approximate");
   const [isSaving, setIsSaving] = useState(false);
   const [editorMessage, setEditorMessage] = useState("");
 
   const saveCorrection = async () => {
-    if (!period || !editStartDate) return;
+    if (!period || !editStartDate || !period.id || period.authorityVersion === undefined) return;
     setIsSaving(true);
     setEditorMessage("");
     try {
       await onSaveCorrection(
         period.id,
         editStartDate,
-        editEndDate || undefined
+        editEndDate || undefined,
+        period.authorityVersion,
+        promoteStartCertainty,
+        promoteEndCertainty,
+        editEndCertainty
       );
       setIsEditing(false);
     } catch (error) {
@@ -171,11 +191,11 @@ function TimelineEntry({
   };
 
   const deleteEntry = async () => {
-    if (!period) return;
+    if (!period || !period.id || period.authorityVersion === undefined) return;
     setIsSaving(true);
     setEditorMessage("");
     try {
-      await onDelete(period.id);
+      await onDelete(period.id, period.authorityVersion);
       setIsEditing(false);
     } catch (error) {
       setEditorMessage(
@@ -260,8 +280,17 @@ function TimelineEntry({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-medium text-foreground/75">
-                  {attributionCopy(period, viewerId, partnerView)}
+                  {attributionCopy(period, partnerView)}
                 </p>
+                {showFactSemantics && (
+                  <p className="mt-1 text-xs text-foreground/60">
+                    {period.certainty === "exact"
+                      ? "Exact observation"
+                      : period.certainty === "approximate"
+                        ? "Approximate observation"
+                        : "Legacy fact needs review"}
+                  </p>
+                )}
                 {period.source === "partner_assist" && period.canCorrect && (
                   <p className="mt-1 text-xs text-foreground/60">
                     Added with your permission. You can correct this anytime.
@@ -274,6 +303,11 @@ function TimelineEntry({
                   onClick={() => {
                     setEditStartDate(period.startDate);
                     setEditEndDate(period.endDate ?? "");
+                    setPromoteStartCertainty(false);
+                    setPromoteEndCertainty(false);
+                    setEditEndCertainty(
+                      period.endCertainty === "exact" ? "exact" : "approximate"
+                    );
                     setEditorMessage("");
                     setIsEditing(true);
                   }}
@@ -315,6 +349,46 @@ function TimelineEntry({
                     />
                   </label>
                 </div>
+                {showFactSemantics && period.startCertainty !== "exact" && (
+                  <label className="flex items-start gap-3 rounded-xl border border-foreground/10 p-3 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={promoteStartCertainty}
+                      onChange={(event) =>
+                        setPromoteStartCertainty(event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block font-semibold">
+                        Confirm this start date is exact
+                      </span>
+                      <span className="mt-1 block text-xs text-foreground/60">
+                        Leave unchecked to preserve the existing uncertainty.
+                      </span>
+                    </span>
+                  </label>
+                )}
+                {showFactSemantics && editEndDate && period.endCertainty !== "exact" && (
+                  <label className="flex items-start gap-3 rounded-xl border border-foreground/10 p-3 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={promoteEndCertainty}
+                      onChange={(event) =>
+                        setPromoteEndCertainty(event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block font-semibold">
+                        Confirm this end date is exact
+                      </span>
+                      <span className="mt-1 block text-xs text-foreground/60">
+                        Leave unchecked to save this end as approximate.
+                      </span>
+                    </span>
+                  </label>
+                )}
                 {editorMessage && (
                   <p className="text-xs font-medium text-destructive" role="alert">
                     {editorMessage}
@@ -335,6 +409,11 @@ function TimelineEntry({
                       setIsEditing(false);
                       setEditStartDate(period.startDate);
                       setEditEndDate(period.endDate ?? "");
+                      setPromoteStartCertainty(false);
+                      setPromoteEndCertainty(false);
+                      setEditEndCertainty(
+                        period.endCertainty === "exact" ? "exact" : "approximate"
+                      );
                       setEditorMessage("");
                     }}
                     disabled={isSaving}
@@ -365,6 +444,9 @@ function TimelineEntry({
 export default function LogPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const me            = useQuery(api.queries.users.getMe, isLoaded && isSignedIn ? {} : "skip");
+  const cycleFactsCapability = useCycleFactsCapability(
+    isLoaded && isSignedIn && Boolean(me?.role),
+  );
   const coupleStatus  = useQuery(api.queries.couples.getCoupleStatus, isLoaded && isSignedIn ? {} : "skip");
   const periodHistory = useQuery(api.queries.history.getPeriodHistory, isLoaded && isSignedIn ? {} : "skip");
   const painHistory   = useQuery(
@@ -386,6 +468,9 @@ export default function LogPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message,      setMessage]      = useState("");
+  const [selectedCertainty, setSelectedCertainty] = useState<
+    "exact" | "approximate"
+  >("exact");
 
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -417,6 +502,7 @@ export default function LogPage() {
   const painShared    = Boolean(coupleStatus?.sharingSettings?.pain);
   const periodWriteAllowed = Boolean(coupleStatus?.sharingSettings?.periodWrite);
   const canAssist = isPartnerView && phaseShared && periodWriteAllowed && isLinked;
+  const cycleFactsEnabled = cycleFactsCapability?.cycleFactsV1 === true;
   const ongoingPeriod = periodHistory?.find((p: any) => !p.endDate);
   const visiblePainHistory = (painShared || !isPartnerView) ? painHistory ?? [] : [];
 
@@ -435,19 +521,37 @@ export default function LogPage() {
         if (isPartnerView) {
           await assistLogPeriodEnd({
             endDate: selectedDate,
+            ...(cycleFactsEnabled
+              ? {
+                  periodEventId: ongoingPeriod._id,
+                  endCertainty: selectedCertainty,
+                  expectedAuthorityVersion: ongoingPeriod.authorityVersion ?? 0,
+                }
+              : {}),
           });
         } else {
           await logPeriodEnd({
             endDate: selectedDate,
             timeZone: getLocalTimeZone(),
+            ...(cycleFactsEnabled
+              ? {
+                  periodEventId: ongoingPeriod._id,
+                  endCertainty: selectedCertainty,
+                  expectedAuthorityVersion: ongoingPeriod.authorityVersion ?? 0,
+                }
+              : {}),
           });
         }
       } else if (isPartnerView) {
-        await assistLogPeriodStart({ startDate: selectedDate });
+        await assistLogPeriodStart({
+          startDate: selectedDate,
+          ...(cycleFactsEnabled ? { startCertainty: selectedCertainty } : {}),
+        });
       } else {
         await logPeriodStart({
           startDate: selectedDate,
           timeZone: getLocalTimeZone(),
+          ...(cycleFactsEnabled ? { startCertainty: selectedCertainty } : {}),
         });
       }
       setSelectedDate("");
@@ -474,19 +578,39 @@ export default function LogPage() {
   const handleSaveCorrection = async (
     periodEventId: Id<"periodEvents">,
     correctedStartDate: string,
-    correctedEndDate?: string
+    correctedEndDate: string | undefined,
+    authorityVersion: number,
+    promoteStartCertainty: boolean,
+    promoteEndCertainty: boolean,
+    endCertainty: "exact" | "approximate"
   ) => {
     await updatePeriodEvent({
       periodEventId,
       startDate: correctedStartDate,
       endDate: correctedEndDate,
       timeZone: getLocalTimeZone(),
+      ...(cycleFactsEnabled
+        ? {
+            ...(promoteStartCertainty
+              ? { promoteStartCertainty: true }
+              : {}),
+            ...(promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+            ...(correctedEndDate ? { endCertainty } : {}),
+            expectedAuthorityVersion: authorityVersion,
+          }
+        : {}),
     });
     setMessage("Correction saved.");
   };
 
-  const handleDeletePeriod = async (periodEventId: Id<"periodEvents">) => {
-    await deletePeriodEvent({ periodEventId });
+  const handleDeletePeriod = async (
+    periodEventId: Id<"periodEvents">,
+    authorityVersion: number
+  ) => {
+    await deletePeriodEvent({
+      periodEventId,
+      ...(cycleFactsEnabled ? { expectedAuthorityVersion: authorityVersion } : {}),
+    });
     setMessage("Period entry removed.");
   };
 
@@ -701,6 +825,35 @@ export default function LogPage() {
             </label>
           )}
 
+          {cycleFactsEnabled && (
+            <fieldset className="mt-4 rounded-[1.2rem] border border-foreground/10 p-4">
+              <legend className="px-1 text-sm font-semibold text-foreground">
+                How certain is this date?
+              </legend>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {(["exact", "approximate"] as const).map((certainty) => (
+                  <button
+                    key={certainty}
+                    type="button"
+                    aria-pressed={selectedCertainty === certainty}
+                    onClick={() => setSelectedCertainty(certainty)}
+                    className="touch-target rounded-full border border-foreground/15 px-3 text-sm font-semibold capitalize text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    style={
+                      selectedCertainty === certainty
+                        ? {
+                            background: "hsl(var(--primary))",
+                            color: "hsl(var(--primary-foreground))",
+                          }
+                        : { background: "var(--color-glass)" }
+                    }
+                  >
+                    {certainty}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
           {selectedDate && (
             <div className="contrast-glass mt-4 rounded-[1.3rem] p-4">
               <p className="text-sm font-semibold text-foreground">
@@ -808,8 +961,8 @@ export default function LogPage() {
                 period={entry.period}
                 isOngoing={entry.isOngoing}
                 isFirst={i > 0}
-                viewerId={me._id}
                 partnerView={isPartnerView}
+                showFactSemantics={cycleFactsEnabled}
                 onSaveCorrection={handleSaveCorrection}
                 onDelete={handleDeletePeriod}
               />

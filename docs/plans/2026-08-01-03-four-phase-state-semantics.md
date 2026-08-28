@@ -24,6 +24,11 @@ Gate 2 defines a versioned `PredictionBounds` input consumed by the state reduce
 
 Detailed task order is S1 contract/reducer -> S2 fallback Late boundary -> S3 authoritative read model -> S4 partner projection -> S5/S6 reviewed UI/content -> S7 property coverage and pilot evidence.
 
+Gate 2 state anchoring must consume Gate 1's `isStartAnchorEligible` contract.
+Recorded coverage must consume `isExactCoverageEligible`; an approximate or
+unknown end may support a start-to-start anchor but must not be presented as
+exact menstruation coverage.
+
 ## Approved terminology
 
 - **Menstruation · Recorded:** backed by a confirmed open/closed period event covering today.

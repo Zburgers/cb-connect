@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   findLatestPeriodStartDate,
+  getPeriodEndProjection,
   getTimelinePhaseForDate,
 } from "./timelinePhases.ts";
 
@@ -68,4 +69,26 @@ test("latest period selection uses max startDate, not insertion order", () => {
   ]);
 
   expect(latest).toBe("2026-05-01");
+});
+
+test("open periods expose a derived estimated end without mutation", () => {
+  const period = { startDate: "2026-05-01" };
+
+  expect(getPeriodEndProjection(period, 5)).toEqual({
+    endDate: "2026-05-05",
+    kind: "estimated",
+  });
+  expect(period).toEqual({ startDate: "2026-05-01" });
+});
+
+test("observed period ends remain explicitly observed", () => {
+  expect(
+    getPeriodEndProjection(
+      { startDate: "2026-05-01", endDate: "2026-05-03" },
+      5
+    )
+  ).toEqual({
+    endDate: "2026-05-03",
+    kind: "observed",
+  });
 });

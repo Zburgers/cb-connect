@@ -1,0 +1,118 @@
+import { describe, expect, test } from "vitest";
+
+import {
+  getCycleFactReadLabel,
+  isExactCoverageEligible,
+  isHistoryVisible,
+  isStartAnchorEligible,
+  selectPredictionAnchor,
+  selectLatestPredictionFact,
+} from "./cycleFactEligibility.ts";
+
+const exact = {
+  id: "exact",
+  startDate: "2026-07-01",
+  startCertainty: "exact" as const,
+};
+
+describe("cycle fact read eligibility", () => {
+  test.each([
+    [exact, "exact", true, true],
+    [
+      { ...exact, startCertainty: "approximate" as const },
+      "approximate",
+      true,
+      false,
+    ],
+    [
+      {
+        ...exact,
+        startCertainty: "legacy_unknown" as const,
+        legacyReason: "missing_provenance" as const,
+      },
+      "legacy_unknown",
+      true,
+      false,
+    ],
+    [
+      {
+        ...exact,
+        legacyReason: "overlap" as const,
+      },
+      "legacy_unknown",
+      true,
+      false,
+    ],
+    [
+      { ...exact, tombstoneAt: 1 },
+      "exact",
+      false,
+      false,
+    ],
+  ])(
+    "classifies %s as %s, visible=%s, startAnchorEligible=%s",
+    (period, label, visible, eligible) => {
+      expect(getCycleFactReadLabel(period)).toBe(label);
+      expect(isHistoryVisible(period)).toBe(visible);
+      expect(isStartAnchorEligible(period)).toBe(eligible);
+    }
+  );
+
+  test("only the newest eligible exact fact enters prediction", () => {
+    expect(
+      selectLatestPredictionFact([
+        { ...exact, startDate: "2026-07-01" },
+        {
+          ...exact,
+          id: "approximate",
+          startDate: "2026-08-01",
+          startCertainty: "approximate",
+        },
+        {
+          ...exact,
+          id: "tombstoned",
+          startDate: "2026-09-01",
+          tombstoneAt: 2,
+        },
+        {
+          ...exact,
+          id: "newest-exact",
+          startDate: "2026-08-15",
+        },
+      ])
+    ).toMatchObject({ id: "newest-exact", startDate: "2026-08-15" });
+  });
+
+  test("legacy selection keeps the newest visible row in query order", () => {
+    expect(
+      selectPredictionAnchor(
+        [
+          { ...exact, startDate: "2026-08-01", startCertainty: undefined },
+          { ...exact, id: "older", startDate: "2026-07-01" },
+        ],
+        "legacy"
+      )
+    ).toMatchObject({ startDate: "2026-08-01", startCertainty: undefined });
+  });
+
+  test("does not treat an approximate end as exact coverage", () => {
+    const period = {
+      ...exact,
+      endDate: "2026-07-05",
+      endCertainty: "approximate" as const,
+    };
+    expect(getCycleFactReadLabel(period)).toBe("approximate");
+    expect(isStartAnchorEligible(period)).toBe(true);
+    expect(isExactCoverageEligible(period, "2026-07-05")).toBe(false);
+  });
+
+  test("uses an exact start for prediction even when the end is approximate", () => {
+    expect(
+      isStartAnchorEligible({
+        ...exact,
+        endDate: "2026-07-05",
+        endCertainty: "approximate",
+      })
+    ).toBe(true);
+  });
+});

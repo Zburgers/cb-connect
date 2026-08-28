@@ -10,7 +10,7 @@ crons.daily(
   internal.actions.notifications.sendDailyPredictions
 );
 
-// Daily auto-close of periods that exceeded configured period length (midnight UTC)
+// Legacy compatibility path only; the mutation is a no-op while Gate 1 is enabled.
 crons.daily(
   "auto end periods",
   { hourUTC: 0, minuteUTC: 0 },

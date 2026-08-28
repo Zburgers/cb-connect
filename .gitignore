@@ -14,6 +14,7 @@ next-env.d.ts
 test-results/
 playwright-report/
 /e2e/.auth/
+/e2e/.evidence/
 /e2e/auth-state/
 /e2e/storage-state/
 graphify-out/cache/
@@ -21,3 +22,6 @@ graphify-out/.graphify_root
 .antigravitycli/
 .claude/
 .codex/
+
+# clerk configuration (can include secrets)
+/.clerk/

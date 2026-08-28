@@ -11,16 +11,27 @@ export interface PeriodLike {
   endDate?: string;
 }
 
+export type PeriodEndProjection = {
+  endDate: string;
+  kind: "observed" | "estimated";
+};
+
 function parseCalendarDate(dateString: string): Date {
   const [year, month, day] = dateString.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-function getEffectivePeriodEndDate(
+export function getPeriodEndProjection(
   period: PeriodLike,
   periodLength: number
-): string {
-  return period.endDate ?? addCalendarDays(period.startDate, periodLength - 1);
+): PeriodEndProjection {
+  if (period.endDate) {
+    return { endDate: period.endDate, kind: "observed" };
+  }
+  return {
+    endDate: addCalendarDays(period.startDate, periodLength - 1),
+    kind: "estimated",
+  };
 }
 
 function getRecordedPeriodLength(period: PeriodLike, fallbackPeriodLength: number): number {
@@ -60,7 +71,7 @@ export function getTimelinePhaseForDate(
   let latestPeriodStartDate: string | null = null;
 
   for (const period of periods) {
-    const effectiveEndDate = getEffectivePeriodEndDate(period, periodLength);
+    const effectiveEndDate = getPeriodEndProjection(period, periodLength).endDate;
 
     if (targetDate >= period.startDate && targetDate <= effectiveEndDate) {
       return "menstruation";

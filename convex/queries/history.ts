@@ -7,6 +7,20 @@ import {
   getTimelinePhaseForDate,
   type TimelinePhase,
 } from "../_helpers/timelinePhases";
+import {
+  getCycleFactReadLabel,
+  isHistoryVisible,
+  selectPredictionAnchor,
+  type CycleFactReadLabel,
+} from "../_helpers/cycleFactEligibility";
+import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
+import {
+  projectPartnerPeriodHistory,
+  projectPrimaryPeriodHistory,
+} from "../_helpers/historyProjections";
+
+const MAX_PERIOD_HISTORY_ROWS = 100;
+const MAX_PAIN_HISTORY_ROWS = 1000;
 
 export const getPainHistory = query({
   args: {
@@ -45,10 +59,9 @@ export const getPainHistory = query({
       .withIndex("by_user_and_date", (q) =>
         q.eq("userId", targetUserId).gte("date", args.startDate)
       )
-      .filter((q) => q.lte(q.field("date"), args.endDate))
-      .collect();
+      .take(MAX_PAIN_HISTORY_ROWS);
 
-    return logs;
+    return logs.filter((log) => log.date <= args.endDate);
   },
 });
 
@@ -60,6 +73,7 @@ export const getPeriodHistory = query({
     }
 
     let targetUserId = user._id;
+    let partnerCanWrite = false;
     if (user.role === "partner") {
       const coupleData = await getCoupleForUser(ctx, user._id);
       if (!coupleData) {
@@ -78,15 +92,22 @@ export const getPeriodHistory = query({
       }
 
       targetUserId = primaryMembership.userId;
+      partnerCanWrite = primaryMembership.sharingPeriodWrite ?? false;
     }
 
     const periods = await ctx.db
       .query("periodEvents")
       .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
       .order("desc")
-      .collect();
+      .take(MAX_PERIOD_HISTORY_ROWS);
 
-    return await enrichPeriodEvents(ctx, periods, user._id);
+    return await enrichPeriodEvents(
+      ctx,
+      periods.filter(isHistoryVisible),
+      user._id,
+      user.role === "partner" ? "partner" : "primary",
+      partnerCanWrite,
+    );
   },
 });
 
@@ -116,11 +137,16 @@ export const getPredictionInputsForUser = internalQuery({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .unique();
 
-    const recentPeriod = await ctx.db
+    const recentPeriods = await ctx.db
       .query("periodEvents")
       .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
       .order("desc")
-      .first();
+      .take(MAX_PERIOD_HISTORY_ROWS);
+
+    const recentPeriod = selectPredictionAnchor(
+      recentPeriods,
+      isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
+    );
 
     if (!recentPeriod) {
       return null;
@@ -188,7 +214,8 @@ export const getTimelineHistory = query({
           .query("periodEvents")
           .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
           .order("desc")
-          .collect()
+          .take(MAX_PERIOD_HISTORY_ROWS)
+          .then((rows) => rows.filter(isHistoryVisible))
       : [];
 
     const painLogs = canViewPain
@@ -197,8 +224,8 @@ export const getTimelineHistory = query({
           .withIndex("by_user_and_date", (q) =>
             q.eq("userId", targetUserId).gte("date", args.startDate)
           )
-          .filter((q) => q.lte(q.field("date"), args.endDate))
-          .collect()
+          .take(MAX_PAIN_HISTORY_ROWS)
+          .then((rows) => rows.filter((log) => log.date <= args.endDate))
       : [];
 
     const cycleSettings = canViewPhase
@@ -218,20 +245,29 @@ export const getTimelineHistory = query({
       isOngoing?: boolean;
       pain?: { score: number; tags?: string[]; note?: string };
       period?: {
-        id: Id<"periodEvents">;
+        id?: Id<"periodEvents">;
         startDate: string;
         endDate?: string;
+        startCertainty?: "exact" | "approximate" | "legacy_unknown";
+        endCertainty?: "exact" | "approximate" | "legacy_unknown";
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
-        createdByUserId: Id<"users">;
-        updatedByUserId: Id<"users">;
+        certainty: CycleFactReadLabel;
         createdByName: string;
         updatedByName: string;
+        createdByViewer: boolean;
+        updatedByViewer: boolean;
         canCorrect: boolean;
       };
     }> = [];
 
-    const enrichedPeriods = await enrichPeriodEvents(ctx, periods, user._id);
+    const enrichedPeriods = await enrichPeriodEvents(
+      ctx,
+      periods,
+      user._id,
+      user.role === "partner" ? "partner" : "primary",
+      false,
+    );
     for (const period of enrichedPeriods) {
       timelineEntries.push({
         date: period.startDate,
@@ -239,15 +275,23 @@ export const getTimelineHistory = query({
         type: "period",
         isOngoing: !period.endDate,
         period: {
-          id: period._id,
+          ...(user.role === "partner" ? {} : { id: period._id }),
           startDate: period.startDate,
           endDate: period.endDate,
+          startCertainty: period.startCertainty,
+          endCertainty: period.endCertainty,
           source: period.source,
           confirmationStatus: period.confirmationStatus,
-          createdByUserId: period.createdByUserId,
-          updatedByUserId: period.updatedByUserId,
+          certainty: period.certainty,
+          ...(user.role === "partner"
+            ? {}
+            : {
+                authorityVersion: period.authorityVersion,
+              }),
           createdByName: period.createdByName,
           updatedByName: period.updatedByName,
+          createdByViewer: period.createdByViewer,
+          updatedByViewer: period.updatedByViewer,
           canCorrect: period.canCorrect,
         },
       });
@@ -277,7 +321,9 @@ export const getTimelineHistory = query({
 async function enrichPeriodEvents(
   ctx: QueryCtx,
   periods: Doc<"periodEvents">[],
-  viewerId: Id<"users">
+  viewerId: Id<"users">,
+  viewerRole: "primary" | "partner",
+  partnerCanWrite: boolean,
 ) {
   const userIds = new Set<Id<"users">>();
   for (const period of periods) {
@@ -301,16 +347,22 @@ async function enrichPeriodEvents(
   return periods.map((period) => {
     const createdByUserId = period.createdByUserId ?? period.userId;
     const updatedByUserId = period.updatedByUserId ?? period.userId;
-    return {
+    const enrichedPeriod = {
       ...period,
       source: period.source ?? ("self" as const),
       confirmationStatus:
         period.confirmationStatus ?? ("confirmed" as const),
+      certainty: getCycleFactReadLabel(period),
+      authorityVersion: period.authorityVersion ?? 0,
       createdByUserId,
       updatedByUserId,
       createdByName: names.get(createdByUserId) ?? "Partner",
       updatedByName: names.get(updatedByUserId) ?? "Partner",
       canCorrect: period.userId === viewerId,
     };
+
+    return viewerRole === "partner"
+      ? projectPartnerPeriodHistory(enrichedPeriod, viewerId, partnerCanWrite)
+      : projectPrimaryPeriodHistory(enrichedPeriod, viewerId);
   });
 }

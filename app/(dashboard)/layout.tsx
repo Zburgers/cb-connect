@@ -13,6 +13,7 @@ import { Home, PenTool, Heart, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { HEARTBEAT_INTERVAL_MS } from "@/lib/presence.mjs";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
+import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
 import { getLocalTimeZone } from "@/lib/utils";
 
 const navItems = [
@@ -29,6 +30,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateUserTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
+  const cycleFactsCapability = useCycleFactsCapability(
+    isAuthenticated && Boolean(me?.role),
+  );
   const coupleStatus = useQuery(
     api.queries.couples.getCoupleStatus,
     isAuthenticated && me?.role ? {} : "skip"
@@ -113,7 +117,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* ── Page content ─────────────────────────────────────────── */}
-      <main className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28">
+      <main
+        className="relative z-10 mx-auto max-w-4xl px-4 py-6 pb-28"
+        data-cycle-facts-v1={
+          cycleFactsCapability?.cycleFactsV1 ? "enabled" : "disabled"
+        }
+      >
         {children}
       </main>
 

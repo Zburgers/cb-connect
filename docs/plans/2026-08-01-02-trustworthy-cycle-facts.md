@@ -1,9 +1,9 @@
 # Trustworthy Cycle Facts Implementation Plan
 
 > **Codex/Shipyard execution:** Use the approved dated execution plan at
-> [`2026-08-12-gate-1-trustworthy-cycle-facts-execution.md`](2026-08-12-gate-1-trustworthy-cycle-facts-execution.md),
-> for additive, default-off, non-destructive work. D-012 blocks only the tasks
-> that destroy or permanently delete data.
+> [`2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md`](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md),
+> for additive, default-off, non-destructive work. D-012 blocks production
+> exposure and the tasks that destroy or permanently delete data.
 
 **Goal:** Ensure period history contains explicit user observations with valid provenance and never silently stores system estimates as facts.
 
@@ -20,10 +20,21 @@
 **Next gate:** [Four-phase state semantics](2026-08-01-03-four-phase-state-semantics.md)
 
 **Planning status:** Gate-level work packages plus an approved dated execution
-plan. Additive/default-off implementation may start. D-012 must be resolved
-before destructive migration or deletion behavior. See the
+plan. Additive/default-off implementation may start. Authenticated
+qualification is still pending. Additive/default-off deployment is allowed;
+D-012 must be resolved before destructive migration, hard deletion, final
+retention behavior or production feature exposure. See the
 [Gate 0-to-Gate 1 handoff](../handoffs/2026-08-06-gate-0-to-gate-1.md) for the
 current code inventory and decision boundary; it is not an execution plan.
+
+### Eligibility contract
+
+Gate 1 exposes two distinct read policies. `isStartAnchorEligible` accepts a
+visible, non-legacy row with an exact start for prediction and state anchoring;
+an approximate or unknown end does not invalidate that start.
+`isExactCoverageEligible` is stricter: coverage after the start requires an
+exact end, so an approximate or unknown end never claims Recorded coverage.
+Whole-row labels remain conservative through `getCycleFactReadLabel`.
 
 ## Required detailed execution order
 
@@ -199,7 +210,16 @@ F6 must be split in the detailed plan: its timezone foundation blocks F1, while 
 
 ## Rollout and rollback
 
-Deploy additive schema and read compatibility first, then dry-run audit, then migration, then guarded new writes, and only afterward remove old write paths. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and exposes only an authenticated boolean capability to the UI. Gate 0 approval is required before additive execution; D-012 approval remains required for hard deletion, destructive migration and production exposure. Stop on count mismatch, invariant rejection spike, unauthorized visibility, migration non-idempotency or inability to restore. Rollback reads to compatible fields; never “undo” by deleting migrated history.
+Deploy additive schema and read compatibility first, then guarded new writes,
+derived-estimate separation, dry-run audit, bounded annotation, and finally the
+default-off UI. Convex owns `CB_CONNECT_CYCLE_FACTS_V1`, defaulting off, and
+exposes only an authenticated boolean capability to the UI. Historical Gate 0
+approval is not an additive-execution switch under the approved feature-first
+policy; D-012 approval remains required for production exposure, hard deletion,
+destructive migration and final retention behavior. Stop on count mismatch, invariant
+rejection spike, unauthorized visibility, migration non-idempotency or
+inability to recover. Roll back by disabling the flag and retaining compatible
+reads; never “undo” by deleting annotated history.
 
 ## Exit evidence
 

@@ -13,13 +13,18 @@ valid `CONVEX_DEPLOY_KEY` and validates the exact target
 - Backend identity query: `queries/system:getBackendIdentity`
 - Required evidence: function specification plus the query result containing the approved deployment and compatibility tag
 
-The workflow rejects any target other than the approved selector and passes the same selector through an explicit `--env-file` to `npx convex deploy`. It then records a function specification and invokes the identity query against that same selector. No CLI default or `--prod` shortcut is evidence of target identity.
+The workflow rejects any target other than the approved selector and invokes
+all stateful Convex operations through `scripts/convex-safe-exec` in explicit
+`production` mode. The wrapper verifies effective backend identity immediately
+before and after each operation. No CLI default or `--prod` shortcut is valid
+evidence of target identity.
 
 ## Preview/test rehearsal
 
 Before any production execution, deploy the same commit to the approved
 preview/test deployment `dev:hallowed-hummingbird-284` with its own deploy key
-provided through `CONVEX_DEPLOY_KEY`. Verify `getBackendIdentity`, the `v1`
+provided through `CONVEX_DEPLOY_KEY` and invoke the wrapper in explicit `test`
+mode. Verify `getBackendIdentity`, the `v1`
 compatibility tag, and the generated function specification. Keep synthetic
 data only; never use production users or production data for this rehearsal.
 

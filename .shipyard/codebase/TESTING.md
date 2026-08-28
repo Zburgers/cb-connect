@@ -2,9 +2,19 @@
 
 ## Current evidence
 
-- Vitest/Convex unit suite: 5 files and 27 tests passed in the baseline run on 2026-08-01.
-- `npm run build` passed and generated all listed App Router routes on 2026-08-01.
-- `npm run typecheck` must be run after the build when `.next/types` is absent or being regenerated; the first parallel baseline run raced that generated directory and failed with TS6053 missing `.next/types` files.
+- Gate 1 branch qualification: `npm run test:unit -- --run` passed 27 files and
+  181 tests on 2026-08-20.
+- `npm run build` passed with non-secret process-only Convex/Clerk placeholders
+  and generated all listed App Router routes; an isolated checkout without
+  `NEXT_PUBLIC_CONVEX_URL` fails closed during prerender.
+- `npm run typecheck` passed after the build. Run build before typecheck when
+  `.next/types` is absent or being regenerated.
+- `npm run test:cycle-facts-plan`, `npm run test:ci-workflow`, and
+  `bash scripts/tests/deploy-workflow.test.sh` passed. `npm audit --omit=dev`
+  reported zero vulnerabilities.
+- `npx convex codegen` requires an authenticated/configured
+  `CONVEX_DEPLOYMENT`; the checked-in generated API is retained and must be
+  refreshed in a configured Convex environment before deployment.
 
 ## Test layers
 
@@ -21,4 +31,6 @@ For changes affecting auth, onboarding, linking, sharing, logging, or chat, run 
 
 - The checked-in E2E suite depends on external Clerk state and fixtures (`e2e/fixtures.ts`, `playwright.config.ts`).
 - The tracker records pending authenticated two-user production smoke coverage for the chat state path (`issues.md`).
-- Cron prediction behavior has implementation coverage gaps and needs a dedicated test/manual verification path (`issues.md`, `convex/actions/notifications.ts`).
+- Gate 1 covers derived-ending separation and exact-fact eligibility; the
+  broader rollover/late-state prediction model remains a Gate 2 concern
+  (`issues.md`, `convex/_helpers/cycleCalculations.ts`).

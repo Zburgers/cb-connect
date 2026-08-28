@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The target and credential context are intentionally established here, in the
+# same process that performs the Convex operation. Do not replace this with a
+# caller-side preflight.
+
+usage() {
+  echo "usage: $0 test|production [--dry-run] -- convex-command ..." >&2
+  exit 64
+}
+
+[[ $# -ge 1 ]] || usage
+mode="$1"
+shift
+case "$mode" in
+  test) approved_target='dev:hallowed-hummingbird-284'; required_class='test' ;;
+  production) approved_target='prod:festive-malamute-715'; required_class='production' ;;
+  *) echo 'convex-safe-exec requires explicit mode: test or production' >&2; exit 64 ;;
+esac
+
+dry_run=false
+if [[ "${1:-}" == '--dry-run' ]]; then
+  dry_run=true
+  shift
+fi
+[[ "${1:-}" == '--' ]] || usage
+shift
+[[ $# -ge 1 ]] || usage
+
+credential_class="${CB_CONNECT_CONVEX_CREDENTIAL_CLASS:-}"
+if [[ "$credential_class" != "$required_class" ]]; then
+  echo 'convex-safe-exec rejected credential class' >&2
+  exit 65
+fi
+
+deploy_key="${CONVEX_DEPLOY_KEY:-}"
+if [[ -z "$deploy_key" ]]; then
+  echo 'convex-safe-exec requires a bound Convex deploy credential' >&2
+  exit 65
+fi
+credential_target="${deploy_key%%|*}"
+if [[ "$deploy_key" != *'|'* || "$credential_target" != "$approved_target" ]]; then
+  echo 'convex-safe-exec rejected a deploy credential for the wrong target' >&2
+  exit 65
+fi
+
+# Convex interprets CONVEX_DEPLOYMENT as a project/development selector and can
+# redirect a development deployment to its associated production deployment.
+# It is therefore never allowed in the executor context. The deploy key's
+# associated deployment is the sole CLI target authority.
+if [[ -n "${CONVEX_DEPLOYMENT:-}" ]]; then
+  echo 'convex-safe-exec rejects CONVEX_DEPLOYMENT; use the bound target credential' >&2
+  exit 65
+fi
+
+if [[ "$mode" == 'test' ]]; then
+  deployment_vars=(CONVEX_TEST_DEPLOYMENT CB_CONNECT_TEST_DEPLOYMENT CB_CONNECT_BACKEND_DEPLOYMENT)
+else
+  deployment_vars=(CB_CONNECT_PRODUCTION_DEPLOYMENT CB_CONNECT_BACKEND_DEPLOYMENT)
+fi
+for name in "${deployment_vars[@]}"; do
+  value="${!name:-}"
+  if [[ -n "$value" && "$value" != "$approved_target" ]]; then
+    echo 'convex-safe-exec rejected ambiguous or contradictory deployment selectors' >&2
+    exit 65
+  fi
+done
+
+if [[ "$mode" == 'test' && -n "${CB_CONNECT_PRODUCTION_DEPLOYMENT:-}" ]]; then
+  echo 'convex-safe-exec rejected production context in test mode' >&2
+  exit 65
+fi
+if [[ "$mode" == 'production' && "${CB_CONNECT_PROTECTED_EXECUTION:-}" != '1' ]]; then
+  echo 'convex-safe-exec requires the protected production execution boundary' >&2
+  exit 65
+fi
+
+for arg in "$@"; do
+  case "$arg" in
+    --prod|--deployment=prod:*|prod:*)
+      echo 'convex-safe-exec rejected an explicit production selector in command arguments' >&2
+      exit 65
+      ;;
+    --deployment=dev:*|dev:*)
+      if [[ "$mode" != 'test' ]]; then
+        echo 'convex-safe-exec rejected a test selector in production mode' >&2
+        exit 65
+      fi
+      ;;
+  esac
+done
+
+verify_identity() {
+  local identity
+  identity="$(npx convex run queries/system:getBackendIdentity '{}' 2>/dev/null)" || {
+    echo 'convex-safe-exec could not verify effective backend identity' >&2
+    return 1
+  }
+  IDENTITY="$identity" EXPECTED_DEPLOYMENT="$approved_target" node <<'NODE'
+const identity = JSON.parse(process.env.IDENTITY);
+if (identity.deployment !== process.env.EXPECTED_DEPLOYMENT) {
+  throw new Error('convex-safe-exec effective backend target mismatch');
+}
+NODE
+}
+
+if [[ "$dry_run" == true ]]; then
+  echo "convex-safe-exec dry-run validated mode=$mode target-bound=true"
+  exit 0
+fi
+
+verify_identity
+verify_identity
+npx convex "$@"
+verify_identity
+echo "convex-safe-exec completed mode=$mode target-bound=true"

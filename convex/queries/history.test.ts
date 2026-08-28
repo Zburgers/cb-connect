@@ -1,10 +1,18 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+});
 
 describe("period history attribution", () => {
   test("legacy events render with safe defaults and owner correction", async () => {
@@ -33,7 +41,7 @@ describe("period history attribution", () => {
     });
   });
 
-  test("partner visibility and timeline metadata use primary sharing settings", async () => {
+  test("writable partner history carries only stale-safe target metadata", async () => {
     const t = convexTest(schema, modules);
     const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
       sharingPhase: true,
@@ -64,17 +72,62 @@ describe("period history attribution", () => {
       createdByName: "Partner Person",
       canCorrect: false,
     });
+    expect(history[0]).not.toHaveProperty("userId");
+    expect(history[0]).not.toHaveProperty("createdByUserId");
+    expect(history[0]).not.toHaveProperty("updatedByUserId");
+    expect(history[0]).not.toHaveProperty("_creationTime");
+    expect(history[0]).not.toHaveProperty("createdAt");
+    expect(history[0]).not.toHaveProperty("updatedAt");
+    expect(history[0]).not.toHaveProperty("tombstoneByUserId");
+    expect(history[0]).toHaveProperty("authorityVersion");
+    expect(history[0]).toHaveProperty("_id");
+    expect(history[0]).not.toHaveProperty("legacyReason");
     expect(timeline[0]).toMatchObject({
       type: "period",
       period: {
-        id: eventId,
         source: "partner_assist",
         confirmationStatus: "confirmed",
         createdByName: "Partner Person",
         updatedByName: "Partner Person",
+        createdByViewer: true,
+        updatedByViewer: true,
         canCorrect: false,
       },
     });
+    expect(timeline[0].period).not.toHaveProperty("userId");
+    expect(timeline[0].period).not.toHaveProperty("createdByUserId");
+    expect(timeline[0].period).not.toHaveProperty("updatedByUserId");
+    expect(timeline[0].period).not.toHaveProperty("_creationTime");
+    expect(timeline[0].period).not.toHaveProperty("createdAt");
+    expect(timeline[0].period).not.toHaveProperty("updatedAt");
+    expect(timeline[0].period).not.toHaveProperty("authorityVersion");
+    expect(timeline[0].period).not.toHaveProperty("legacyReason");
+  });
+
+  test("read-only partner history has presentation only", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: false,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        endDate: "2026-06-24",
+        legacyReason: "duplicate",
+        authorityVersion: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const history = await asPartner.query(api.queries.history.getPeriodHistory, {});
+    expect(history).toHaveLength(1);
+    expect(history[0]).not.toHaveProperty("_id");
+    expect(history[0]).not.toHaveProperty("authorityVersion");
+    expect(history[0]).not.toHaveProperty("legacyReason");
+    expect(history[0]).toMatchObject({ startDate: "2026-06-20", endDate: "2026-06-24" });
   });
 
   test("partner receives no period history when phase sharing is disabled", async () => {
@@ -87,6 +140,106 @@ describe("period history attribution", () => {
       await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-06-20",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    expect(
+      await asPartner.query(api.queries.history.getPeriodHistory, {})
+    ).toEqual([]);
+  });
+});
+
+describe("fact-aware history and prediction reads", () => {
+  test("flag-off prediction keeps the newest legacy row without certainty", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId }
+    );
+
+    expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
+  });
+
+  test("keeps uncertain history visible but excludes it from prediction", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-07-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "approximate",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-09-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        tombstoneByUserId: primaryId,
+        tombstoneAt: 2,
+        tombstoneAuthorityVersion: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const history = await asPrimary.query(api.queries.history.getPeriodHistory, {});
+    const prediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId }
+    );
+
+    expect(history.map((period) => period.startDate)).toEqual([
+      "2026-08-01",
+      "2026-07-01",
+    ]);
+    expect(history[0]).toMatchObject({ certainty: "approximate" });
+    expect(prediction).toMatchObject({ recentPeriodStart: "2026-07-01" });
+  });
+
+  test("keeps partner phase-sharing boundaries server-side", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: false,
+      sharingPeriodWrite: false,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-07-01",
+        startCertainty: "approximate",
+        authorityVersion: 1,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });

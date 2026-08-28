@@ -2262,7 +2262,7 @@ jobs:
           echo "Deploying to Kubernetes cluster..."
 
       - name: Deploy Convex
-        run: npx convex deploy --prod
+        run: bash scripts/convex-safe-exec production -- deploy
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 ```
@@ -2382,7 +2382,7 @@ export const addSharingSettings = internalMutation({
 
 Run migration:
 ```bash
-npx convex run migrations/001_add_sharing_settings:addSharingSettings
+bash scripts/convex-safe-exec test -- run migrations/001_add_sharing_settings:addSharingSettings
 ```
 
 ### 14.6 Infrastructure as Code

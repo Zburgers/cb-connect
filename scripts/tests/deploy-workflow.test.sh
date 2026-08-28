@@ -46,11 +46,15 @@ required_patterns=(
   "steps\.promote\.outcome == 'failure' \|\| steps\.verify_promotion\.outcome == 'failure'"
   'always\(\)'
   'Validate Convex deploy key preflight'
-  'npx convex deploy --typecheck disable --codegen enable'
+  'bash scripts/convex-safe-exec production -- deploy --typecheck disable --codegen enable'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION'
+  'CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT: production'
+  'CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT: \$\{\{ vars\.CB_CONNECT_PRODUCTION_DEPLOYMENT \}\}'
+  'CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY: "false"'
+  'CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY'
   'Record backend deployment timestamp'
   'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
-  'npx convex env set --from-file "\$env_file" --force'
+  'bash scripts/convex-safe-exec production -- env set --from-file "\$env_file" --force'
 )
 for pattern in "${required_patterns[@]}"; do
   if ! rg -q "$pattern" "$workflow"; then
@@ -74,6 +78,22 @@ if rg -q 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBAC
   exit 1
 fi
 
+if rg -n 'CB_CONNECT_CYCLE_FACTS_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_FACTS_V1' .github/workflows/ci.yml "$workflow"; then
+  echo "cycle facts capability must remain an optional Convex-only setting" >&2
+  exit 1
+fi
+
+for pattern in \
+  'CB_CONNECT_CYCLE_FACTS_V1' \
+  'flag-off' \
+  'backward-compatible reads' \
+  'destructive migration'; do
+  if ! rg -qi "$pattern" DEPLOYMENT.md; then
+    echo "deployment guide is missing Gate 1 rollout policy: $pattern" >&2
+    exit 1
+  fi
+done
+
 if rg -q 'test "\$CB_CONNECT_RELEASE_ROOT"|\[\[ "\$CB_CONNECT_RELEASE_ROOT" =~' "$workflow"; then
   echo "release-root validation must use the explicit safe-path case contract" >&2
   exit 1
@@ -87,16 +107,6 @@ fi
 
 if ! rg -q 'if \[\[ -s "\$env_file" \]\]; then' "$workflow"; then
   echo "deploy workflow must skip Convex environment sync when the generated file is empty" >&2
-  exit 1
-fi
-
-if rg -q 'npx convex (env set|function-spec|run).*--deployment' "$workflow"; then
-  echo "deploy-key-authenticated Convex commands must let the key select the deployment" >&2
-  exit 1
-fi
-
-if rg -q 'convex deploy --env-file|Validate explicit Convex release target|convex function-spec|npx convex run queries/system:getBackendIdentity' "$workflow"; then
-  echo "verified deploy-key releases must not depend on a duplicate deployment selector" >&2
   exit 1
 fi
 
