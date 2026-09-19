@@ -28,6 +28,8 @@ describe("authenticated capability query", () => {
     "returns independent authenticated capabilities for %s/%s",
     async (factsValue, stateValue, factsEnabled, stateEnabled) => {
       const t = convexTest(schema, modules);
+      vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+      vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "false");
       await seedUser(t, {
         clerkId: "capability-clerk",
         name: "Capability User",
