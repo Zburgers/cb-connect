@@ -24,6 +24,9 @@ Real external/CB Connect benchmark outcome viewing and model promotion remain bl
 - `docs/plans/2026-08-01-cb-connect-major-release-program.md`
 - `docs/plans/README.md`
 - `.shipyard/LESSONS.md`
+- `.shipyard/codebase/ARCHITECTURE.md`
+- `.shipyard/codebase/TESTING.md`
+- `.shipyard/codebase/CONCERNS.md`
 
 Current code seams reviewed against the plan include:
 
