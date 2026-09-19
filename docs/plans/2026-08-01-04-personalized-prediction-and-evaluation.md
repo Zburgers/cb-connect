@@ -2,9 +2,9 @@
 
 > **Codex/Shipyard execution:** This gate-level plan requires a frozen benchmark protocol and dated execution plan after Gate 2 evidence exists.
 
-**Goal:** Replace fixed exact-date claims with benchmarked personal estimates, calibrated likely windows, explanations and safe abstention.
+**Goal:** Replace fixed exact-date claims with benchmarked personal estimates, calibrated likely windows, explanations and honest low-confidence behavior. High variability should widen/lower quality rather than suppress the best usable prediction; true abstention is reserved for insufficient/invalid evidence, pause, or an unavailable calibration contract.
 
-**Architecture:** Pure versioned estimators operate only on eligible confirmed start-to-start intervals. A time-ordered walk-forward harness compares simple baselines and calibrates an 80% likely window. Immutable snapshots record what was generated and shown; a feature-flagged Convex read model serves one result to web, notifications and mobile.
+**Architecture:** Pure versioned estimators operate on eligible exact start-to-start intervals inside the active private prediction segment. D-009 partner-assisted exact starts are accepted immediately and retain provenance. A time-ordered walk-forward harness compares simple baselines and calibrates an 80% likely window. Immutable snapshots record what was generated and shown; a feature-flagged Convex read model serves one result to web, notifications and mobile. External academic data may inform estimator selection and initial calibration under G3-BENCH-V1 but does not provide a Gate 3 population-trained point predictor.
 
 **Tech Stack:** TypeScript, Convex, Vitest, offline benchmark scripts, Next.js, Playwright.
 
@@ -16,7 +16,7 @@
 
 **Next gate:** [Notification platform](2026-08-01-05-notification-platform.md)
 
-**Planning status:** Gate-level work packages only. Resolve D-013 before viewing benchmark outcomes and D-015 before pilot promotion.
+**Planning status:** Superseded for execution detail by [the dated Gate 3 implementation plan](2026-09-20-gate-3-personalized-prediction-implementation.md), [the Gate 3 design freeze](../decisions/2026-09-20-gate-3-prediction-design-freeze.md), and [G3-BENCH-V1](../research/cycle-benchmark-protocol.md). Synthetic/golden implementation may proceed. D-013 still blocks real benchmark outcome viewing/promotion until remaining dataset/consent/statistical authority is recorded; D-015 blocks pilot promotion.
 
 **Required task order:** P1 eligibility/reasons -> P2 estimator interface -> P3 frozen leakage-safe protocol -> P4 calibration -> P5 immutable snapshots -> P6 versioned serving contract -> P7 owner-first UI/pilot. Benchmark, eligibility, metric and subgroup definitions are frozen before candidate results are viewed.
 
@@ -39,9 +39,9 @@
     <modify>convex/queries/history.ts</modify>
   </files>
   <steps>
-    <step>Write failing fixtures for stable, variable, approximate, pending partner, corrected, segmented and 28/29/58/28 histories.</step>
-    <step>Calculate only consecutive confirmed starts in the active eligible segment.</step>
-    <step>Attach reason codes such as `LIMITED_HISTORY`, `APPROXIMATE_DATE`, `PENDING_PRIMARY_CONFIRMATION`, `POSSIBLE_MISSING_LOG`, `CONTEXT_SEGMENT` and `RECENT_CORRECTION`.</step>
+    <step>Write failing fixtures for stable, variable, approximate, accepted partner-assisted, corrected, segmented and 28/29/58/28 histories.</step>
+    <step>Calculate only consecutive eligible exact starts in the active eligible segment. Under D-009, authorized current partner-assisted exact starts are immediately eligible; legacy `unreviewed` rows remain conservative compatibility data.</step>
+    <step>Attach reason codes such as `LIMITED_HISTORY`, `APPROXIMATE_DATE`, `LEGACY_UNKNOWN`, `POSSIBLE_MISSING_LOG`, `PARTNER_ASSISTED`, `CONTEXT_SEGMENT` and `RECENT_CORRECTION`.</step>
     <step>Never divide a long interval or delete it without preserving its reason and eligibility decision.</step>
   </steps>
   <verification>
@@ -51,7 +51,7 @@
 </task>
 
 <task id="P2" name="Implement versioned simple estimators">
-  <description>Provide configured length, all-history mean/median, rolling mean/median and recency-weighted candidates behind one interface.</description>
+  <description>Provide configured length, all-history mean/median, rolling mean/median and the frozen recency-weighted candidate behind one interface. Benchmark many; initially promote at most one global personalized estimator version.</description>
   <files>
     <create>convex/_helpers/predictionEstimators.ts</create>
     <create>convex/_helpers/predictionEstimators.test.ts</create>
@@ -99,7 +99,7 @@
     <step>Write failing tests for point-inside-window, 80%-not-narrower-than-50%, monotonic variability and timezone stability.</step>
     <step>Fit calibration only on prior folds or a separate calibration split; never on the evaluated target.</step>
     <step>Use personal residuals when sufficient and shrink/blend to approved history-band calibration when sparse.</step>
-    <step>Widen or abstain for high variability, context change, possible missing log and limited history.</step>
+    <step>Widen/lower quality for high variability, context change, possible missing log and limited history. High variability alone must not suppress the best usable prediction; abstain only for insufficient/invalid evidence, pause, or unavailable calibration semantics.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/_helpers/predictionIntervals.test.ts</command>
@@ -147,7 +147,7 @@
 </task>
 
 <task id="P7" name="Replace exact-date-only prediction UI">
-  <description>Show “most likely around,” an 80% likely window, basis count, quality and explanation; show timing-less-predictable or abstention when appropriate.</description>
+  <description>Show “most likely around,” a calibrated 80% likely window when probability language is approved, basis count, ordinal quality and explanation. Highly variable users still receive the best defensible range with timing-less-predictable copy; arbitrary numeric user-facing confidence is forbidden.</description>
   <files>
     <modify>components/dashboard/CurrentPhase.tsx</modify>
     <modify>components/dashboard/PhaseAura.tsx</modify>
@@ -159,7 +159,7 @@
   <steps>
     <step>Write failing regular/irregular/late/limited-history/paused assertions and accessible screenshots.</step>
     <step>Render point and window without deterministic “starts on” language.</step>
-    <step>Explain basis and quality in plain language; keep detailed health-pattern notices private.</step>
+    <step>Explain basis and quality in plain language; keep the internal numeric quality diagnostic, residuals, private context segments and detailed health-pattern notices private.</step>
     <step>Feature-flag separately for primary and partner projections.</step>
   </steps>
   <verification>
@@ -167,6 +167,21 @@
     <expected>Every prediction state is honest, accessible and sourced from the versioned contract.</expected>
   </verification>
 </task>
+
+
+## 2026-09-20 owner design freeze
+
+The detailed Gate 3 implementation must follow `docs/decisions/2026-09-20-gate-3-prediction-design-freeze.md`. In particular:
+
+- public/academic data is Level-2 input for method selection/robustness/initial calibration, not a population-trained Gate 3 point prior;
+- one global estimator is promoted first;
+- hard context segmentation is private and user-controlled; automatic change detection may adapt uncertainty or later suggest a segment but does not silently exclude history;
+- D-009 partner-assisted exact starts are immediately eligible and primary correction/deletion remains authoritative;
+- possible missing logs are preserved and flagged, never split into invented cycles;
+- user-facing probability is reserved for calibrated interval coverage, while the internal numeric quality score remains diagnostic;
+- subjective feedback is not a cycle outcome label;
+- Gate 3 point prediction is start-to-start only; and
+- partner output is reduced and care-oriented, without private model/context metadata.
 
 ## Preregistered promotion criteria
 
