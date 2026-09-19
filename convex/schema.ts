@@ -282,6 +282,17 @@ export default defineSchema({
     lastUpdatedAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  cyclePredictionSegments: defineTable({
+    userId: v.id("users"),
+    startDate: v.string(),
+    status: v.union(v.literal("active"), v.literal("superseded")),
+    supersedesSegmentId: v.optional(v.id("cyclePredictionSegments")),
+    createdAt: v.number(),
+    supersededAt: v.optional(v.number()),
+  })
+    .index("by_user_and_status", ["userId", "status"])
+    .index("by_user_and_created_at", ["userId", "createdAt"]),
+
   painTips: defineTable({
     phase: v.union(
       v.literal("menstruation"),

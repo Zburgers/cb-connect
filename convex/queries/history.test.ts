@@ -15,6 +15,68 @@ beforeEach(() => {
 });
 
 describe("period history attribution", () => {
+  test("exposes the active prediction baseline to primary history only", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: "2026-08-01" },
+    );
+
+    const [primaryHistory, partnerHistory] = await Promise.all([
+      asPrimary.query(api.queries.history.getPeriodHistory, {}),
+      asPartner.query(api.queries.history.getPeriodHistory, {}),
+    ]);
+
+    expect(primaryHistory[0]).toMatchObject({
+      predictionSegmentStartDate: "2026-08-01",
+    });
+    expect(partnerHistory[0]).not.toHaveProperty("predictionSegmentStartDate");
+    expect(partnerHistory[0]).not.toHaveProperty("segmentId");
+    expect(partnerHistory[0]).not.toHaveProperty("supersedesSegmentId");
+  });
+
+  test("keeps stored prediction segment metadata hidden when Gate 3 is off", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("cyclePredictionSegments", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        status: "active",
+        createdAt: Date.now(),
+      });
+    });
+
+    const history = await asPrimary.query(
+      api.queries.history.getPeriodHistory,
+      {},
+    );
+
+    expect(history[0]).not.toHaveProperty("predictionSegmentStartDate");
+  });
+
   test("legacy events render with safe defaults and owner correction", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

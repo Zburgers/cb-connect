@@ -15,6 +15,7 @@ import {
   type CycleFactReadLabel,
 } from "../_helpers/cycleFactEligibility";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import {
   projectPartnerPeriodHistory,
   projectPrimaryPeriodHistory,
@@ -102,13 +103,29 @@ export const getPeriodHistory = query({
       .order("desc")
       .take(MAX_PERIOD_HISTORY_ROWS);
 
-    return await enrichPeriodEvents(
+    const activeSegment =
+      user.role === "primary" && isPeriodPredictionV2Enabled()
+        ? await ctx.db
+            .query("cyclePredictionSegments")
+            .withIndex("by_user_and_status", (q) =>
+              q.eq("userId", user._id).eq("status", "active"),
+            )
+            .unique()
+        : null;
+    const history = await enrichPeriodEvents(
       ctx,
       periods.filter(isHistoryVisible),
       user._id,
       user.role === "partner" ? "partner" : "primary",
       partnerCanWrite,
     );
+
+    return activeSegment
+      ? history.map((period) => ({
+          ...period,
+          predictionSegmentStartDate: activeSegment.startDate,
+        }))
+      : history;
   },
 });
 
