@@ -51,8 +51,35 @@ describe("authenticated capability query", () => {
       expect(result).toEqual({
         cycleFactsV1: factsEnabled,
         cycleStateV1: stateEnabled,
+        periodPredictionV2: false,
+        partnerPredictionV2: false,
       });
-      expect(Object.keys(result)).toEqual(["cycleFactsV1", "cycleStateV1"]);
+      expect(Object.keys(result).sort()).toEqual([
+        "cycleFactsV1",
+        "cycleStateV1",
+        "periodPredictionV2",
+        "partnerPredictionV2",
+      ].sort());
     }
   );
+
+  test("returns independent Gate 3 capabilities to the authenticated user", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, {
+      clerkId: "gate3-capability-clerk",
+      name: "Gate 3 Capability User",
+      role: "primary",
+    });
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "false");
+
+    const result = await t
+      .withIdentity({ subject: "gate3-capability-clerk" })
+      .query(api.queries.capabilities.getCapabilities, {});
+
+    expect(result).toMatchObject({
+      periodPredictionV2: true,
+      partnerPredictionV2: false,
+    });
+  });
 });

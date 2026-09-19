@@ -88,6 +88,11 @@ if rg -n 'CB_CONNECT_CYCLE_STATE_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_STATE_V1' .gith
   exit 1
 fi
 
+if rg -n 'CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2|NEXT_PUBLIC_CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2' .github/workflows/ci.yml "$workflow"; then
+  echo "Gate 3 capabilities must remain optional Convex-only settings" >&2
+  exit 1
+fi
+
 cycle_state_sources=(
   convex
   app
@@ -102,6 +107,19 @@ fi
 if ! rg -q 'CB_CONNECT_CYCLE_STATE_V1' convex/_helpers/cycleStateFlag.ts || \
    ! rg -q '=== "true"' convex/_helpers/cycleStateFlag.ts; then
   echo "cycle state capability must be server-side and exact-true default-off" >&2
+  exit 1
+fi
+
+for flag in CB_CONNECT_PERIOD_PREDICTION_V2 CB_CONNECT_PARTNER_PREDICTION_V2; do
+  if ! rg -q "$flag" convex/_helpers/periodPredictionFlag.ts || \
+     ! rg -q '=== "true"' convex/_helpers/periodPredictionFlag.ts; then
+    echo "Gate 3 capability must be server-side and exact-true default-off: $flag" >&2
+    exit 1
+  fi
+done
+
+if rg -n 'NEXT_PUBLIC[^[:space:]]*(PERIOD|PARTNER)_PREDICTION_V2' convex app components lib; then
+  echo "Gate 3 capabilities must not have a NEXT_PUBLIC mirror" >&2
   exit 1
 fi
 
