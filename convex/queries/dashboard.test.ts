@@ -36,6 +36,50 @@ describe("dashboard cycle state read model", () => {
     expect(result.cycleStateV1Exposed).toBe(false);
   });
 
+  test("Gate 3 prediction flags off preserves the Gate 2 V1 dashboard output", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    const periodId = await t.run(async (ctx) => {
+      return ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        endDate: "2026-01-03",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-01-03",
+    });
+
+    expect(result.cycleStateV1).toEqual({
+      version: 1,
+      status: "recorded_period",
+      phase: "menstruation",
+      evidence: "RECORDED_EXACT",
+      cycleDay: 3,
+      coveringEventId: periodId,
+      reason: "CONFIRMED_EVENT_COVERS_TODAY",
+    });
+    expect(result.cycleInfo).toEqual({
+      phase: "menstruation",
+      cycleDay: 3,
+      daysUntilNextPeriod: 26,
+      predictedNextPeriodStart: "2026-01-29",
+      predictedNextPeriodEnd: "2026-02-02",
+      phaseDescription: "Recorded period",
+    });
+  });
+
   test("flag on records exact coverage and ignores approximate and tombstoned rows", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
