@@ -403,6 +403,7 @@ npx vitest run convex/_helpers/predictionEstimators.test.ts
 - Create: `scripts/cycle-benchmark-manifest.test.ts`
 - Create: `fixtures/cycle-benchmark/golden.json` or equivalent synthetic fixture location that contains no real user data
 - Modify: `package.json`
+- Modify: `package-lock.json`
 - Keep `docs/research/cycle-benchmark-protocol.md` frozen unless a pre-outcome protocol version bump is approved
 
 **Behavior**
@@ -416,6 +417,8 @@ npx vitest run convex/_helpers/predictionEstimators.test.ts
 - manifest refuses unapproved/unknown external dataset source metadata;
 - final evaluation command refuses to run until an explicit approved manifest/authority record exists.
 
+Add a pinned development-only TypeScript script runner (`tsx`) to `devDependencies` and the lockfile unless the then-current repository already has an equivalent pinned runner. Do not rely on an unpinned `npx` download.
+
 Suggested scripts:
 
 ```json
@@ -423,7 +426,7 @@ Suggested scripts:
 "benchmark:cycle": "tsx scripts/cycle-benchmark.ts"
 ```
 
-Use the repository's existing TS execution conventions; do not introduce a runtime dependency if Node/tsx is not already appropriate without documenting it.
+The benchmark runner is tooling only; it must not enter the application/runtime dependency path.
 
 **D-013 guard**
 
