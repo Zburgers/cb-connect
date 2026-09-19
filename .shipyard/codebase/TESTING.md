@@ -2,8 +2,8 @@
 
 ## Current evidence
 
-- Gate 1 branch qualification: `npm run test:unit -- --run` passed 27 files and
-  181 tests on 2026-08-20.
+- Gates 1 and 2 are merged on `main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`; the Gate 2 merge was qualified with the isolated authenticated Gates 0–2 matrix before merge.
+- The older Gate 1 local qualification below is retained as historical context, not current branch status: `npm run test:unit -- --run` passed 27 files and 181 tests on 2026-08-20.
 - `npm run build` passed with non-secret process-only Convex/Clerk placeholders
   and generated all listed App Router routes; an isolated checkout without
   `NEXT_PUBLIC_CONVEX_URL` fails closed during prerender.
@@ -31,6 +31,17 @@ For changes affecting auth, onboarding, linking, sharing, logging, or chat, run 
 
 - The checked-in E2E suite depends on external Clerk state and fixtures (`e2e/fixtures.ts`, `playwright.config.ts`).
 - The tracker records pending authenticated two-user production smoke coverage for the chat state path (`issues.md`).
-- Gate 1 covers derived-ending separation and exact-fact eligibility; the
-  broader rollover/late-state prediction model remains a Gate 2 concern
-  (`issues.md`, `convex/_helpers/cycleCalculations.ts`).
+- Gate 2 now owns non-wrapping Recorded/Calendar estimate/Late/Unknown/Paused semantics. Gate 3 still needs personalized estimator, calibration, snapshot, segmentation, and shared serving-contract coverage.
+
+## Gate 3 required test layers
+
+- Pure interval derivation: eligibility, segmentation, partner-assisted starts, corrections, possible-missing-log reasons.
+- Deterministic estimators: configured, all-history mean/median, last-three mean/median, recency half-life candidate.
+- Benchmark harness: stable 60/20/20 user split, chronological walk-forward folds, future-leakage trap, subgroup metrics and manifest fail-closed behavior.
+- Calibration/quality: point containment, 50/80 interval nesting, asymmetric residuals, variability-to-width monotonicity, insufficient-calibration fallback, internal score monotonicity.
+- Persistence: immutable prediction snapshots plus append-only outcome/supersession assessments.
+- Contract integration: V2 PredictionBounds through the existing Gate 2 reducer; flag-off must preserve Gate 2 V1 behavior.
+- Privacy: reduced partner projection, segment/model diagnostic exclusion, share-off/revocation.
+- Browser: isolated fresh primary/partner fixture per destructive desktop/mobile lane; no static skip.
+
+Real benchmark outcome viewing is not a test prerequisite until D-013 is fully authorized. Synthetic/golden qualification must be runnable without production or real-user data.
