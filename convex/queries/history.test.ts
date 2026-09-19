@@ -132,7 +132,7 @@ describe("period history attribution", () => {
       _id: eventId,
       source: "partner_assist",
       createdByName: "Partner Person",
-      canCorrect: false,
+      canCorrect: true,
     });
     expect(history[0]).not.toHaveProperty("userId");
     expect(history[0]).not.toHaveProperty("createdByUserId");
@@ -147,13 +147,15 @@ describe("period history attribution", () => {
     expect(timeline[0]).toMatchObject({
       type: "period",
       period: {
+        id: eventId,
+        authorityVersion: 0,
         source: "partner_assist",
         confirmationStatus: "confirmed",
         createdByName: "Partner Person",
         updatedByName: "Partner Person",
         createdByViewer: true,
         updatedByViewer: true,
-        canCorrect: false,
+        canCorrect: true,
       },
     });
     expect(timeline[0].period).not.toHaveProperty("userId");
@@ -162,8 +164,51 @@ describe("period history attribution", () => {
     expect(timeline[0].period).not.toHaveProperty("_creationTime");
     expect(timeline[0].period).not.toHaveProperty("createdAt");
     expect(timeline[0].period).not.toHaveProperty("updatedAt");
-    expect(timeline[0].period).not.toHaveProperty("authorityVersion");
+    expect(timeline[0].period).toHaveProperty("authorityVersion");
     expect(timeline[0].period).not.toHaveProperty("legacyReason");
+  });
+
+  test("primary corrections revoke partner correction projection", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } =
+      await seedActiveCouple(t, {
+        sharingPhase: true,
+        sharingPeriodWrite: true,
+      });
+    const eventId = await t.run(async (ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+
+    const history = await asPartner.query(api.queries.history.getPeriodHistory, {});
+    const timeline = await asPartner.query(api.queries.history.getTimelineHistory, {
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+    });
+    const primaryCorrected = timeline.find(
+      (entry) => entry.type === "period" && entry.period?.startDate === "2026-06-21"
+    );
+
+    expect(history[0]).toMatchObject({ _id: eventId, canCorrect: false });
+    expect(primaryCorrected?.period).toMatchObject({ canCorrect: false });
+    expect(primaryCorrected?.period).not.toHaveProperty("id");
+    expect(primaryCorrected?.period).not.toHaveProperty("authorityVersion");
   });
 
   test("read-only partner history has presentation only", async () => {

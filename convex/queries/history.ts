@@ -208,6 +208,7 @@ export const getTimelineHistory = query({
     let targetUserId = user._id;
     let canViewPain = true;
     let canViewPhase = true;
+    let partnerCanWrite = false;
 
     if (user.role === "partner") {
       const coupleData = await getCoupleForUser(ctx, user._id);
@@ -229,6 +230,7 @@ export const getTimelineHistory = query({
       targetUserId = primaryMembership.userId;
       canViewPain = primaryMembership.sharingPain;
       canViewPhase = primaryMembership.sharingPhase;
+      partnerCanWrite = primaryMembership.sharingPeriodWrite ?? false;
     }
 
     if (!canViewPain && !canViewPhase) {
@@ -283,6 +285,7 @@ export const getTimelineHistory = query({
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
         certainty: CycleFactReadLabel;
+        authorityVersion?: number;
         createdByName: string;
         updatedByName: string;
         createdByViewer: boolean;
@@ -296,7 +299,7 @@ export const getTimelineHistory = query({
       periods,
       user._id,
       user.role === "partner" ? "partner" : "primary",
-      false,
+      partnerCanWrite,
     );
     for (const period of enrichedPeriods) {
       const state = getTimelineStateForDate(
@@ -315,7 +318,11 @@ export const getTimelineHistory = query({
         type: "period",
         isOngoing: !period.endDate,
         period: {
-          ...(user.role === "partner" ? {} : { id: period._id }),
+          ...(user.role === "partner"
+            ? period.canCorrect
+              ? { id: period._id, authorityVersion: period.authorityVersion }
+              : {}
+            : { id: period._id }),
           startDate: period.startDate,
           endDate: period.endDate,
           startCertainty: period.startCertainty,
@@ -323,11 +330,9 @@ export const getTimelineHistory = query({
           source: period.source,
           confirmationStatus: period.confirmationStatus,
           certainty: period.certainty,
-          ...(user.role === "partner"
+          ...(user.role === "partner" || period.authorityVersion === undefined
             ? {}
-            : {
-                authorityVersion: period.authorityVersion,
-              }),
+            : { authorityVersion: period.authorityVersion }),
           createdByName: period.createdByName,
           updatedByName: period.updatedByName,
           createdByViewer: period.createdByViewer,
@@ -407,7 +412,14 @@ async function enrichPeriodEvents(
       updatedByUserId,
       createdByName: names.get(createdByUserId) ?? "Partner",
       updatedByName: names.get(updatedByUserId) ?? "Partner",
-      canCorrect: period.userId === viewerId,
+      canCorrect:
+        period.userId === viewerId ||
+        (viewerRole === "partner" &&
+          partnerCanWrite &&
+          period.source === "partner_assist" &&
+          period.createdByUserId === viewerId &&
+          period.primaryCorrectionVersion === undefined &&
+          period.updatedByUserId !== period.userId),
     };
 
     return viewerRole === "partner"

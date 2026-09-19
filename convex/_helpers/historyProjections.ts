@@ -72,7 +72,7 @@ function projectPeriodHistory(
     updatedByName: period.updatedByName,
     createdByViewer: createdByUserId === viewerId,
     updatedByViewer: updatedByUserId === viewerId,
-    canCorrect: period.userId === viewerId,
+    canCorrect: period.canCorrect,
   };
 
   return includeWriteMetadata

@@ -501,6 +501,104 @@ export const assistLogPeriodEnd = mutation({
   },
 });
 
+export const correctAssistedPeriodEvent = mutation({
+  args: {
+    periodEventId: v.id("periodEvents"),
+    expectedAuthorityVersion: v.number(),
+    startDate: v.string(),
+    endDate: v.optional(v.string()),
+    endCertainty: v.optional(cycleFactCertaintyValidator),
+    promoteStartCertainty: v.optional(v.boolean()),
+    promoteEndCertainty: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { partner, primaryMembership, primaryUser } =
+      await getAssistedLoggingContext(ctx);
+    const period = await ctx.db.get("periodEvents", args.periodEventId);
+    if (!period || period.userId !== primaryMembership.userId) {
+      throw new Error("TARGET_EVENT_NOT_FOUND");
+    }
+    if (period.tombstoneAt !== undefined) {
+      throw new Error("TARGET_EVENT_TOMBSTONED");
+    }
+    if (
+      period.source !== "partner_assist" ||
+      period.createdByUserId !== partner._id
+    ) {
+      throw new Error("PARTNER_CORRECTION_NOT_ALLOWED");
+    }
+
+    const authorityVersion = currentAuthorityVersion(period);
+    if (
+      period.primaryCorrectionVersion !== undefined ||
+      period.updatedByUserId === primaryMembership.userId
+    ) {
+      if (authorityVersion !== args.expectedAuthorityVersion) {
+        throw new Error("STALE_AUTHORITY_VERSION");
+      }
+      throw new Error("PRIMARY_AUTHORITY_REQUIRED");
+    }
+
+    const timeZone = resolveCalendarTimeZone(primaryUser.timeZone);
+    requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
+    if (args.endDate !== undefined) {
+      requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
+      if (args.endDate < args.startDate) {
+        throw new Error("End date cannot be before start date");
+      }
+      if (
+        period.endDate === undefined &&
+        args.endCertainty === undefined &&
+        args.promoteEndCertainty !== true
+      ) {
+        throw new Error("END_CERTAINTY_REQUIRED");
+      }
+    }
+
+    const { startCertainty, endCertainty, legacyReason } =
+      resolveCycleFactCorrection({
+        existingStartCertainty: storedStartCertainty(period),
+        existingEndCertainty: storedEndCertainty(period),
+        existingEndDate: period.endDate,
+        existingLegacyReason: period.legacyReason,
+        correctedEndDate: args.endDate,
+        correctedEndCertainty: args.endCertainty,
+        promoteStartCertainty: args.promoteStartCertainty === true,
+        promoteEndCertainty: args.promoteEndCertainty === true,
+      });
+    await requireAllowedPeriodEventWrite(
+      ctx,
+      primaryMembership.userId,
+      {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        startCertainty,
+        endCertainty,
+        legacyReason,
+        authorityVersion: authorityVersion + 1,
+        actorRole: "partner",
+        partnerAccess: "active",
+        targetEventId: period._id,
+        expectedAuthorityVersion: args.expectedAuthorityVersion,
+      },
+      period
+    );
+
+    await ctx.db.patch(period._id, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      startCertainty,
+      endCertainty,
+      legacyReason,
+      updatedByUserId: partner._id,
+      authorityVersion: authorityVersion + 1,
+      updatedAt: Date.now(),
+    });
+
+    return { eventId: period._id };
+  },
+});
+
 export const updatePeriodEvent = mutation({
   args: {
     periodEventId: v.id("periodEvents"),
