@@ -1,6 +1,7 @@
 "use node";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { getDailyPredictionNotificationMessage } from "../_helpers/notificationPrediction";
 
 export const sendDailyPredictions = internalAction({
   handler: async (ctx) => {
@@ -8,6 +9,14 @@ export const sendDailyPredictions = internalAction({
 
     for (const user of allUsers) {
       try {
+        if (!user.externalNotificationConsent) continue;
+
+        const hasConsent = await ctx.runQuery(
+          internal.queries.users.hasExternalNotificationConsent,
+          { userId: user._id },
+        );
+        if (!hasConsent) continue;
+
         const predictionData = await ctx.runQuery(
           internal.queries.history.getPredictionInputsForUser,
           {
@@ -15,18 +24,21 @@ export const sendDailyPredictions = internalAction({
           }
         );
 
-        if (
-          !user.externalNotificationConsent ||
-          !predictionData ||
-          predictionData.cycleInfo.daysUntilNextPeriod !== 3
-        ) {
-          continue;
-        }
+        if (!predictionData) continue;
+
+        const message = getDailyPredictionNotificationMessage(predictionData);
+        if (!message) continue;
+
+        const stillHasConsent = await ctx.runQuery(
+          internal.queries.users.hasExternalNotificationConsent,
+          { userId: user._id },
+        );
+        if (!stillHasConsent) continue;
 
         await ctx.runAction(internal.actions.discord.sendDiscordNotification, {
           userId: user._id,
           type: "period_prediction",
-          message: `Your period is predicted to start in 3 days (${predictionData.cycleInfo.predictedNextPeriodStart}).`,
+          message,
         });
       } catch (error) {
         console.error(`Error checking predictions for user ${user._id}:`, error);

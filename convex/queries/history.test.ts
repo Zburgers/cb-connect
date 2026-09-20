@@ -1,10 +1,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  addCalendarDays,
-  calculateCycleInfo,
-} from "../_helpers/cycleCalculations";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -292,6 +289,7 @@ describe("fact-aware history and prediction reads", () => {
 
     expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
     expect(prediction).not.toHaveProperty("cycleIntervals");
+    expect(prediction).not.toHaveProperty("periodPredictionV2");
     expect(
       await t.query(internal.queries.history.getCycleIntervalsForUser, {
         userId: primaryId,
@@ -361,6 +359,10 @@ describe("fact-aware history and prediction reads", () => {
       internal.queries.history.getPeriodPredictionForUser,
       { userId: primaryId },
     );
+    const partnerNotificationInputs = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: partnerId },
+    );
     const partnerPrediction = await t.query(
       internal.queries.history.getPeriodPredictionForUser,
       { userId: partnerId },
@@ -382,6 +384,7 @@ describe("fact-aware history and prediction reads", () => {
         "USER_CONFIGURED_BASELINE",
       ]),
     });
+    expect(partnerNotificationInputs).toBeNull();
     expect(partnerPrediction).toBeNull();
     expect(partnerIntervals).toBeNull();
   });
@@ -417,7 +420,7 @@ describe("fact-aware history and prediction reads", () => {
       }
     });
 
-    const [legacyPrediction, cycleIntervals] = await Promise.all([
+    const [notificationPrediction, cycleIntervals] = await Promise.all([
       t.query(internal.queries.history.getPredictionInputsForUser, {
         userId: primaryId,
       }),
@@ -426,7 +429,14 @@ describe("fact-aware history and prediction reads", () => {
       }),
     ]);
 
-    expect(legacyPrediction).toBeNull();
+    expect(notificationPrediction?.periodPredictionV2).toMatchObject({
+      version: 2,
+      status: "available",
+    });
+    expect(notificationPrediction?.periodPredictionV2).not.toHaveProperty(
+      "pointDate",
+    );
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
     expect(cycleIntervals).toMatchObject({
       latestEligibleStartDate: "2026-01-01",
       eligibleAnchorCount: 1,
@@ -485,7 +495,7 @@ describe("fact-aware history and prediction reads", () => {
     expect(partnerOptions).toBeNull();
   });
 
-  test("V2 interval data does not change existing notification inputs", async () => {
+  test("V2 notification inputs use the shared period prediction", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
     const t = convexTest(schema, modules);
@@ -513,7 +523,7 @@ describe("fact-aware history and prediction reads", () => {
       });
     });
 
-    const [prediction, cycleIntervals] = await Promise.all([
+    const [notificationPrediction, cycleIntervals] = await Promise.all([
       t.query(internal.queries.history.getPredictionInputsForUser, {
         userId: primaryId,
       }),
@@ -522,17 +532,41 @@ describe("fact-aware history and prediction reads", () => {
       }),
     ]);
 
-    expect(prediction).toMatchObject({
-      recentPeriodStart: "2026-09-01",
-      cycleInfo: calculateCycleInfo("2026-09-01", 28, 5),
+    expect(notificationPrediction?.periodPredictionV2).toMatchObject({
+      version: 2,
+      status: "available",
+      dueInThreeDays: expect.any(Boolean),
     });
-    expect(prediction).not.toHaveProperty("cycleIntervals");
+    expect(notificationPrediction?.periodPredictionV2).not.toHaveProperty(
+      "pointDate",
+    );
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
+    expect(notificationPrediction).not.toHaveProperty("cycleIntervals");
     expect(cycleIntervals?.latestEligibleStartDate).toBe(
       "2026-08-01",
     );
   });
 
+  test("V2 notification inputs preserve unavailable without a legacy fallback", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+
+    const notificationPrediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId },
+    );
+
+    expect(notificationPrediction?.periodPredictionV2).toEqual({
+      version: 2,
+      status: "unavailable",
+      dueInThreeDays: false,
+    });
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
+  });
+
   test("historical timeline state ignores today's prediction pause", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
     await t.run(async (ctx) => {

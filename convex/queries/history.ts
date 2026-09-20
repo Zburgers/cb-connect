@@ -10,6 +10,7 @@ import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { buildPeriodPrediction } from "../_helpers/periodPrediction";
+import { projectPeriodPredictionForNotification } from "../_helpers/notificationPrediction";
 import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import {
   getTimelineStateForDate,
@@ -31,6 +32,30 @@ import {
 
 const MAX_PERIOD_HISTORY_ROWS = 100;
 const MAX_PAIN_HISTORY_ROWS = 1000;
+
+async function readCurrentPeriodPredictionV2(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+) {
+  const user = await ctx.db.get(userId);
+  if (!user || user.role !== "primary") return null;
+
+  const [predictionData, cycleSettings] = await Promise.all([
+    readCyclePredictionData(ctx, userId, user),
+    ctx.db
+      .query("cycleSettings")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique(),
+  ]);
+  return {
+    user,
+    prediction: buildPeriodPrediction({
+      cycleIntervals: predictionData.cycleIntervals,
+      configuredCycleLength: cycleSettings?.cycleLength ?? 28,
+      predictionPaused: cycleSettings?.predictionPaused ?? false,
+    }),
+  };
+}
 
 export const getPainHistory = query({
   args: {
@@ -166,6 +191,24 @@ export const getPredictionInputsForUser = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    if (isPeriodPredictionV2Enabled()) {
+      const currentPrediction = await readCurrentPeriodPredictionV2(
+        ctx,
+        args.userId,
+      );
+      if (!currentPrediction) return null;
+
+      return {
+        periodPredictionV2: projectPeriodPredictionForNotification(
+          currentPrediction.prediction,
+          toCalendarDateInTimeZone(
+            new Date(),
+            currentPrediction.user.timeZone,
+          ),
+        ),
+      };
+    }
+
     const cycleSettings = await ctx.db
       .query("cycleSettings")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
@@ -220,22 +263,9 @@ export const getPeriodPredictionForUser = internalQuery({
   },
   handler: async (ctx, args) => {
     if (!isPeriodPredictionV2Enabled()) return null;
-    const [predictionData, cycleSettings] = await Promise.all([
-      readCyclePredictionData(ctx, args.userId),
-      ctx.db
-        .query("cycleSettings")
-        .withIndex("by_user", (q) => q.eq("userId", args.userId))
-        .unique(),
-    ]);
-    if (!predictionData.user || predictionData.user.role !== "primary") {
-      return null;
-    }
-
-    return buildPeriodPrediction({
-      cycleIntervals: predictionData.cycleIntervals,
-      configuredCycleLength: cycleSettings?.cycleLength ?? 28,
-      predictionPaused: cycleSettings?.predictionPaused ?? false,
-    });
+    return (
+      await readCurrentPeriodPredictionV2(ctx, args.userId)
+    )?.prediction ?? null;
   },
 });
 
