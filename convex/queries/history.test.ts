@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -286,6 +287,44 @@ describe("fact-aware history and prediction reads", () => {
     );
 
     expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
+    expect(prediction).not.toHaveProperty("cycleIntervals");
+  });
+
+  test("V2 derives intervals from the full eligible history", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      let startDate = "2024-01-01";
+      for (let index = 0; index < 105; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+        startDate = addCalendarDays(startDate, 5);
+      }
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId },
+    );
+
+    expect(prediction?.cycleIntervals).toMatchObject({
+      eligibleAnchorCount: 105,
+      eligibleIntervalCount: 104,
+      basis: { version: "cycle_intervals_v1" },
+    });
+    expect(prediction?.cycleIntervals?.intervals).toHaveLength(104);
+    expect(prediction?.cycleIntervals?.intervals[0]).not.toHaveProperty(
+      "startDate",
+    );
   });
 
   test("historical timeline state ignores today's prediction pause", async () => {

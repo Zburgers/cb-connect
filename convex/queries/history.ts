@@ -3,6 +3,11 @@ import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
+import {
+  deriveCycleIntervals,
+  type CycleIntervalDerivation,
+} from "../_helpers/cycleIntervals";
 import {
   getTimelineStateForDate,
   type TimelineStateMetadata,
@@ -174,9 +179,36 @@ export const getPredictionInputsForUser = internalQuery({
       isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
     );
 
-    if (!recentPeriod) {
-      return null;
+    let cycleIntervals: CycleIntervalDerivation | null = null;
+    if (isPeriodPredictionV2Enabled()) {
+      const cutoffAt = Date.now();
+      const [allPeriods, segments, user] = await Promise.all([
+        ctx.db
+          .query("periodEvents")
+          .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
+          .collect(),
+        ctx.db
+          .query("cyclePredictionSegments")
+          .withIndex("by_user_and_created_at", (q) =>
+            q.eq("userId", args.userId),
+          )
+          .collect(),
+        ctx.db.get("users", args.userId),
+      ]);
+      cycleIntervals = deriveCycleIntervals(allPeriods, {
+        cutoffAt,
+        cutoffDate: toCalendarDateInTimeZone(
+          new Date(cutoffAt),
+          user?.timeZone ?? "UTC",
+        ),
+        segments,
+      });
     }
+
+    const recentPeriodStart = cycleIntervals
+      ? cycleIntervals.latestEligibleStartDate
+      : recentPeriod?.startDate;
+    if (!recentPeriodStart) return null;
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
@@ -184,12 +216,14 @@ export const getPredictionInputsForUser = internalQuery({
     return {
       cycleLength,
       periodLength,
-      recentPeriodStart: recentPeriod.startDate,
+      recentPeriodStart,
       cycleInfo: calculateCycleInfo(
-        recentPeriod.startDate,
+        recentPeriodStart,
         cycleLength,
-        periodLength
+        periodLength,
+        cycleIntervals?.basis.cutoffDate,
       ),
+      ...(cycleIntervals ? { cycleIntervals } : {}),
     };
   },
 });
