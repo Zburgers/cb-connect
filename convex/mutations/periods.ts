@@ -787,6 +787,9 @@ export const updateCycleSettings = mutation({
       if (args.cycleLength < 21 || args.cycleLength > 40) {
         throw new Error("Cycle length must be between 21 and 40 days");
       }
+      if (!Number.isSafeInteger(args.cycleLength)) {
+        throw new Error("Cycle length must be a whole number of days");
+      }
     }
 
     if (args.periodLength !== undefined) {

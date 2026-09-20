@@ -444,6 +444,17 @@ describe("partner-assisted period logging", () => {
 });
 
 describe("prediction pause cycle settings", () => {
+  test("rejects fractional cycle lengths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: 28.5,
+      }),
+    ).rejects.toThrow("Cycle length must be a whole number of days");
+  });
+
   test("pausing preserves existing lengths and records a timestamp", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
