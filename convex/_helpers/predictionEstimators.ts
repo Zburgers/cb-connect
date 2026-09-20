@@ -66,14 +66,14 @@ export function estimatePredictionCandidate(
   input: PredictionEstimatorInput,
 ): PredictionEstimatorResult {
   if (
-    !Number.isFinite(input.configuredCycleLength) ||
+    !Number.isSafeInteger(input.configuredCycleLength) ||
     input.configuredCycleLength <= 0
   ) {
-    throw new Error("Configured cycle length must be a positive finite number");
+    throw new Error("Configured cycle length must be a positive whole number");
   }
   if (
     input.intervalsOldestToNewest.some(
-      (interval) => !Number.isInteger(interval) || interval <= 0,
+      (interval) => !Number.isSafeInteger(interval) || interval <= 0,
     )
   ) {
     throw new Error("Cycle intervals must be positive whole days");

@@ -113,7 +113,14 @@ describe("estimatePredictionCandidate", () => {
 
   test("rejects invalid configuration and interval values", () => {
     expect(() => estimate("configured_v1", [], Number.NaN)).toThrow();
+    expect(() => estimate("configured_v1", [], 28.5)).toThrow();
+    expect(
+      () => estimate("configured_v1", [], Number.MAX_SAFE_INTEGER + 1),
+    ).toThrow();
     expect(() => estimate("all_mean_v1", [28, 0])).toThrow();
     expect(() => estimate("all_mean_v1", [28, 29.5])).toThrow();
+    expect(
+      () => estimate("all_mean_v1", [Number.MAX_SAFE_INTEGER + 1]),
+    ).toThrow();
   });
 });
