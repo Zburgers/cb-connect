@@ -279,18 +279,37 @@ export const getDashboardData = query({
       ...(!isPartnerView && periodPredictionV2 ? { periodPredictionV2 } : {}),
     };
 
+    let separatelySharedPainData: DashboardData["painData"] = null;
+    if (isPartnerView && !canViewPhase && primaryMembership?.sharingPain) {
+      const todayPainLog = await ctx.db
+        .query("painLogs")
+        .withIndex("by_user_and_date", (q) =>
+          q.eq("userId", targetUserId).eq("date", today)
+        )
+        .unique();
+      separatelySharedPainData = todayPainLog
+        ? {
+            score: todayPainLog.painScore,
+            severity: getPainSeverityBucket(todayPainLog.painScore),
+          }
+        : null;
+    }
+
     if (!recentPeriod) {
       return {
-        hasData: false,
+        hasData: separatelySharedPainData !== null,
         isPartnerView,
-        message: partnerPredictionV2Enabled
-          ? "A shared timing estimate is not available yet."
-          : "No period data yet. Log your last period to get started.",
+        message:
+          isPartnerView && !canViewPhase
+            ? "Cycle timing is not shared right now."
+            : partnerPredictionV2Enabled
+              ? "A shared timing estimate is not available yet."
+              : "No period data yet. Log your last period to get started.",
         cycleInfo: null,
         cycleStateV1,
         cycleStateV1Exposed,
         ...predictionFields,
-        painData: null,
+        painData: isPartnerView ? separatelySharedPainData : null,
         painTip: null,
         nutritionTips: [],
       };

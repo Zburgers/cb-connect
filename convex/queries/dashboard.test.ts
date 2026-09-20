@@ -477,6 +477,60 @@ describe("dashboard cycle state read model", () => {
     expect(result).not.toHaveProperty("periodPredictionV2");
     expect(result.cycleInfo).toBeNull();
     expect(result.cycleStateV1).toBeNull();
+    expect(result.message).toBe("Cycle timing is not shared right now.");
+  });
+
+  test("keeps independently shared pain visible while cycle timing stays private", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, coupleId } = await seedActiveCouple(t, {
+      sharingPhase: false,
+    });
+
+    await t.run(async (ctx) => {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary")
+        )
+        .first();
+      expect(primaryMembership).not.toBeNull();
+      await ctx.db.patch(primaryMembership!._id, { sharingPain: true });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-24",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-08-25",
+        painScore: 4,
+        tags: ["cramps"],
+        note: "private note",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.hasData).toBe(true);
+    expect(result.painData).toMatchObject({ score: 4 });
+    expect(result.painData).not.toHaveProperty("tags");
+    expect(result.painData).not.toHaveProperty("note");
+    expect(result.cycleInfo).toBeNull();
+    expect(result.cycleStateV1).toBeNull();
+    expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result).not.toHaveProperty("partnerPredictionV2");
+    expect(result).not.toHaveProperty("periodPredictionV2");
   });
 
   test("returns an unavailable V2 contract when the primary has no eligible start", async () => {
