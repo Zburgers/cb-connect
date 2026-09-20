@@ -1,6 +1,6 @@
 # Gate 3 Qualification Report
 
-**Verdict: Local deterministic qualification passes. Gate 3 is not merge-ready yet.** The protected authenticated matrix was not run because the GitHub environment currently has no required reviewers or deployment branch policy.
+**Verdict: Local deterministic qualification passes. Gate 3 is not merge-ready yet.** The authenticated desktop/mobile matrix is implemented but has not run; it awaits the Draft PR and an authorized reviewer approval in the protected test environment.
 
 ## Exact source and runtime
 
@@ -10,7 +10,7 @@
 - Base: `origin/main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`; 40 commits ahead, 0 behind at qualification
 - Local runtime: Node `v26.5.0`, npm `11.17.0`; CI is pinned to Node `v20.19.1`, npm `10.8.2`
 - CI run ID / PR: none; the commit is not in a pull request
-- GitHub environment `cb-connect-auth-test`: secret names are configured, but API metadata reports `protection_rules=[]` and `deployment_branch_policy=null`. Secret values were not read or validated.
+- GitHub environment `cb-connect-auth-test`: all eight workflow-required secret names are configured. Required reviewers are `Zburgers` and `shriiyaaa`; self-review and administrator bypass are disabled. Deployment branches are limited to `main` and `refs/pull/*/merge`. Secret values were not read or validated.
 
 ## Deterministic qualification
 
@@ -34,9 +34,9 @@ The benchmark used G3-BENCH-V1 manifest `g3-synthetic-golden-v1` (`0b29b505c7bdf
 
 ## Authenticated qualification
 
-The isolated four-lane desktop/mobile matrix is implemented and its mocked runner policy passes. The actual authenticated browser matrix is **NOT RUN**, not skipped: starting the PR job would expose Clerk and Convex test credentials to PR-controlled code while `cb-connect-auth-test` has no GitHub protection rules. The local checkout also lacks the release-test credential values; no values were requested or printed.
+The isolated four-lane desktop/mobile matrix is implemented and its mocked runner policy passes. The actual authenticated browser matrix is **NOT RUN**, not skipped. All eight local release-test variables are unset; no values were requested or printed. The protected GitHub job can now run on the Draft PR, but a reviewer other than the workflow actor must approve the environment before its secrets become available.
 
-Add required environment reviewers and a branch policy (or another approved secret-isolation boundary) before opening the Draft PR and running authenticated CI. No authenticated CI run ID is available yet.
+No authenticated CI run ID is available yet. The environment's required-reviewer, self-review, administrator-bypass, and deployment-branch settings were verified after configuration.
 
 ## Governance and exposure status
 
