@@ -18,6 +18,7 @@ import {
   buildPredictionIntervals,
   MIN_CALIBRATION_RESIDUALS,
   PREDICTION_CALIBRATION_VERSION,
+  type BuildPredictionIntervalsInput,
   type PredictionCalibrationSource,
   type PredictionDateWindow,
   type PredictionIntervalReasonCode,
@@ -91,6 +92,7 @@ type BenchmarkFold = {
   medianInterval: number;
   variabilityMad: number;
   groups: Record<string, string>;
+  predictionContext: NonNullable<BuildPredictionIntervalsInput["context"]>;
   predictions: Record<PredictionEstimatorId, BenchmarkPrediction>;
 };
 
@@ -659,6 +661,14 @@ function buildUserFolds(
       medianInterval,
       variabilityMad: variabilityMad ?? 0,
       groups,
+      // Derivation flags use only the cutoff history; groups also include target outcomes.
+      predictionContext: {
+        approximateLegacyAdjacent: groups.approximateLegacyAdjacent === "yes",
+        partnerAssisted: derived.reasonCodes.includes("PARTNER_ASSISTED"),
+        possibleMissingLog: derived.reasonCodes.includes("POSSIBLE_MISSING_LOG"),
+        recentCorrection: derived.reasonCodes.includes("RECENT_CORRECTION"),
+        segmentBoundary: derived.basis.segmentStartDate !== undefined,
+      },
       predictions,
     });
   }
@@ -1070,14 +1080,7 @@ function applyCalibration(
         pointDate: fold.predictions[estimatorId].pointDate,
         variabilityBand,
         historyCount: fold.historyCount,
-        context: {
-          approximateLegacyAdjacent:
-            fold.groups.approximateLegacyAdjacent === "yes",
-          partnerAssisted: fold.groups.partnerAssisted === "yes",
-          possibleMissingLog: fold.groups.possibleMissingLog === "yes",
-          recentCorrection: fold.groups.recentCorrection === "yes",
-          segmentBoundary: fold.groups.segmentBoundary === "yes",
-        },
+        context: fold.predictionContext,
         calibrationResiduals: estimatorModel.globalResiduals,
         calibrationResidualsByVariability: estimatorModel.byVariability,
         personalResiduals: userResiduals.get(estimatorId) ?? [],

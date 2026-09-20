@@ -259,6 +259,12 @@ describe("cycle benchmark runner", () => {
       30,
     );
     const evaluationUser = regularCycleUser(userKeyForPartition("evaluation"));
+    evaluationUser.segments.push({
+      segmentKey: "existing-segment",
+      startDate: "2020-01-01",
+      status: "active",
+      createdAt: timestamp("2020-01-01"),
+    });
     const dataset: CycleBenchmarkDataset = {
       formatVersion: CYCLE_BENCHMARK_DATA_VERSION,
       users: [calibrationUser, evaluationUser],
@@ -285,18 +291,29 @@ describe("cycle benchmark runner", () => {
       });
     const report = run(dataset.users);
     const finalEvent = evaluationUser.events.at(-1)!;
+    const changedTargetDate = addCalendarDays(finalEvent.startDate, 56);
     const shiftedUser = {
       ...evaluationUser,
       events: evaluationUser.events.map((item) =>
         item.eventKey === finalEvent.eventKey
           ? {
               ...item,
-              startDate: addCalendarDays(item.startDate, 3),
-              createdAt: timestamp(addCalendarDays(item.startDate, 3)),
-              updatedAt: timestamp(addCalendarDays(item.startDate, 3)),
+              startDate: changedTargetDate,
+              createdAt: timestamp(changedTargetDate),
+              updatedAt: timestamp(changedTargetDate),
+              primaryCorrectionVersion: 1,
             }
           : item,
       ),
+      segments: [
+        ...evaluationUser.segments,
+        {
+          segmentKey: "future-segment",
+          startDate: changedTargetDate,
+          status: "active" as const,
+          createdAt: timestamp(changedTargetDate),
+        },
+      ],
     };
     const changedOutcome = run([calibrationUser, shiftedUser]);
     const baseMetrics = candidate(report, "configured_v1").predictionCalibration;
@@ -309,6 +326,14 @@ describe("cycle benchmark runner", () => {
     expect(changedMetrics).not.toBeNull();
     expect(baseMetrics!.medianWindow80Days).toBeGreaterThan(0);
     expect(changedMetrics!.medianWindow80Days).toBe(baseMetrics!.medianWindow80Days);
+    expect(subgroupCount(changedOutcome, "possibleMissingLog", "yes")).toBeGreaterThan(0);
+    expect(subgroupCount(changedOutcome, "recentCorrection", "yes")).toBeGreaterThan(0);
+    expect(subgroupCount(changedOutcome, "segmentBoundary", "yes")).toBeGreaterThan(0);
+    expect(changedMetrics!.reasonCodeCounts.POSSIBLE_MISSING_LOG ?? 0).toBe(0);
+    expect(changedMetrics!.reasonCodeCounts.RECENT_CORRECTION ?? 0).toBe(0);
+    expect(changedMetrics!.reasonCodeCounts.CONTEXT_BOUNDARY ?? 0).toBe(
+      baseMetrics!.reasonCodeCounts.CONTEXT_BOUNDARY ?? 0,
+    );
     expect(changedMetrics!.interval80CoverageRate).toBeLessThan(
       baseMetrics!.interval80CoverageRate,
     );
