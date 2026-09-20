@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -160,6 +165,81 @@ describe("cycle benchmark manifest", () => {
         "evaluation",
       ),
     ).not.toThrow();
+
+    expect(() =>
+      validateCycleBenchmarkManifest(
+        {
+          ...frozen,
+          authority: {
+            ...frozen.authority,
+            evaluationHoldout: {
+              state: "opened_once",
+              openedBy: "Named Holdout Reviewer",
+              openedAt: "2026-09-20T10:04:00Z",
+            },
+          },
+        },
+        "evaluation",
+      ),
+    ).toThrow("open strictly after authority and preregistration approval");
+  });
+
+  test("records one evaluation opening before reading outcome bytes", () => {
+    const directory = mkdtempSync(join(tmpdir(), "cycle-benchmark-evaluation-"));
+    tempDirectories.push(directory);
+    const datasetPath = join(directory, "outcomes.json");
+    const dataBytes = Buffer.from("not-json");
+    const manifest = externalManifest();
+    manifest.datasetSha256 = createHash("sha256").update(dataBytes).digest("hex");
+    manifest.developmentCutoffs = {
+      variabilityMadQ33: 1,
+      variabilityMadQ67: 3,
+      medianIntervalQ33: 27,
+      medianIntervalQ67: 30,
+    };
+    manifest.authority!.evaluationHoldout = {
+      state: "opened_once",
+      openedBy: "Named Holdout Reviewer",
+      openedAt: "2026-09-20T11:00:00Z",
+    };
+    const manifestPath = join(directory, "manifest.json");
+    const receiptDirectory = join(directory, "openings");
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    writeFileSync(datasetPath, dataBytes);
+    const priorSalt = process.env.CYCLE_BENCHMARK_SPLIT_SALT;
+    const priorSaltId = process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
+    process.env.CYCLE_BENCHMARK_SPLIT_SALT = "0123456789abcdef";
+    process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = "test-salt-v1";
+    const options = {
+      datasetPath,
+      manifestPath,
+      partition: "evaluation" as const,
+      isGoldenFixture: false,
+      evaluationReceiptDirectory: receiptDirectory,
+    };
+    try {
+      expect(() => loadCycleBenchmarkFiles(options)).toThrow(
+        "Benchmark data file is not valid JSON",
+      );
+      const receipt = JSON.parse(
+        readFileSync(
+          join(receiptDirectory, `${manifest.datasetSha256}.json`),
+          "utf8",
+        ),
+      );
+      expect(receipt).toMatchObject({
+        protocolVersion: CYCLE_BENCHMARK_PROTOCOL_VERSION,
+        datasetSha256: manifest.datasetSha256,
+      });
+      expect(() => loadCycleBenchmarkFiles(options)).toThrow(
+        "already been opened in this checkout",
+      );
+    } finally {
+      if (priorSalt === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT;
+      else process.env.CYCLE_BENCHMARK_SPLIT_SALT = priorSalt;
+      if (priorSaltId === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
+      else process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = priorSaltId;
+    }
   });
 
   test("rejects unknown source fields, unknown manifest keys, and unapproved authority", () => {

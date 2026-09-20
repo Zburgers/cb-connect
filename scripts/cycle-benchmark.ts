@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addCalendarDays } from "../convex/_helpers/cycleCalculations";
 import { isStartAnchorEligible } from "../convex/_helpers/cycleFactEligibility";
@@ -35,6 +35,10 @@ const GOLDEN_SALT = "g3-golden-only-split-salt-v1";
 const GOLDEN_SALT_ID = "synthetic-only-v1";
 const GOLDEN_DATASET = "fixtures/cycle-benchmark";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const EVALUATION_OPENINGS_DIR = resolve(
+  REPO_ROOT,
+  "docs/research/cycle-benchmark-evaluation-openings",
+);
 
 type BenchmarkEvent = CycleIntervalEvent & { eventKey: string };
 type BenchmarkSegment = CycleIntervalSegment & { segmentKey: string };
@@ -901,11 +905,48 @@ function sha256(value: Uint8Array | string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function recordEvaluationOpening(options: {
+  directory: string;
+  protocolVersion: string;
+  datasetSha256: string;
+  manifestSha256: string;
+}): void {
+  mkdirSync(options.directory, { recursive: true });
+  const receiptPath = join(
+    options.directory,
+    `${options.datasetSha256.toLowerCase()}.json`,
+  );
+  const receipt = {
+    protocolVersion: options.protocolVersion,
+    datasetSha256: options.datasetSha256,
+    manifestSha256: options.manifestSha256,
+    consumedAt: new Date().toISOString(),
+  };
+  try {
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "EEXIST"
+    ) {
+      throw new Error("D-013 evaluation holdout has already been opened in this checkout");
+    }
+    throw error;
+  }
+}
+
 export function loadCycleBenchmarkFiles(options: {
   datasetPath: string;
   manifestPath?: string;
   partition: CycleBenchmarkPartition;
   isGoldenFixture: boolean;
+  evaluationReceiptDirectory?: string;
 }): {
   dataset: CycleBenchmarkDataset;
   manifest: CycleBenchmarkManifest;
@@ -950,6 +991,17 @@ export function loadCycleBenchmarkFiles(options: {
     );
   }
 
+  const manifestSha256 = sha256(manifestBytes);
+  if (options.partition === "evaluation") {
+    // ponytail: this local receipt blocks repeat runs in this checkout; a shared D-013 ledger is needed across clones.
+    recordEvaluationOpening({
+      directory: options.evaluationReceiptDirectory ?? EVALUATION_OPENINGS_DIR,
+      protocolVersion: rawManifest.protocolVersion,
+      datasetSha256: rawManifest.datasetSha256,
+      manifestSha256,
+    });
+  }
+
   const datasetBytes = readFileSync(options.datasetPath);
   if (sha256(datasetBytes).toLowerCase() !== rawManifest.datasetSha256.toLowerCase()) {
     throw new Error("Benchmark dataset checksum does not match its manifest");
@@ -989,7 +1041,7 @@ export function loadCycleBenchmarkFiles(options: {
   return {
     dataset: rawDataset,
     manifest: rawManifest,
-    manifestSha256: sha256(manifestBytes),
+    manifestSha256,
   };
 }
 

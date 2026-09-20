@@ -324,13 +324,26 @@ export function validateCycleBenchmarkManifest(
     throw new Error("Calibration and evaluation require frozen development cutoffs");
   }
   if (partition === "evaluation") {
-    const holdout = value.authority?.evaluationHoldout;
+    const authority = value.authority;
+    const holdout = authority?.evaluationHoldout;
     if (
       holdout?.state !== "opened_once" ||
       !isNonEmptyString(holdout.openedBy) ||
       !isUtcTimestamp(holdout.openedAt)
     ) {
       throw new Error("D-013 locked evaluation holdout is not approved to open");
+    }
+    const openedAt = Date.parse(holdout.openedAt);
+    const latestApprovalAt = Math.max(
+      Date.parse(authority!.approvedAt),
+      Date.parse(authority!.preregistrationApprovedAt),
+    );
+    if (
+      openedAt <= latestApprovalAt
+    ) {
+      throw new Error(
+        "D-013 evaluation holdout must open strictly after authority and preregistration approval",
+      );
     }
   }
 }
