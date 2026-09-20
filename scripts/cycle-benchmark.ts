@@ -15,6 +15,23 @@ import {
 import { requireValidCalendarDate, toCalendarDateInTimeZone } from "../convex/_helpers/calendarDates";
 import { daysBetweenCalendarDates } from "../convex/_helpers/predictionBounds";
 import {
+  buildPredictionIntervals,
+  MIN_CALIBRATION_RESIDUALS,
+  PREDICTION_CALIBRATION_VERSION,
+  type PredictionCalibrationSource,
+  type PredictionDateWindow,
+  type PredictionIntervalReasonCode,
+  type PredictionIntervals,
+  type PredictionVariability,
+  type PredictionVariabilityBand,
+} from "../convex/_helpers/predictionIntervals";
+import {
+  derivePredictionQuality,
+  type PredictionQuality,
+  type PredictionQualityReasonCode,
+  type PredictionQualityState,
+} from "../convex/_helpers/predictionQuality";
+import {
   estimatePredictionCandidate,
   PREDICTION_ESTIMATOR_IDS,
   type PredictionEstimatorId,
@@ -27,7 +44,7 @@ import {
 } from "./cycle-benchmark-manifest";
 
 export const CYCLE_BENCHMARK_DATA_VERSION = "g3-cycle-benchmark-data-v1" as const;
-export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v1" as const;
+export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v2" as const;
 export const CYCLE_BENCHMARK_BOOTSTRAP_VERSION =
   "user-cluster-percentile-95-2000-v1" as const;
 const BOOTSTRAP_SAMPLES = 2000;
@@ -63,15 +80,36 @@ type BenchmarkPrediction = {
   signedErrorDays: number;
   absoluteErrorDays: number;
   personalizationEligible: boolean;
+  intervals?: PredictionIntervals;
+  quality?: PredictionQuality;
 };
 
 type BenchmarkFold = {
   userKey: string;
+  targetDate: string;
   historyCount: number;
   medianInterval: number;
   variabilityMad: number;
   groups: Record<string, string>;
   predictions: Record<PredictionEstimatorId, BenchmarkPrediction>;
+};
+
+type PredictionCalibrationSummary = {
+  version: typeof PREDICTION_CALIBRATION_VERSION;
+  calibrationSource: PredictionCalibrationSource | "mixed";
+  calibrationSources: Record<PredictionCalibrationSource, number>;
+  calibrationOutcomeCount: number;
+  empiricalTargetCoverageLevel: 80 | null;
+  intervalOutcomeCount: number;
+  interval50CoverageRate: number;
+  interval80CoverageRate: number;
+  medianWindow50Days: number;
+  medianWindow80Days: number;
+  qualityCounts: Record<PredictionQualityState, number>;
+  qualityScoreV1: { p10: number; median: number; p90: number } | null;
+  reasonCodeCounts: Partial<
+    Record<PredictionIntervalReasonCode | PredictionQualityReasonCode, number>
+  >;
 };
 
 type InternalBenchmarkResult = {
@@ -106,6 +144,7 @@ type CandidateMetrics = {
     configured_v1: PairedDifference | null;
     all_median_v1: PairedDifference | null;
   };
+  predictionCalibration: PredictionCalibrationSummary | null;
 };
 
 type PairedDifference = {
@@ -129,6 +168,12 @@ export type CycleBenchmarkReport = {
   sourceCommit: string;
   sourceTreeState: "clean" | "dirty";
   protocolSha256: string;
+  calibration: {
+    version: typeof PREDICTION_CALIBRATION_VERSION;
+    source: "calibration_partition" | "none";
+    fitOutcomeCount: number;
+    empiricalTargetCoverageLevel: null;
+  };
   userCount: number;
   targetCount: number;
   outcomeCount: number;
@@ -609,6 +654,7 @@ function buildUserFolds(
     }
     folds.push({
       userKey: user.userKey,
+      targetDate: target.startDate,
       historyCount: intervalLengths.length,
       medianInterval,
       variabilityMad: variabilityMad ?? 0,
@@ -657,6 +703,97 @@ function emptyCandidateMetrics(
       configured_v1: null,
       all_median_v1: null,
     },
+    predictionCalibration: null,
+  };
+}
+
+function predictionCalibrationSummary(
+  folds: readonly BenchmarkFold[],
+  estimatorId: PredictionEstimatorId,
+): PredictionCalibrationSummary | null {
+  const predictions = folds
+    .map((fold) => ({
+      targetDate: fold.targetDate,
+      prediction: fold.predictions[estimatorId],
+    }))
+    .filter(
+      (row): row is { targetDate: string; prediction: BenchmarkPrediction & { intervals: PredictionIntervals; quality: PredictionQuality } } =>
+        row.prediction.intervals !== undefined && row.prediction.quality !== undefined,
+    );
+  if (predictions.length === 0) return null;
+
+  const inside = (date: string, interval: PredictionDateWindow) =>
+    interval.earliestDate <= date && date <= interval.latestDate;
+  const widths = (getWindow: (prediction: PredictionIntervals) => PredictionIntervals["window50"]) =>
+    predictions.map(({ prediction }) => {
+      const window = getWindow(prediction.intervals!);
+      return daysBetweenCalendarDates(window.earliestDate, window.latestDate);
+    });
+  const scores = predictions
+    .map(({ prediction }) => prediction.quality!.qualityScoreV1)
+    .filter((score): score is number => score !== null);
+  const qualityCounts: PredictionCalibrationSummary["qualityCounts"] = {
+    high: 0,
+    moderate: 0,
+    low: 0,
+    timing_less_predictable: 0,
+    limited_evidence: 0,
+  };
+  const calibrationSources: PredictionCalibrationSummary["calibrationSources"] = {
+    calibration_partition: 0,
+    calibration_and_personal: 0,
+    personal_walk_forward: 0,
+    none: 0,
+  };
+  const reasonCodeCounts: PredictionCalibrationSummary["reasonCodeCounts"] = {};
+  for (const { prediction } of predictions) {
+    qualityCounts[prediction.quality!.quality] += 1;
+    calibrationSources[prediction.intervals!.calibrationSource] += 1;
+    for (
+      const reason of new Set([
+        ...prediction.intervals!.reasonCodes,
+        ...prediction.quality!.reasonCodes,
+      ])
+    ) {
+      reasonCodeCounts[reason] = (reasonCodeCounts[reason] ?? 0) + 1;
+    }
+  }
+  const usedSources = Object.entries(calibrationSources)
+    .filter(([, count]) => count > 0)
+    .map(([source]) => source as PredictionCalibrationSource);
+
+  return {
+    version: PREDICTION_CALIBRATION_VERSION,
+    calibrationSource: usedSources.length === 1 ? usedSources[0] : "mixed",
+    calibrationSources,
+    calibrationOutcomeCount: median(
+      predictions.map(({ prediction }) => prediction.intervals!.calibrationOutcomeCount),
+    ),
+    empiricalTargetCoverageLevel: predictions.every(
+      ({ prediction }) => prediction.intervals!.empiricalTargetCoverageLevel === 80,
+    )
+      ? 80
+      : null,
+    intervalOutcomeCount: predictions.length,
+    interval50CoverageRate:
+      predictions.filter(({ targetDate, prediction }) =>
+        inside(targetDate, prediction.intervals!.window50),
+      ).length / predictions.length,
+    interval80CoverageRate:
+      predictions.filter(({ targetDate, prediction }) =>
+        inside(targetDate, prediction.intervals!.window80),
+      ).length / predictions.length,
+    medianWindow50Days: median(widths((intervals) => intervals.window50)),
+    medianWindow80Days: median(widths((intervals) => intervals.window80)),
+    qualityCounts,
+    qualityScoreV1: scores.length
+      ? {
+          p10: percentile(scores, 0.1) as number,
+          median: median(scores),
+          p90: percentile(scores, 0.9) as number,
+        }
+      : null,
+    reasonCodeCounts,
   };
 }
 
@@ -787,6 +924,7 @@ function candidateMetrics(
         calculateBootstrapCi,
       ),
     },
+    predictionCalibration: predictionCalibrationSummary(folds, estimatorId),
   };
   return metrics;
 }
@@ -837,6 +975,139 @@ function buildSubgroups(
   return report;
 }
 
+type EstimatorCalibrationModel = {
+  globalResiduals: number[];
+  byVariability: Partial<Record<PredictionVariabilityBand, number[]>>;
+  byHistoryBand: Map<string, number[]>;
+  riskDeciles: Map<string, number | null>;
+};
+
+type CalibrationModel = Record<PredictionEstimatorId, EstimatorCalibrationModel>;
+
+function historyBandKey(fold: BenchmarkFold): string {
+  return `${fold.groups.historyCount}:${fold.groups.variability}`;
+}
+
+function fitCalibrationModel(folds: readonly BenchmarkFold[]): CalibrationModel {
+  const model = {} as CalibrationModel;
+  for (const estimatorId of PREDICTION_ESTIMATOR_IDS) {
+    const estimator: EstimatorCalibrationModel = {
+      globalResiduals: [],
+      byVariability: { stable: [], moderate: [], high: [] },
+      byHistoryBand: new Map(),
+      riskDeciles: new Map(),
+    };
+    for (const fold of folds) {
+      const residual = -fold.predictions[estimatorId].signedErrorDays;
+      estimator.globalResiduals.push(residual);
+      const variability = fold.groups.variability;
+      if (variability === "stable" || variability === "moderate" || variability === "high") {
+        estimator.byVariability[variability]!.push(residual);
+      }
+      const key = historyBandKey(fold);
+      const residuals = estimator.byHistoryBand.get(key) ?? [];
+      residuals.push(residual);
+      estimator.byHistoryBand.set(key, residuals);
+    }
+
+    const risks = [...estimator.byHistoryBand.entries()]
+      .filter(([, residuals]) => residuals.length >= MIN_CALIBRATION_RESIDUALS)
+      .map(([key, residuals]) => {
+        const [, variabilityText] = key.split(":");
+        const variabilityBand =
+          variabilityText === "stable" ||
+          variabilityText === "moderate" ||
+          variabilityText === "high"
+            ? variabilityText
+            : "unavailable";
+        const interval = buildPredictionIntervals({
+          pointDate: "2000-01-01",
+          variabilityBand,
+          calibrationResiduals: estimator.globalResiduals,
+          calibrationResidualsByVariability: estimator.byVariability,
+        });
+        return {
+          key,
+          medianAbsoluteError: median(residuals.map(Math.abs)),
+          medianWindowWidth: daysBetweenCalendarDates(
+            interval.window80.earliestDate,
+            interval.window80.latestDate,
+          ),
+        };
+      })
+      .sort(
+        (left, right) =>
+          left.medianAbsoluteError - right.medianAbsoluteError ||
+          left.medianWindowWidth - right.medianWindowWidth ||
+          left.key.localeCompare(right.key),
+      );
+    for (let index = 0; index < risks.length; index += 1) {
+      estimator.riskDeciles.set(
+        risks[index].key,
+        risks.length < 2 ? null : Math.round((index * 9) / (risks.length - 1)),
+      );
+    }
+    model[estimatorId] = estimator;
+  }
+  return model;
+}
+
+function applyCalibration(
+  folds: readonly BenchmarkFold[],
+  model: CalibrationModel,
+): BenchmarkFold[] {
+  const personalResiduals = new Map<
+    string,
+    Map<PredictionEstimatorId, number[]>
+  >();
+  return folds.map((fold) => {
+    const userResiduals = personalResiduals.get(fold.userKey) ?? new Map();
+    const predictions = {} as Record<PredictionEstimatorId, BenchmarkPrediction>;
+    for (const estimatorId of PREDICTION_ESTIMATOR_IDS) {
+      const estimatorModel = model[estimatorId];
+      const variabilityBand = fold.groups.variability as PredictionVariability;
+      const interval = buildPredictionIntervals({
+        pointDate: fold.predictions[estimatorId].pointDate,
+        variabilityBand,
+        historyCount: fold.historyCount,
+        context: {
+          approximateLegacyAdjacent:
+            fold.groups.approximateLegacyAdjacent === "yes",
+          partnerAssisted: fold.groups.partnerAssisted === "yes",
+          possibleMissingLog: fold.groups.possibleMissingLog === "yes",
+          recentCorrection: fold.groups.recentCorrection === "yes",
+          segmentBoundary: fold.groups.segmentBoundary === "yes",
+        },
+        calibrationResiduals: estimatorModel.globalResiduals,
+        calibrationResidualsByVariability: estimatorModel.byVariability,
+        personalResiduals: userResiduals.get(estimatorId) ?? [],
+      });
+      const quality = derivePredictionQuality({
+        calibrationRiskDecile:
+          estimatorModel.riskDeciles.get(historyBandKey(fold)) ?? null,
+        calibrationOutcomeCount:
+          estimatorModel.byHistoryBand.get(historyBandKey(fold))?.length ?? 0,
+        historyCount: fold.historyCount,
+        variabilityBand,
+      });
+      predictions[estimatorId] = {
+        ...fold.predictions[estimatorId],
+        intervals: interval,
+        quality,
+      };
+    }
+
+    // Add this target's residual only after its interval has been sized.
+    for (const estimatorId of PREDICTION_ESTIMATOR_IDS) {
+      const residuals = userResiduals.get(estimatorId) ?? [];
+      residuals.push(-fold.predictions[estimatorId].signedErrorDays);
+      userResiduals.set(estimatorId, residuals);
+    }
+    personalResiduals.set(fold.userKey, userResiduals);
+    return { ...fold, predictions };
+  });
+}
+
 export function runCycleBenchmark(options: {
   dataset: CycleBenchmarkDataset;
   manifest: CycleBenchmarkManifest;
@@ -858,7 +1129,21 @@ export function runCycleBenchmark(options: {
     ? deriveDevelopmentCutoffs(preliminary.flatMap((result) => result.folds))
     : options.manifest.developmentCutoffs ?? null;
   const results = partitionUsers.map((user) => buildUserFolds(user, developmentCutoffs));
-  const folds = results.flatMap((result) => result.folds);
+  const partitionFolds = results.flatMap((result) => result.folds);
+  const calibrationFolds = options.partition === "development"
+    ? []
+    : options.partition === "calibration"
+      ? partitionFolds
+      : options.dataset.users
+          .filter(
+            (user) =>
+              assignCycleBenchmarkPartition(user.userKey, options.splitSalt) ===
+              "calibration",
+          )
+          .flatMap((user) => buildUserFolds(user, developmentCutoffs).folds);
+  const folds = options.partition === "evaluation"
+    ? applyCalibration(partitionFolds, fitCalibrationModel(calibrationFolds))
+    : partitionFolds;
   const targetCount = results.reduce((sum, result) => sum + result.targetCount, 0);
   const unscorableTargets = results.flatMap((result) => result.unscorableTargets);
   const unscorableTargetCount = unscorableTargets.length;
@@ -878,6 +1163,12 @@ export function runCycleBenchmark(options: {
     sourceCommit: options.sourceCommit,
     sourceTreeState: options.sourceTreeState,
     protocolSha256: options.protocolSha256,
+    calibration: {
+      version: PREDICTION_CALIBRATION_VERSION,
+      source: calibrationFolds.length > 0 ? "calibration_partition" : "none",
+      fitOutcomeCount: calibrationFolds.length,
+      empiricalTargetCoverageLevel: null,
+    },
     userCount: partitionUsers.length,
     targetCount,
     outcomeCount: folds.length,

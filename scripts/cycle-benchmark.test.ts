@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { addCalendarDays } from "../convex/_helpers/cycleCalculations";
 import {
   CYCLE_BENCHMARK_DATA_VERSION,
   loadCycleBenchmarkFiles,
@@ -43,14 +44,40 @@ function event(
   };
 }
 
-function userKeyForDevelopment(): string {
+function userKeyForPartition(
+  partition: "development" | "calibration" | "evaluation",
+): string {
   for (let index = 0; index < 10_000; index += 1) {
     const candidate = `synthetic-test-user-${index}`;
-    if (assignCycleBenchmarkPartition(candidate, TEST_SALT) === "development") {
+    if (assignCycleBenchmarkPartition(candidate, TEST_SALT) === partition) {
       return candidate;
     }
   }
-  throw new Error("Could not construct a development split test key");
+  throw new Error(`Could not construct a ${partition} split test key`);
+}
+
+function userKeyForDevelopment(): string {
+  return userKeyForPartition("development");
+}
+
+function regularCycleUser(
+  userKey: string,
+  eventCount = 45,
+  cycleLength = 28,
+): CycleBenchmarkUser {
+  const events: CycleBenchmarkUser["events"] = [];
+  let startDate = "2020-01-01";
+  for (let index = 0; index < eventCount; index += 1) {
+    events.push(event(`period-${index}`, startDate));
+    startDate = addCalendarDays(startDate, cycleLength);
+  }
+  return {
+    userKey,
+    timezone: "UTC",
+    configuredCycleLength: 28,
+    events,
+    segments: [],
+  };
 }
 
 function manifest(): CycleBenchmarkManifest {
@@ -133,7 +160,9 @@ describe("cycle benchmark runner", () => {
     expect(report.userCount).toBeGreaterThan(0);
     expect(report.outcomeCount).toBeGreaterThan(0);
     expect(report.promotionStatus).toBe("synthetic_not_evidence");
-    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v1");
+    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v2");
+    expect(report.calibration.source).toBe("none");
+    expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
     expect(report.pairedBootstrapVersion).toBe("user-cluster-percentile-95-2000-v1");
     expect(subgroupCount(report, "possibleMissingLog", "yes")).toBeGreaterThan(0);
     expect(subgroupCount(report, "variability", "high")).toBeGreaterThan(0);
@@ -221,6 +250,68 @@ describe("cycle benchmark runner", () => {
     };
     const report = reportFor(user);
     expect(candidate(report, "all_median_v1").meanAbsoluteErrorDays).toBe(0);
+  });
+
+  test("fits intervals from calibration users and sizes a target before its outcome", () => {
+    const calibrationUser = regularCycleUser(
+      userKeyForPartition("calibration"),
+      45,
+      30,
+    );
+    const evaluationUser = regularCycleUser(userKeyForPartition("evaluation"));
+    const dataset: CycleBenchmarkDataset = {
+      formatVersion: CYCLE_BENCHMARK_DATA_VERSION,
+      users: [calibrationUser, evaluationUser],
+    };
+    const evaluationManifest = {
+      ...manifest(),
+      developmentCutoffs: {
+        variabilityMadQ33: 1,
+        variabilityMadQ67: 3,
+        medianIntervalQ33: 27,
+        medianIntervalQ67: 29,
+      },
+    };
+    const run = (users: CycleBenchmarkUser[]) =>
+      runCycleBenchmark({
+        dataset: { ...dataset, users },
+        manifest: evaluationManifest,
+        partition: "evaluation",
+        splitSalt: TEST_SALT,
+        manifestSha256: "b".repeat(64),
+        sourceCommit: "test-commit",
+        sourceTreeState: "clean",
+        protocolSha256: "c".repeat(64),
+      });
+    const report = run(dataset.users);
+    const finalEvent = evaluationUser.events.at(-1)!;
+    const shiftedUser = {
+      ...evaluationUser,
+      events: evaluationUser.events.map((item) =>
+        item.eventKey === finalEvent.eventKey
+          ? {
+              ...item,
+              startDate: addCalendarDays(item.startDate, 3),
+              createdAt: timestamp(addCalendarDays(item.startDate, 3)),
+              updatedAt: timestamp(addCalendarDays(item.startDate, 3)),
+            }
+          : item,
+      ),
+    };
+    const changedOutcome = run([calibrationUser, shiftedUser]);
+    const baseMetrics = candidate(report, "configured_v1").predictionCalibration;
+    const changedMetrics = candidate(changedOutcome, "configured_v1").predictionCalibration;
+
+    expect(report.calibration.source).toBe("calibration_partition");
+    expect(report.calibration.fitOutcomeCount).toBeGreaterThanOrEqual(20);
+    expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
+    expect(baseMetrics).not.toBeNull();
+    expect(changedMetrics).not.toBeNull();
+    expect(baseMetrics!.medianWindow80Days).toBeGreaterThan(0);
+    expect(changedMetrics!.medianWindow80Days).toBe(baseMetrics!.medianWindow80Days);
+    expect(changedMetrics!.interval80CoverageRate).toBeLessThan(
+      baseMetrics!.interval80CoverageRate,
+    );
   });
 
   test("rounds a fractional configured interval half-up only when producing a calendar date", () => {
