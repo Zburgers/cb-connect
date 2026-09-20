@@ -1,7 +1,10 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { addCalendarDays } from "../_helpers/cycleCalculations";
+import {
+  addCalendarDays,
+  calculateCycleInfo,
+} from "../_helpers/cycleCalculations";
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -324,6 +327,48 @@ describe("fact-aware history and prediction reads", () => {
     expect(prediction?.cycleIntervals?.intervals).toHaveLength(104);
     expect(prediction?.cycleIntervals?.intervals[0]).not.toHaveProperty(
       "startDate",
+    );
+  });
+
+  test("V2 interval data does not change existing notification inputs", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-09-01",
+        startCertainty: "approximate",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId },
+    );
+
+    expect(prediction).toMatchObject({
+      recentPeriodStart: "2026-09-01",
+      cycleInfo: calculateCycleInfo("2026-09-01", 28, 5),
+    });
+    expect(prediction?.cycleIntervals?.latestEligibleStartDate).toBe(
+      "2026-08-01",
     );
   });
 

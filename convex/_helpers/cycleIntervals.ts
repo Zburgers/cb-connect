@@ -143,6 +143,8 @@ function possibleMissingLog(
 ): boolean {
   if (precedingLengths.length < 3) return false;
 
+  // ponytail: prefix sorts are O(n^2 log n);
+  // use a streaming median if lifetime histories grow.
   const ordered = [...precedingLengths].sort((left, right) => left - right);
   const middle = Math.floor(ordered.length / 2);
   const median =

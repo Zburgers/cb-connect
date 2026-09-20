@@ -178,21 +178,22 @@ export const getPredictionInputsForUser = internalQuery({
       recentPeriods,
       isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
     );
+    if (!recentPeriod) return null;
 
     let cycleIntervals: CycleIntervalDerivation | null = null;
     if (isPeriodPredictionV2Enabled()) {
       const cutoffAt = Date.now();
-      const [allPeriods, segments, user] = await Promise.all([
+      const [allPeriods, activeSegment, user] = await Promise.all([
         ctx.db
           .query("periodEvents")
           .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
           .collect(),
         ctx.db
           .query("cyclePredictionSegments")
-          .withIndex("by_user_and_created_at", (q) =>
-            q.eq("userId", args.userId),
+          .withIndex("by_user_and_status", (q) =>
+            q.eq("userId", args.userId).eq("status", "active"),
           )
-          .collect(),
+          .unique(),
         ctx.db.get("users", args.userId),
       ]);
       cycleIntervals = deriveCycleIntervals(allPeriods, {
@@ -201,14 +202,9 @@ export const getPredictionInputsForUser = internalQuery({
           new Date(cutoffAt),
           user?.timeZone ?? "UTC",
         ),
-        segments,
+        segments: activeSegment ? [activeSegment] : [],
       });
     }
-
-    const recentPeriodStart = cycleIntervals
-      ? cycleIntervals.latestEligibleStartDate
-      : recentPeriod?.startDate;
-    if (!recentPeriodStart) return null;
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
@@ -216,12 +212,12 @@ export const getPredictionInputsForUser = internalQuery({
     return {
       cycleLength,
       periodLength,
-      recentPeriodStart,
+      recentPeriodStart: recentPeriod.startDate,
+      // Keep legacy consumers on the qualified input until G3.11 adopts V2.
       cycleInfo: calculateCycleInfo(
-        recentPeriodStart,
+        recentPeriod.startDate,
         cycleLength,
-        periodLength,
-        cycleIntervals?.basis.cutoffDate,
+        periodLength
       ),
       ...(cycleIntervals ? { cycleIntervals } : {}),
     };
