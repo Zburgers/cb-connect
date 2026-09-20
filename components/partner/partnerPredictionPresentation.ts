@@ -12,6 +12,14 @@ export type PartnerPredictionPresentation = {
   careSuggestions: readonly string[];
 };
 
+export function shouldEnsurePartnerPredictionSnapshot(
+  enabled: boolean,
+  hasData: boolean,
+  prediction: PartnerPredictionV2Projection | null | undefined,
+): boolean {
+  return enabled && hasData && prediction?.status !== "estimated";
+}
+
 const CARE_SUGGESTIONS = [
   "Ask what kind of support would feel helpful today.",
   "Check in before offering help.",

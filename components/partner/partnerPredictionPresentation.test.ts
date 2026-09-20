@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   getPartnerPredictionPresentation,
+  shouldEnsurePartnerPredictionSnapshot,
   type PartnerPredictionPresentation,
 } from "./partnerPredictionPresentation";
 import type { PartnerPredictionV2Projection } from "../../convex/_helpers/partnerCycleProjection";
@@ -16,6 +17,21 @@ const estimatedPrediction: PartnerPredictionV2Projection = {
   quality: "limited_evidence",
   basisBand: "limited",
 };
+
+test("bootstraps a shared snapshot when partner data exists but projection is absent", () => {
+  expect(
+    shouldEnsurePartnerPredictionSnapshot(true, true, undefined),
+  ).toBe(true);
+  expect(
+    shouldEnsurePartnerPredictionSnapshot(true, true, estimatedPrediction),
+  ).toBe(false);
+  expect(
+    shouldEnsurePartnerPredictionSnapshot(false, true, undefined),
+  ).toBe(false);
+  expect(
+    shouldEnsurePartnerPredictionSnapshot(true, false, undefined),
+  ).toBe(false);
+});
 
 test("presents only the safe date, timing, quality, and basis summary", () => {
   expect(getPartnerPredictionPresentation(estimatedPrediction)).toEqual({

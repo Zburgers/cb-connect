@@ -13,6 +13,7 @@ import {
   PartnerCycleStateCard,
   PartnerPredictionCard,
 } from "@/components/partner/PartnerDashboard";
+import { shouldEnsurePartnerPredictionSnapshot } from "@/components/partner/partnerPredictionPresentation";
 import { getPartnerCyclePresentation } from "@/components/partner/partnerCyclePresentation";
 import { getPartnerPredictionPresentation } from "@/components/partner/partnerPredictionPresentation";
 
@@ -68,8 +69,11 @@ export default function PartnerPage() {
     if (
       isAuthenticated &&
       me?.role === "partner" &&
-      partnerDashboardData?.partnerPredictionV2Exposed &&
-      partnerDashboardData.partnerPredictionV2?.status !== "estimated"
+      shouldEnsurePartnerPredictionSnapshot(
+        cycleFactsCapability?.partnerPredictionV2 === true,
+        partnerDashboardData?.hasData === true,
+        partnerDashboardData?.partnerPredictionV2,
+      )
     ) {
       ensurePredictionSnapshot().catch(() => {});
     }

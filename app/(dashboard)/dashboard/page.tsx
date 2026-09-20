@@ -14,6 +14,9 @@ import TipsCard from "@/components/dashboard/TipsCard";
 import NutritionSuggestions from "@/components/dashboard/NutritionSuggestions";
 import OnboardingFlow from "@/components/dashboard/OnboardingFlow";
 import PartnerDashboard from "@/components/partner/PartnerDashboard";
+import {
+  shouldEnsurePartnerPredictionSnapshot,
+} from "@/components/partner/partnerPredictionPresentation";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
 import { getCycleStateCopyState } from "@/components/dashboard/cycleStatePresentation";
 import {
@@ -59,9 +62,11 @@ export default function DashboardPage() {
         data.periodPredictionV2 === undefined);
     const needsPartnerSnapshot =
       me.role === "partner" &&
-      capabilities?.partnerPredictionV2 === true &&
-      data.partnerPredictionV2Exposed &&
-      data.partnerPredictionV2?.status !== "estimated";
+      shouldEnsurePartnerPredictionSnapshot(
+        capabilities?.partnerPredictionV2 === true,
+        data.hasData,
+        data.partnerPredictionV2,
+      );
     if (needsPrimarySnapshot || needsPartnerSnapshot) {
       ensurePredictionSnapshot().catch(() => {});
     }

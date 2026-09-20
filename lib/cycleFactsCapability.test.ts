@@ -37,10 +37,11 @@ describe("cycle facts client capability compatibility", () => {
     ).toEqual({ cycleFactsV1: true });
   });
 
-  test("preserves the optional cycle state capability from an extended response", () => {
+  test("preserves prediction capabilities from the expanded response", () => {
     const response: CycleFactsCapability = {
       cycleFactsV1: true,
       cycleStateV1: false,
+      partnerPredictionV2: true,
     };
 
     expect(
