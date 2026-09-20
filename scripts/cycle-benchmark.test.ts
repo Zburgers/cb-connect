@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { addCalendarDays } from "../convex/_helpers/cycleCalculations";
 import {
   CYCLE_BENCHMARK_DATA_VERSION,
+  deriveCycleBenchmarkPromotionVerdict,
   loadCycleBenchmarkFiles,
   runCycleBenchmark,
   validateCycleBenchmarkDataset,
@@ -138,6 +139,37 @@ function subgroupCount(
     ?.outcomeCount ?? 0;
 }
 
+type PromotionTestMetric = Parameters<
+  typeof deriveCycleBenchmarkPromotionVerdict
+>[0]["estimators"][number];
+
+function promotionMetric(
+  estimatorId: PromotionTestMetric["estimatorId"],
+  overrides: Partial<PromotionTestMetric> = {},
+): PromotionTestMetric {
+  const difference = {
+    mean: -0.3,
+    median: -0.3,
+    bootstrap95Ci: { lower: -0.5, upper: -0.1 },
+  };
+  return {
+    estimatorId,
+    outcomeCount: 1_000,
+    meanAbsoluteErrorDays: 1.5,
+    medianAbsoluteErrorDays: 1.5,
+    within3DayRate: 0.9,
+    pairedAbsoluteErrorDifferenceDays:
+      estimatorId === "all_mean_v1"
+        ? { configured_v1: difference, all_median_v1: difference }
+        : { configured_v1: null, all_median_v1: null },
+    predictionCalibration: {
+      interval80CoverageRate: 0.8,
+      medianWindow80Days: 7,
+    },
+    ...overrides,
+  };
+}
+
 describe("cycle benchmark runner", () => {
   test("loads and scores only the checked-in synthetic golden development partition", () => {
     const loaded = loadCycleBenchmarkFiles({
@@ -159,8 +191,14 @@ describe("cycle benchmark runner", () => {
     expect(report.datasetClass).toBe("synthetic");
     expect(report.userCount).toBeGreaterThan(0);
     expect(report.outcomeCount).toBeGreaterThan(0);
-    expect(report.promotionStatus).toBe("synthetic_not_evidence");
-    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v2");
+    expect(report.promotionVerdict).toEqual({
+      status: "synthetic_not_evidence",
+      candidates: [],
+      reason: "Synthetic benchmark outcomes cannot establish promotion evidence",
+      recommendedEstimatorId: null,
+      manualGates: [],
+    });
+    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v3");
     expect(report.calibration.source).toBe("none");
     expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
     expect(report.pairedBootstrapVersion).toBe("user-cluster-percentile-95-2000-v1");
@@ -322,6 +360,23 @@ describe("cycle benchmark runner", () => {
     expect(report.calibration.source).toBe("calibration_partition");
     expect(report.calibration.fitOutcomeCount).toBeGreaterThanOrEqual(20);
     expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
+    const calibrationSourceSubgroup = (source: string) =>
+      report.subgroups.find(
+        (item) =>
+          item.dimension === "calibrationSource" &&
+          item.group === source,
+      );
+    expect(
+      calibrationSourceSubgroup("calibration_partition")?.targetCount,
+    ).toBeGreaterThan(0);
+    expect(
+      calibrationSourceSubgroup("calibration_and_personal")?.targetCount,
+    ).toBeGreaterThan(0);
+    expect(
+      calibrationSourceSubgroup("calibration_and_personal")?.estimators.map(
+        (item) => item.estimatorId,
+      ),
+    ).toEqual(expect.arrayContaining(["configured_v1", "all_median_v1"]));
     expect(baseMetrics).not.toBeNull();
     expect(changedMetrics).not.toBeNull();
     expect(baseMetrics!.medianWindow80Days).toBeGreaterThan(0);
@@ -337,6 +392,82 @@ describe("cycle benchmark runner", () => {
     expect(changedMetrics!.interval80CoverageRate).toBeLessThan(
       baseMetrics!.interval80CoverageRate,
     );
+  });
+
+  test("scores promotion criteria while retaining required manual gates", () => {
+    const configured = promotionMetric("configured_v1", {
+      meanAbsoluteErrorDays: 2,
+      medianAbsoluteErrorDays: 2,
+      within3DayRate: 0.85,
+    });
+    const rollingMedian = promotionMetric("all_median_v1", {
+      meanAbsoluteErrorDays: 1.8,
+      medianAbsoluteErrorDays: 1.8,
+      within3DayRate: 0.86,
+    });
+    const candidate = promotionMetric("all_mean_v1");
+    const narrowerCandidate = promotionMetric("last3_mean_v1", {
+      pairedAbsoluteErrorDifferenceDays:
+        candidate.pairedAbsoluteErrorDifferenceDays,
+      predictionCalibration: {
+        interval80CoverageRate: 0.8,
+        medianWindow80Days: 5,
+      },
+    });
+    const verdict = deriveCycleBenchmarkPromotionVerdict({
+      datasetClass: "external_academic",
+      partition: "evaluation",
+      estimators: [configured, rollingMedian, candidate, narrowerCandidate],
+      subgroups: [],
+    });
+    expect(verdict).toEqual({
+      status: "metrics_pass_manual_gates_pending",
+      candidates: [
+        {
+          estimatorId: "all_median_v1",
+          passed: false,
+          failedCriteria: [
+            "paired_improvement_vs_configured_v1",
+            "paired_improvement_vs_all_median_v1",
+          ],
+        },
+        { estimatorId: "all_mean_v1", passed: true, failedCriteria: [] },
+        { estimatorId: "last3_mean_v1", passed: true, failedCriteria: [] },
+      ],
+      reason:
+        "Metric criteria pass; independent quality, snapshot, leakage, and approval gates remain",
+      recommendedEstimatorId: "last3_mean_v1",
+      manualGates: [
+        "variability_quality_monotonicity",
+        "snapshot_input_cutoff_and_leakage_audits",
+        "named_model_promotion_approval",
+      ],
+    });
+
+    const regressed = deriveCycleBenchmarkPromotionVerdict({
+      datasetClass: "external_academic",
+      partition: "evaluation",
+      estimators: [configured, rollingMedian, candidate, narrowerCandidate],
+      subgroups: [
+        {
+          dimension: "variability",
+          group: "high",
+          outcomeCount: 200,
+          estimators: [
+            configured,
+            rollingMedian,
+            promotionMetric("all_mean_v1", {
+              meanAbsoluteErrorDays: 3,
+              within3DayRate: 0.8,
+            }),
+          ],
+        },
+      ],
+    });
+    expect(
+      regressed.candidates.find((item) => item.estimatorId === "all_mean_v1")
+        ?.failedCriteria,
+    ).toContain("subgroup:variability:high:mae_regression_over_0.5");
   });
 
   test("rounds a fractional configured interval half-up only when producing a calendar date", () => {

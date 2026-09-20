@@ -45,7 +45,7 @@ import {
 } from "./cycle-benchmark-manifest";
 
 export const CYCLE_BENCHMARK_DATA_VERSION = "g3-cycle-benchmark-data-v1" as const;
-export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v2" as const;
+export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v3" as const;
 export const CYCLE_BENCHMARK_BOOTSTRAP_VERSION =
   "user-cluster-percentile-95-2000-v1" as const;
 const BOOTSTRAP_SAMPLES = 2000;
@@ -149,6 +149,39 @@ type CandidateMetrics = {
   predictionCalibration: PredictionCalibrationSummary | null;
 };
 
+type PromotionMetric = Pick<
+  CandidateMetrics,
+  | "estimatorId"
+  | "outcomeCount"
+  | "meanAbsoluteErrorDays"
+  | "medianAbsoluteErrorDays"
+  | "within3DayRate"
+> & {
+  pairedAbsoluteErrorDifferenceDays: CandidateMetrics["pairedAbsoluteErrorDifferenceDays"];
+  predictionCalibration: Pick<
+    PredictionCalibrationSummary,
+    "interval80CoverageRate" | "medianWindow80Days"
+  > | null;
+};
+
+type PromotionCandidateVerdict = {
+  estimatorId: PredictionEstimatorId;
+  passed: boolean;
+  failedCriteria: string[];
+};
+
+type CycleBenchmarkPromotionVerdict = {
+  status:
+    | "synthetic_not_evidence"
+    | "not_assessed"
+    | "metrics_failed"
+    | "metrics_pass_manual_gates_pending";
+  candidates: PromotionCandidateVerdict[];
+  reason: string | null;
+  recommendedEstimatorId: PredictionEstimatorId | null;
+  manualGates: string[];
+};
+
 type PairedDifference = {
   mean: number;
   median: number;
@@ -190,7 +223,7 @@ export type CycleBenchmarkReport = {
     unscorableTargetCount: number;
     estimators: CandidateMetrics[];
   }>;
-  promotionStatus: "synthetic_not_evidence" | "not_assessed";
+  promotionVerdict: CycleBenchmarkPromotionVerdict;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -944,6 +977,12 @@ function buildSubgroups(
   unscorableTargets: readonly { groups: Record<string, string> }[],
 ): CycleBenchmarkReport["subgroups"] {
   const dimensions: Record<string, readonly string[]> = {
+    calibrationSource: [
+      "calibration_partition",
+      "calibration_and_personal",
+      "personal_walk_forward",
+      "none",
+    ],
     variability: ["stable", "moderate", "high", "unavailable"],
     historyCount: ["sparse", "3", "4-6", "7-12", "13+"],
     relativeLength: ["short", "typical", "long", "unavailable"],
@@ -956,9 +995,16 @@ function buildSubgroups(
   const report: CycleBenchmarkReport["subgroups"] = [];
   for (const [dimension, groups] of Object.entries(dimensions)) {
     for (const group of groups) {
-      const matched = folds.filter((fold) => fold.groups[dimension] === group);
+      const matched = folds.filter((fold) =>
+        dimension === "calibrationSource"
+          ? calibrationSourceForFold(fold) === group
+          : fold.groups[dimension] === group,
+      );
       const unscorable = unscorableTargets.filter(
-        (target) => target.groups[dimension] === group,
+        (target) =>
+          dimension === "calibrationSource"
+            ? group === "none"
+            : target.groups[dimension] === group,
       );
       const groupTargetCount = matched.length + unscorable.length;
       report.push({
@@ -983,6 +1029,16 @@ function buildSubgroups(
     }
   }
   return report;
+}
+
+function calibrationSourceForFold(fold: BenchmarkFold): PredictionCalibrationSource {
+  const sources = PREDICTION_ESTIMATOR_IDS.map(
+    (estimatorId) => fold.predictions[estimatorId].intervals?.calibrationSource ?? "none",
+  );
+  if (sources.some((source) => source !== sources[0])) {
+    throw new Error("Calibration source differs across candidate estimators");
+  }
+  return sources[0];
 }
 
 type EstimatorCalibrationModel = {
@@ -1111,6 +1167,188 @@ function applyCalibration(
   });
 }
 
+export function deriveCycleBenchmarkPromotionVerdict(args: {
+  datasetClass: CycleBenchmarkManifest["datasetClass"];
+  partition: CycleBenchmarkPartition;
+  estimators: readonly PromotionMetric[];
+  subgroups: readonly {
+    dimension: string;
+    group: string;
+    outcomeCount: number;
+    estimators: readonly PromotionMetric[];
+  }[];
+}): CycleBenchmarkPromotionVerdict {
+  if (args.datasetClass === "synthetic") {
+    return {
+      status: "synthetic_not_evidence",
+      candidates: [],
+      reason: "Synthetic benchmark outcomes cannot establish promotion evidence",
+      recommendedEstimatorId: null,
+      manualGates: [],
+    };
+  }
+  if (args.partition !== "evaluation") {
+    return {
+      status: "not_assessed",
+      candidates: [],
+      reason: "Only the locked evaluation partition can assess promotion",
+      recommendedEstimatorId: null,
+      manualGates: [],
+    };
+  }
+
+  const configured = args.estimators.find(
+    (metric) => metric.estimatorId === "configured_v1",
+  );
+  const rollingMedian = args.estimators.find(
+    (metric) => metric.estimatorId === "all_median_v1",
+  );
+  const candidates = args.estimators
+    .filter((metric) => metric.estimatorId !== "configured_v1")
+    .map((candidate): PromotionCandidateVerdict => {
+      const failedCriteria: string[] = [];
+      const failUnless = (condition: boolean, criterion: string) => {
+        if (!condition) failedCriteria.push(criterion);
+      };
+      failUnless(candidate.outcomeCount >= 1_000, "minimum_1000_outcomes");
+
+      for (const baselineId of ["configured_v1", "all_median_v1"] as const) {
+        const difference =
+          candidate.pairedAbsoluteErrorDifferenceDays[baselineId];
+        failUnless(
+          difference !== null &&
+            difference.mean <= -0.25 &&
+            difference.bootstrap95Ci !== null &&
+            difference.bootstrap95Ci.upper < 0,
+          `paired_improvement_vs_${baselineId}`,
+        );
+      }
+
+      const baselines = [configured, rollingMedian];
+      const medianBaseline = baselines.every(
+        (baseline) => baseline?.medianAbsoluteErrorDays !== null && baseline,
+      )
+        ? Math.min(...baselines.map((baseline) => baseline!.medianAbsoluteErrorDays!))
+        : null;
+      const within3Baseline = baselines.every(
+        (baseline) => baseline?.within3DayRate !== null && baseline,
+      )
+        ? Math.max(...baselines.map((baseline) => baseline!.within3DayRate!))
+        : null;
+      failUnless(
+        candidate.medianAbsoluteErrorDays !== null &&
+          medianBaseline !== null &&
+          candidate.medianAbsoluteErrorDays <= medianBaseline,
+        "overall_median_error_not_worse",
+      );
+      failUnless(
+        candidate.within3DayRate !== null &&
+          within3Baseline !== null &&
+          candidate.within3DayRate >= within3Baseline,
+        "overall_within_3_day_rate_not_lower",
+      );
+      const coverage = candidate.predictionCalibration?.interval80CoverageRate;
+      failUnless(
+        coverage !== undefined && coverage >= 0.77 && coverage <= 0.83,
+        "overall_80_percent_coverage",
+      );
+
+      for (const subgroup of args.subgroups) {
+        if (
+          subgroup.outcomeCount < 200
+        ) {
+          continue;
+        }
+        const candidateMetrics = subgroup.estimators.find(
+          (metric) => metric.estimatorId === candidate.estimatorId,
+        );
+        const subgroupBaselines = ["configured_v1", "all_median_v1"].map(
+          (id) => subgroup.estimators.find((metric) => metric.estimatorId === id),
+        );
+        const baselineMae = subgroupBaselines.every(
+          (metric) => metric?.meanAbsoluteErrorDays !== null && metric,
+        )
+          ? Math.min(
+              ...subgroupBaselines.map((metric) => metric!.meanAbsoluteErrorDays!),
+            )
+          : null;
+        const baselineWithin3 = subgroupBaselines.every(
+          (metric) => metric?.within3DayRate !== null && metric,
+        )
+          ? Math.max(
+              ...subgroupBaselines.map((metric) => metric!.within3DayRate!),
+            )
+          : null;
+        if (
+          !candidateMetrics ||
+          candidateMetrics.meanAbsoluteErrorDays === null ||
+          candidateMetrics.within3DayRate === null ||
+          baselineMae === null ||
+          baselineWithin3 === null
+        ) {
+          failedCriteria.push(
+            `subgroup:${subgroup.dimension}:${subgroup.group}:metrics_missing`,
+          );
+          continue;
+        }
+        const subgroupCoverage =
+          candidateMetrics.predictionCalibration?.interval80CoverageRate;
+        failUnless(
+          subgroupCoverage !== undefined &&
+            subgroupCoverage >= 0.75 &&
+            subgroupCoverage <= 0.85,
+          `subgroup:${subgroup.dimension}:${subgroup.group}:80_percent_coverage`,
+        );
+        failUnless(
+          candidateMetrics.meanAbsoluteErrorDays - baselineMae <= 0.5,
+          `subgroup:${subgroup.dimension}:${subgroup.group}:mae_regression_over_0.5`,
+        );
+        failUnless(
+          baselineWithin3 - candidateMetrics.within3DayRate <= 0.03,
+          `subgroup:${subgroup.dimension}:${subgroup.group}:within_3_day_regression_over_0.03`,
+        );
+      }
+
+      return {
+        estimatorId: candidate.estimatorId,
+        passed: failedCriteria.length === 0,
+        failedCriteria,
+      };
+    });
+  const hasMetricPass = candidates.some((candidate) => candidate.passed);
+  const recommendedEstimatorId = candidates
+    .filter((candidate) => candidate.passed)
+    .map((candidate) => ({
+      estimatorId: candidate.estimatorId,
+      medianWindow80Days:
+        args.estimators.find(
+          (metric) => metric.estimatorId === candidate.estimatorId,
+        )?.predictionCalibration?.medianWindow80Days ?? Number.POSITIVE_INFINITY,
+    }))
+    .sort(
+      (left, right) =>
+        left.medianWindow80Days - right.medianWindow80Days ||
+        left.estimatorId.localeCompare(right.estimatorId),
+    )[0]?.estimatorId ?? null;
+  return {
+    status: hasMetricPass
+      ? "metrics_pass_manual_gates_pending"
+      : "metrics_failed",
+    candidates,
+    reason: hasMetricPass
+      ? "Metric criteria pass; independent quality, snapshot, leakage, and approval gates remain"
+      : "No candidate passes the frozen numeric promotion criteria",
+    recommendedEstimatorId,
+    manualGates: hasMetricPass
+      ? [
+          "variability_quality_monotonicity",
+          "snapshot_input_cutoff_and_leakage_audits",
+          "named_model_promotion_approval",
+        ]
+      : [],
+  };
+}
+
 export function runCycleBenchmark(options: {
   dataset: CycleBenchmarkDataset;
   manifest: CycleBenchmarkManifest;
@@ -1150,6 +1388,17 @@ export function runCycleBenchmark(options: {
   const targetCount = results.reduce((sum, result) => sum + result.targetCount, 0);
   const unscorableTargets = results.flatMap((result) => result.unscorableTargets);
   const unscorableTargetCount = unscorableTargets.length;
+  const estimators = PREDICTION_ESTIMATOR_IDS.map((id) =>
+    candidateMetrics(
+      id,
+      folds,
+      targetCount,
+      unscorableTargetCount,
+      `${options.manifestSha256}:${options.partition}:${CYCLE_BENCHMARK_METRIC_VERSION}:${id}`,
+      true,
+    ),
+  );
+  const subgroups = buildSubgroups(folds, unscorableTargets);
 
   return {
     protocolVersion: options.manifest.protocolVersion,
@@ -1177,21 +1426,14 @@ export function runCycleBenchmark(options: {
     outcomeCount: folds.length,
     unscorableTargetCount,
     developmentCutoffs,
-    estimators: PREDICTION_ESTIMATOR_IDS.map((id) =>
-      candidateMetrics(
-        id,
-        folds,
-        targetCount,
-        unscorableTargetCount,
-        `${options.manifestSha256}:${options.partition}:${CYCLE_BENCHMARK_METRIC_VERSION}:${id}`,
-        true,
-      ),
-    ),
-    subgroups: buildSubgroups(folds, unscorableTargets),
-    promotionStatus:
-      options.manifest.datasetClass === "synthetic"
-        ? "synthetic_not_evidence"
-        : "not_assessed",
+    estimators,
+    subgroups,
+    promotionVerdict: deriveCycleBenchmarkPromotionVerdict({
+      datasetClass: options.manifest.datasetClass,
+      partition: options.partition,
+      estimators,
+      subgroups,
+    }),
   };
 }
 
