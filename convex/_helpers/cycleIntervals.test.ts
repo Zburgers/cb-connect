@@ -145,6 +145,34 @@ describe("deriveCycleIntervals", () => {
     expect(result.reasonCodes).toContain("RECENT_CORRECTION");
   });
 
+  test.each([
+    ["primary", "self" as const],
+    ["partner-assisted", "partner_assist" as const],
+  ])(
+    "does not treat ordinary %s period completion as a correction",
+    (_label, source) => {
+      const periods = eventsForIntervals([28, 29]);
+      const completedPeriod = periods[1];
+      periods[1] = {
+        ...completedPeriod,
+        source,
+        endDate: addCalendarDays(completedPeriod.startDate, 4),
+        endCertainty: "exact",
+        authorityVersion: 2,
+        updatedAt: 10,
+      };
+
+      const result = deriveCycleIntervals(periods, cutoff);
+
+      expect(result.reasonCodes).not.toContain("RECENT_CORRECTION");
+      expect(
+        result.intervals.every(
+          (interval) => !interval.reasonCodes.includes("RECENT_CORRECTION"),
+        ),
+      ).toBe(true);
+    },
+  );
+
   test("uses the segment active at the cutoff and restores earlier history", () => {
     const segments: CycleIntervalSegment[] = [
       {

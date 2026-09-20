@@ -111,10 +111,7 @@ function activeSegmentAt(
 }
 
 function isCorrected(event: CycleIntervalEvent): boolean {
-  return (
-    event.primaryCorrectionVersion !== undefined ||
-    (event.authorityVersion ?? 0) > 1
-  );
+  return event.primaryCorrectionVersion !== undefined;
 }
 
 function endpoint(event: CycleIntervalEvent): CycleIntervalEndpoint {
