@@ -36,9 +36,11 @@ const enrichedPeriod = {
   canCorrect: true,
 };
 
+const primaryCorrectedPeriod = { ...enrichedPeriod, canCorrect: false };
+
 describe("role-specific period history projections", () => {
   test("partner read-only projection excludes write and audit metadata", () => {
-    const result = projectPartnerPeriodHistory(enrichedPeriod, partnerId);
+    const result = projectPartnerPeriodHistory(primaryCorrectedPeriod, partnerId);
 
     expect(result).toMatchObject({
       startDate: "2026-06-20",
@@ -60,7 +62,7 @@ describe("role-specific period history projections", () => {
   });
 
   test("partner writable projection carries only stale-safe target metadata", () => {
-    const result = projectPartnerPeriodHistory(enrichedPeriod, partnerId, true);
+    const result = projectPartnerPeriodHistory(primaryCorrectedPeriod, partnerId, true);
 
     expect(result).toMatchObject({
       _id: eventId,

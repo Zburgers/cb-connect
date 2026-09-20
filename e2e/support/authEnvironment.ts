@@ -1,6 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
+import { resolveLocalBaseUrl } from "./localBaseUrl";
 
 export const APPROVED_CLERK_ENVIRONMENT = "holy clerk";
 export const APPROVED_CLERK_FRONTEND_API_HOST = "holy-clam-29.clerk.accounts.dev";
@@ -192,7 +193,7 @@ export function loadAuthEnvironment(
     storageDir,
     primaryStorageStatePath: `${storageDir}/primary.json`,
     partnerStorageStatePath: `${storageDir}/partner.json`,
-    baseUrl: environment.PLAYWRIGHT_BASE_URL?.trim() || "http://localhost:3000",
+    baseUrl: resolveLocalBaseUrl(environment.PLAYWRIGHT_BASE_URL),
   };
 }
 

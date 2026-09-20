@@ -56,7 +56,7 @@ Do not reimplement cycle state, factual period coverage, timezone authority, or 
 ## 2. Non-negotiable boundaries
 
 - No production deploy, production data mutation, or production feature exposure from this branch.
-- All stateful Convex QA operations use `bash scripts/convex-safe-exec test -- ...` only.
+- All privileged Convex CLI/admin QA operations use `bash scripts/convex-safe-exec test -- ...` only. Authenticated app reads/mutations use the validated E2E client path with fixture-specific Clerk session tokens, never a privileged key or arbitrary Convex URL.
 - Test Convex target remains `dev:hallowed-hummingbird-284`; approved Clerk environment remains `holy clerk`.
 - D-012 blocks production exposure and final retention/deletion behavior.
 - D-013 blocks opening real benchmark outcomes/promotion until dataset authority, applicable permission/consent basis, calibration/evaluation split, and named statistical/preregistration approval are recorded.
@@ -758,8 +758,8 @@ Every destructive spec/project lane gets a fresh synthetic fixture pair.
 Cover desktop and mobile for:
 
 - configured baseline / limited history;
-- stable personalized history;
-- variable personalized history;
+- stable history eligible for personalization;
+- variable history with sufficient eligible evidence;
 - 28/29/58/28 possible-missing-log behavior;
 - one outlier;
 - persistent shift;
@@ -774,11 +774,22 @@ Cover desktop and mobile for:
 
 No silent skip.
 
-All stateful target operations go through:
+**D-013 promotion guard:** D-013 still requires approved real-outcome authority
+before estimator promotion. Synthetic E2E histories must therefore verify the
+stable and variable inputs while keeping the served estimator
+`configured_v1`/`limited_evidence` with `PERSONALIZATION_NOT_APPROVED`. The
+deterministic estimator tests cover candidate calculations; synthetic fixtures
+cannot establish user-facing personalization or calibration.
+
+All privileged Convex CLI/admin target operations go through:
 
 ```bash
 bash scripts/convex-safe-exec test -- ...
 ```
+
+Authenticated product reads and mutations in this E2E use `ConvexHttpClient`
+with fixture-specific Clerk session tokens and the exact Convex URL returned by
+`loadAuthEnvironment`.
 
 **Verify**
 

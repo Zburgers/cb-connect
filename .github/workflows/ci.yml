@@ -245,6 +245,49 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Run isolated Gates 0-3 matrix
+        if: github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CB_CONNECT_QA_EVIDENCE_DIR="$RUNNER_TEMP/cb-connect-gates-0-3-qa"
+          export CB_CONNECT_QA_RUN_ID="qa-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          bash scripts/run-gates-0-3-qa.sh
+
+      - name: Prepare redacted Gates 0-3 evidence
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/cb-connect-gates-0-3-qa"
+          safe_root="$RUNNER_TEMP/cb-connect-gates-0-3-qa-redacted"
+          mkdir -p "$safe_root"
+          if [[ -f "$source_root/summary.tsv" ]]; then
+            cp "$source_root/summary.tsv" "$safe_root/summary.tsv"
+          fi
+          if [[ -d "$source_root" ]]; then
+            while IFS= read -r file; do
+              relative="${file#${source_root}/}"
+              destination="$safe_root/$relative"
+              mkdir -p "$(dirname "$destination")"
+              cp "$file" "$destination"
+            done < <(find "$source_root" -type f -name 'lane.env')
+          fi
+          printf '%s\n' \
+            "qualified_source_sha=${GITHUB_SHA}" \
+            "approved_convex_target=dev:hallowed-hummingbird-284" \
+            "approved_clerk_environment=holy clerk" \
+            > "$safe_root/qualification.env"
+
+      - name: Upload redacted Gates 0-3 evidence
+        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-connect-gates-0-3-qa-${{ github.sha }}
+          path: ${{ runner.temp }}/cb-connect-gates-0-3-qa-redacted
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Create redacted failure artifact
         if: failure()
         shell: bash

@@ -31,7 +31,34 @@ describe("approved authenticated fixture environment", () => {
       clerkEnvironmentName: APPROVED_CLERK_ENVIRONMENT,
       convexDeployment: APPROVED_CONVEX_DEPLOYMENT,
       runId: "run-123",
+      baseUrl: "http://localhost:3000",
     });
+  });
+
+  test("accepts an explicit loopback browser origin", () => {
+    expect(
+      loadAuthEnvironment({
+        ...validEnvironment,
+        PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3012",
+      }).baseUrl,
+    ).toBe("http://127.0.0.1:3012");
+  });
+
+  test.each([
+    "https://example.com",
+    "http://localhost:0",
+    "http://192.0.2.10:3000",
+    "http://localhost.attacker.example:3000",
+    "http://user@localhost:3000",
+    "http://localhost:3000/dashboard",
+    "http://localhost:3000/?target=remote",
+  ])("rejects an unsafe browser origin: %s", (baseUrl) => {
+    expect(() =>
+      loadAuthEnvironment({
+        ...validEnvironment,
+        PLAYWRIGHT_BASE_URL: baseUrl,
+      }),
+    ).toThrow("Authenticated browser tests require a local HTTP origin");
   });
 
   test.each([

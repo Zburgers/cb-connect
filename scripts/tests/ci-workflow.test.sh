@@ -37,6 +37,8 @@ required_patterns=(
   'Sync authenticated test Convex runtime config'
   'Deploy authenticated test Convex backend'
   'Verify authenticated test Convex backend identity'
+  'name: Run isolated Gates 0-3 matrix'
+  'bash scripts/run-gates-0-3-qa.sh'
   'CONVEX_DEPLOY_KEY: \$\{\{ secrets\.CONVEX_TEST_DEPLOY_KEY \}\}'
   'CB_CONNECT_BACKEND_DEPLOYMENT: dev:hallowed-hummingbird-284'
   'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1'
@@ -50,7 +52,15 @@ for pattern in "${required_patterns[@]}"; do
 done
 
 qualify_block="$(sed -n '/^  qualify:/,/^  authenticated-smoke:/p' "$workflow")"
+authenticated_block="$(sed -n '/^  authenticated-smoke:/,/^  release-artifact:/p' "$workflow")"
 release_block="$(sed -n '/^  release-artifact:/,$p' "$workflow")"
+
+for pattern in 'name: Run isolated Gates 0-3 matrix' 'bash scripts/run-gates-0-3-qa.sh'; do
+  if ! rg -Fq "$pattern" <<<"$authenticated_block"; then
+    echo "Gate 3 authenticated qualification must stay in the protected test job: $pattern" >&2
+    exit 1
+  fi
+done
 
 for value in NEXT_PUBLIC_CONVEX_URL NEXT_PUBLIC_CONVEX_SITE_URL NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; do
   if ! rg -q "${value}: (https://qualification|pk_test_qualification)" <<<"$qualify_block"; then
