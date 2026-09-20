@@ -453,6 +453,49 @@ describe("prediction pause cycle settings", () => {
         cycleLength: 28.5,
       }),
     ).rejects.toThrow("Cycle length must be a whole number of days");
+
+    const legacy = convexTest(schema, modules);
+    const { asPrimary: legacyPrimary, primaryId } =
+      await seedActiveCouple(legacy);
+    await legacy.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 28.5,
+        periodLength: 5,
+        lastUpdatedAt: 1,
+      });
+    });
+    await expect(
+      legacyPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: 29.5,
+      }),
+    ).rejects.toThrow("Cycle length must be a whole number of days");
+  });
+
+  test("preserves an unchanged legacy fractional length during other updates", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("cycleSettings", {
+        userId: primaryId,
+        cycleLength: 28.5,
+        periodLength: 5,
+        lastUpdatedAt: 1,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 28.5,
+      periodLength: 6,
+    });
+
+    const settings = await t.run(async (ctx) =>
+      await ctx.db
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    expect(settings).toMatchObject({ cycleLength: 28.5, periodLength: 6 });
   });
 
   test("pausing preserves existing lengths and records a timestamp", async () => {

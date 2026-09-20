@@ -783,11 +783,19 @@ export const updateCycleSettings = mutation({
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
 
+    const existing = await ctx.db
+      .query("cycleSettings")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .unique();
+
     if (args.cycleLength !== undefined) {
       if (args.cycleLength < 21 || args.cycleLength > 40) {
         throw new Error("Cycle length must be between 21 and 40 days");
       }
-      if (!Number.isSafeInteger(args.cycleLength)) {
+      if (
+        !Number.isSafeInteger(args.cycleLength) &&
+        args.cycleLength !== existing?.cycleLength
+      ) {
         throw new Error("Cycle length must be a whole number of days");
       }
     }
@@ -797,11 +805,6 @@ export const updateCycleSettings = mutation({
         throw new Error("Period length must be between 2 and 8 days");
       }
     }
-
-    const existing = await ctx.db
-      .query("cycleSettings")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .unique();
 
     const pauseStartedAt =
       args.predictionPaused === true
