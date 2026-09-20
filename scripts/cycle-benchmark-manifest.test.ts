@@ -79,9 +79,9 @@ function externalManifest(): CycleBenchmarkManifest {
       authorityReference: "approved-test-record",
       permissionOrConsentBasis: "approved test basis",
       approvedBy: "Named Reviewer",
-      approvedAt: "2026-09-20T10:00:00Z",
+      approvedAt: "2025-09-20T10:00:00Z",
       preregistrationApprover: "Named Statistician",
-      preregistrationApprovedAt: "2026-09-20T10:05:00Z",
+      preregistrationApprovedAt: "2025-09-20T10:05:00Z",
       evaluationHoldout: { state: "locked" },
     },
   };
@@ -158,7 +158,7 @@ describe("cycle benchmark manifest", () => {
             evaluationHoldout: {
               state: "opened_once",
               openedBy: "Named Holdout Reviewer",
-              openedAt: "2026-09-20T11:00:00Z",
+              openedAt: "2025-09-20T11:00:00Z",
             },
           },
         },
@@ -175,13 +175,29 @@ describe("cycle benchmark manifest", () => {
             evaluationHoldout: {
               state: "opened_once",
               openedBy: "Named Holdout Reviewer",
-              openedAt: "2026-09-20T10:04:00Z",
+              openedAt: "2025-09-20T10:04:00Z",
             },
           },
         },
         "evaluation",
       ),
-    ).toThrow("open strictly after authority and preregistration approval");
+    ).toThrow("open after approvals and cannot be future-dated");
+    expect(() =>
+      validateCycleBenchmarkManifest(
+        {
+          ...frozen,
+          authority: {
+            ...frozen.authority,
+            evaluationHoldout: {
+              state: "opened_once",
+              openedBy: "Named Holdout Reviewer",
+              openedAt: "2999-01-01T00:00:00Z",
+            },
+          },
+        },
+        "evaluation",
+      ),
+    ).toThrow("open after approvals and cannot be future-dated");
   });
 
   test("records one evaluation opening before reading outcome bytes", () => {
@@ -200,7 +216,7 @@ describe("cycle benchmark manifest", () => {
     manifest.authority!.evaluationHoldout = {
       state: "opened_once",
       openedBy: "Named Holdout Reviewer",
-      openedAt: "2026-09-20T11:00:00Z",
+      openedAt: "2025-09-20T11:00:00Z",
     };
     const manifestPath = join(directory, "manifest.json");
     const receiptDirectory = join(directory, "openings");

@@ -338,11 +338,9 @@ export function validateCycleBenchmarkManifest(
       Date.parse(authority!.approvedAt),
       Date.parse(authority!.preregistrationApprovedAt),
     );
-    if (
-      openedAt <= latestApprovalAt
-    ) {
+    if (openedAt <= latestApprovalAt || openedAt > Date.now()) {
       throw new Error(
-        "D-013 evaluation holdout must open strictly after authority and preregistration approval",
+        "D-013 evaluation holdout must open after approvals and cannot be future-dated",
       );
     }
   }
