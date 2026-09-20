@@ -17,6 +17,11 @@ export const sendDailyPredictions = internalAction({
         );
         if (!hasConsent) continue;
 
+        await ctx.runMutation(
+          internal.internal.predictionSnapshots.ensureCurrentForUser,
+          { userId: user._id },
+        );
+
         const predictionData = await ctx.runQuery(
           internal.queries.history.getPredictionInputsForUser,
           {

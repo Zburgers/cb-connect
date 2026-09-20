@@ -298,13 +298,26 @@ export default defineSchema({
     generatedAt: v.number(),
     inputCutoffAt: v.number(),
     inputCutoffDate: v.string(),
+    status: v.union(
+      v.literal("configured"),
+      v.literal("personalized"),
+      v.literal("limited_evidence")
+    ),
     estimatorId: v.string(),
-    estimatorVersion: v.string(),
+    estimatorVersion: v.number(),
     intervalMethodVersion: v.string(),
-    calibrationVersion: v.string(),
+    calibrationVersion: v.union(v.string(), v.null()),
     pointDate: v.string(),
     earliestDate: v.string(),
     latestDate: v.string(),
+    probabilityLabel: v.union(
+      v.null(),
+      v.object({
+        level: v.literal(80),
+        calibrationStatus: v.literal("approved"),
+        calibrationVersion: v.string(),
+      })
+    ),
     quality: v.union(
       v.literal("high"),
       v.literal("moderate"),
@@ -317,10 +330,15 @@ export default defineSchema({
     reasonCodes: v.array(
       v.union(
         v.literal("ELEVATED_CALIBRATION_RISK"),
+        v.literal("USER_CONFIGURED_BASELINE"),
+        v.literal("PERSONALIZATION_NOT_APPROVED"),
         v.literal("INSUFFICIENT_CALIBRATION"),
         v.literal("RECENT_TIMING_VARIABLE"),
         v.literal("SPARSE_HISTORY"),
         v.literal("LIMITED_HISTORY"),
+        v.literal("USER_PAUSED"),
+        v.literal("NO_ELIGIBLE_FACT"),
+        v.literal("INVALID_CONFIGURATION"),
         v.literal("APPROXIMATE_DATE"),
         v.literal("LEGACY_UNKNOWN"),
         v.literal("POSSIBLE_MISSING_LOG"),
@@ -334,7 +352,10 @@ export default defineSchema({
       )
     ),
     displayStatus: v.union(v.literal("shadow"), v.literal("visible")),
-    predictionSegmentId: v.id("cyclePredictionSegments"),
+    predictionSegmentId: v.union(
+      v.id("cyclePredictionSegments"),
+      v.literal("default_all_history_v1")
+    ),
     featureVersion: v.string(),
     contractVersion: v.number(),
   })
@@ -360,7 +381,10 @@ export default defineSchema({
         type: v.literal("superseded"),
         sourcePeriodEventId: v.id("periodEvents"),
         sourceAuthorityVersion: v.optional(v.number()),
-        reason: v.literal("primary_correction"),
+        reason: v.union(
+          v.literal("primary_correction"),
+          v.literal("partner_correction")
+        ),
         recordedAt: v.number(),
       })
     )

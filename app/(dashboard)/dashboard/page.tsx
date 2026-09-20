@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useEffect } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
@@ -27,6 +28,9 @@ export default function DashboardPage() {
     api.queries.dashboard.getDashboardData,
     isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
   );
+  const ensurePredictionSnapshot = useMutation(
+    api.mutations.predictionSnapshots.ensureForViewer,
+  );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
   const capabilities = useQuery(
     api.queries.capabilities.getCapabilities,
@@ -44,6 +48,31 @@ export default function DashboardPage() {
     me?.role === "primary" &&
     capabilities?.periodPredictionV2 === true &&
     periodPredictionV2 !== undefined;
+
+  useEffect(() => {
+    if (!isAuthenticated || !data || !me?.role) return;
+    const needsPrimarySnapshot =
+      me.role === "primary" &&
+      capabilities?.periodPredictionV2 === true &&
+      data.hasData &&
+      (data.periodPredictionV2 === null ||
+        data.periodPredictionV2 === undefined);
+    const needsPartnerSnapshot =
+      me.role === "partner" &&
+      capabilities?.partnerPredictionV2 === true &&
+      data.partnerPredictionV2Exposed &&
+      data.partnerPredictionV2?.status !== "estimated";
+    if (needsPrimarySnapshot || needsPartnerSnapshot) {
+      ensurePredictionSnapshot().catch(() => {});
+    }
+  }, [
+    capabilities?.partnerPredictionV2,
+    capabilities?.periodPredictionV2,
+    data,
+    ensurePredictionSnapshot,
+    isAuthenticated,
+    me?.role,
+  ]);
 
   if (
     isLoading ||

@@ -28,6 +28,10 @@ import {
   buildPeriodPrediction,
   type PeriodPredictionV2,
 } from "../_helpers/periodPrediction";
+import {
+  currentPredictionSnapshotInput,
+  readServedPeriodPrediction,
+} from "../_helpers/predictionSnapshotContract";
 
 const MAX_CYCLE_FACT_ROWS = 100;
 
@@ -181,13 +185,26 @@ export const getDashboardData = query({
     const recentPeriod = predictionData
       ? predictionData.periodEvents.find(isHistoryVisible)
       : visiblePeriodEvents[0];
-    const periodPredictionV2: PeriodPredictionV2 | null = predictionData
-      ? buildPeriodPrediction({
-          cycleIntervals: predictionData.cycleIntervals,
-          configuredCycleLength: cycleLength,
-          predictionPaused: cycleSettings?.predictionPaused ?? false,
-        })
-      : null;
+    let periodPredictionV2: PeriodPredictionV2 | null = null;
+    if (predictionData) {
+      const currentPrediction = buildPeriodPrediction({
+        cycleIntervals: predictionData.cycleIntervals,
+        configuredCycleLength: cycleLength,
+        predictionPaused: cycleSettings?.predictionPaused ?? false,
+      });
+      periodPredictionV2 = await readServedPeriodPrediction(
+        ctx,
+        targetUserId,
+        currentPredictionSnapshotInput({
+          prediction: currentPrediction,
+          inputCutoffAt: predictionData.cycleIntervals.basis.cutoffAt,
+          inputCutoffDate: predictionData.cycleIntervals.basis.cutoffDate,
+          periodEvents: predictionData.periodEvents,
+          settings: cycleSettings,
+          activeSegment: predictionData.activeSegment,
+        }),
+      );
+    }
     const v2Bounds = getV2Bounds(periodPredictionV2);
 
     const readModel =

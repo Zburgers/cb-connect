@@ -34,6 +34,7 @@ import type * as mutations_nudges from "../mutations/nudges.js";
 import type * as mutations_painLog from "../mutations/painLog.js";
 import type * as mutations_periods from "../mutations/periods.js";
 import type * as mutations_presence from "../mutations/presence.js";
+import type * as mutations_predictionSnapshots from "../mutations/predictionSnapshots.js";
 import type * as mutations_users from "../mutations/users.js";
 import type * as queries_capabilities from "../queries/capabilities.js";
 import type * as queries_couples from "../queries/couples.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   "mutations/painLog": typeof mutations_painLog;
   "mutations/periods": typeof mutations_periods;
   "mutations/presence": typeof mutations_presence;
+  "mutations/predictionSnapshots": typeof mutations_predictionSnapshots;
   "mutations/users": typeof mutations_users;
   "queries/capabilities": typeof queries_capabilities;
   "queries/couples": typeof queries_couples;

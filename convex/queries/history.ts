@@ -10,6 +10,10 @@ import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { buildPeriodPrediction } from "../_helpers/periodPrediction";
+import {
+  currentPredictionSnapshotInput,
+  readServedPeriodPrediction,
+} from "../_helpers/predictionSnapshotContract";
 import { projectPeriodPredictionForNotification } from "../_helpers/notificationPrediction";
 import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import {
@@ -47,13 +51,25 @@ async function readCurrentPeriodPredictionV2(
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .unique(),
   ]);
+  const currentPrediction = buildPeriodPrediction({
+    cycleIntervals: predictionData.cycleIntervals,
+    configuredCycleLength: cycleSettings?.cycleLength ?? 28,
+    predictionPaused: cycleSettings?.predictionPaused ?? false,
+  });
   return {
     user,
-    prediction: buildPeriodPrediction({
-      cycleIntervals: predictionData.cycleIntervals,
-      configuredCycleLength: cycleSettings?.cycleLength ?? 28,
-      predictionPaused: cycleSettings?.predictionPaused ?? false,
-    }),
+    prediction: await readServedPeriodPrediction(
+      ctx,
+      userId,
+      currentPredictionSnapshotInput({
+        prediction: currentPrediction,
+        inputCutoffAt: predictionData.cycleIntervals.basis.cutoffAt,
+        inputCutoffDate: predictionData.cycleIntervals.basis.cutoffDate,
+        periodEvents: predictionData.periodEvents,
+        settings: cycleSettings,
+        activeSegment: predictionData.activeSegment,
+      }),
+    ),
   };
 }
 
@@ -196,7 +212,7 @@ export const getPredictionInputsForUser = internalQuery({
         ctx,
         args.userId,
       );
-      if (!currentPrediction) return null;
+      if (!currentPrediction || currentPrediction.prediction === null) return null;
 
       return {
         periodPredictionV2: projectPeriodPredictionForNotification(
@@ -263,9 +279,7 @@ export const getPeriodPredictionForUser = internalQuery({
   },
   handler: async (ctx, args) => {
     if (!isPeriodPredictionV2Enabled()) return null;
-    return (
-      await readCurrentPeriodPredictionV2(ctx, args.userId)
-    )?.prediction ?? null;
+    return (await readCurrentPeriodPredictionV2(ctx, args.userId))?.prediction ?? null;
   },
 });
 

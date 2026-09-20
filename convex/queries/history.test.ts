@@ -355,6 +355,10 @@ describe("fact-aware history and prediction reads", () => {
       }
     });
 
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+
     const prediction = await t.query(
       internal.queries.history.getPeriodPredictionForUser,
       { userId: primaryId },
@@ -418,6 +422,10 @@ describe("fact-aware history and prediction reads", () => {
         });
         startDate = addCalendarDays(startDate, 1);
       }
+    });
+
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
     });
 
     const [notificationPrediction, cycleIntervals] = await Promise.all([
@@ -521,6 +529,10 @@ describe("fact-aware history and prediction reads", () => {
         createdAt: 2,
         updatedAt: 2,
       });
+    });
+
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
     });
 
     const [notificationPrediction, cycleIntervals] = await Promise.all([

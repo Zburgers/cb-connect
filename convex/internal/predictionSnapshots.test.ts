@@ -63,13 +63,15 @@ function snapshotArgs(
     generatedAt,
     inputCutoffAt,
     inputCutoffDate: "2026-01-15",
+    status: "limited_evidence" as const,
     estimatorId: "cycle-interval",
-    estimatorVersion: "2",
+    estimatorVersion: 2,
     intervalMethodVersion: "cycle_intervals_v1",
     calibrationVersion: "empirical-residual-quantiles-v1",
     pointDate: "2026-01-30",
     earliestDate: "2026-01-29",
     latestDate: "2026-01-31",
+    probabilityLabel: null,
     quality: "limited_evidence" as const,
     qualityScoreV1: null,
     basisCount: 2,
@@ -224,6 +226,163 @@ describe("immutable prediction snapshots", () => {
       absoluteErrorDays: 0,
       insideWindow: true,
     });
+  });
+
+  test("a newly logged period start appends its eligible outcome to prior snapshots", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const before = await t.run(async (ctx) => ctx.db.get("predictionSnapshots", snapshotId));
+
+    vi.useFakeTimers();
+    try {
+      const { eventId } = await asPrimary.mutation(
+        api.mutations.periods.logPeriodStart,
+        {
+          startDate: "2026-01-30",
+          startCertainty: "exact",
+          timeZone: "UTC",
+        },
+      );
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+      const [after, assessments] = await Promise.all([
+        t.run(async (ctx) => ctx.db.get("predictionSnapshots", snapshotId)),
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+            )
+            .take(2),
+        ),
+      ]);
+      expect(after).toEqual(before);
+      expect(assessments).toHaveLength(1);
+      expect(assessments[0]).toMatchObject({
+        type: "outcome",
+        sourcePeriodEventId: eventId,
+        observedEligibleStartDate: "2026-01-30",
+        signedErrorDays: 0,
+        absoluteErrorDays: 0,
+        insideWindow: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a partner correction supersedes the assisted-start snapshot outcome", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const before = await t.run(async (ctx) => ctx.db.get("predictionSnapshots", snapshotId));
+
+    vi.useFakeTimers();
+    try {
+      const { eventId } = await asPartner.mutation(
+        api.mutations.periods.assistLogPeriodStart,
+        { startDate: "2026-01-30" },
+      );
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+      await asPartner.mutation(
+        api.mutations.periods.correctAssistedPeriodEvent,
+        {
+          periodEventId: eventId,
+          expectedAuthorityVersion: 1,
+          startDate: "2026-01-31",
+        },
+      );
+
+      const [after, outcomes, supersessions] = await Promise.all([
+        t.run(async (ctx) => ctx.db.get("predictionSnapshots", snapshotId)),
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+            )
+            .take(2),
+        ),
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+            )
+            .take(2),
+        ),
+      ]);
+      expect(after).toEqual(before);
+      expect(outcomes).toHaveLength(1);
+      expect(outcomes[0]).toMatchObject({
+        observedEligibleStartDate: "2026-01-30",
+        sourcePeriodEventId: eventId,
+      });
+      expect(supersessions).toHaveLength(1);
+      expect(supersessions[0]).toMatchObject({
+        type: "superseded",
+        sourcePeriodEventId: eventId,
+        sourceAuthorityVersion: 2,
+        reason: "partner_correction",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("feature-off period starts do not schedule Gate 3 snapshot work", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+
+    vi.useFakeTimers();
+    try {
+      await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: "2026-01-30",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      });
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+      const [snapshots, assessments] = await Promise.all([
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshots")
+            .withIndex("by_user_and_generated_at", (q) => q.eq("userId", primaryId))
+            .take(2),
+        ),
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+            )
+            .take(2),
+        ),
+      ]);
+      expect(snapshots).toHaveLength(1);
+      expect(assessments).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("a primary edit appends supersession when cycle-fact versioning is off", async () => {

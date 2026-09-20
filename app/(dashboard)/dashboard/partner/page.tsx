@@ -34,6 +34,9 @@ export default function PartnerPage() {
       ? { todayDate: toLocalDateString() }
       : "skip",
   );
+  const ensurePredictionSnapshot = useMutation(
+    api.mutations.predictionSnapshots.ensureForViewer,
+  );
   const generateCode = useMutation(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
@@ -60,6 +63,22 @@ export default function PartnerPage() {
   useEffect(() => {
     setPartnerNickname(coupleStatus?.partner?.nickname ?? "");
   }, [coupleStatus?.partner?.nickname]);
+
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      me?.role === "partner" &&
+      partnerDashboardData?.partnerPredictionV2Exposed &&
+      partnerDashboardData.partnerPredictionV2?.status !== "estimated"
+    ) {
+      ensurePredictionSnapshot().catch(() => {});
+    }
+  }, [
+    ensurePredictionSnapshot,
+    isAuthenticated,
+    me?.role,
+    partnerDashboardData,
+  ]);
 
   // Still loading auth
   if (isLoading || me === undefined) return <LoadingSpinner />;

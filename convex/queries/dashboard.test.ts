@@ -108,6 +108,8 @@ describe("dashboard cycle state read model", () => {
       }
     });
 
+    await asPrimary.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
+
     const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
       todayDate: "2026-08-25",
     });
@@ -122,6 +124,15 @@ describe("dashboard cycle state read model", () => {
       estimatorId: "configured_v1",
       basisCount: 3,
     });
+    const snapshot = await t.run(async (ctx) =>
+      ctx.db
+        .query("predictionSnapshots")
+        .withIndex("by_user_and_generated_at", (q) => q.eq("userId", primaryId))
+        .order("desc")
+        .first(),
+    );
+    expect(snapshot?.predictionSegmentId).toBe("default_all_history_v1");
+    expect(result.periodPredictionV2).toMatchObject({ snapshotId: snapshot?._id });
     expect(result.cycleStateV1).toMatchObject({
       status: "estimated",
       bounds: { version: 2, pointDate: "2026-09-21" },
@@ -161,6 +172,8 @@ describe("dashboard cycle state read model", () => {
         startDate = addCalendarDays(startDate, 1);
       }
     });
+
+    await asPrimary.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
 
     const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
       todayDate: "2026-02-01",
@@ -213,6 +226,8 @@ describe("dashboard cycle state read model", () => {
         startDate = addCalendarDays(startDate, 1);
       }
     });
+
+    await asPrimary.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
 
     const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
       todayDate: "2026-02-01",
@@ -291,6 +306,8 @@ describe("dashboard cycle state read model", () => {
         });
       }
     });
+
+    await asPartner.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
 
     const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
       todayDate: "2026-08-25",

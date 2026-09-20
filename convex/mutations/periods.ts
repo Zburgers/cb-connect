@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
 import {
   mutation,
   internalMutation,
@@ -18,12 +19,31 @@ import {
 import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
-import { appendPrimaryCorrectionAssessments } from "../internal/predictionSnapshots";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
+import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
   v.literal("approximate")
 );
+
+async function schedulePredictionRefresh(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  eventId: Id<"periodEvents">,
+) {
+  if (!isPeriodPredictionV2Enabled()) return;
+  await ctx.scheduler.runAfter(
+    0,
+    internal.internal.predictionSnapshots.recordOutcomesForStart,
+    { sourcePeriodEventId: eventId },
+  );
+  await ctx.scheduler.runAfter(
+    0,
+    internal.internal.predictionSnapshots.ensureCurrentForUser,
+    { userId },
+  );
+}
 
 function currentAuthorityVersion(period: Doc<"periodEvents">): number {
   return period.authorityVersion ?? 0;
@@ -227,6 +247,7 @@ export const logPeriodStart = mutation({
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      await schedulePredictionRefresh(ctx, user._id, eventId);
       return { eventId };
     }
 
@@ -249,6 +270,7 @@ export const logPeriodStart = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    await schedulePredictionRefresh(ctx, user._id, eventId);
 
     return { eventId };
   },
@@ -366,6 +388,7 @@ export const assistLogPeriodStart = mutation({
         createdAt: now,
         updatedAt: now,
       });
+      await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
       await ctx.db.insert("notificationLog", {
         userId: primaryMembership.userId,
         type: "partner_assisted_period_start",
@@ -401,6 +424,7 @@ export const assistLogPeriodStart = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
 
     await ctx.db.insert("notificationLog", {
       userId: primaryMembership.userId,
@@ -602,6 +626,12 @@ export const correctAssistedPeriodEvent = mutation({
       authorityVersion: authorityVersion + 1,
       updatedAt: Date.now(),
     });
+    await appendCorrectionAssessments(ctx, {
+      userId: primaryMembership.userId,
+      periodEventId: period._id,
+      sourceAuthorityVersion: authorityVersion + 1,
+      reason: "partner_correction",
+    });
 
     return { eventId: period._id };
   },
@@ -648,9 +678,10 @@ export const updatePeriodEvent = mutation({
         primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
         updatedAt: Date.now(),
       });
-      await appendPrimaryCorrectionAssessments(ctx, {
+      await appendCorrectionAssessments(ctx, {
         userId: user._id,
         periodEventId: args.periodEventId,
+        reason: "primary_correction",
       });
       return { success: true };
     }
@@ -700,10 +731,11 @@ export const updatePeriodEvent = mutation({
       primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: Date.now(),
     });
-    await appendPrimaryCorrectionAssessments(ctx, {
+    await appendCorrectionAssessments(ctx, {
       userId: user._id,
       periodEventId: args.periodEventId,
       sourceAuthorityVersion: authorityVersion + 1,
+      reason: "primary_correction",
     });
     return { success: true };
   },
@@ -723,9 +755,10 @@ export const deletePeriodEvent = mutation({
     }
 
     if (!isCycleFactsV1Enabled()) {
-      await appendPrimaryCorrectionAssessments(ctx, {
+      await appendCorrectionAssessments(ctx, {
         userId: user._id,
         periodEventId: args.periodEventId,
+        reason: "primary_correction",
       });
       await ctx.db.delete("periodEvents", args.periodEventId);
       return { success: true };
@@ -755,10 +788,11 @@ export const deletePeriodEvent = mutation({
       primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: tombstoneAt,
     });
-    await appendPrimaryCorrectionAssessments(ctx, {
+    await appendCorrectionAssessments(ctx, {
       userId: user._id,
       periodEventId: args.periodEventId,
       sourceAuthorityVersion: authorityVersion + 1,
+      reason: "primary_correction",
     });
     return { success: true };
   },
