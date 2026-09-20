@@ -66,10 +66,11 @@ export function estimatePredictionCandidate(
   input: PredictionEstimatorInput,
 ): PredictionEstimatorResult {
   if (
-    !Number.isSafeInteger(input.configuredCycleLength) ||
-    input.configuredCycleLength <= 0
+    !Number.isFinite(input.configuredCycleLength) ||
+    input.configuredCycleLength < 21 ||
+    input.configuredCycleLength > 40
   ) {
-    throw new Error("Configured cycle length must be a positive whole number");
+    throw new Error("Configured cycle length must be between 21 and 40 days");
   }
   if (
     input.intervalsOldestToNewest.some(
