@@ -4,6 +4,7 @@ import {
   buildCycleReadModel,
   type CycleReadModelInput,
 } from "./cycleReadModel";
+import type { PredictionBoundsV2 } from "./predictionBounds";
 
 function period(
   overrides: Partial<CycleReadModelInput["periods"][number]> = {}
@@ -29,6 +30,22 @@ function input(
     ...overrides,
   };
 }
+
+const v2Bounds: PredictionBoundsV2 = {
+  version: 2,
+  source: "period_prediction_v2",
+  status: "limited_evidence",
+  pointDate: "2026-01-30",
+  earliestDate: "2026-01-27",
+  latestDate: "2026-02-02",
+  probabilityLabel: null,
+  quality: "limited_evidence",
+  basisCount: 4,
+  estimatorId: "configured_v1",
+  estimatorVersion: 1,
+  calibrationVersion: null,
+  reasonCodes: ["USER_CONFIGURED_BASELINE"],
+};
 
 describe("authoritative cycle dashboard read model", () => {
   test("keeps an exact closed three-day period Recorded on its final day", () => {
@@ -205,6 +222,38 @@ describe("authoritative cycle dashboard read model", () => {
       status: "insufficient_data",
       evidence: "UNAVAILABLE",
       reason: "NO_ELIGIBLE_FACT",
+    });
+    expect(result.cycleInfo).toBeNull();
+  });
+
+  test("feeds V2 point and range through the existing Gate 2 reducer", () => {
+    const result = buildCycleReadModel(
+      input({
+        targetDate: "2026-01-20",
+        predictionBounds: v2Bounds,
+      }),
+    );
+
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: v2Bounds,
+      cycleDay: 20,
+    });
+    expect(result.cycleInfo).toMatchObject({
+      predictedNextPeriodStart: "2026-01-30",
+      predictedNextPeriodEnd: "2026-02-03",
+      daysUntilNextPeriod: 10,
+    });
+  });
+
+  test("an explicit unavailable V2 result does not fall back to legacy bounds", () => {
+    const result = buildCycleReadModel(
+      input({ predictionBounds: null }),
+    );
+
+    expect(result.cycleStateV1).toMatchObject({
+      status: "insufficient_data",
+      reason: "INVALID_BOUNDS",
     });
     expect(result.cycleInfo).toBeNull();
   });

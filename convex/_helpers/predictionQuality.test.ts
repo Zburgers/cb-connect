@@ -57,4 +57,18 @@ describe("prediction quality diagnostics", () => {
     expect(result.quality).toBe("limited_evidence");
     expect(result.reasonCodes).toContain("SPARSE_HISTORY");
   });
+
+  test("keeps uncalibrated variable timing limited while naming the variation", () => {
+    const result = derivePredictionQuality({
+      calibrationRiskDecile: null,
+      calibrationOutcomeCount: 0,
+      historyCount: 5,
+      variabilityBand: "unavailable",
+      observedSpreadDays: 3,
+    });
+
+    expect(result.quality).toBe("limited_evidence");
+    expect(result.qualityScoreV1).toBeNull();
+    expect(result.reasonCodes).toContain("RECENT_TIMING_VARIABLE");
+  });
 });

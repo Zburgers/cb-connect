@@ -336,6 +336,56 @@ describe("fact-aware history and prediction reads", () => {
     );
   });
 
+  test("serves the V2 prediction internally for primaries only", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      let startDate = "2026-06-01";
+      for (let index = 0; index < 4; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: Date.now() - 1_000 + index,
+          updatedAt: Date.now() - 1_000 + index,
+        });
+        startDate = addCalendarDays(startDate, 28);
+      }
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: primaryId },
+    );
+    const partnerPrediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: partnerId },
+    );
+    const partnerIntervals = await t.query(
+      internal.queries.history.getCycleIntervalsForUser,
+      { userId: partnerId },
+    );
+
+    expect(prediction).toMatchObject({
+      version: 2,
+      status: "limited_evidence",
+      pointDate: "2026-09-21",
+      estimatorId: "configured_v1",
+      basisCount: 3,
+      probabilityLabel: null,
+      reasonCodes: expect.arrayContaining([
+        "PERSONALIZATION_NOT_APPROVED",
+        "USER_CONFIGURED_BASELINE",
+      ]),
+    });
+    expect(partnerPrediction).toBeNull();
+    expect(partnerIntervals).toBeNull();
+  });
+
   test("V2 finds exact anchors beyond 100 newer ineligible rows", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
     const t = convexTest(schema, modules);

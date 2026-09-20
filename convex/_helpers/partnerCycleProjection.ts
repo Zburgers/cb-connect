@@ -1,6 +1,7 @@
 import type { CycleState } from "./cycleState";
 import {
   isValidPredictionBounds,
+  type LegacyPredictionBounds,
   type PredictionBounds,
 } from "./predictionBounds";
 
@@ -21,7 +22,7 @@ type PartnerEstimatedProjection = {
   phase: CyclePhase;
   evidence: "CALENDAR_ESTIMATE";
   cycleDay: number;
-  bounds: PredictionBounds;
+  bounds: LegacyPredictionBounds;
   reason: "ELIGIBLE_FACT_WITHIN_LATEST_BOUND";
 };
 
@@ -31,7 +32,7 @@ type PartnerLateProjection = {
   phase: null;
   evidence: "TIMING_UNCERTAINTY";
   cycleDay: null;
-  bounds: PredictionBounds;
+  bounds: LegacyPredictionBounds;
   reason: "AFTER_LATEST_BOUND";
 };
 
@@ -161,6 +162,28 @@ export function isPrimaryCycleState(value: unknown): value is CycleState {
 }
 
 function copyBounds(bounds: PredictionBounds): PredictionBounds {
+  return bounds.version === 1
+    ? {
+        version: bounds.version,
+        source: bounds.source,
+        expectedDate: bounds.expectedDate,
+        earliestDate: bounds.earliestDate,
+        latestDate: bounds.latestDate,
+        reason: bounds.reason,
+        basisCount: bounds.basisCount,
+      }
+    : {
+        ...bounds,
+        probabilityLabel: bounds.probabilityLabel
+          ? { ...bounds.probabilityLabel }
+          : null,
+        reasonCodes: [...bounds.reasonCodes],
+      };
+}
+
+function copyLegacyBounds(
+  bounds: LegacyPredictionBounds,
+): LegacyPredictionBounds {
   return {
     version: bounds.version,
     source: bounds.source,
@@ -239,23 +262,25 @@ function copyPartnerState(state: CycleState): PartnerCycleProjection | null {
         reason: state.reason,
       };
     case "estimated":
+      if (state.bounds.version !== 1) return null;
       return {
         version: state.version,
         status: state.status,
         phase: state.phase,
         evidence: state.evidence,
         cycleDay: state.cycleDay,
-        bounds: copyBounds(state.bounds),
+        bounds: copyLegacyBounds(state.bounds),
         reason: state.reason,
       };
     case "late_or_uncertain":
+      if (state.bounds.version !== 1) return null;
       return {
         version: state.version,
         status: state.status,
         phase: state.phase,
         evidence: state.evidence,
         cycleDay: state.cycleDay,
-        bounds: copyBounds(state.bounds),
+        bounds: copyLegacyBounds(state.bounds),
         reason: state.reason,
       };
     case "insufficient_data":

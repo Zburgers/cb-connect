@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -77,6 +78,199 @@ describe("dashboard cycle state read model", () => {
       predictedNextPeriodStart: "2026-01-29",
       predictedNextPeriodEnd: "2026-02-02",
       phaseDescription: "Recorded period",
+    });
+  });
+
+  test("serves primary V2 prediction through Gate 2 without leaking the legacy exact date", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      for (const [index, startDate] of [
+        "2026-06-01",
+        "2026-06-29",
+        "2026-07-27",
+        "2026-08-24",
+      ].entries()) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: Date.now() - 1_000 + index,
+          updatedAt: Date.now() - 1_000 + index,
+        });
+      }
+    });
+
+    const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.cycleInfo).toBeNull();
+    expect(result.periodPredictionV2).toMatchObject({
+      status: "limited_evidence",
+      pointDate: "2026-09-21",
+      earliestDate: "2026-09-21",
+      latestDate: "2026-09-24",
+      probabilityLabel: null,
+      estimatorId: "configured_v1",
+      basisCount: 3,
+    });
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 2, pointDate: "2026-09-21" },
+    });
+  });
+
+  test("keeps V2 and Gate 2 on the same anchor beyond the bounded legacy window", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      let startDate = "2026-05-01";
+      for (let index = 0; index < 105; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "approximate",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 2,
+          updatedAt: index + 2,
+        });
+        startDate = addCalendarDays(startDate, 1);
+      }
+    });
+
+    const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-02-01",
+    });
+
+    expect(result.periodPredictionV2).toMatchObject({
+      status: "configured",
+      pointDate: "2026-01-29",
+      basisCount: 0,
+    });
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 2, pointDate: result.periodPredictionV2?.pointDate },
+    });
+  });
+
+  test("keeps a V2 prediction visible when the bounded history contains only tombstones", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      let startDate = "2026-05-01";
+      for (let index = 0; index < 101; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          tombstoneByUserId: primaryId,
+          tombstoneAt: index + 2,
+          tombstoneAuthorityVersion: 2,
+          createdAt: index + 2,
+          updatedAt: index + 2,
+        });
+        startDate = addCalendarDays(startDate, 1);
+      }
+    });
+
+    const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-02-01",
+    });
+
+    expect(result.hasData).toBe(true);
+    expect(result.periodPredictionV2).toMatchObject({
+      status: "configured",
+      pointDate: "2026-01-29",
+    });
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 2, pointDate: "2026-01-29" },
+    });
+  });
+
+  test("does not expose primary V2 prediction details to partner dashboard reads", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-24",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now() - 1_000,
+        updatedAt: Date.now() - 1_000,
+      });
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result).not.toHaveProperty("periodPredictionV2");
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 1 },
+    });
+  });
+
+  test("returns an unavailable V2 contract when the primary has no eligible start", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    const result = await asPrimary.query(api.queries.dashboard.getDashboardData, {});
+
+    expect(result.hasData).toBe(false);
+    expect(result.periodPredictionV2).toMatchObject({
+      status: "unavailable",
+      pointDate: null,
+      probabilityLabel: null,
     });
   });
 

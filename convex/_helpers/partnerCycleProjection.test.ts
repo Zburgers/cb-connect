@@ -6,7 +6,10 @@ import {
   type PartnerCycleProjection,
   type ProjectionContext,
 } from "./partnerCycleProjection";
-import type { PredictionBounds } from "./predictionBounds";
+import type {
+  PredictionBounds,
+  PredictionBoundsV2,
+} from "./predictionBounds";
 
 const bounds: PredictionBounds = {
   version: 1,
@@ -16,6 +19,23 @@ const bounds: PredictionBounds = {
   latestDate: "2026-10-01",
   reason: "LEGACY_UNCALIBRATED_GRACE",
   basisCount: 1,
+};
+
+const v2Bounds: PredictionBoundsV2 = {
+  version: 2,
+  source: "period_prediction_v2",
+  status: "limited_evidence",
+  pointDate: "2026-09-28",
+  earliestDate: "2026-09-25",
+  latestDate: "2026-10-01",
+  probabilityLabel: null,
+  quality: "limited_evidence",
+  basisCount: 4,
+  estimatorId: "configured_v1",
+  estimatorVersion: 1,
+  calibrationVersion: null,
+  reasonCodes: ["USER_CONFIGURED_BASELINE"],
+  snapshotId: "predictionSnapshots:private-id",
 };
 
 const recordedState: CycleState = {
@@ -36,6 +56,11 @@ const estimatedState: CycleState = {
   cycleDay: 25,
   bounds,
   reason: "ELIGIBLE_FACT_WITHIN_LATEST_BOUND",
+};
+
+const v2EstimatedState: CycleState = {
+  ...estimatedState,
+  bounds: v2Bounds,
 };
 
 const lateState: CycleState = {
@@ -169,6 +194,14 @@ test("partner projection redacts recorded coveringEventId", () => {
     reason: "CONFIRMED_EVENT_COVERS_TODAY",
   });
   expect(projection).not.toHaveProperty("coveringEventId");
+});
+
+test("partner projection fails closed for V2 bounds and keeps them primary-only", () => {
+  expect(projectCycleState(v2EstimatedState, partnerContext)).toBeNull();
+  expect(projectCycleState(v2EstimatedState, primaryContext)).toMatchObject({
+    status: "estimated",
+    bounds: { version: 2, snapshotId: "predictionSnapshots:private-id" },
+  });
 });
 
 test.each([

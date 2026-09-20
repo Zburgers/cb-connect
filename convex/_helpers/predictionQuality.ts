@@ -27,6 +27,7 @@ export type DerivePredictionQualityInput = {
   calibrationOutcomeCount: number;
   historyCount: number;
   variabilityBand: PredictionVariability;
+  observedSpreadDays?: number;
 };
 
 export function derivePredictionQuality(
@@ -37,6 +38,9 @@ export function derivePredictionQuality(
     input.calibrationOutcomeCount < 0 ||
     !Number.isSafeInteger(input.historyCount) ||
     input.historyCount < 0 ||
+    (input.observedSpreadDays !== undefined &&
+      (!Number.isSafeInteger(input.observedSpreadDays) ||
+        input.observedSpreadDays < 0)) ||
     (input.calibrationRiskDecile !== null &&
       (!Number.isInteger(input.calibrationRiskDecile) ||
         input.calibrationRiskDecile < 0 ||
@@ -47,6 +51,9 @@ export function derivePredictionQuality(
 
   const reasonCodes = new Set<PredictionQualityReasonCode>();
   if (input.historyCount < 3) reasonCodes.add("SPARSE_HISTORY");
+  if ((input.observedSpreadDays ?? 0) > 0) {
+    reasonCodes.add("RECENT_TIMING_VARIABLE");
+  }
   if (
     input.calibrationOutcomeCount < MIN_CALIBRATION_RESIDUALS ||
     input.calibrationRiskDecile === null ||

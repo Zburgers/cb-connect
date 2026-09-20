@@ -6,6 +6,7 @@ import {
   type PartnerCyclePresentation,
 } from "./partnerCyclePresentation";
 import type { PartnerCycleProjection } from "@/convex/_helpers/partnerCycleProjection";
+import type { CycleState } from "@/convex/_helpers/cycleState";
 
 const bounds = {
   version: 1 as const,
@@ -128,6 +129,39 @@ describe("partner cycle presentation", () => {
     expect(result.basisCount).toBe(1);
     expect(result.bounds).not.toHaveProperty("source");
     expect(result.bounds).not.toHaveProperty("reason");
+  });
+
+  test("refuses primary-only recorded IDs and V2 prediction bounds", () => {
+    const privateRecorded: CycleState = {
+      version: 1,
+      status: "recorded_period",
+      phase: "menstruation",
+      evidence: "RECORDED_EXACT",
+      cycleDay: 2,
+      coveringEventId: "periodEvents:private-id",
+      reason: "CONFIRMED_EVENT_COVERS_TODAY",
+    };
+    const privateV2Bounds: CycleState = {
+      ...estimated,
+      bounds: {
+        version: 2,
+        source: "period_prediction_v2",
+        status: "limited_evidence",
+        pointDate: "2026-09-28",
+        earliestDate: "2026-09-25",
+        latestDate: "2026-10-01",
+        probabilityLabel: null,
+        quality: "limited_evidence",
+        basisCount: 4,
+        estimatorId: "configured_v1",
+        estimatorVersion: 1,
+        calibrationVersion: null,
+        reasonCodes: ["USER_CONFIGURED_BASELINE"],
+      },
+    };
+
+    expect(getPartnerCyclePresentation(privateRecorded).visible).toBe(false);
+    expect(getPartnerCyclePresentation(privateV2Bounds).visible).toBe(false);
   });
 
   test.each([

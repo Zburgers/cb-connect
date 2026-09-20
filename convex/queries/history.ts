@@ -1,10 +1,15 @@
-import { internalQuery, query, type QueryCtx } from "../_generated/server";
+import {
+  internalQuery,
+  query,
+  type QueryCtx,
+} from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
-import { deriveCycleIntervals } from "../_helpers/cycleIntervals";
+import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
+import { buildPeriodPrediction } from "../_helpers/periodPrediction";
 import {
   getTimelineStateForDate,
   type TimelineStateMetadata,
@@ -200,29 +205,35 @@ export const getCycleIntervalsForUser = internalQuery({
   },
   handler: async (ctx, args) => {
     if (!isPeriodPredictionV2Enabled()) return null;
+    const predictionData = await readCyclePredictionData(ctx, args.userId);
+    if (!predictionData.user || predictionData.user.role !== "primary") {
+      return null;
+    }
+    return predictionData.cycleIntervals;
+  },
+});
 
-    const cutoffAt = Date.now();
-    const [allPeriods, activeSegment, user] = await Promise.all([
+export const getPeriodPredictionForUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    if (!isPeriodPredictionV2Enabled()) return null;
+    const [predictionData, cycleSettings] = await Promise.all([
+      readCyclePredictionData(ctx, args.userId),
       ctx.db
-        .query("periodEvents")
-        .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
-        .collect(),
-      ctx.db
-        .query("cyclePredictionSegments")
-        .withIndex("by_user_and_status", (q) =>
-          q.eq("userId", args.userId).eq("status", "active"),
-        )
+        .query("cycleSettings")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
         .unique(),
-      ctx.db.get("users", args.userId),
     ]);
+    if (!predictionData.user || predictionData.user.role !== "primary") {
+      return null;
+    }
 
-    return deriveCycleIntervals(allPeriods, {
-      cutoffAt,
-      cutoffDate: toCalendarDateInTimeZone(
-        new Date(cutoffAt),
-        user?.timeZone ?? "UTC",
-      ),
-      segments: activeSegment ? [activeSegment] : [],
+    return buildPeriodPrediction({
+      cycleIntervals: predictionData.cycleIntervals,
+      configuredCycleLength: cycleSettings?.cycleLength ?? 28,
+      predictionPaused: cycleSettings?.predictionPaused ?? false,
     });
   },
 });

@@ -5,20 +5,61 @@ import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import {
   calculateCycleInfo,
   getPainSeverityBucket,
+  type CycleInfo,
 } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import { buildCycleReadModel } from "../_helpers/cycleReadModel";
+import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { isHistoryVisible } from "../_helpers/cycleFactEligibility";
 import { isCycleStateV1ExposedToUser } from "../_helpers/cycleStateExposure";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import { projectCycleState } from "../_helpers/partnerCycleProjection";
+import type { PredictionBounds } from "../_helpers/predictionBounds";
+import type { CycleState } from "../_helpers/cycleState";
+import type { PartnerCycleProjection } from "../_helpers/partnerCycleProjection";
+import {
+  buildPeriodPrediction,
+  type PeriodPredictionV2,
+} from "../_helpers/periodPrediction";
 
 const MAX_CYCLE_FACT_ROWS = 100;
+
+type DashboardData = {
+  hasData: boolean;
+  isPartnerView: boolean;
+  message?: string;
+  cycleInfo?: CycleInfo | null;
+  cycleStateV1: CycleState | PartnerCycleProjection | null;
+  cycleStateV1Exposed: boolean;
+  periodPredictionV2?: PeriodPredictionV2;
+  painData?: {
+    score: number;
+    severity: ReturnType<typeof getPainSeverityBucket>;
+    tags?: Doc<"painLogs">["tags"];
+    note?: string;
+  } | null;
+  painTip?: Doc<"painTips"> | null;
+  nutritionTips?: Doc<"nutritionTips">[];
+};
+
+function getV2Bounds(
+  prediction: PeriodPredictionV2 | null,
+): PredictionBounds | null {
+  switch (prediction?.status) {
+    case "configured":
+    case "personalized":
+    case "limited_evidence":
+      return prediction;
+    default:
+      return null;
+  }
+}
 
 export const getDashboardData = query({
   args: {
     todayDate: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<DashboardData> => {
     const user = await getCurrentUserOrNull(ctx);
     if (!user) {
       return {
@@ -97,18 +138,35 @@ export const getDashboardData = query({
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
+    const periodPredictionV2Enabled =
+      user.role === "primary" && isPeriodPredictionV2Enabled();
 
-    // Keep the semantic input bounded while retaining the newest Gate 1 facts.
-    const periodEvents = await ctx.db
-      .query("periodEvents")
-      .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
-      .order("desc")
-      .take(MAX_CYCLE_FACT_ROWS);
+    // Keep Gate 2's default input bounded; V2 reuses the full history below.
+    const periodEvents = periodPredictionV2Enabled
+      ? []
+      : await ctx.db
+          .query("periodEvents")
+          .withIndex("by_user_and_start", (q) => q.eq("userId", targetUserId))
+          .order("desc")
+          .take(MAX_CYCLE_FACT_ROWS);
     const visiblePeriodEvents = periodEvents.filter(isHistoryVisible);
-    const recentPeriod = visiblePeriodEvents[0];
 
     const today =
       args.todayDate ?? toCalendarDateInTimeZone(new Date(), targetUser.timeZone);
+    const predictionData = periodPredictionV2Enabled
+      ? await readCyclePredictionData(ctx, targetUserId, targetUser)
+      : null;
+    const recentPeriod = predictionData
+      ? predictionData.periodEvents.find(isHistoryVisible)
+      : visiblePeriodEvents[0];
+    const periodPredictionV2: PeriodPredictionV2 | null = predictionData
+      ? buildPeriodPrediction({
+          cycleIntervals: predictionData.cycleIntervals,
+          configuredCycleLength: cycleLength,
+          predictionPaused: cycleSettings?.predictionPaused ?? false,
+        })
+      : null;
+    const v2Bounds = getV2Bounds(periodPredictionV2);
 
     const readModel =
       cycleStateV1Exposed && canViewPhase
@@ -118,15 +176,20 @@ export const getDashboardData = query({
             cycleLength,
             periodLength,
             predictionPaused: cycleSettings?.predictionPaused ?? false,
-            periods: visiblePeriodEvents.map((period) => ({
-              id: period._id,
-              startDate: period.startDate,
-              endDate: period.endDate,
-              startCertainty: period.startCertainty,
-              endCertainty: period.endCertainty,
-              legacyReason: period.legacyReason,
-              tombstoneAt: period.tombstoneAt,
-            })),
+            ...(periodPredictionV2Enabled
+              ? { predictionBounds: v2Bounds }
+              : {}),
+            periods: (predictionData?.periodEvents ?? visiblePeriodEvents).map(
+              (period) => ({
+                id: period._id,
+                startDate: period.startDate,
+                endDate: period.endDate,
+                startCertainty: period.startCertainty,
+                endCertainty: period.endCertainty,
+                legacyReason: period.legacyReason,
+                tombstoneAt: period.tombstoneAt,
+              }),
+            ),
           })
         : null;
 
@@ -160,6 +223,7 @@ export const getDashboardData = query({
         cycleInfo: null,
         cycleStateV1,
         cycleStateV1Exposed,
+        ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
         painData: null,
         painTip: null,
         nutritionTips: [],
@@ -167,16 +231,17 @@ export const getDashboardData = query({
     }
 
     // Calculate current cycle info
-    const cycleInfo =
-      readModel?.cycleInfo ??
-      (cycleStateV1Exposed
-        ? null
-        : calculateCycleInfo(
-            recentPeriod.startDate,
-            cycleLength,
-            periodLength,
-            today
-          ));
+    const cycleInfo = periodPredictionV2Enabled
+      ? null
+      : readModel?.cycleInfo ??
+        (cycleStateV1Exposed
+          ? null
+          : calculateCycleInfo(
+              recentPeriod.startDate,
+              cycleLength,
+              periodLength,
+              today,
+            ));
 
     // Get today's pain log
     const todayPainLog = await ctx.db
@@ -203,6 +268,7 @@ export const getDashboardData = query({
           cycleInfo: null,
           cycleStateV1: null,
           cycleStateV1Exposed,
+          ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
           painData,
           painTip: null,
           nutritionTips: [],
@@ -226,6 +292,7 @@ export const getDashboardData = query({
         cycleInfo: null,
         cycleStateV1,
         cycleStateV1Exposed,
+        ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
         painData,
         painTip: null,
         nutritionTips: [],
@@ -281,6 +348,7 @@ export const getDashboardData = query({
       cycleInfo: partnerV1View ? null : cycleInfo,
       cycleStateV1,
       cycleStateV1Exposed,
+      ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
       painData,
       painTip: partnerV1View ? null : painTip,
       nutritionTips: partnerV1View ? [] : nutritionTips,

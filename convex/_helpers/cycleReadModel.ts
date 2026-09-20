@@ -12,6 +12,7 @@ import {
 import {
   createLegacyPredictionBounds,
   daysBetweenCalendarDates,
+  predictionPointDate,
   type PredictionBounds,
 } from "./predictionBounds";
 import { addCalendarDays } from "./cycleCalculations";
@@ -24,6 +25,8 @@ export type CycleReadModelInput = {
   cycleLength: number;
   periodLength: number;
   predictionPaused?: boolean;
+  /** Omitted keeps the Gate 2 configured path; null deliberately fails closed. */
+  predictionBounds?: PredictionBounds | null;
   periods: readonly CycleReadModelPeriod[];
 };
 
@@ -87,18 +90,19 @@ function projectCycleInfo(
     return null;
   }
 
+  const pointDate = predictionPointDate(bounds);
   const daysUntilNextPeriod = Math.max(
     0,
-    daysBetweenCalendarDates(targetDate, bounds.expectedDate)
+    daysBetweenCalendarDates(targetDate, pointDate)
   );
 
   return {
     phase: state.phase,
     cycleDay: state.cycleDay,
     daysUntilNextPeriod,
-    predictedNextPeriodStart: bounds.expectedDate,
+    predictedNextPeriodStart: pointDate,
     predictedNextPeriodEnd: addCalendarDays(
-      bounds.expectedDate,
+      pointDate,
       periodLength - 1
     ),
     phaseDescription:
@@ -113,17 +117,24 @@ export function buildCycleReadModel(
 ): CycleReadModel {
   const predictionPeriods = input.periods.filter(isStartAnchorEligible);
   const latestFact = selectLatestPredictionFact([...predictionPeriods]);
-  const bounds = getPredictionBounds(latestFact, input.cycleLength);
+  const bounds =
+    input.predictionBounds === undefined
+      ? getPredictionBounds(latestFact, input.cycleLength)
+      : input.predictionBounds;
   const eligibleFacts = predictionPeriods.map((period) =>
     toEligibleCycleFact(period, input.targetDate)
   );
+  const estimatedCycleLength =
+    latestFact && bounds?.version === 2
+      ? daysBetweenCalendarDates(latestFact.startDate, bounds.pointDate)
+      : input.cycleLength;
   const cycleStateV1 = reduceCycleState({
     targetDate: input.targetDate,
     timeZone: input.timeZone,
     paused: input.predictionPaused ?? false,
     eligibleFacts,
     bounds,
-    cycleLength: input.cycleLength,
+    cycleLength: estimatedCycleLength,
     periodLength: input.periodLength,
   });
 
