@@ -26,6 +26,7 @@ export type CycleIntervalEvent = CycleFactLike & {
   confirmationStatus?: "confirmed" | "unreviewed";
   authorityVersion?: number;
   primaryCorrectionVersion?: number;
+  partnerCorrectionVersion?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -41,6 +42,7 @@ type CycleIntervalEndpoint = {
   provenance: "self" | "partner_assist" | "system" | "unknown";
   authorityVersion?: number;
   primaryCorrectionVersion?: number;
+  partnerCorrectionVersion?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -111,7 +113,10 @@ function activeSegmentAt(
 }
 
 function isCorrected(event: CycleIntervalEvent): boolean {
-  return event.primaryCorrectionVersion !== undefined;
+  return (
+    event.primaryCorrectionVersion !== undefined ||
+    event.partnerCorrectionVersion !== undefined
+  );
 }
 
 function endpoint(event: CycleIntervalEvent): CycleIntervalEndpoint {
@@ -123,6 +128,9 @@ function endpoint(event: CycleIntervalEvent): CycleIntervalEndpoint {
     ...(event.primaryCorrectionVersion === undefined
       ? {}
       : { primaryCorrectionVersion: event.primaryCorrectionVersion }),
+    ...(event.partnerCorrectionVersion === undefined
+      ? {}
+      : { partnerCorrectionVersion: event.partnerCorrectionVersion }),
     createdAt: event.createdAt,
     updatedAt: event.updatedAt,
   };

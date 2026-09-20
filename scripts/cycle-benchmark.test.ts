@@ -273,6 +273,38 @@ describe("cycle benchmark runner", () => {
     expect(candidate(intentionallyLeakyReport, "all_median_v1").meanAbsoluteErrorDays).toBe(0);
   });
 
+  test("does not classify ordinary period completion as a recent correction", () => {
+    const user = regularCycleUser(userKeyForDevelopment());
+    const completedBeforeCutoff = user.events[0];
+    user.events[0] = {
+      ...completedBeforeCutoff,
+      updatedAt: timestamp("2020-02-01"),
+      authorityVersion: 2,
+    };
+
+    const report = reportFor(user);
+
+    expect(subgroupCount(report, "recentCorrection", "yes")).toBe(0);
+  });
+
+  test(
+    "recognizes a partner correction without treating version increments as corrections",
+    () => {
+      const user = regularCycleUser(userKeyForDevelopment());
+      const correctedBeforeCutoff = user.events[0];
+      user.events[0] = {
+        ...correctedBeforeCutoff,
+        updatedAt: timestamp("2020-02-01"),
+        authorityVersion: 2,
+        partnerCorrectionVersion: 2,
+      };
+
+      const report = reportFor(user);
+
+      expect(subgroupCount(report, "recentCorrection", "yes")).toBeGreaterThan(0);
+    },
+  );
+
   test("uses local calendar cutoffs across daylight saving time", () => {
     const user: CycleBenchmarkUser = {
       userKey: userKeyForDevelopment(),

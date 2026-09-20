@@ -611,6 +611,7 @@ describe("partner-assisted period correction", () => {
       createdByUserId: partnerId,
       updatedByUserId: partnerId,
       authorityVersion: 2,
+      partnerCorrectionVersion: 2,
       endCertainty: "exact",
     });
     expect(correctedEvent).not.toHaveProperty("primaryCorrectionVersion");

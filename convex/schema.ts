@@ -244,6 +244,7 @@ export default defineSchema({
     ),
     authorityVersion: v.optional(v.number()),
     primaryCorrectionVersion: v.optional(v.number()),
+    partnerCorrectionVersion: v.optional(v.number()),
     tombstoneByUserId: v.optional(v.id("users")),
     tombstoneAt: v.optional(v.number()),
     tombstoneAuthorityVersion: v.optional(v.number()),

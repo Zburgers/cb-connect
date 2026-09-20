@@ -25,6 +25,7 @@ const enrichedPeriod = {
   legacyReason: undefined,
   authorityVersion: 2,
   primaryCorrectionVersion: 2,
+  partnerCorrectionVersion: 2,
   tombstoneByUserId: undefined,
   tombstoneAt: undefined,
   tombstoneAuthorityVersion: undefined,
@@ -84,6 +85,7 @@ describe("role-specific period history projections", () => {
     expect(result).not.toHaveProperty("createdAt");
     expect(result).not.toHaveProperty("updatedAt");
     expect(result).not.toHaveProperty("primaryCorrectionVersion");
+    expect(result).not.toHaveProperty("partnerCorrectionVersion");
     expect(result).not.toHaveProperty("legacyReason");
     expect(result).not.toHaveProperty("tombstoneByUserId");
     expect(result).not.toHaveProperty("tombstoneAt");

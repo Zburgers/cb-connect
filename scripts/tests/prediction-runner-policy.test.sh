@@ -111,12 +111,12 @@ for flag in \
   fi
 done
 
-if rg -n 'test\.skip|\.skip\(' e2e/prediction-v2.spec.ts; then
+if grep -En 'test\.skip|\.skip\(' e2e/prediction-v2.spec.ts; then
   echo "Gate 3 authenticated prediction qualification must not silently skip cases" >&2
   exit 1
 fi
 
-if rg -n 'npx[[:space:]]+convex[[:space:]]+env[[:space:]]+set|--prod|production' "$runner"; then
+if grep -En 'npx[[:space:]]+convex[[:space:]]+env[[:space:]]+set|--prod|production' "$runner"; then
   echo "Gate 3 QA must use the guarded test target and never select production" >&2
   exit 1
 fi
@@ -127,7 +127,7 @@ if run_qa restore-failure CB_CONNECT_PERIOD_PREDICTION_V2 \
   exit 1
 fi
 
-if ! rg -q 'failed to restore CB_CONNECT_PERIOD_PREDICTION_V2 to false' \
+if ! grep -Eq 'failed to restore CB_CONNECT_PERIOD_PREDICTION_V2 to false' \
     "$temp_root/restore-failure.log" ||
     ! tail -n 4 "$temp_root/restore-failure.convex.log" | awk '
       $1 == "convex" && $2 == "env" && $3 == "set" && $5 == "false" {

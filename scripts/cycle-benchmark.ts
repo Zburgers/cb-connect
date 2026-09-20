@@ -266,6 +266,7 @@ function validateEvent(value: unknown): asserts value is BenchmarkEvent {
       "confirmationStatus",
       "authorityVersion",
       "primaryCorrectionVersion",
+      "partnerCorrectionVersion",
       "createdAt",
       "updatedAt",
     ],
@@ -302,6 +303,7 @@ function validateEvent(value: unknown): asserts value is BenchmarkEvent {
   }
   requireOptionalVersion(value.authorityVersion, "Benchmark authority version");
   requireOptionalVersion(value.primaryCorrectionVersion, "Primary correction version");
+  requireOptionalVersion(value.partnerCorrectionVersion, "Partner correction version");
   if (value.tombstoneAt !== undefined) {
     requireTimestamp(value.tombstoneAt, "Benchmark tombstoneAt");
     if (value.tombstoneAt < value.createdAt || value.tombstoneAt > value.updatedAt) {
@@ -483,7 +485,7 @@ function percentile(values: readonly number[], proportion: number): number | nul
 function correctionMarked(event: BenchmarkEvent): boolean {
   return (
     event.primaryCorrectionVersion !== undefined ||
-    (event.authorityVersion ?? 0) > 1
+    event.partnerCorrectionVersion !== undefined
   );
 }
 
@@ -551,7 +553,12 @@ function deriveFoldGroups(
   );
   const correctedInputKeys = new Set(
     user.events
-      .filter((event) => event.updatedAt > cutoffAt && event.createdAt <= cutoffAt)
+      .filter(
+        (event) =>
+          event.updatedAt > cutoffAt &&
+          event.createdAt <= cutoffAt &&
+          correctionMarked(event),
+      )
       .map((event) => event.eventKey),
   );
   const recentCorrection =

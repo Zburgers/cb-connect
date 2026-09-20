@@ -56,6 +56,13 @@ function nextPrimaryCorrectionVersion(period: Doc<"periodEvents">): number {
   ) + 1;
 }
 
+function nextPartnerCorrectionVersion(period: Doc<"periodEvents">): number {
+  return Math.max(
+    currentAuthorityVersion(period),
+    period.partnerCorrectionVersion ?? 0
+  ) + 1;
+}
+
 function storedStartCertainty(
   period: Doc<"periodEvents">
 ): CycleFactCertainty {
@@ -624,6 +631,7 @@ export const correctAssistedPeriodEvent = mutation({
       legacyReason,
       updatedByUserId: partner._id,
       authorityVersion: authorityVersion + 1,
+      partnerCorrectionVersion: nextPartnerCorrectionVersion(period),
       updatedAt: Date.now(),
     });
     await appendCorrectionAssessments(ctx, {

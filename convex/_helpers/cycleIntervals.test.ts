@@ -173,6 +173,29 @@ describe("deriveCycleIntervals", () => {
     },
   );
 
+  test(
+    "keeps an authorized partner correction distinct from period completion",
+    () => {
+      const periods = eventsForIntervals([28, 29]);
+      const correctedPeriod = periods[1];
+      periods[1] = {
+        ...correctedPeriod,
+        source: "partner_assist",
+        authorityVersion: 2,
+        partnerCorrectionVersion: 2,
+        updatedAt: 10,
+      };
+
+      const result = deriveCycleIntervals(periods, cutoff);
+
+      expect(result.intervals[0].to).toMatchObject({
+        partnerCorrectionVersion: 2,
+      });
+      expect(result.intervals[0].reasonCodes).toContain("PARTNER_ASSISTED");
+      expect(result.intervals[0].reasonCodes).toContain("RECENT_CORRECTION");
+    },
+  );
+
   test("uses the segment active at the cutoff and restores earlier history", () => {
     const segments: CycleIntervalSegment[] = [
       {
