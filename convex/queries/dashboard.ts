@@ -12,8 +12,15 @@ import { buildCycleReadModel } from "../_helpers/cycleReadModel";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { isHistoryVisible } from "../_helpers/cycleFactEligibility";
 import { isCycleStateV1ExposedToUser } from "../_helpers/cycleStateExposure";
-import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
-import { projectCycleState } from "../_helpers/partnerCycleProjection";
+import {
+  isPartnerPredictionV2Enabled,
+  isPeriodPredictionV2Enabled,
+} from "../_helpers/periodPredictionFlag";
+import {
+  projectCycleState,
+  projectPartnerPrediction,
+  type PartnerPredictionV2Projection,
+} from "../_helpers/partnerCycleProjection";
 import type { PredictionBounds } from "../_helpers/predictionBounds";
 import type { CycleState } from "../_helpers/cycleState";
 import type { PartnerCycleProjection } from "../_helpers/partnerCycleProjection";
@@ -32,6 +39,8 @@ type DashboardData = {
   cycleStateV1: CycleState | PartnerCycleProjection | null;
   cycleStateV1Exposed: boolean;
   periodPredictionV2?: PeriodPredictionV2;
+  partnerPredictionV2?: PartnerPredictionV2Projection;
+  partnerPredictionV2Exposed: boolean;
   painData?: {
     score: number;
     severity: ReturnType<typeof getPainSeverityBucket>;
@@ -69,6 +78,7 @@ export const getDashboardData = query({
         cycleInfo: null,
         cycleStateV1: null,
         cycleStateV1Exposed: false,
+        partnerPredictionV2Exposed: false,
         painData: null,
         painTip: null,
         nutritionTips: [],
@@ -90,6 +100,7 @@ export const getDashboardData = query({
           message: "Not linked to a partner yet.",
           cycleStateV1: null,
           cycleStateV1Exposed: false,
+          partnerPredictionV2Exposed: false,
         };
       }
 
@@ -109,6 +120,7 @@ export const getDashboardData = query({
           message: "Couple has no primary user.",
           cycleStateV1: null,
           cycleStateV1Exposed: false,
+          partnerPredictionV2Exposed: false,
         };
       }
 
@@ -121,6 +133,7 @@ export const getDashboardData = query({
           message: "Couple has no primary user.",
           cycleStateV1: null,
           cycleStateV1Exposed: false,
+          partnerPredictionV2Exposed: false,
         };
       }
       targetUser = primaryUser;
@@ -140,9 +153,18 @@ export const getDashboardData = query({
     const periodLength = cycleSettings?.periodLength ?? 5;
     const periodPredictionV2Enabled =
       user.role === "primary" && isPeriodPredictionV2Enabled();
+    const partnerPredictionV2Enabled =
+      isPartnerView &&
+      partnerCoupleStatus === "active" &&
+      primaryMembership !== null &&
+      canViewPhase &&
+      isPeriodPredictionV2Enabled() &&
+      isPartnerPredictionV2Enabled();
+    const predictionV2EnabledForTarget =
+      periodPredictionV2Enabled || partnerPredictionV2Enabled;
 
     // Keep Gate 2's default input bounded; V2 reuses the full history below.
-    const periodEvents = periodPredictionV2Enabled
+    const periodEvents = predictionV2EnabledForTarget
       ? []
       : await ctx.db
           .query("periodEvents")
@@ -153,7 +175,7 @@ export const getDashboardData = query({
 
     const today =
       args.todayDate ?? toCalendarDateInTimeZone(new Date(), targetUser.timeZone);
-    const predictionData = periodPredictionV2Enabled
+    const predictionData = predictionV2EnabledForTarget
       ? await readCyclePredictionData(ctx, targetUserId, targetUser)
       : null;
     const recentPeriod = predictionData
@@ -169,14 +191,14 @@ export const getDashboardData = query({
     const v2Bounds = getV2Bounds(periodPredictionV2);
 
     const readModel =
-      cycleStateV1Exposed && canViewPhase
+      (cycleStateV1Exposed || partnerPredictionV2Enabled) && canViewPhase
         ? buildCycleReadModel({
             targetDate: today,
             timeZone: targetUser.timeZone,
             cycleLength,
             periodLength,
             predictionPaused: cycleSettings?.predictionPaused ?? false,
-            ...(periodPredictionV2Enabled
+            ...(predictionV2EnabledForTarget
               ? { predictionBounds: v2Bounds }
               : {}),
             periods: (predictionData?.periodEvents ?? visiblePeriodEvents).map(
@@ -196,7 +218,7 @@ export const getDashboardData = query({
     // The server is the privacy boundary. A partner never receives the
     // primary CycleState, even transiently; only the enumerated projection
     // can cross this query boundary.
-    const cycleStateV1 = readModel
+    const cycleStateV1 = readModel && cycleStateV1Exposed
       ? isPartnerView
           ? projectCycleState(readModel.cycleStateV1, {
               role: "partner",
@@ -214,16 +236,40 @@ export const getDashboardData = query({
             })
       : null;
     const partnerV1View = isPartnerView && cycleStateV1Exposed;
+    const partnerPredictionV2 = partnerPredictionV2Enabled
+      ? projectPartnerPrediction(
+          periodPredictionV2,
+          readModel?.cycleStateV1 ?? null,
+          {
+            role: "partner",
+            coupleStatus: partnerCoupleStatus,
+            hasMembership: primaryMembership !== null,
+            sharingEnabled: canViewPhase,
+            consentGranted: canViewPhase,
+            partnerPredictionEnabled: true,
+          },
+        )
+      : null;
+    const partnerPredictionV2Exposed = partnerPredictionV2 !== null;
+    const partnerPredictionView =
+      isPartnerView && partnerPredictionV2Exposed;
+    const predictionFields = {
+      partnerPredictionV2Exposed,
+      ...(partnerPredictionV2 ? { partnerPredictionV2 } : {}),
+      ...(!isPartnerView && periodPredictionV2 ? { periodPredictionV2 } : {}),
+    };
 
     if (!recentPeriod) {
       return {
         hasData: false,
         isPartnerView,
-        message: "No period data yet. Log your last period to get started.",
+        message: partnerPredictionV2Enabled
+          ? "A shared timing estimate is not available yet."
+          : "No period data yet. Log your last period to get started.",
         cycleInfo: null,
         cycleStateV1,
         cycleStateV1Exposed,
-        ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
+        ...predictionFields,
         painData: null,
         painTip: null,
         nutritionTips: [],
@@ -231,7 +277,7 @@ export const getDashboardData = query({
     }
 
     // Calculate current cycle info
-    const cycleInfo = periodPredictionV2Enabled
+    const cycleInfo = predictionV2EnabledForTarget
       ? null
       : readModel?.cycleInfo ??
         (cycleStateV1Exposed
@@ -268,7 +314,7 @@ export const getDashboardData = query({
           cycleInfo: null,
           cycleStateV1: null,
           cycleStateV1Exposed,
-          ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
+          ...predictionFields,
           painData,
           painTip: null,
           nutritionTips: [],
@@ -292,7 +338,7 @@ export const getDashboardData = query({
         cycleInfo: null,
         cycleStateV1,
         cycleStateV1Exposed,
-        ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
+        ...predictionFields,
         painData,
         painTip: null,
         nutritionTips: [],
@@ -345,10 +391,10 @@ export const getDashboardData = query({
     return {
       hasData: true,
       isPartnerView,
-      cycleInfo: partnerV1View ? null : cycleInfo,
+      cycleInfo: partnerV1View || partnerPredictionView ? null : cycleInfo,
       cycleStateV1,
       cycleStateV1Exposed,
-      ...(periodPredictionV2 ? { periodPredictionV2 } : {}),
+      ...predictionFields,
       painData,
       painTip: partnerV1View ? null : painTip,
       nutritionTips: partnerV1View ? [] : nutritionTips,

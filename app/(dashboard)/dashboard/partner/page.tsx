@@ -9,8 +9,12 @@ import { useCycleFactsCapability } from "@/lib/cycleFactsCapability";
 import { copyToClipboard, shareText, toLocalDateString } from "@/lib/utils";
 import { CalendarHeart, Copy, Gift, Share2, Check } from "lucide-react";
 import DigitalLocket from "@/components/partner/DigitalLocket";
-import { PartnerCycleStateCard } from "@/components/partner/PartnerDashboard";
+import {
+  PartnerCycleStateCard,
+  PartnerPredictionCard,
+} from "@/components/partner/PartnerDashboard";
 import { getPartnerCyclePresentation } from "@/components/partner/partnerCyclePresentation";
+import { getPartnerPredictionPresentation } from "@/components/partner/partnerPredictionPresentation";
 
 export default function PartnerPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -93,6 +97,12 @@ export default function PartnerPage() {
     ? partnerDashboardData?.cycleStateV1 ?? null
     : null;
   const partnerPresentation = getPartnerCyclePresentation(partnerProjection);
+  const partnerPredictionPresentation =
+    me.role === "partner" && partnerDashboardData?.partnerPredictionV2Exposed === true
+      ? getPartnerPredictionPresentation(
+          partnerDashboardData.partnerPredictionV2 ?? null,
+        )
+      : null;
 
   const handleCopyCode = async (codeToCopy: string) => {
     const success = await copyToClipboard(codeToCopy);
@@ -249,9 +259,11 @@ export default function PartnerPage() {
           </p>
         </div>
       )}
-      {showPartnerCycleState && (
+      {partnerPredictionPresentation ? (
+        <PartnerPredictionCard presentation={partnerPredictionPresentation} />
+      ) : showPartnerCycleState ? (
         <PartnerCycleStateCard presentation={partnerPresentation} />
-      )}
+      ) : null}
       {message && (
         <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">
           {message}

@@ -259,6 +259,203 @@ describe("dashboard cycle state read model", () => {
     });
   });
 
+  test("returns only the partner V2 allowlist when both flags and sharing allow it", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+    });
+    const starts = [
+      "2026-06-01",
+      "2026-06-29",
+      "2026-07-27",
+      "2026-08-24",
+    ];
+
+    await t.run(async (ctx) => {
+      for (const [index, startDate] of starts.entries()) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          ...(startDate === "2026-08-24"
+            ? { endDate: "2026-08-26", endCertainty: "exact" as const }
+            : {}),
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: Date.now() - starts.length + index,
+          updatedAt: Date.now() - starts.length + index,
+        });
+      }
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.partnerPredictionV2Exposed).toBe(true);
+    expect(result.partnerPredictionV2).toMatchObject({
+      version: 2,
+      status: "estimated",
+      timingStatus: "recorded_period",
+      pointDate: "2026-09-21",
+      earliestDate: "2026-09-21",
+      latestDate: "2026-09-24",
+      quality: "limited_evidence",
+      basisBand: "broader",
+    });
+    expect(Object.keys(result.partnerPredictionV2 ?? {}).sort()).toEqual(
+      [
+        "version",
+        "status",
+        "timingStatus",
+        "pointDate",
+        "earliestDate",
+        "latestDate",
+        "quality",
+        "basisBand",
+      ].sort(),
+    );
+    expect(result).not.toHaveProperty("periodPredictionV2");
+    expect(result.cycleStateV1).toBeNull();
+    expect(JSON.stringify(result.partnerPredictionV2)).not.toMatch(
+      /snapshotId|estimator|calibration|reasonCodes|basisCount|periodEvents|userId|privateContext/,
+    );
+  });
+
+  test("keeps the partner V2 projection hidden when the partner flag is off", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "false");
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-24",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result).not.toHaveProperty("partnerPredictionV2");
+    expect(result).not.toHaveProperty("periodPredictionV2");
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 1 },
+    });
+  });
+
+  test("requires the global prediction flag as well as the partner flag", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-24",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result).not.toHaveProperty("partnerPredictionV2");
+    expect(result).not.toHaveProperty("periodPredictionV2");
+    expect(result.cycleStateV1).toMatchObject({
+      status: "estimated",
+      bounds: { version: 1 },
+    });
+  });
+
+  test("returns a reduced unavailable partner projection without suggesting they log", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner } = await seedActiveCouple(t, { sharingPhase: true });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {});
+
+    expect(result.hasData).toBe(false);
+    expect(result.message).toBe(
+      "A shared timing estimate is not available yet.",
+    );
+    expect(result.partnerPredictionV2Exposed).toBe(true);
+    expect(result.partnerPredictionV2).toMatchObject({
+      status: "unavailable",
+      timingStatus: "insufficient_data",
+      pointDate: null,
+      earliestDate: null,
+      latestDate: null,
+      basisBand: "limited",
+    });
+    expect(result).not.toHaveProperty("periodPredictionV2");
+  });
+
+  test("hides partner V2 prediction when phase sharing is disabled", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_PARTNER_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: false,
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-24",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
+      todayDate: "2026-08-25",
+    });
+
+    expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result).not.toHaveProperty("partnerPredictionV2");
+    expect(result).not.toHaveProperty("periodPredictionV2");
+    expect(result.cycleInfo).toBeNull();
+    expect(result.cycleStateV1).toBeNull();
+  });
+
   test("returns an unavailable V2 contract when the primary has no eligible start", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
     const t = convexTest(schema, modules);

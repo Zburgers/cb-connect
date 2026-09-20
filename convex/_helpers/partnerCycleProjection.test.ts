@@ -2,10 +2,13 @@ import { expect, test } from "vitest";
 
 import type { CycleState } from "./cycleState";
 import {
+  projectPartnerPrediction,
   projectCycleState,
   type PartnerCycleProjection,
+  type PartnerPredictionProjectionContext,
   type ProjectionContext,
 } from "./partnerCycleProjection";
+import type { PeriodPredictionV2 } from "./periodPrediction";
 import type {
   PredictionBounds,
   PredictionBoundsV2,
@@ -105,6 +108,11 @@ const partnerContext: ProjectionContext = {
   hasMembership: true,
   sharingEnabled: true,
   consentGranted: true,
+};
+
+const partnerPredictionContext: PartnerPredictionProjectionContext = {
+  ...partnerContext,
+  partnerPredictionEnabled: true,
 };
 
 const partnerAllowlistByStatus: Record<
@@ -416,4 +424,94 @@ test("recursively excludes forbidden fields from partner output", () => {
   }
 
   assertNoForbiddenKeys(projectCycleState(pollutedState, partnerContext));
+});
+
+test("partner V2 projection exposes only the reduced prediction allowlist", () => {
+  const projection = projectPartnerPrediction(
+    v2Bounds,
+    v2EstimatedState,
+    partnerPredictionContext,
+  );
+
+  expect(projection).toEqual({
+    version: 2,
+    status: "estimated",
+    timingStatus: "estimated",
+    pointDate: "2026-09-28",
+    earliestDate: "2026-09-25",
+    latestDate: "2026-10-01",
+    quality: "limited_evidence",
+    basisBand: "broader",
+  });
+  expect(Object.keys(projection ?? {}).sort()).toEqual(
+    [
+      "version",
+      "status",
+      "timingStatus",
+      "pointDate",
+      "earliestDate",
+      "latestDate",
+      "quality",
+      "basisBand",
+    ].sort(),
+  );
+  const serialized = JSON.stringify(projection);
+  expect(serialized).not.toMatch(
+    /snapshotId|estimator|calibration|reasonCodes|basisCount|private-id|period_prediction_v2/,
+  );
+});
+
+test.each([
+  ["inactive relationship", { ...partnerPredictionContext, coupleStatus: "pending" }],
+  ["no membership", { ...partnerPredictionContext, hasMembership: false }],
+  ["sharing disabled", { ...partnerPredictionContext, sharingEnabled: false }],
+  ["consent absent", { ...partnerPredictionContext, consentGranted: false }],
+  ["feature disabled", { ...partnerPredictionContext, partnerPredictionEnabled: false }],
+  ["primary role", { ...partnerPredictionContext, role: "primary" }],
+] as const)("partner V2 projection fails closed when %s", (_label, context) => {
+  expect(projectPartnerPrediction(v2Bounds, v2EstimatedState, context)).toBeNull();
+});
+
+test("partner V2 projection uses a limited band for inactive predictions", () => {
+  const prediction: PeriodPredictionV2 = {
+    version: 2,
+    source: "period_prediction_v2",
+    status: "paused",
+    pointDate: null,
+    earliestDate: null,
+    latestDate: null,
+    probabilityLabel: null,
+    quality: "limited_evidence",
+    basisCount: 0,
+    estimatorId: "configured_v1",
+    estimatorVersion: 1,
+    calibrationVersion: null,
+    reasonCodes: ["USER_PAUSED"],
+  };
+
+  expect(
+    projectPartnerPrediction(prediction, pausedState, partnerPredictionContext),
+  ).toEqual({
+    version: 2,
+    status: "paused",
+    timingStatus: "prediction_paused",
+    pointDate: null,
+    earliestDate: null,
+    latestDate: null,
+    quality: "limited_evidence",
+    basisBand: "limited",
+  });
+});
+
+test("partner V2 projection rejects malformed prediction and timing data", () => {
+  expect(
+    projectPartnerPrediction(
+      { ...v2Bounds, pointDate: "not-a-date" },
+      v2EstimatedState,
+      partnerPredictionContext,
+    ),
+  ).toBeNull();
+  expect(
+    projectPartnerPrediction(v2Bounds, { ...v2EstimatedState, cycleDay: 0 }, partnerPredictionContext),
+  ).toBeNull();
 });
