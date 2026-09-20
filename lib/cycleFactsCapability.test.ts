@@ -41,6 +41,7 @@ describe("cycle facts client capability compatibility", () => {
     const response: CycleFactsCapability = {
       cycleFactsV1: true,
       cycleStateV1: false,
+      periodPredictionV2: true,
       partnerPredictionV2: true,
     };
 

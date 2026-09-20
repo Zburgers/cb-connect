@@ -10,7 +10,7 @@ import { ensureCurrentSnapshot } from "../internal/predictionSnapshots";
 
 export const ensureForViewer = mutation({
   args: {},
-  returns: v.union(v.id("predictionSnapshots"), v.null()),
+  returns: v.null(),
   handler: async (ctx) => {
     if (!isPeriodPredictionV2Enabled()) return null;
     const viewer = await getCurrentUserOrNull(ctx);
@@ -31,6 +31,7 @@ export const ensureForViewer = mutation({
       targetUserId = primaryMembership.userId;
     }
 
-    return await ensureCurrentSnapshot(ctx, targetUserId);
+    await ensureCurrentSnapshot(ctx, targetUserId);
+    return null;
   },
 });

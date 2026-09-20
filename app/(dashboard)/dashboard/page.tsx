@@ -63,7 +63,8 @@ export default function DashboardPage() {
     const needsPartnerSnapshot =
       me.role === "partner" &&
       shouldEnsurePartnerPredictionSnapshot(
-        capabilities?.partnerPredictionV2 === true,
+        capabilities?.periodPredictionV2 === true &&
+          capabilities.partnerPredictionV2 === true,
         data.hasData,
         data.partnerPredictionV2,
       );

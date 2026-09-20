@@ -144,7 +144,10 @@ export const getDashboardData = query({
       isPartnerView = true;
     }
 
-    const canViewPhase = !isPartnerView || primaryMembership?.sharingPhase === true;
+    const canViewPhase =
+      !isPartnerView ||
+      (partnerCoupleStatus === "active" &&
+        primaryMembership?.sharingPhase === true);
     const cycleStateV1Exposed = isCycleStateV1ExposedToUser(user, targetUser);
 
     // Get cycle settings
@@ -168,7 +171,7 @@ export const getDashboardData = query({
       periodPredictionV2Enabled || partnerPredictionV2Enabled;
 
     // Keep Gate 2's default input bounded; V2 reuses the full history below.
-    const periodEvents = predictionV2EnabledForTarget
+    const periodEvents = predictionV2EnabledForTarget || !canViewPhase
       ? []
       : await ctx.db
           .query("periodEvents")

@@ -307,7 +307,12 @@ describe("dashboard cycle state read model", () => {
       }
     });
 
-    await asPartner.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
+    expect(
+      await asPartner.mutation(
+        api.mutations.predictionSnapshots.ensureForViewer,
+        {},
+      ),
+    ).toBeNull();
 
     const result = await asPartner.query(api.queries.dashboard.getDashboardData, {
       todayDate: "2026-08-25",
@@ -467,6 +472,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result.hasData).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");
     expect(result.cycleInfo).toBeNull();

@@ -70,7 +70,8 @@ export default function PartnerPage() {
       isAuthenticated &&
       me?.role === "partner" &&
       shouldEnsurePartnerPredictionSnapshot(
-        cycleFactsCapability?.partnerPredictionV2 === true,
+        cycleFactsCapability?.periodPredictionV2 === true &&
+          cycleFactsCapability.partnerPredictionV2 === true,
         partnerDashboardData?.hasData === true,
         partnerDashboardData?.partnerPredictionV2,
       )
@@ -78,6 +79,8 @@ export default function PartnerPage() {
       ensurePredictionSnapshot().catch(() => {});
     }
   }, [
+    cycleFactsCapability?.partnerPredictionV2,
+    cycleFactsCapability?.periodPredictionV2,
     ensurePredictionSnapshot,
     isAuthenticated,
     me?.role,
