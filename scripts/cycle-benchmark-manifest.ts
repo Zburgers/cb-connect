@@ -17,6 +17,7 @@ const ALLOWED_BENCHMARK_FIELDS = new Set([
   "confirmationStatus",
   "authorityVersion",
   "primaryCorrectionVersion",
+  "partnerCorrectionVersion",
   "createdAt",
   "updatedAt",
   "segmentKey",

@@ -200,6 +200,15 @@ describe("cycle benchmark manifest", () => {
     ).toThrow("open after approvals and cannot be future-dated");
   });
 
+  test("allows partner correction provenance in an approved source manifest", () => {
+    const manifest = externalManifest();
+    manifest.source!.fieldsUsed.push("partnerCorrectionVersion");
+
+    expect(() =>
+      validateCycleBenchmarkManifest(manifest, "development"),
+    ).not.toThrow();
+  });
+
   test("records one evaluation opening before reading outcome bytes", () => {
     const directory = mkdtempSync(join(tmpdir(), "cycle-benchmark-evaluation-"));
     tempDirectories.push(directory);

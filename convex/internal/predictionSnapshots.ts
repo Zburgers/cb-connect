@@ -82,6 +82,14 @@ type SnapshotCreateArgs = Omit<
   "_id" | "_creationTime" | "qualityScoreV1"
 > & { qualityScoreV1: number | null };
 
+function isUncorrectedOutcomeStart(event: Doc<"periodEvents">): boolean {
+  return (
+    isStartAnchorEligible(event) &&
+    event.primaryCorrectionVersion === undefined &&
+    event.partnerCorrectionVersion === undefined
+  );
+}
+
 function requireBoundedText(value: string, label: string, maxLength: number) {
   if (value.trim().length === 0 || value.length > maxLength) {
     throw new Error("PREDICTION_SNAPSHOT_INVALID_" + label);
@@ -331,10 +339,9 @@ export const recordOutcome = internalMutation({
     if (
       !event ||
       event.userId !== snapshot.userId ||
-      !isStartAnchorEligible(event) ||
+      !isUncorrectedOutcomeStart(event) ||
       event.startDate <= snapshot.inputCutoffDate ||
-      event.createdAt <= snapshot.inputCutoffAt ||
-      event.primaryCorrectionVersion !== undefined
+      event.createdAt <= snapshot.inputCutoffAt
     ) {
       throw new Error("PREDICTION_SNAPSHOT_OUTCOME_NOT_ELIGIBLE");
     }
@@ -401,8 +408,7 @@ export const recordOutcomesForStart = internalMutation({
     const event = await ctx.db.get("periodEvents", sourcePeriodEventId);
     if (
       !event ||
-      !isStartAnchorEligible(event) ||
-      event.primaryCorrectionVersion !== undefined
+      !isUncorrectedOutcomeStart(event)
     ) {
       return null;
     }

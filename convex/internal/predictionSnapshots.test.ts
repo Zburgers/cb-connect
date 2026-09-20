@@ -343,6 +343,56 @@ describe("immutable prediction snapshots", () => {
     }
   });
 
+  test("a partner correction before deferred outcome recording is not scored", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const { eventId } = await asPartner.mutation(
+        api.mutations.periods.assistLogPeriodStart,
+        { startDate: "2026-01-30" },
+      );
+      await asPartner.mutation(
+        api.mutations.periods.correctAssistedPeriodEvent,
+        {
+          periodEventId: eventId,
+          expectedAuthorityVersion: 1,
+          startDate: "2026-01-31",
+        },
+      );
+
+      await expect(
+        t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+          snapshotId,
+          sourcePeriodEventId: eventId,
+        }),
+      ).rejects.toThrow("PREDICTION_SNAPSHOT_OUTCOME_NOT_ELIGIBLE");
+
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+      const assessments = await t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+          )
+          .take(2),
+      );
+      expect(assessments).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("feature-off period starts do not schedule Gate 3 snapshot work", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
