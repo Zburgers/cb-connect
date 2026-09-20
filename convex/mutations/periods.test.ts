@@ -444,6 +444,22 @@ describe("partner-assisted period logging", () => {
 });
 
 describe("prediction pause cycle settings", () => {
+  test("rejects non-finite cycle lengths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: Number.NaN,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: Number.POSITIVE_INFINITY,
+      }),
+    ).rejects.toThrow();
+  });
+
   test("pausing preserves existing lengths and records a timestamp", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

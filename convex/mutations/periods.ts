@@ -784,7 +784,11 @@ export const updateCycleSettings = mutation({
     requirePrimaryUser(user);
 
     if (args.cycleLength !== undefined) {
-      if (args.cycleLength < 21 || args.cycleLength > 40) {
+      if (
+        !Number.isFinite(args.cycleLength) ||
+        args.cycleLength < 21 ||
+        args.cycleLength > 40
+      ) {
         throw new Error("Cycle length must be between 21 and 40 days");
       }
     }
