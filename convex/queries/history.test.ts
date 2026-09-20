@@ -435,6 +435,56 @@ describe("fact-aware history and prediction reads", () => {
     });
   });
 
+  test("primary segment options include full eligible history and reject partner reads", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t);
+    const startDates: string[] = [];
+
+    await t.run(async (ctx) => {
+      let startDate = "2018-01-01";
+      for (let index = 0; index < 105; index += 1) {
+        startDates.push(startDate);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+        startDate = addCalendarDays(startDate, 28);
+      }
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2017-12-31",
+        startCertainty: "exact",
+        confirmationStatus: "unreviewed",
+        createdAt: 500,
+        updatedAt: 500,
+      });
+    });
+
+    const activeStartDate = startDates[startDates.length - 1];
+    await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: activeStartDate },
+    );
+    const [options, partnerOptions] = await Promise.all([
+      asPrimary.query(api.queries.history.getPredictionSegmentOptions, {}),
+      asPartner.query(api.queries.history.getPredictionSegmentOptions, {}),
+    ]);
+
+    expect(options).toMatchObject({ activeStartDate });
+    expect(options?.eligibleStartDates).toHaveLength(105);
+    expect(options?.eligibleStartDates).toContain(startDates[0]);
+    expect(options?.eligibleStartDates?.[0]).toBe(activeStartDate);
+    expect(options?.eligibleStartDates).not.toContain("2017-12-31");
+    expect(partnerOptions).toBeNull();
+  });
+
   test("V2 interval data does not change existing notification inputs", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");

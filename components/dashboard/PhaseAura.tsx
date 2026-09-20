@@ -9,9 +9,11 @@ import { getPainSeverityBucket } from "@/lib/utils";
 import { getPhaseAsset } from "@/lib/phaseAssets";
 import { getNudgeMessage, NUDGE_EMOJIS } from "@/lib/nudges.mjs";
 import type { CycleStatePresentation } from "./cycleStatePresentation";
+import type { PredictionPresentation } from "./predictionPresentation";
 
 interface PhaseAuraProps {
   presentation?: CycleStatePresentation;
+  prediction?: PredictionPresentation;
   phase?: string;
   cycleDay?: number;
   description?: string;
@@ -55,8 +57,68 @@ function painPhrase(score?: number | null) {
   return                            { label: "Rough day",          help: "Practical care beats big speeches." };
 }
 
+export function PredictionSummary({
+  prediction,
+}: {
+  prediction: PredictionPresentation;
+}) {
+  return (
+    <section
+      className="phase-data-tile"
+      aria-label="Period timing estimate"
+      data-prediction-status={prediction.status}
+    >
+      <div className="flex items-start gap-3">
+        <CalendarDays
+          className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary"
+          aria-hidden="true"
+        />
+        <div className="min-w-0 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {prediction.statusLabel}
+          </p>
+          <p className="font-display text-xl font-semibold leading-tight text-foreground">
+            {prediction.pointText ??
+              (prediction.status === "paused"
+                ? "Prediction paused"
+                : "No estimate available")}
+          </p>
+          {prediction.rangeLabel && prediction.rangeText && (
+            <p className="text-sm font-medium text-foreground">
+              {prediction.rangeLabel}: {prediction.rangeText}
+            </p>
+          )}
+          <span className="phase-chip">{prediction.qualityLabel}</span>
+          {prediction.basisText && (
+            <p className="text-sm leading-5 text-muted-foreground">
+              {prediction.basisText}
+            </p>
+          )}
+          {prediction.explanations.length > 0 && (
+            <ul className="list-inside list-disc space-y-1 text-sm leading-5 text-muted-foreground">
+              {prediction.explanations.map((explanation) => (
+                <li key={explanation}>{explanation}</li>
+              ))}
+            </ul>
+          )}
+          {prediction.status === "unavailable" &&
+            prediction.explanations.length === 0 && (
+              <p className="text-sm leading-5 text-muted-foreground">
+                Record an exact period start to get an estimated range.
+              </p>
+            )}
+          <p className="text-xs leading-5 text-muted-foreground">
+            Cycle timing is an estimate, not a promise.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function PhaseAura({
   presentation,
+  prediction,
   phase,
   cycleDay,
   description,
@@ -76,7 +138,11 @@ export default function PhaseAura({
       }
     : phaseCopy[legacyPhase] ?? phaseCopy.follicular;
   const pain  = painPhrase(painScore);
-  const phaseChipLabel = presentation
+  const phaseChipLabel = prediction
+    ? [prediction.qualityLabel, presentation?.phaseLabel]
+        .filter(Boolean)
+        .join(" · ")
+    : presentation
     ? [presentation.statusLabel, presentation.phaseLabel]
         .filter(Boolean)
         .join(" · ")
@@ -189,7 +255,7 @@ export default function PhaseAura({
           <div>
             <span className="phase-badge">
               <Sparkles className="h-3.5 w-3.5 text-primary" />
-              Today's shared signal
+              {prediction ? "Your cycle outlook" : "Today's shared signal"}
             </span>
           </div>
 
@@ -345,6 +411,8 @@ export default function PhaseAura({
 
         {/* ── Right column — data satellites ── */}
         <div className="grid gap-3">
+          {prediction && <PredictionSummary prediction={prediction} />}
+
           {/* Cycle day */}
           <div className="phase-data-tile">
             <div className="flex items-start gap-3">
@@ -383,8 +451,8 @@ export default function PhaseAura({
             </div>
           </div>
 
-          {/* Countdown — high-contrast tile */}
-          {hasCountdown && (
+          {/* Countdown — legacy configured path only */}
+          {!prediction && hasCountdown && (
             <motion.div
               key={countdownDays}
               className="rounded-[1.4rem] p-4 bg-foreground text-background"

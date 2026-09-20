@@ -645,7 +645,7 @@ npx vitest run convex/_helpers/periodPrediction.test.ts convex/_helpers/predicti
 
 When V2 is exposed:
 
-- "Most likely around …"
+- "Estimated around …" for the point estimate; reserve likelihood claims for calibration-supported ranges;
 - calibrated "80% likely range …" only when calibration contract says probability language is allowed;
 - otherwise "Estimated range …";
 - High / Moderate / Low / Timing less predictable / Limited evidence;

@@ -13,6 +13,7 @@ export async function readCyclePredictionData(
 ): Promise<{
   user: Doc<"users"> | null;
   periodEvents: Doc<"periodEvents">[];
+  activeSegment: Doc<"cyclePredictionSegments"> | null;
   cycleIntervals: CycleIntervalDerivation;
 }> {
   const cutoffAt = Date.now();
@@ -36,6 +37,7 @@ export async function readCyclePredictionData(
   return {
     user,
     periodEvents: allPeriods,
+    activeSegment,
     cycleIntervals: deriveCycleIntervals(allPeriods, {
       cutoffAt,
       cutoffDate: toCalendarDateInTimeZone(

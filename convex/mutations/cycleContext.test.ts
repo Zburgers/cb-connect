@@ -110,8 +110,16 @@ describe("prediction segment mutation", () => {
         updatedAt: now,
       });
       await ctx.db.insert("periodEvents", {
-        userId: partnerId,
+        userId: primaryId,
         startDate: "2026-07-01",
+        startCertainty: "exact",
+        confirmationStatus: "unreviewed",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: partnerId,
+        startDate: "2026-08-01",
         startCertainty: "exact",
         createdAt: now,
         updatedAt: now,
@@ -123,6 +131,7 @@ describe("prediction segment mutation", () => {
       "2026-05-01",
       "2026-06-01",
       "2026-07-01",
+      "2026-08-01",
     ]) {
       await expect(
         asPrimary.mutation(api.mutations.cycleContext.createPredictionSegment, {

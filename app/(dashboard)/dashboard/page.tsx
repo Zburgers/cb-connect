@@ -39,6 +39,11 @@ export default function DashboardPage() {
     : null;
   const showCycleStateV1 =
     capabilities?.cycleFactsV1 === true && cycleStateEnabled && cycleState != null;
+  const periodPredictionV2 = data?.periodPredictionV2;
+  const showPeriodPredictionV2 =
+    me?.role === "primary" &&
+    capabilities?.periodPredictionV2 === true &&
+    periodPredictionV2 !== undefined;
 
   if (
     isLoading ||
@@ -82,7 +87,7 @@ export default function DashboardPage() {
 
   return (
     <div
-      data-phase={showCycleStateV1 ? cycleState?.phase ?? "unknown" : data.cycleInfo?.phase ?? "follicular"}
+      data-phase={showCycleStateV1 ? cycleState?.phase ?? "unknown" : data.cycleInfo?.phase ?? (showPeriodPredictionV2 ? "unknown" : "follicular")}
       data-cycle-state={showCycleStateV1 ? cycleState?.status : undefined}
       className="space-y-6 animate-fade-in"
     >
@@ -98,7 +103,14 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {showCycleStateV1 ? (
+      {showPeriodPredictionV2 ? (
+        <CurrentPhase
+          cycleStateV1={showCycleStateV1 ? cycleState : null}
+          periodPredictionV2={periodPredictionV2}
+          painScore={data.painData?.score ?? null}
+          partnerPresent={partnerPresent}
+        />
+      ) : showCycleStateV1 ? (
         <CurrentPhase
           cycleStateV1={cycleState}
           cycleInfo={data.cycleInfo}

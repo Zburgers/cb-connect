@@ -6,14 +6,17 @@ import { getCurrentUser } from "../_helpers/auth";
 import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
+  toCalendarDateInTimeZone,
 } from "../_helpers/calendarDates";
-import { isStartAnchorEligible } from "../_helpers/cycleFactEligibility";
+import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 
 async function requireEligibleSegmentStart(
   ctx: MutationCtx,
   userId: Id<"users">,
   startDate: string,
+  cutoffAt: number,
+  cutoffDate: string,
 ) {
   const matchingEvents = ctx.db
     .query("periodEvents")
@@ -22,7 +25,7 @@ async function requireEligibleSegmentStart(
     );
 
   for await (const event of matchingEvents) {
-    if (isStartAnchorEligible(event)) return;
+    if (isEligiblePredictionSegmentStart(event, cutoffAt, cutoffDate)) return;
   }
 
   throw new Error("PREDICTION_SEGMENT_START_NOT_ELIGIBLE");
@@ -45,7 +48,14 @@ export const createPredictionSegment = mutation({
       "Prediction baseline start date",
       timeZone,
     );
-    await requireEligibleSegmentStart(ctx, user._id, args.startDate);
+    const now = Date.now();
+    await requireEligibleSegmentStart(
+      ctx,
+      user._id,
+      args.startDate,
+      now,
+      toCalendarDateInTimeZone(new Date(now), timeZone),
+    );
 
     const active = await ctx.db
       .query("cyclePredictionSegments")
@@ -53,8 +63,6 @@ export const createPredictionSegment = mutation({
         q.eq("userId", user._id).eq("status", "active"),
       )
       .unique();
-    const now = Date.now();
-
     if (active) {
       await ctx.db.patch(active._id, {
         status: "superseded",

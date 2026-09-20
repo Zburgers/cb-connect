@@ -10,6 +10,7 @@ import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { buildPeriodPrediction } from "../_helpers/periodPrediction";
+import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import {
   getTimelineStateForDate,
   type TimelineStateMetadata,
@@ -235,6 +236,37 @@ export const getPeriodPredictionForUser = internalQuery({
       configuredCycleLength: cycleSettings?.cycleLength ?? 28,
       predictionPaused: cycleSettings?.predictionPaused ?? false,
     });
+  },
+});
+
+export const getPredictionSegmentOptions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrNull(ctx);
+    if (
+      !user ||
+      user.role !== "primary" ||
+      !isPeriodPredictionV2Enabled()
+    ) {
+      return null;
+    }
+
+    const predictionData = await readCyclePredictionData(ctx, user._id, user);
+    const { cutoffAt, cutoffDate } = predictionData.cycleIntervals.basis;
+    const eligibleStartDates = [
+      ...new Set(
+        predictionData.periodEvents
+          .filter((event) =>
+            isEligiblePredictionSegmentStart(event, cutoffAt, cutoffDate),
+          )
+          .map((event) => event.startDate),
+      ),
+    ].sort((left, right) => right.localeCompare(left));
+
+    return {
+      activeStartDate: predictionData.activeSegment?.startDate ?? null,
+      eligibleStartDates,
+    };
   },
 });
 
