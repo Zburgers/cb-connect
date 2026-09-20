@@ -265,6 +265,7 @@ describe("period history attribution", () => {
 describe("fact-aware history and prediction reads", () => {
   test("flag-off prediction keeps the newest legacy row without certainty", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
     await t.run(async (ctx) => {
@@ -291,6 +292,11 @@ describe("fact-aware history and prediction reads", () => {
 
     expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
     expect(prediction).not.toHaveProperty("cycleIntervals");
+    expect(
+      await t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ).toBeNull();
   });
 
   test("V2 derives intervals from the full eligible history", async () => {
@@ -314,20 +320,69 @@ describe("fact-aware history and prediction reads", () => {
       }
     });
 
-    const prediction = await t.query(
-      internal.queries.history.getPredictionInputsForUser,
+    const cycleIntervals = await t.query(
+      internal.queries.history.getCycleIntervalsForUser,
       { userId: primaryId },
     );
 
-    expect(prediction?.cycleIntervals).toMatchObject({
+    expect(cycleIntervals).toMatchObject({
       eligibleAnchorCount: 105,
       eligibleIntervalCount: 104,
       basis: { version: "cycle_intervals_v1" },
     });
-    expect(prediction?.cycleIntervals?.intervals).toHaveLength(104);
-    expect(prediction?.cycleIntervals?.intervals[0]).not.toHaveProperty(
+    expect(cycleIntervals?.intervals).toHaveLength(104);
+    expect(cycleIntervals?.intervals[0]).not.toHaveProperty(
       "startDate",
     );
+  });
+
+  test("V2 finds exact anchors beyond 100 newer ineligible rows", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      let startDate = "2026-05-01";
+      for (let index = 0; index < 105; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "approximate",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 2,
+          updatedAt: index + 2,
+        });
+        startDate = addCalendarDays(startDate, 1);
+      }
+    });
+
+    const [legacyPrediction, cycleIntervals] = await Promise.all([
+      t.query(internal.queries.history.getPredictionInputsForUser, {
+        userId: primaryId,
+      }),
+      t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ]);
+
+    expect(legacyPrediction).toBeNull();
+    expect(cycleIntervals).toMatchObject({
+      latestEligibleStartDate: "2026-01-01",
+      eligibleAnchorCount: 1,
+      eligibleIntervalCount: 0,
+      reasonCodes: expect.arrayContaining(["LIMITED_HISTORY"]),
+    });
   });
 
   test("V2 interval data does not change existing notification inputs", async () => {
@@ -358,16 +413,21 @@ describe("fact-aware history and prediction reads", () => {
       });
     });
 
-    const prediction = await t.query(
-      internal.queries.history.getPredictionInputsForUser,
-      { userId: primaryId },
-    );
+    const [prediction, cycleIntervals] = await Promise.all([
+      t.query(internal.queries.history.getPredictionInputsForUser, {
+        userId: primaryId,
+      }),
+      t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ]);
 
     expect(prediction).toMatchObject({
       recentPeriodStart: "2026-09-01",
       cycleInfo: calculateCycleInfo("2026-09-01", 28, 5),
     });
-    expect(prediction?.cycleIntervals?.latestEligibleStartDate).toBe(
+    expect(prediction).not.toHaveProperty("cycleIntervals");
+    expect(cycleIntervals?.latestEligibleStartDate).toBe(
       "2026-08-01",
     );
   });

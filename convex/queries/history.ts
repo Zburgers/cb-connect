@@ -4,10 +4,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
-import {
-  deriveCycleIntervals,
-  type CycleIntervalDerivation,
-} from "../_helpers/cycleIntervals";
+import { deriveCycleIntervals } from "../_helpers/cycleIntervals";
 import {
   getTimelineStateForDate,
   type TimelineStateMetadata,
@@ -178,33 +175,8 @@ export const getPredictionInputsForUser = internalQuery({
       recentPeriods,
       isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
     );
-    if (!recentPeriod) return null;
 
-    let cycleIntervals: CycleIntervalDerivation | null = null;
-    if (isPeriodPredictionV2Enabled()) {
-      const cutoffAt = Date.now();
-      const [allPeriods, activeSegment, user] = await Promise.all([
-        ctx.db
-          .query("periodEvents")
-          .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
-          .collect(),
-        ctx.db
-          .query("cyclePredictionSegments")
-          .withIndex("by_user_and_status", (q) =>
-            q.eq("userId", args.userId).eq("status", "active"),
-          )
-          .unique(),
-        ctx.db.get("users", args.userId),
-      ]);
-      cycleIntervals = deriveCycleIntervals(allPeriods, {
-        cutoffAt,
-        cutoffDate: toCalendarDateInTimeZone(
-          new Date(cutoffAt),
-          user?.timeZone ?? "UTC",
-        ),
-        segments: activeSegment ? [activeSegment] : [],
-      });
-    }
+    if (!recentPeriod) return null;
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
@@ -213,14 +185,45 @@ export const getPredictionInputsForUser = internalQuery({
       cycleLength,
       periodLength,
       recentPeriodStart: recentPeriod.startDate,
-      // Keep legacy consumers on the qualified input until G3.11 adopts V2.
       cycleInfo: calculateCycleInfo(
         recentPeriod.startDate,
         cycleLength,
         periodLength
       ),
-      ...(cycleIntervals ? { cycleIntervals } : {}),
     };
+  },
+});
+
+export const getCycleIntervalsForUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    if (!isPeriodPredictionV2Enabled()) return null;
+
+    const cutoffAt = Date.now();
+    const [allPeriods, activeSegment, user] = await Promise.all([
+      ctx.db
+        .query("periodEvents")
+        .withIndex("by_user_and_start", (q) => q.eq("userId", args.userId))
+        .collect(),
+      ctx.db
+        .query("cyclePredictionSegments")
+        .withIndex("by_user_and_status", (q) =>
+          q.eq("userId", args.userId).eq("status", "active"),
+        )
+        .unique(),
+      ctx.db.get("users", args.userId),
+    ]);
+
+    return deriveCycleIntervals(allPeriods, {
+      cutoffAt,
+      cutoffDate: toCalendarDateInTimeZone(
+        new Date(cutoffAt),
+        user?.timeZone ?? "UTC",
+      ),
+      segments: activeSegment ? [activeSegment] : [],
+    });
   },
 });
 
