@@ -1,0 +1,381 @@
+import { convexTest } from "convex-test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { internal, api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
+import { modules } from "../test.setup";
+import { seedActiveCouple } from "../test.fixtures";
+
+type TestBackend = ReturnType<typeof convexTest>;
+
+const inputCutoffAt = Date.UTC(2026, 0, 15, 12);
+const generatedAt = inputCutoffAt + 1_000;
+const outcomeCreatedAt = Date.UTC(2026, 0, 20, 12);
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+async function seedPredictionContext(
+  t: TestBackend,
+  userId: Id<"users">
+) {
+  return await t.run(async (ctx) => {
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-01-01",
+      endDate: "2026-01-05",
+      startCertainty: "exact",
+      endCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.UTC(2026, 0, 1),
+      updatedAt: Date.UTC(2026, 0, 1),
+    });
+    const predictionSegmentId = await ctx.db.insert(
+      "cyclePredictionSegments",
+      {
+        userId,
+        startDate: "2026-01-01",
+        status: "active",
+        createdAt: Date.UTC(2026, 0, 1),
+      }
+    );
+    return { predictionSegmentId };
+  });
+}
+
+function snapshotArgs(
+  userId: Id<"users">,
+  predictionSegmentId: Id<"cyclePredictionSegments">
+) {
+  const reasonCodes: (
+    | "LIMITED_HISTORY"
+    | "INSUFFICIENT_CALIBRATION"
+  )[] = ["LIMITED_HISTORY", "INSUFFICIENT_CALIBRATION"];
+  return {
+    userId,
+    generatedAt,
+    inputCutoffAt,
+    inputCutoffDate: "2026-01-15",
+    estimatorId: "cycle-interval",
+    estimatorVersion: "2",
+    intervalMethodVersion: "cycle_intervals_v1",
+    calibrationVersion: "empirical-residual-quantiles-v1",
+    pointDate: "2026-01-30",
+    earliestDate: "2026-01-29",
+    latestDate: "2026-01-31",
+    quality: "limited_evidence" as const,
+    qualityScoreV1: null,
+    basisCount: 2,
+    reasonCodes,
+    displayStatus: "shadow" as const,
+    predictionSegmentId,
+    featureVersion: "period_prediction_v2",
+    contractVersion: 2,
+  };
+}
+
+async function seedOutcomeEvent(
+  t: TestBackend,
+  userId: Id<"users">,
+  startDate = "2026-01-30"
+) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert("periodEvents", {
+      userId,
+      startDate,
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: outcomeCreatedAt,
+      updatedAt: outcomeCreatedAt,
+    })
+  );
+}
+
+describe("immutable prediction snapshots", () => {
+  test("records an outcome, then appends supersession when the primary corrects it", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const args = snapshotArgs(primaryId, predictionSegmentId);
+
+    await expect(
+      t.mutation(internal.internal.predictionSnapshots.createSnapshot, {
+        ...args,
+        earliestDate: "2026-01-31",
+      })
+    ).rejects.toThrow("PREDICTION_SNAPSHOT_INVALID_WINDOW");
+
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      args
+    );
+    const beforeAssessment = await t.run(async (ctx) =>
+      ctx.db.get("predictionSnapshots", snapshotId)
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId);
+    const outcome = await t.mutation(
+      internal.internal.predictionSnapshots.recordOutcome,
+      { snapshotId, sourcePeriodEventId: periodEventId }
+    );
+    expect(outcome).toEqual({
+      assessmentId: expect.any(String),
+      signedErrorDays: 0,
+      absoluteErrorDays: 0,
+      insideWindow: true,
+    });
+    await expect(
+      t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: periodEventId,
+      })
+    ).rejects.toThrow("PREDICTION_SNAPSHOT_ALREADY_ASSESSED");
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId,
+      startDate: "2026-01-31",
+      startCertainty: "exact",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+
+    const [
+      afterCorrection,
+      outcomeAssessments,
+      supersessions,
+      futureIntervals,
+    ] = await Promise.all([
+      t.run(async (ctx) => ctx.db.get("predictionSnapshots", snapshotId)),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "outcome")
+          )
+          .take(2)
+      ),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded")
+          )
+          .take(2)
+      ),
+      t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ]);
+    expect(afterCorrection).toEqual(beforeAssessment);
+    expect(outcomeAssessments).toHaveLength(1);
+    expect(outcomeAssessments[0]).toMatchObject({
+      type: "outcome",
+      observedEligibleStartDate: "2026-01-30",
+      signedErrorDays: 0,
+      absoluteErrorDays: 0,
+      insideWindow: true,
+    });
+    expect(supersessions).toHaveLength(1);
+    expect(supersessions[0]).toMatchObject({
+      type: "superseded",
+      sourcePeriodEventId: periodEventId,
+      sourceAuthorityVersion: 2,
+      reason: "primary_correction",
+    });
+    expect(futureIntervals?.latestEligibleStartDate).toBe("2026-01-31");
+  });
+
+  test("records an outcome after ordinary period-end completion", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId)
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId);
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      endDate: "2026-02-03",
+      endCertainty: "exact",
+      timeZone: "UTC",
+      periodEventId,
+      expectedAuthorityVersion: 1,
+    });
+
+    const event = await t.run(async (ctx) =>
+      ctx.db.get("periodEvents", periodEventId)
+    );
+    expect(event?.updatedAt).not.toBe(event?.createdAt);
+    expect(event?.primaryCorrectionVersion).toBeUndefined();
+    await expect(
+      t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: periodEventId,
+      })
+    ).resolves.toMatchObject({
+      signedErrorDays: 0,
+      absoluteErrorDays: 0,
+      insideWindow: true,
+    });
+  });
+
+  test("a primary edit appends supersession when cycle-fact versioning is off", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId)
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId);
+
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: periodEventId,
+    });
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId,
+      startDate: "2026-01-31",
+      timeZone: "UTC",
+    });
+
+    const supersessions = await t.run(async (ctx) =>
+      ctx.db
+        .query("predictionSnapshotAssessments")
+        .withIndex("by_snapshot_and_type", (q) =>
+          q.eq("snapshotId", snapshotId).eq("type", "superseded")
+        )
+        .take(2)
+    );
+    const correctedEvent = await t.run(async (ctx) =>
+      ctx.db.get("periodEvents", periodEventId)
+    );
+    expect(supersessions).toHaveLength(1);
+    expect(supersessions[0]).toMatchObject({
+      type: "superseded",
+      sourcePeriodEventId: periodEventId,
+      reason: "primary_correction",
+    });
+    expect(correctedEvent?.primaryCorrectionVersion).toBe(2);
+  });
+
+  test("continues supersession in bounded scheduled pages", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const periodEventId = await seedOutcomeEvent(t, primaryId);
+    const outcomeCount = 205;
+
+    await t.run(async (ctx) => {
+      const { qualityScoreV1, ...snapshotFields } = snapshotArgs(
+        primaryId,
+        predictionSegmentId
+      );
+      for (let index = 0; index < outcomeCount; index += 1) {
+        const snapshotId = await ctx.db.insert("predictionSnapshots", {
+          ...snapshotFields,
+          generatedAt: generatedAt + index,
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+        await ctx.db.insert("predictionSnapshotAssessments", {
+          snapshotId,
+          type: "outcome",
+          observedEligibleStartDate: "2026-01-30",
+          signedErrorDays: 0,
+          absoluteErrorDays: 0,
+          insideWindow: true,
+          sourcePeriodEventId: periodEventId,
+          sourceAuthorityVersion: 1,
+          reason: "eligible_outcome",
+          recordedAt: outcomeCreatedAt,
+        });
+      }
+    });
+
+    vi.useFakeTimers();
+    try {
+      await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId,
+        startDate: "2026-01-31",
+        startCertainty: "exact",
+        timeZone: "UTC",
+        expectedAuthorityVersion: 1,
+      });
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const supersessions = await t.run(async (ctx) =>
+      ctx.db
+        .query("predictionSnapshotAssessments")
+        .withIndex("by_source_period_event_and_type", (q) =>
+          q
+            .eq("sourcePeriodEventId", periodEventId)
+            .eq("type", "superseded")
+        )
+        .take(outcomeCount + 1)
+    );
+    expect(supersessions).toHaveLength(outcomeCount);
+  });
+
+  test.each([true, false])(
+    "a primary deletion appends a supersession assessment (cycle facts v1: %s)",
+    async (cycleFactsEnabled) => {
+      vi.stubEnv(
+        "CB_CONNECT_CYCLE_FACTS_V1",
+        cycleFactsEnabled ? "true" : "false"
+      );
+      const t = convexTest(schema, modules);
+      const { asPrimary, primaryId } = await seedActiveCouple(t);
+      const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+      const { snapshotId } = await t.mutation(
+        internal.internal.predictionSnapshots.createSnapshot,
+        snapshotArgs(primaryId, predictionSegmentId)
+      );
+      const periodEventId = await seedOutcomeEvent(t, primaryId);
+
+      await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: periodEventId,
+      });
+      await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId,
+        expectedAuthorityVersion: 1,
+      });
+
+      const assessments = await t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded")
+          )
+          .take(2)
+      );
+      const correctedEvent = await t.run(async (ctx) =>
+        ctx.db.get("periodEvents", periodEventId)
+      );
+      expect(assessments).toHaveLength(1);
+      expect(assessments[0]).toMatchObject({
+        type: "superseded",
+        sourcePeriodEventId: periodEventId,
+        reason: "primary_correction",
+      });
+      if (cycleFactsEnabled) {
+        expect(assessments[0].sourceAuthorityVersion).toBe(2);
+        expect(correctedEvent).toMatchObject({ tombstoneAuthorityVersion: 2 });
+      } else {
+        expect(assessments[0].sourceAuthorityVersion).toBeUndefined();
+        expect(correctedEvent).toBeNull();
+      }
+    }
+  );
+});

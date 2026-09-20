@@ -18,6 +18,7 @@ import {
 import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
+import { appendPrimaryCorrectionAssessments } from "../internal/predictionSnapshots";
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
@@ -26,6 +27,13 @@ const cycleFactCertaintyValidator = v.union(
 
 function currentAuthorityVersion(period: Doc<"periodEvents">): number {
   return period.authorityVersion ?? 0;
+}
+
+function nextPrimaryCorrectionVersion(period: Doc<"periodEvents">): number {
+  return Math.max(
+    currentAuthorityVersion(period),
+    period.primaryCorrectionVersion ?? 0
+  ) + 1;
 }
 
 function storedStartCertainty(
@@ -637,7 +645,12 @@ export const updatePeriodEvent = mutation({
         endDate: args.endDate,
         updatedByUserId: user._id,
         confirmationStatus: "confirmed",
+        primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
         updatedAt: Date.now(),
+      });
+      await appendPrimaryCorrectionAssessments(ctx, {
+        userId: user._id,
+        periodEventId: args.periodEventId,
       });
       return { success: true };
     }
@@ -684,8 +697,13 @@ export const updatePeriodEvent = mutation({
       updatedByUserId: user._id,
       confirmationStatus: "confirmed",
       authorityVersion: authorityVersion + 1,
-      primaryCorrectionVersion: authorityVersion + 1,
+      primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: Date.now(),
+    });
+    await appendPrimaryCorrectionAssessments(ctx, {
+      userId: user._id,
+      periodEventId: args.periodEventId,
+      sourceAuthorityVersion: authorityVersion + 1,
     });
     return { success: true };
   },
@@ -705,6 +723,10 @@ export const deletePeriodEvent = mutation({
     }
 
     if (!isCycleFactsV1Enabled()) {
+      await appendPrimaryCorrectionAssessments(ctx, {
+        userId: user._id,
+        periodEventId: args.periodEventId,
+      });
       await ctx.db.delete("periodEvents", args.periodEventId);
       return { success: true };
     }
@@ -730,8 +752,13 @@ export const deletePeriodEvent = mutation({
       tombstoneAt,
       tombstoneAuthorityVersion: authorityVersion + 1,
       updatedByUserId: user._id,
-      primaryCorrectionVersion: authorityVersion + 1,
+      primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: tombstoneAt,
+    });
+    await appendPrimaryCorrectionAssessments(ctx, {
+      userId: user._id,
+      periodEventId: args.periodEventId,
+      sourceAuthorityVersion: authorityVersion + 1,
     });
     return { success: true };
   },

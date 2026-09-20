@@ -293,6 +293,84 @@ export default defineSchema({
     .index("by_user_and_status", ["userId", "status"])
     .index("by_user_and_created_at", ["userId", "createdAt"]),
 
+  predictionSnapshots: defineTable({
+    userId: v.id("users"),
+    generatedAt: v.number(),
+    inputCutoffAt: v.number(),
+    inputCutoffDate: v.string(),
+    estimatorId: v.string(),
+    estimatorVersion: v.string(),
+    intervalMethodVersion: v.string(),
+    calibrationVersion: v.string(),
+    pointDate: v.string(),
+    earliestDate: v.string(),
+    latestDate: v.string(),
+    quality: v.union(
+      v.literal("high"),
+      v.literal("moderate"),
+      v.literal("low"),
+      v.literal("timing_less_predictable"),
+      v.literal("limited_evidence")
+    ),
+    qualityScoreV1: v.optional(v.number()),
+    basisCount: v.number(),
+    reasonCodes: v.array(
+      v.union(
+        v.literal("ELEVATED_CALIBRATION_RISK"),
+        v.literal("INSUFFICIENT_CALIBRATION"),
+        v.literal("RECENT_TIMING_VARIABLE"),
+        v.literal("SPARSE_HISTORY"),
+        v.literal("LIMITED_HISTORY"),
+        v.literal("APPROXIMATE_DATE"),
+        v.literal("LEGACY_UNKNOWN"),
+        v.literal("POSSIBLE_MISSING_LOG"),
+        v.literal("CONTEXT_SEGMENT"),
+        v.literal("RECENT_CORRECTION"),
+        v.literal("PARTNER_ASSISTED"),
+        v.literal("TOMBSTONED"),
+        v.literal("AFTER_CUTOFF"),
+        v.literal("INVALID_DATE"),
+        v.literal("NON_POSITIVE_INTERVAL")
+      )
+    ),
+    displayStatus: v.union(v.literal("shadow"), v.literal("visible")),
+    predictionSegmentId: v.id("cyclePredictionSegments"),
+    featureVersion: v.string(),
+    contractVersion: v.number(),
+  })
+    .index("by_user_and_generated_at", ["userId", "generatedAt"])
+    .index("by_user_and_input_cutoff_at", ["userId", "inputCutoffAt"]),
+
+  predictionSnapshotAssessments: defineTable(
+    v.union(
+      v.object({
+        snapshotId: v.id("predictionSnapshots"),
+        type: v.literal("outcome"),
+        observedEligibleStartDate: v.string(),
+        signedErrorDays: v.number(),
+        absoluteErrorDays: v.number(),
+        insideWindow: v.boolean(),
+        sourcePeriodEventId: v.id("periodEvents"),
+        sourceAuthorityVersion: v.optional(v.number()),
+        reason: v.literal("eligible_outcome"),
+        recordedAt: v.number(),
+      }),
+      v.object({
+        snapshotId: v.id("predictionSnapshots"),
+        type: v.literal("superseded"),
+        sourcePeriodEventId: v.id("periodEvents"),
+        sourceAuthorityVersion: v.optional(v.number()),
+        reason: v.literal("primary_correction"),
+        recordedAt: v.number(),
+      })
+    )
+  )
+    .index("by_snapshot_and_type", ["snapshotId", "type"])
+    .index("by_source_period_event_and_type", [
+      "sourcePeriodEventId",
+      "type",
+    ]),
+
   painTips: defineTable({
     phase: v.union(
       v.literal("menstruation"),
