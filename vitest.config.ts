@@ -8,6 +8,7 @@ export default defineConfig({
       "app/**/*.test.ts",
       "components/**/*.test.ts",
       "lib/**/*.test.ts",
+      "scripts/**/*.test.ts",
       "e2e/**/*.test.ts",
       "middleware.test.ts",
     ],

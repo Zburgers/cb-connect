@@ -1,0 +1,151 @@
+{
+  "formatVersion": "g3-cycle-benchmark-data-v1",
+  "users": [
+    {
+      "userKey": "synthetic-user-01",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "stable-period-1", "startDate": "2021-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1609502400000, "updatedAt": 1609502400000},
+        {"eventKey": "stable-period-2", "startDate": "2021-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1611921600000, "updatedAt": 1611921600000},
+        {"eventKey": "stable-period-3", "startDate": "2021-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1614340800000, "updatedAt": 1614340800000},
+        {"eventKey": "stable-period-4", "startDate": "2021-03-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1616760000000, "updatedAt": 1616760000000},
+        {"eventKey": "stable-period-5", "startDate": "2021-04-23", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1619179200000, "updatedAt": 1619179200000},
+        {"eventKey": "stable-period-6", "startDate": "2021-05-21", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1621598400000, "updatedAt": 1621598400000},
+        {"eventKey": "stable-period-7", "startDate": "2021-06-18", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1624017600000, "updatedAt": 1624017600000}
+      ],
+      "segments": [
+        {"segmentKey": "stable-segment", "startDate": "2021-01-01", "status": "active", "createdAt": 1609491600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-02",
+      "timezone": "UTC",
+      "configuredCycleLength": 29,
+      "events": [
+        {"eventKey": "missing-log-period-1", "startDate": "2021-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1609502400000, "updatedAt": 1609502400000},
+        {"eventKey": "missing-log-period-2", "startDate": "2021-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1611921600000, "updatedAt": 1611921600000},
+        {"eventKey": "missing-log-period-3", "startDate": "2021-02-27", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1614427200000, "updatedAt": 1614427200000},
+        {"eventKey": "missing-log-period-4", "startDate": "2021-03-27", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1616846400000, "updatedAt": 1616846400000},
+        {"eventKey": "missing-log-period-5", "startDate": "2021-05-24", "startCertainty": "exact", "source": "partner_assist", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1621857600000, "updatedAt": 1621857600000},
+        {"eventKey": "missing-log-period-6", "startDate": "2021-06-21", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1624276800000, "updatedAt": 1624276800000},
+        {"eventKey": "missing-log-approximate", "startDate": "2021-07-05", "startCertainty": "approximate", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1625486400000, "updatedAt": 1625486400000},
+        {"eventKey": "missing-log-period-7", "startDate": "2021-07-19", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1626696000000, "updatedAt": 1626696000000},
+        {"eventKey": "missing-log-legacy", "startDate": "2021-08-02", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1627905600000, "updatedAt": 1627905600000, "legacyReason": "legacy_unknown"},
+        {"eventKey": "missing-log-period-8", "startDate": "2021-08-16", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1629115200000, "updatedAt": 1629115200000}
+      ],
+      "segments": [
+        {"segmentKey": "variable-segment", "startDate": "2021-01-01", "status": "active", "createdAt": 1609491600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-03",
+      "timezone": "America/Los_Angeles",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "leap-dst-period-1", "startDate": "2020-02-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1583006400000, "updatedAt": 1583006400000},
+        {"eventKey": "leap-dst-period-2", "startDate": "2020-03-28", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1585422000000, "updatedAt": 1585422000000},
+        {"eventKey": "leap-dst-period-3", "startDate": "2020-04-25", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1587841200000, "updatedAt": 1587841200000},
+        {"eventKey": "leap-dst-period-4", "startDate": "2020-05-23", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1590260400000, "updatedAt": 1590260400000},
+        {"eventKey": "leap-dst-period-5", "startDate": "2020-06-20", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1592679600000, "updatedAt": 1592679600000}
+      ],
+      "segments": [
+        {"segmentKey": "leap-segment", "startDate": "2020-02-29", "status": "active", "createdAt": 1582995600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-04",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "future-correction-period-1", "startDate": "2020-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1577880000000, "updatedAt": 1577880000000},
+        {"eventKey": "future-correction-period-2", "startDate": "2020-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1580299200000, "updatedAt": 1580299200000},
+        {"eventKey": "future-correction-period-3", "startDate": "2020-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1582718400000, "updatedAt": 1582718400000},
+        {"eventKey": "future-correction-period-4", "startDate": "2020-03-27", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1585310400000, "updatedAt": 1585310400000},
+        {"eventKey": "future-correction-period-3", "startDate": "2020-02-27", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 2, "createdAt": 1582718400000, "updatedAt": 1585396800000, "primaryCorrectionVersion": 1}
+      ],
+      "segments": [
+        {"segmentKey": "correction-segment", "startDate": "2020-01-01", "status": "active", "createdAt": 1577869200000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-05",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "segment-shift-period-1", "startDate": "2022-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1641038400000, "updatedAt": 1641038400000},
+        {"eventKey": "segment-shift-period-2", "startDate": "2022-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1643457600000, "updatedAt": 1643457600000},
+        {"eventKey": "segment-shift-period-3", "startDate": "2022-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1645876800000, "updatedAt": 1645876800000},
+        {"eventKey": "segment-shift-period-4", "startDate": "2022-03-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1648296000000, "updatedAt": 1648296000000},
+        {"eventKey": "segment-shift-period-5", "startDate": "2022-04-23", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1650715200000, "updatedAt": 1650715200000},
+        {"eventKey": "segment-shift-period-6", "startDate": "2022-05-21", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1653134400000, "updatedAt": 1653134400000}
+      ],
+      "segments": [
+        {"segmentKey": "old-segment", "startDate": "2022-01-01", "status": "superseded", "createdAt": 1641027600000, "supersededAt": 1650704400000},
+        {"segmentKey": "new-segment", "startDate": "2022-04-23", "status": "active", "createdAt": 1650704400000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-00",
+      "timezone": "UTC",
+      "configuredCycleLength": 29,
+      "events": [
+        {"eventKey": "calibration-only-period-1", "startDate": "2023-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1672574400000, "updatedAt": 1672574400000},
+        {"eventKey": "calibration-only-period-2", "startDate": "2023-01-30", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1675080000000, "updatedAt": 1675080000000},
+        {"eventKey": "calibration-only-period-3", "startDate": "2023-02-28", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1677585600000, "updatedAt": 1677585600000},
+        {"eventKey": "calibration-only-period-4", "startDate": "2023-03-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1680091200000, "updatedAt": 1680091200000}
+      ],
+      "segments": [
+        {"segmentKey": "calibration-segment", "startDate": "2023-01-01", "status": "active", "createdAt": 1672563600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-06",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "evaluation-only-period-1", "startDate": "2024-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1704110400000, "updatedAt": 1704110400000},
+        {"eventKey": "evaluation-only-period-2", "startDate": "2024-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1706529600000, "updatedAt": 1706529600000},
+        {"eventKey": "evaluation-only-period-3", "startDate": "2024-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1708948800000, "updatedAt": 1708948800000},
+        {"eventKey": "evaluation-only-period-4", "startDate": "2024-03-25", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1711368000000, "updatedAt": 1711368000000}
+      ],
+      "segments": [
+        {"segmentKey": "evaluation-segment", "startDate": "2024-01-01", "status": "active", "createdAt": 1704099600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-07",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "persistent-shift-period-1", "startDate": "2024-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1704110400000, "updatedAt": 1704110400000},
+        {"eventKey": "persistent-shift-period-2", "startDate": "2024-01-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1706529600000, "updatedAt": 1706529600000},
+        {"eventKey": "persistent-shift-period-3", "startDate": "2024-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1708948800000, "updatedAt": 1708948800000},
+        {"eventKey": "persistent-shift-period-4", "startDate": "2024-03-25", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1711368000000, "updatedAt": 1711368000000},
+        {"eventKey": "persistent-shift-period-5", "startDate": "2024-04-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1714132800000, "updatedAt": 1714132800000},
+        {"eventKey": "persistent-shift-period-6", "startDate": "2024-05-28", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1716897600000, "updatedAt": 1716897600000},
+        {"eventKey": "persistent-shift-period-7", "startDate": "2024-06-29", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1719662400000, "updatedAt": 1719662400000}
+      ],
+      "segments": [
+        {"segmentKey": "persistent-shift-segment", "startDate": "2024-01-01", "status": "active", "createdAt": 1704099600000}
+      ]
+    },
+    {
+      "userKey": "synthetic-user-08",
+      "timezone": "UTC",
+      "configuredCycleLength": 28,
+      "events": [
+        {"eventKey": "variable-history-period-1", "startDate": "2024-01-01", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1704110400000, "updatedAt": 1704110400000},
+        {"eventKey": "variable-history-period-2", "startDate": "2024-01-27", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1706356800000, "updatedAt": 1706356800000},
+        {"eventKey": "variable-history-period-3", "startDate": "2024-02-26", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1708948800000, "updatedAt": 1708948800000},
+        {"eventKey": "variable-history-period-4", "startDate": "2024-03-24", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1711281600000, "updatedAt": 1711281600000},
+        {"eventKey": "variable-history-period-5", "startDate": "2024-04-24", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1713960000000, "updatedAt": 1713960000000},
+        {"eventKey": "variable-history-period-6", "startDate": "2024-05-22", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1716379200000, "updatedAt": 1716379200000},
+        {"eventKey": "variable-history-period-7", "startDate": "2024-06-21", "startCertainty": "exact", "source": "self", "confirmationStatus": "confirmed", "authorityVersion": 1, "createdAt": 1718971200000, "updatedAt": 1718971200000}
+      ],
+      "segments": [
+        {"segmentKey": "variable-history-segment", "startDate": "2024-01-01", "status": "active", "createdAt": 1704099600000}
+      ]
+    }
+  ]
+}

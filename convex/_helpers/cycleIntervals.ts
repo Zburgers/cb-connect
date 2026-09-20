@@ -137,7 +137,7 @@ function sortedReasons(
   return [...reasons].sort();
 }
 
-function possibleMissingLog(
+export function isPossibleMissingLogInterval(
   lengthDays: number,
   precedingLengths: readonly number[],
 ): boolean {
@@ -249,7 +249,7 @@ export function deriveCycleIntervals(
     if (!included) {
       intervalReasons.add("NON_POSITIVE_INTERVAL");
     } else {
-      if (possibleMissingLog(lengthDays, precedingLengths)) {
+      if (isPossibleMissingLogInterval(lengthDays, precedingLengths)) {
         intervalReasons.add("POSSIBLE_MISSING_LOG");
         reasonCodes.add("POSSIBLE_MISSING_LOG");
       }

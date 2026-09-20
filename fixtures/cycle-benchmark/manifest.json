@@ -1,0 +1,19 @@
+{
+  "manifestId": "g3-synthetic-golden-v1",
+  "protocolVersion": "G3-BENCH-V1",
+  "datasetClass": "synthetic",
+  "datasetSha256": "b53424a7d8612b761498f84a33831f5d28d9320b598f36637c1ac146e8e14b76",
+  "split": {
+    "version": "hmac-sha256-60-20-20-v1",
+    "saltId": "synthetic-only-v1",
+    "allocation": {
+      "development": 60,
+      "calibration": 20,
+      "evaluation": 20
+    }
+  },
+  "synthetic": {
+    "fixtureId": "g3-bench-golden-v1",
+    "containsRealUserData": false
+  }
+}
