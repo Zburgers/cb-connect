@@ -106,6 +106,22 @@ describe("dashboard cycle state read model", () => {
           updatedAt: Date.now() - 1_000 + index,
         });
       }
+      await ctx.db.insert("painTips", {
+        phase: "menstruation",
+        painSeverity: "none",
+        title: "Gentle movement",
+        suggestions: ["Try a short walk"],
+        safetyNote: "Choose what feels comfortable.",
+        isActive: true,
+        priority: 1,
+      });
+      await ctx.db.insert("nutritionTips", {
+        phase: "menstruation",
+        foodItem: "Lentils",
+        reasoning: "A varied meal can support everyday nutrition.",
+        isActive: true,
+        priority: 1,
+      });
     });
 
     await asPrimary.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
@@ -115,6 +131,10 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.cycleInfo).toBeNull();
+    expect(result.painTip).toMatchObject({ title: "Gentle movement" });
+    expect(result.nutritionTips).toContainEqual(
+      expect.objectContaining({ foodItem: "Lentils" }),
+    );
     expect(result.periodPredictionV2).toMatchObject({
       status: "limited_evidence",
       pointDate: "2026-09-21",

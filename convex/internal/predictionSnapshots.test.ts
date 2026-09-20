@@ -228,6 +228,169 @@ describe("immutable prediction snapshots", () => {
     });
   });
 
+  test("signed outcome error is observed start minus predicted point", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId, "2026-02-01");
+
+    await expect(
+      t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: periodEventId,
+      }),
+    ).resolves.toMatchObject({
+      signedErrorDays: 2,
+      absoluteErrorDays: 2,
+      insideWindow: false,
+    });
+  });
+
+  test("a primary end-only correction keeps the start outcome valid", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId);
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: periodEventId,
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId,
+      startDate: "2026-01-30",
+      endDate: "2026-02-02",
+      endCertainty: "exact",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+
+    const [event, supersessions] = await Promise.all([
+      t.run(async (ctx) => ctx.db.get("periodEvents", periodEventId)),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+          )
+          .take(2),
+      ),
+    ]);
+    expect(event?.primaryCorrectionVersion).toBeUndefined();
+    expect(supersessions).toHaveLength(0);
+  });
+
+  test("a partner end-only correction keeps the start outcome valid", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const { eventId } = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-01-30", startCertainty: "exact" },
+    );
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: eventId,
+    });
+
+    await asPartner.mutation(
+      api.mutations.periods.correctAssistedPeriodEvent,
+      {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-01-30",
+        endDate: "2026-02-02",
+        endCertainty: "exact",
+      },
+    );
+
+    const [event, supersessions] = await Promise.all([
+      t.run(async (ctx) => ctx.db.get("periodEvents", eventId)),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+          )
+          .take(2),
+      ),
+    ]);
+    expect(event?.partnerCorrectionVersion).toBeUndefined();
+    expect(supersessions).toHaveLength(0);
+  });
+
+  test("a backfilled earlier start replaces a later recorded outcome", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const laterId = await seedOutcomeEvent(t, primaryId, "2026-06-20");
+    const earlierId = await seedOutcomeEvent(t, primaryId, "2026-06-10");
+    const middleId = await seedOutcomeEvent(t, primaryId, "2026-06-15");
+
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: laterId,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.recordOutcomesForStart,
+      { sourcePeriodEventId: earlierId },
+    );
+    await t.mutation(
+      internal.internal.predictionSnapshots.recordOutcomesForStart,
+      { sourcePeriodEventId: middleId },
+    );
+
+    const [outcomes, supersessions] = await Promise.all([
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+          )
+          .take(5),
+      ),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+          )
+          .take(5),
+      ),
+    ]);
+    expect(
+      outcomes.flatMap((item) =>
+        item.type === "outcome" ? [item.observedEligibleStartDate] : [],
+      ),
+    ).toEqual(["2026-06-20", "2026-06-10"]);
+    expect(supersessions).toMatchObject([
+      {
+        type: "superseded",
+        sourcePeriodEventId: laterId,
+        reason: "earlier_eligible_start_discovered",
+      },
+    ]);
+  });
+
   test("a newly logged period start appends its eligible outcome to prior snapshots", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

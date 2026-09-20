@@ -192,6 +192,7 @@ export const getDashboardData = query({
     if (predictionData) {
       const currentPrediction = buildPeriodPrediction({
         cycleIntervals: predictionData.cycleIntervals,
+        historyComplete: predictionData.historyComplete,
         configuredCycleLength: cycleLength,
         predictionPaused: cycleSettings?.predictionPaused ?? false,
       });
@@ -211,7 +212,7 @@ export const getDashboardData = query({
     const v2Bounds = getV2Bounds(periodPredictionV2);
 
     const readModel =
-      (cycleStateV1Exposed || partnerPredictionV2Enabled) && canViewPhase
+      (cycleStateV1Exposed || predictionV2EnabledForTarget) && canViewPhase
         ? buildCycleReadModel({
             targetDate: today,
             timeZone: targetUser.timeZone,
@@ -327,6 +328,10 @@ export const getDashboardData = query({
               periodLength,
               today,
             ));
+    const tipPhase =
+      partnerV1View || partnerPredictionView
+        ? null
+        : readModel?.cycleStateV1.phase ?? cycleInfo?.phase ?? null;
 
     // Get today's pain log
     const todayPainLog = await ctx.db
@@ -370,7 +375,7 @@ export const getDashboardData = query({
         : null;
     }
 
-    if (!cycleInfo) {
+    if (!tipPhase) {
       return {
         hasData: true,
         isPartnerView,
@@ -389,7 +394,7 @@ export const getDashboardData = query({
     const painTip = await ctx.db
       .query("painTips")
       .withIndex("by_phase_and_severity", (q) =>
-        q.eq("phase", cycleInfo.phase).eq("painSeverity", painSeverity).eq("isActive", true)
+        q.eq("phase", tipPhase).eq("painSeverity", painSeverity).eq("isActive", true)
       )
       .order("desc")
       .first();
@@ -398,7 +403,7 @@ export const getDashboardData = query({
     const allNutritionTips = await ctx.db
       .query("nutritionTips")
       .withIndex("by_phase", (q) =>
-        q.eq("phase", cycleInfo.phase).eq("isActive", true)
+        q.eq("phase", tipPhase).eq("isActive", true)
       )
       .collect();
 
@@ -435,8 +440,9 @@ export const getDashboardData = query({
       cycleStateV1Exposed,
       ...predictionFields,
       painData,
-      painTip: partnerV1View ? null : painTip,
-      nutritionTips: partnerV1View ? [] : nutritionTips,
+      painTip: partnerV1View || partnerPredictionView ? null : painTip,
+      nutritionTips:
+        partnerV1View || partnerPredictionView ? [] : nutritionTips,
     };
   },
 });

@@ -34,7 +34,9 @@ import {
 } from "../convex/_helpers/predictionQuality";
 import {
   estimatePredictionCandidate,
+  PROMOTION_CANDIDATE_ESTIMATOR_IDS,
   PREDICTION_ESTIMATOR_IDS,
+  type PromotionCandidateEstimatorId,
   type PredictionEstimatorId,
 } from "../convex/_helpers/predictionEstimators";
 import {
@@ -195,6 +197,7 @@ export type CycleBenchmarkReport = {
   pairedBootstrapVersion: typeof CYCLE_BENCHMARK_BOOTSTRAP_VERSION;
   partition: CycleBenchmarkPartition;
   datasetClass: CycleBenchmarkManifest["datasetClass"];
+  selectedEstimatorId: PromotionCandidateEstimatorId | null;
   manifestId: string;
   manifestSha256: string;
   datasetSha256: string;
@@ -686,7 +689,7 @@ function buildUserFolds(
       });
       const cycleDays = Math.floor(estimate.pointCycleLength + 0.5);
       const pointDate = addCalendarDays(derived.latestEligibleStartDate, cycleDays);
-      const signedErrorDays = daysBetweenCalendarDates(target.startDate, pointDate);
+      const signedErrorDays = daysBetweenCalendarDates(pointDate, target.startDate);
       predictions[estimatorId] = {
         pointDate,
         signedErrorDays,
@@ -982,6 +985,7 @@ function candidateMetrics(
 function buildSubgroups(
   folds: readonly BenchmarkFold[],
   unscorableTargets: readonly { groups: Record<string, string> }[],
+  estimatorIds: readonly PredictionEstimatorId[] = PREDICTION_ESTIMATOR_IDS,
 ): CycleBenchmarkReport["subgroups"] {
   const dimensions: Record<string, readonly string[]> = {
     calibrationSource: [
@@ -1023,7 +1027,7 @@ function buildSubgroups(
         estimators:
           groupTargetCount === 0
             ? []
-            : PREDICTION_ESTIMATOR_IDS.map((id) =>
+            : estimatorIds.map((id) =>
                 candidateMetrics(
                   id,
                   matched,
@@ -1071,7 +1075,7 @@ function fitCalibrationModel(folds: readonly BenchmarkFold[]): CalibrationModel 
       riskDeciles: new Map(),
     };
     for (const fold of folds) {
-      const residual = -fold.predictions[estimatorId].signedErrorDays;
+      const residual = fold.predictions[estimatorId].signedErrorDays;
       estimator.globalResiduals.push(residual);
       const variability = fold.groups.variability;
       if (variability === "stable" || variability === "moderate" || variability === "high") {
@@ -1166,7 +1170,7 @@ function applyCalibration(
     // Add this target's residual only after its interval has been sized.
     for (const estimatorId of PREDICTION_ESTIMATOR_IDS) {
       const residuals = userResiduals.get(estimatorId) ?? [];
-      residuals.push(-fold.predictions[estimatorId].signedErrorDays);
+      residuals.push(fold.predictions[estimatorId].signedErrorDays);
       userResiduals.set(estimatorId, residuals);
     }
     personalResiduals.set(fold.userKey, userResiduals);
@@ -1177,6 +1181,7 @@ function applyCalibration(
 export function deriveCycleBenchmarkPromotionVerdict(args: {
   datasetClass: CycleBenchmarkManifest["datasetClass"];
   partition: CycleBenchmarkPartition;
+  selectedEstimatorId?: PromotionCandidateEstimatorId;
   estimators: readonly PromotionMetric[];
   subgroups: readonly {
     dimension: string;
@@ -1203,6 +1208,19 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
       manualGates: [],
     };
   }
+  if (
+    !args.selectedEstimatorId ||
+    !PROMOTION_CANDIDATE_ESTIMATOR_IDS.includes(args.selectedEstimatorId)
+  ) {
+    return {
+      status: "not_assessed",
+      candidates: [],
+      reason:
+        "A development-selected estimator must be frozen in the dataset manifest before evaluation",
+      recommendedEstimatorId: null,
+      manualGates: [],
+    };
+  }
 
   const configured = args.estimators.find(
     (metric) => metric.estimatorId === "configured_v1",
@@ -1211,7 +1229,7 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
     (metric) => metric.estimatorId === "all_median_v1",
   );
   const candidates = args.estimators
-    .filter((metric) => metric.estimatorId !== "configured_v1")
+    .filter((metric) => metric.estimatorId === args.selectedEstimatorId)
     .map((candidate): PromotionCandidateVerdict => {
       const failedCriteria: string[] = [];
       const failUnless = (condition: boolean, criterion: string) => {
@@ -1323,20 +1341,8 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
       };
     });
   const hasMetricPass = candidates.some((candidate) => candidate.passed);
-  const recommendedEstimatorId = candidates
-    .filter((candidate) => candidate.passed)
-    .map((candidate) => ({
-      estimatorId: candidate.estimatorId,
-      medianWindow80Days:
-        args.estimators.find(
-          (metric) => metric.estimatorId === candidate.estimatorId,
-        )?.predictionCalibration?.medianWindow80Days ?? Number.POSITIVE_INFINITY,
-    }))
-    .sort(
-      (left, right) =>
-        left.medianWindow80Days - right.medianWindow80Days ||
-        left.estimatorId.localeCompare(right.estimatorId),
-    )[0]?.estimatorId ?? null;
+  const recommendedEstimatorId =
+    candidates.find((candidate) => candidate.passed)?.estimatorId ?? null;
   return {
     status: hasMetricPass
       ? "metrics_pass_manual_gates_pending"
@@ -1366,6 +1372,15 @@ export function runCycleBenchmark(options: {
   sourceTreeState: "clean" | "dirty";
   protocolSha256: string;
 }): CycleBenchmarkReport {
+  if (
+    options.partition === "evaluation" &&
+    options.manifest.datasetClass !== "synthetic" &&
+    options.manifest.selectedEstimatorId === undefined
+  ) {
+    throw new Error(
+      "Evaluation requires a development-selected estimator frozen in the manifest",
+    );
+  }
   const partitionUsers = options.dataset.users.filter(
     (user) => assignCycleBenchmarkPartition(user.userKey, options.splitSalt) === options.partition,
   );
@@ -1395,7 +1410,18 @@ export function runCycleBenchmark(options: {
   const targetCount = results.reduce((sum, result) => sum + result.targetCount, 0);
   const unscorableTargets = results.flatMap((result) => result.unscorableTargets);
   const unscorableTargetCount = unscorableTargets.length;
-  const estimators = PREDICTION_ESTIMATOR_IDS.map((id) =>
+  const evaluationEstimatorIds =
+    options.partition === "evaluation" &&
+    options.manifest.datasetClass !== "synthetic" &&
+    options.manifest.selectedEstimatorId !== undefined
+      ? PREDICTION_ESTIMATOR_IDS.filter(
+          (id) =>
+            id === "configured_v1" ||
+            id === "all_median_v1" ||
+            id === options.manifest.selectedEstimatorId,
+        )
+      : PREDICTION_ESTIMATOR_IDS;
+  const estimators = evaluationEstimatorIds.map((id) =>
     candidateMetrics(
       id,
       folds,
@@ -1405,7 +1431,11 @@ export function runCycleBenchmark(options: {
       true,
     ),
   );
-  const subgroups = buildSubgroups(folds, unscorableTargets);
+  const subgroups = buildSubgroups(
+    folds,
+    unscorableTargets,
+    evaluationEstimatorIds,
+  );
 
   return {
     protocolVersion: options.manifest.protocolVersion,
@@ -1414,6 +1444,7 @@ export function runCycleBenchmark(options: {
     pairedBootstrapVersion: CYCLE_BENCHMARK_BOOTSTRAP_VERSION,
     partition: options.partition,
     datasetClass: options.manifest.datasetClass,
+    selectedEstimatorId: options.manifest.selectedEstimatorId ?? null,
     manifestId: options.manifest.manifestId,
     manifestSha256: options.manifestSha256,
     datasetSha256: options.manifest.datasetSha256,
@@ -1438,6 +1469,7 @@ export function runCycleBenchmark(options: {
     promotionVerdict: deriveCycleBenchmarkPromotionVerdict({
       datasetClass: options.manifest.datasetClass,
       partition: options.partition,
+      selectedEstimatorId: options.manifest.selectedEstimatorId,
       estimators,
       subgroups,
     }),

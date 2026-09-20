@@ -147,12 +147,22 @@ describe("cycle benchmark manifest", () => {
     };
     expect(() => validateCycleBenchmarkManifest(frozen, "calibration")).not.toThrow();
     expect(() => validateCycleBenchmarkManifest(frozen, "evaluation")).toThrow(
+      "development-selected estimator",
+    );
+    const selected = { ...frozen, selectedEstimatorId: "all_mean_v1" as const };
+    expect(() =>
+      validateCycleBenchmarkManifest(
+        { ...selected, selectedEstimatorId: "configured_v1" },
+        "evaluation",
+      ),
+    ).toThrow("not a promotion candidate");
+    expect(() => validateCycleBenchmarkManifest(selected, "evaluation")).toThrow(
       "not approved to open",
     );
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...frozen,
+          ...selected,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -169,7 +179,7 @@ describe("cycle benchmark manifest", () => {
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...frozen,
+          ...selected,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -185,7 +195,7 @@ describe("cycle benchmark manifest", () => {
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...frozen,
+          ...selected,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -222,6 +232,7 @@ describe("cycle benchmark manifest", () => {
       medianIntervalQ33: 27,
       medianIntervalQ67: 30,
     };
+    manifest.selectedEstimatorId = "all_mean_v1";
     manifest.authority!.evaluationHoldout = {
       state: "opened_once",
       openedBy: "Named Holdout Reviewer",

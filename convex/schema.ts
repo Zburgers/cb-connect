@@ -384,7 +384,8 @@ export default defineSchema({
         sourceAuthorityVersion: v.optional(v.number()),
         reason: v.union(
           v.literal("primary_correction"),
-          v.literal("partner_correction")
+          v.literal("partner_correction"),
+          v.literal("earlier_eligible_start_discovered")
         ),
         recordedAt: v.number(),
       })
@@ -392,6 +393,11 @@ export default defineSchema({
   )
     .index("by_snapshot_and_type", ["snapshotId", "type"])
     .index("by_source_period_event_and_type", [
+      "sourcePeriodEventId",
+      "type",
+    ])
+    .index("by_snapshot_source_event_and_type", [
+      "snapshotId",
       "sourcePeriodEventId",
       "type",
     ]),

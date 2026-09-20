@@ -76,7 +76,6 @@ const correctionReasonValidator = v.union(
   v.literal("partner_correction")
 );
 type CorrectionReason = "primary_correction" | "partner_correction";
-
 type SnapshotCreateArgs = Omit<
   Doc<"predictionSnapshots">,
   "_id" | "_creationTime" | "qualityScoreV1"
@@ -262,6 +261,7 @@ export async function ensureCurrentSnapshot(
   ]);
   const prediction = buildPeriodPrediction({
     cycleIntervals: predictionData.cycleIntervals,
+    historyComplete: predictionData.historyComplete,
     configuredCycleLength: settings?.cycleLength ?? 28,
     predictionPaused: settings?.predictionPaused ?? false,
   });
@@ -346,25 +346,12 @@ export const recordOutcome = internalMutation({
       throw new Error("PREDICTION_SNAPSHOT_OUTCOME_NOT_ELIGIBLE");
     }
 
-    const [existingOutcome, existingSupersession] = await Promise.all([
-      ctx.db
-        .query("predictionSnapshotAssessments")
-        .withIndex("by_snapshot_and_type", (q) =>
-          q.eq("snapshotId", args.snapshotId).eq("type", "outcome")
-        )
-        .first(),
-      ctx.db
-        .query("predictionSnapshotAssessments")
-        .withIndex("by_snapshot_and_type", (q) =>
-          q.eq("snapshotId", args.snapshotId).eq("type", "superseded")
-        )
-        .first(),
-    ]);
-    if (existingOutcome || existingSupersession) {
+    const assessment = await appendOutcomeIfEarliest(ctx, snapshot, event);
+    if (!assessment) {
       throw new Error("PREDICTION_SNAPSHOT_ALREADY_ASSESSED");
     }
 
-    return await appendOutcomeAssessment(ctx, snapshot, event);
+    return assessment;
   },
 });
 
@@ -398,6 +385,61 @@ async function appendOutcomeAssessment(
   return { assessmentId, signedErrorDays, absoluteErrorDays, insideWindow };
 }
 
+async function appendOutcomeIfEarliest(
+  ctx: MutationCtx,
+  snapshot: Doc<"predictionSnapshots">,
+  event: Doc<"periodEvents">,
+) {
+  const latestOutcome = await ctx.db
+    .query("predictionSnapshotAssessments")
+    .withIndex("by_snapshot_and_type", (q) =>
+      q.eq("snapshotId", snapshot._id).eq("type", "outcome"),
+    )
+    .order("desc")
+    .first();
+
+  if (latestOutcome?.type === "outcome") {
+    if (event.startDate >= latestOutcome.observedEligibleStartDate) return null;
+    const previousSupersession = await ctx.db
+      .query("predictionSnapshotAssessments")
+      .withIndex("by_snapshot_source_event_and_type", (q) =>
+        q
+          .eq("snapshotId", snapshot._id)
+          .eq("sourcePeriodEventId", latestOutcome.sourcePeriodEventId)
+          .eq("type", "superseded"),
+      )
+      .first();
+    if (previousSupersession) return null;
+
+    await ctx.db.insert("predictionSnapshotAssessments", {
+      snapshotId: snapshot._id,
+      type: "superseded",
+      sourcePeriodEventId: latestOutcome.sourcePeriodEventId,
+      ...(latestOutcome.sourceAuthorityVersion === undefined
+        ? {}
+        : { sourceAuthorityVersion: latestOutcome.sourceAuthorityVersion }),
+      reason: "earlier_eligible_start_discovered",
+      recordedAt: Date.now(),
+    });
+  } else {
+    const latestSupersession = await ctx.db
+      .query("predictionSnapshotAssessments")
+      .withIndex("by_snapshot_and_type", (q) =>
+        q.eq("snapshotId", snapshot._id).eq("type", "superseded"),
+      )
+      .order("desc")
+      .first();
+    if (
+      latestSupersession &&
+      latestSupersession.reason !== "earlier_eligible_start_discovered"
+    ) {
+      return null;
+    }
+  }
+
+  return await appendOutcomeAssessment(ctx, snapshot, event);
+}
+
 export const recordOutcomesForStart = internalMutation({
   args: {
     sourcePeriodEventId: v.id("periodEvents"),
@@ -421,23 +463,7 @@ export const recordOutcomesForStart = internalMutation({
       .paginate({ numItems: 25, cursor: cursor ?? null });
     for (const snapshot of page.page) {
       if (event.startDate <= snapshot.inputCutoffDate) continue;
-      const [outcome, supersession] = await Promise.all([
-        ctx.db
-          .query("predictionSnapshotAssessments")
-          .withIndex("by_snapshot_and_type", (q) =>
-            q.eq("snapshotId", snapshot._id).eq("type", "outcome"),
-          )
-          .first(),
-        ctx.db
-          .query("predictionSnapshotAssessments")
-          .withIndex("by_snapshot_and_type", (q) =>
-            q.eq("snapshotId", snapshot._id).eq("type", "superseded"),
-          )
-          .first(),
-      ]);
-      if (!outcome && !supersession) {
-        await appendOutcomeAssessment(ctx, snapshot, event);
-      }
+      await appendOutcomeIfEarliest(ctx, snapshot, event);
     }
 
     if (!page.isDone) {

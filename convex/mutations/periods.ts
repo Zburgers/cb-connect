@@ -16,6 +16,7 @@ import {
   evaluatePeriodEventInvariants,
   type PeriodEventCandidate,
 } from "../_helpers/periodEventInvariants";
+import { isStartAnchorEligible } from "../_helpers/cycleFactEligibility";
 import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
@@ -82,6 +83,20 @@ function storedLegacyReason(period: Doc<"periodEvents">) {
   return startUnknown || endUnknown
     ? period.legacyReason ?? "missing_provenance"
     : undefined;
+}
+
+function hasPredictionStartChange(
+  period: Doc<"periodEvents">,
+  next: Pick<
+    Doc<"periodEvents">,
+    "startDate" | "startCertainty" | "legacyReason"
+  >,
+): boolean {
+  const nextPeriod = { ...period, ...next };
+  return (
+    period.startDate !== next.startDate ||
+    isStartAnchorEligible(period) !== isStartAnchorEligible(nextPeriod)
+  );
 }
 
 function toPeriodEventProjection(period: Doc<"periodEvents">) {
@@ -623,6 +638,11 @@ export const correctAssistedPeriodEvent = mutation({
       period
     );
 
+    const startOutcomeChanged = hasPredictionStartChange(period, {
+      startDate: args.startDate,
+      startCertainty,
+      legacyReason,
+    });
     await ctx.db.patch(period._id, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -631,15 +651,19 @@ export const correctAssistedPeriodEvent = mutation({
       legacyReason,
       updatedByUserId: partner._id,
       authorityVersion: authorityVersion + 1,
-      partnerCorrectionVersion: nextPartnerCorrectionVersion(period),
+      ...(startOutcomeChanged
+        ? { partnerCorrectionVersion: nextPartnerCorrectionVersion(period) }
+        : {}),
       updatedAt: Date.now(),
     });
-    await appendCorrectionAssessments(ctx, {
-      userId: primaryMembership.userId,
-      periodEventId: period._id,
-      sourceAuthorityVersion: authorityVersion + 1,
-      reason: "partner_correction",
-    });
+    if (startOutcomeChanged) {
+      await appendCorrectionAssessments(ctx, {
+        userId: primaryMembership.userId,
+        periodEventId: period._id,
+        sourceAuthorityVersion: authorityVersion + 1,
+        reason: "partner_correction",
+      });
+    }
 
     return { eventId: period._id };
   },
@@ -678,19 +702,28 @@ export const updatePeriodEvent = mutation({
     }
 
     if (!isCycleFactsV1Enabled()) {
+      const startOutcomeChanged = hasPredictionStartChange(period, {
+        startDate: args.startDate,
+        startCertainty: period.startCertainty,
+        legacyReason: period.legacyReason,
+      });
       await ctx.db.patch(args.periodEventId, {
         startDate: args.startDate,
         endDate: args.endDate,
         updatedByUserId: user._id,
         confirmationStatus: "confirmed",
-        primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
+        ...(startOutcomeChanged
+          ? { primaryCorrectionVersion: nextPrimaryCorrectionVersion(period) }
+          : {}),
         updatedAt: Date.now(),
       });
-      await appendCorrectionAssessments(ctx, {
-        userId: user._id,
-        periodEventId: args.periodEventId,
-        reason: "primary_correction",
-      });
+      if (startOutcomeChanged) {
+        await appendCorrectionAssessments(ctx, {
+          userId: user._id,
+          periodEventId: args.periodEventId,
+          reason: "primary_correction",
+        });
+      }
       return { success: true };
     }
 
@@ -714,6 +747,11 @@ export const updatePeriodEvent = mutation({
         promoteStartCertainty: args.promoteStartCertainty === true,
         promoteEndCertainty: args.promoteEndCertainty === true,
       });
+    const startOutcomeChanged = hasPredictionStartChange(period, {
+      startDate: args.startDate,
+      startCertainty,
+      legacyReason,
+    });
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -736,15 +774,19 @@ export const updatePeriodEvent = mutation({
       updatedByUserId: user._id,
       confirmationStatus: "confirmed",
       authorityVersion: authorityVersion + 1,
-      primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
+      ...(startOutcomeChanged
+        ? { primaryCorrectionVersion: nextPrimaryCorrectionVersion(period) }
+        : {}),
       updatedAt: Date.now(),
     });
-    await appendCorrectionAssessments(ctx, {
-      userId: user._id,
-      periodEventId: args.periodEventId,
-      sourceAuthorityVersion: authorityVersion + 1,
-      reason: "primary_correction",
-    });
+    if (startOutcomeChanged) {
+      await appendCorrectionAssessments(ctx, {
+        userId: user._id,
+        periodEventId: args.periodEventId,
+        sourceAuthorityVersion: authorityVersion + 1,
+        reason: "primary_correction",
+      });
+    }
     return { success: true };
   },
 });

@@ -137,6 +137,8 @@ Within every user, all folds are chronological. A user's future observations nev
 
 **Development** may be used to debug implementation, compare preregistered candidate families, and select the single estimator family that advances.
 
+Freeze the development-selected estimator ID in the dataset manifest before calibration or holdout analysis. Evaluation scores that estimator alongside only the configured and rolling-median baselines; calibration and evaluation results never choose the estimator.
+
 **Calibration** is used to fit interval residual bands and internal quality mappings for the selected estimator version. It is not used to change promotion thresholds.
 
 **Locked evaluation holdout** is opened once for G3-BENCH-V1 after implementation, metrics, subgroups, and calibration rules are frozen. It decides promotion.
@@ -213,7 +215,7 @@ Report overall and required subgroups:
 - within ±2 days;
 - within ±3 days;
 - within ±5 days;
-- signed error distribution;
+- signed error distribution, where signed error is observed target start date minus predicted point date (positive means the target started later than predicted);
 - candidate-minus-baseline paired differences; and
 - abstention/insufficient-data rate.
 

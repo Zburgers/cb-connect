@@ -16,6 +16,34 @@ beforeEach(() => {
 });
 
 describe("period history attribution", () => {
+  test("fails closed when prediction history exceeds its bounded read", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 1_001; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate: "2026-08-01",
+          startCertainty: "exact",
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+      }
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: primaryId },
+    );
+
+    expect(prediction).toMatchObject({
+      status: "unavailable",
+      pointDate: null,
+      reasonCodes: expect.arrayContaining(["LIMITED_HISTORY"]),
+    });
+  });
+
   test("exposes the active prediction baseline to primary history only", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
     const t = convexTest(schema, modules);

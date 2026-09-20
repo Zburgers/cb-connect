@@ -1,4 +1,8 @@
 import { createHmac } from "node:crypto";
+import {
+  PROMOTION_CANDIDATE_ESTIMATOR_IDS,
+  type PromotionCandidateEstimatorId,
+} from "../convex/_helpers/predictionEstimators";
 
 export const CYCLE_BENCHMARK_PROTOCOL_VERSION = "G3-BENCH-V1" as const;
 export const CYCLE_BENCHMARK_SPLIT_VERSION =
@@ -45,6 +49,7 @@ export type CycleBenchmarkManifest = {
   protocolVersion: typeof CYCLE_BENCHMARK_PROTOCOL_VERSION;
   datasetClass: "synthetic" | "external_academic" | "cb_connect";
   datasetSha256: string;
+  selectedEstimatorId?: PromotionCandidateEstimatorId;
   split: {
     version: typeof CYCLE_BENCHMARK_SPLIT_VERSION;
     saltId: string;
@@ -136,6 +141,7 @@ function requireManifest(value: unknown): asserts value is CycleBenchmarkManifes
       "protocolVersion",
       "datasetClass",
       "datasetSha256",
+      "selectedEstimatorId",
       "split",
       "synthetic",
       "source",
@@ -162,12 +168,21 @@ function requireManifest(value: unknown): asserts value is CycleBenchmarkManifes
   ) {
     throw new Error("Dataset manifest does not match G3-BENCH-V1");
   }
+  if (
+    manifest.selectedEstimatorId !== undefined &&
+    !PROMOTION_CANDIDATE_ESTIMATOR_IDS.includes(
+      manifest.selectedEstimatorId as PromotionCandidateEstimatorId,
+    )
+  ) {
+    throw new Error("Dataset manifest selected estimator is not a promotion candidate");
+  }
 
   if (manifest.datasetClass === "synthetic") {
     if (
       manifest.source !== undefined ||
       manifest.authority !== undefined ||
       manifest.developmentCutoffs !== undefined ||
+      manifest.selectedEstimatorId !== undefined ||
       (manifest.synthetic !== undefined &&
         (!isRecord(manifest.synthetic) ||
           !hasOnlyKeys(manifest.synthetic, [
@@ -325,6 +340,11 @@ export function validateCycleBenchmarkManifest(
     throw new Error("Calibration and evaluation require frozen development cutoffs");
   }
   if (partition === "evaluation") {
+    if (value.selectedEstimatorId === undefined) {
+      throw new Error(
+        "Evaluation requires a development-selected estimator frozen in the manifest",
+      );
+    }
     const authority = value.authority;
     const holdout = authority?.evaluationHoldout;
     if (

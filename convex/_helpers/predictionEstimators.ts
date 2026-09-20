@@ -9,6 +9,16 @@ export const PREDICTION_ESTIMATOR_IDS = [
 
 export type PredictionEstimatorId = (typeof PREDICTION_ESTIMATOR_IDS)[number];
 
+export const PROMOTION_CANDIDATE_ESTIMATOR_IDS = [
+  "all_mean_v1",
+  "last3_mean_v1",
+  "last3_median_v1",
+  "recency_exp_h3_v1",
+] as const satisfies readonly PredictionEstimatorId[];
+
+export type PromotionCandidateEstimatorId =
+  (typeof PROMOTION_CANDIDATE_ESTIMATOR_IDS)[number];
+
 export type PredictionEstimatorReasonCode =
   | "LIMITED_HISTORY"
   | "USER_CONFIGURED_BASELINE";

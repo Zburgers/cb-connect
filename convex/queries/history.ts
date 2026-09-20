@@ -53,6 +53,7 @@ async function readCurrentPeriodPredictionV2(
   ]);
   const currentPrediction = buildPeriodPrediction({
     cycleIntervals: predictionData.cycleIntervals,
+    historyComplete: predictionData.historyComplete,
     configuredCycleLength: cycleSettings?.cycleLength ?? 28,
     predictionPaused: cycleSettings?.predictionPaused ?? false,
   });
@@ -269,6 +270,7 @@ export const getCycleIntervalsForUser = internalQuery({
     if (!predictionData.user || predictionData.user.role !== "primary") {
       return null;
     }
+    if (!predictionData.historyComplete) return null;
     return predictionData.cycleIntervals;
   },
 });
@@ -296,6 +298,7 @@ export const getPredictionSegmentOptions = query({
     }
 
     const predictionData = await readCyclePredictionData(ctx, user._id, user);
+    if (!predictionData.historyComplete) return null;
     const { cutoffAt, cutoffDate } = predictionData.cycleIntervals.basis;
     const eligibleStartDates = [
       ...new Set(

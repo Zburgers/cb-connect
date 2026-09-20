@@ -221,6 +221,19 @@ describe("versioned personal period prediction contract", () => {
     });
   });
 
+  test("refuses a prediction when the cycle history read was truncated", () => {
+    const result = buildPeriodPrediction({
+      cycleIntervals: history([28, 28, 28, 28]),
+      historyComplete: false,
+      configuredCycleLength: 28,
+      predictionPaused: false,
+    });
+
+    expect(result.status).toBe("unavailable");
+    expect(result.pointDate).toBeNull();
+    expect(result.reasonCodes).toContain("LIMITED_HISTORY");
+  });
+
   test("keeps every active point inside its returned uncalibrated range", () => {
     for (const result of [
       predict([]),

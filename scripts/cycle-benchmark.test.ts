@@ -426,6 +426,55 @@ describe("cycle benchmark runner", () => {
     );
   });
 
+  test("evaluation reports only the estimator frozen before the holdout", () => {
+    const evaluationUser = regularCycleUser(
+      userKeyForPartition("evaluation"),
+      8,
+      30,
+    );
+    const dataset: CycleBenchmarkDataset = {
+      formatVersion: CYCLE_BENCHMARK_DATA_VERSION,
+      users: [evaluationUser],
+    };
+    const evaluationManifest: CycleBenchmarkManifest = {
+      manifestId: "external-evaluation-test-v1",
+      protocolVersion: CYCLE_BENCHMARK_PROTOCOL_VERSION,
+      datasetClass: "external_academic",
+      datasetSha256: "a".repeat(64),
+      selectedEstimatorId: "all_mean_v1",
+      split: {
+        version: CYCLE_BENCHMARK_SPLIT_VERSION,
+        saltId: "test-only",
+        allocation: { development: 60, calibration: 20, evaluation: 20 },
+      },
+    };
+    const run = (benchmarkManifest: CycleBenchmarkManifest) =>
+      runCycleBenchmark({
+        dataset,
+        manifest: benchmarkManifest,
+        partition: "evaluation",
+        splitSalt: TEST_SALT,
+        manifestSha256: "b".repeat(64),
+        sourceCommit: "test-commit",
+        sourceTreeState: "clean",
+        protocolSha256: "c".repeat(64),
+      });
+    const report = run(evaluationManifest);
+
+    expect(report.selectedEstimatorId).toBe("all_mean_v1");
+    expect(report.estimators.map((item) => item.estimatorId)).toEqual([
+      "configured_v1",
+      "all_mean_v1",
+      "all_median_v1",
+    ]);
+    expect(report.promotionVerdict.candidates.map((item) => item.estimatorId)).toEqual([
+      "all_mean_v1",
+    ]);
+    expect(() =>
+      run({ ...evaluationManifest, selectedEstimatorId: undefined }),
+    ).toThrow("development-selected estimator");
+  });
+
   test("scores promotion criteria while retaining required manual gates", () => {
     const configured = promotionMetric("configured_v1", {
       meanAbsoluteErrorDays: 2,
@@ -449,26 +498,18 @@ describe("cycle benchmark runner", () => {
     const verdict = deriveCycleBenchmarkPromotionVerdict({
       datasetClass: "external_academic",
       partition: "evaluation",
+      selectedEstimatorId: "all_mean_v1",
       estimators: [configured, rollingMedian, candidate, narrowerCandidate],
       subgroups: [],
     });
     expect(verdict).toEqual({
       status: "metrics_pass_manual_gates_pending",
       candidates: [
-        {
-          estimatorId: "all_median_v1",
-          passed: false,
-          failedCriteria: [
-            "paired_improvement_vs_configured_v1",
-            "paired_improvement_vs_all_median_v1",
-          ],
-        },
         { estimatorId: "all_mean_v1", passed: true, failedCriteria: [] },
-        { estimatorId: "last3_mean_v1", passed: true, failedCriteria: [] },
       ],
       reason:
         "Metric criteria pass; independent quality, snapshot, leakage, and approval gates remain",
-      recommendedEstimatorId: "last3_mean_v1",
+      recommendedEstimatorId: "all_mean_v1",
       manualGates: [
         "variability_quality_monotonicity",
         "snapshot_input_cutoff_and_leakage_audits",
@@ -479,6 +520,7 @@ describe("cycle benchmark runner", () => {
     const regressed = deriveCycleBenchmarkPromotionVerdict({
       datasetClass: "external_academic",
       partition: "evaluation",
+      selectedEstimatorId: "all_mean_v1",
       estimators: [configured, rollingMedian, candidate, narrowerCandidate],
       subgroups: [
         {
@@ -500,6 +542,23 @@ describe("cycle benchmark runner", () => {
       regressed.candidates.find((item) => item.estimatorId === "all_mean_v1")
         ?.failedCriteria,
     ).toContain("subgroup:variability:high:mae_regression_over_0.5");
+
+    expect(
+      deriveCycleBenchmarkPromotionVerdict({
+        datasetClass: "external_academic",
+        partition: "evaluation",
+        estimators: [configured, rollingMedian, candidate, narrowerCandidate],
+        subgroups: [],
+      }),
+    ).toMatchObject({ status: "not_assessed", candidates: [] });
+  });
+
+  test("signed errors use observed target start minus predicted point", () => {
+    const report = reportFor(
+      regularCycleUser(userKeyForDevelopment(), 8, 30),
+    );
+
+    expect(candidate(report, "configured_v1").signedErrorDays?.mean).toBe(2);
   });
 
   test("rounds a fractional configured interval half-up only when producing a calendar date", () => {

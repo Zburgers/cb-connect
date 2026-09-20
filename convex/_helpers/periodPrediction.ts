@@ -38,6 +38,7 @@ export type PeriodPredictionV2 =
 
 export type BuildPeriodPredictionInput = {
   cycleIntervals: CycleIntervalDerivation | null;
+  historyComplete?: boolean;
   configuredCycleLength: number;
   predictionPaused: boolean;
 };
@@ -121,6 +122,12 @@ export function buildPeriodPrediction(
   const historyCount = input.cycleIntervals?.eligibleIntervalCount ?? 0;
   if (input.predictionPaused) {
     return inactivePrediction("paused", historyCount, ["USER_PAUSED"]);
+  }
+  if (input.historyComplete === false) {
+    return inactivePrediction("unavailable", historyCount, [
+      ...(input.cycleIntervals?.reasonCodes ?? []),
+      "LIMITED_HISTORY",
+    ]);
   }
 
   const latestStartDate = input.cycleIntervals?.latestEligibleStartDate;
