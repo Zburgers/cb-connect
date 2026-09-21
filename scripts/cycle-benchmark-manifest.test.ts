@@ -145,11 +145,14 @@ describe("cycle benchmark manifest", () => {
         medianIntervalQ67: 30,
       },
     };
-    expect(() => validateCycleBenchmarkManifest(frozen, "calibration")).not.toThrow();
+    expect(() => validateCycleBenchmarkManifest(frozen, "calibration")).toThrow(
+      "development-selected estimator",
+    );
     expect(() => validateCycleBenchmarkManifest(frozen, "evaluation")).toThrow(
       "development-selected estimator",
     );
     const selected = { ...frozen, selectedEstimatorId: "all_mean_v1" as const };
+    expect(() => validateCycleBenchmarkManifest(selected, "calibration")).not.toThrow();
     expect(() =>
       validateCycleBenchmarkManifest(
         { ...selected, selectedEstimatorId: "configured_v1" },

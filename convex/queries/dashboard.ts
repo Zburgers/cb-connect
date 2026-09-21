@@ -40,6 +40,7 @@ type DashboardData = {
   isPartnerView: boolean;
   message?: string;
   cycleInfo?: CycleInfo | null;
+  nutritionTipsPhase: CycleInfo["phase"] | null;
   cycleStateV1: CycleState | PartnerCycleProjection | null;
   cycleStateV1Exposed: boolean;
   periodPredictionV2?: PeriodPredictionV2;
@@ -80,6 +81,7 @@ export const getDashboardData = query({
         isPartnerView: false,
         message: "Please sign in to view your dashboard.",
         cycleInfo: null,
+        nutritionTipsPhase: null,
         cycleStateV1: null,
         cycleStateV1Exposed: false,
         partnerPredictionV2Exposed: false,
@@ -102,6 +104,7 @@ export const getDashboardData = query({
           hasData: false,
           isPartnerView: true,
           message: "Not linked to a partner yet.",
+          nutritionTipsPhase: null,
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
@@ -122,6 +125,7 @@ export const getDashboardData = query({
           hasData: false,
           isPartnerView: true,
           message: "Couple has no primary user.",
+          nutritionTipsPhase: null,
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
@@ -135,6 +139,7 @@ export const getDashboardData = query({
           hasData: false,
           isPartnerView: true,
           message: "Couple has no primary user.",
+          nutritionTipsPhase: null,
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
@@ -307,6 +312,7 @@ export const getDashboardData = query({
               ? "A shared timing estimate is not available yet."
               : "No period data yet. Log your last period to get started.",
         cycleInfo: null,
+        nutritionTipsPhase: null,
         cycleStateV1,
         cycleStateV1Exposed,
         ...predictionFields,
@@ -356,6 +362,7 @@ export const getDashboardData = query({
           hasData: true,
           isPartnerView,
           cycleInfo: null,
+          nutritionTipsPhase: null,
           cycleStateV1: null,
           cycleStateV1Exposed,
           ...predictionFields,
@@ -380,6 +387,7 @@ export const getDashboardData = query({
         hasData: true,
         isPartnerView,
         cycleInfo: null,
+        nutritionTipsPhase: null,
         cycleStateV1,
         cycleStateV1Exposed,
         ...predictionFields,
@@ -436,6 +444,8 @@ export const getDashboardData = query({
       hasData: true,
       isPartnerView,
       cycleInfo: partnerV1View || partnerPredictionView ? null : cycleInfo,
+      nutritionTipsPhase:
+        partnerV1View || partnerPredictionView ? null : tipPhase,
       cycleStateV1,
       cycleStateV1Exposed,
       ...predictionFields,

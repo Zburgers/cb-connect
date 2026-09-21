@@ -162,6 +162,20 @@ function promotionMetric(
       estimatorId === "all_mean_v1"
         ? { configured_v1: difference, all_median_v1: difference }
         : { configured_v1: null, all_median_v1: null },
+    eligibleBaselineMetrics: {
+      configured_v1: {
+        outcomeCount: 1_000,
+        meanAbsoluteErrorDays: 2,
+        medianAbsoluteErrorDays: 2,
+        within3DayRate: 0.85,
+      },
+      all_median_v1: {
+        outcomeCount: 1_000,
+        meanAbsoluteErrorDays: 1.8,
+        medianAbsoluteErrorDays: 1.8,
+        within3DayRate: 0.86,
+      },
+    },
     predictionCalibration: {
       interval80CoverageRate: 0.8,
       medianWindow80Days: 7,
@@ -198,7 +212,7 @@ describe("cycle benchmark runner", () => {
       recommendedEstimatorId: null,
       manualGates: [],
     });
-    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v3");
+    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v4");
     expect(report.calibration.source).toBe("none");
     expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
     expect(report.pairedBootstrapVersion).toBe("user-cluster-percentile-95-2000-v1");
@@ -233,7 +247,7 @@ describe("cycle benchmark runner", () => {
       candidate(repeated, "last3_mean_v1").pairedAbsoluteErrorDifferenceDays
         .configured_v1?.bootstrap95Ci,
     ).toEqual(bootstrapCi);
-  });
+  }, 15_000);
 
   test("does not back-propagate a correction recorded after the prediction cutoff", () => {
     const key = userKeyForDevelopment();
@@ -322,6 +336,39 @@ describe("cycle benchmark runner", () => {
     expect(candidate(report, "all_median_v1").meanAbsoluteErrorDays).toBe(0);
   });
 
+  test("excludes sparse folds from personalized metrics and accounts for fallback coverage", () => {
+    const report = reportFor(regularCycleUser(userKeyForDevelopment(), 5, 28));
+    const configured = candidate(report, "configured_v1");
+    const personalized = candidate(report, "all_mean_v1");
+
+    expect(configured.outcomeCount).toBe(4);
+    expect(personalized).toMatchObject({
+      outcomeCount: 1,
+      personalizationEligibilityRate: 0.25,
+      insufficientDataRate: 0.8,
+      eligibleBaselineMetrics: {
+        configured_v1: { outcomeCount: 1 },
+        all_median_v1: { outcomeCount: 1 },
+      },
+    });
+
+    const sparseGroup = report.subgroups.find(
+      (item) => item.dimension === "historyCount" && item.group === "sparse",
+    );
+    expect(sparseGroup?.targetCount).toBe(4);
+    expect(
+      sparseGroup?.estimators.find((item) => item.estimatorId === "all_mean_v1"),
+    ).toMatchObject({
+      outcomeCount: 0,
+      personalizationEligibilityRate: 0,
+      insufficientDataRate: 1,
+    });
+    expect(
+      sparseGroup?.estimators.find((item) => item.estimatorId === "configured_v1")
+        ?.outcomeCount,
+    ).toBe(3);
+  });
+
   test("fits intervals from calibration users and sizes a target before its outcome", () => {
     const calibrationUser = regularCycleUser(
       userKeyForPartition("calibration"),
@@ -341,6 +388,7 @@ describe("cycle benchmark runner", () => {
     };
     const evaluationManifest = {
       ...manifest(),
+      selectedEstimatorId: "all_mean_v1" as const,
       developmentCutoffs: {
         variabilityMadQ33: 1,
         variabilityMadQ67: 3,
@@ -475,6 +523,60 @@ describe("cycle benchmark runner", () => {
     ).toThrow("development-selected estimator");
   });
 
+  test("calibration reports only the frozen estimator and required baselines", () => {
+    const calibrationUser = regularCycleUser(
+      userKeyForPartition("calibration"),
+      8,
+      30,
+    );
+    const calibrationManifest: CycleBenchmarkManifest = {
+      manifestId: "external-calibration-test-v1",
+      protocolVersion: CYCLE_BENCHMARK_PROTOCOL_VERSION,
+      datasetClass: "external_academic",
+      datasetSha256: "a".repeat(64),
+      selectedEstimatorId: "last3_mean_v1",
+      split: {
+        version: CYCLE_BENCHMARK_SPLIT_VERSION,
+        saltId: "test-only",
+        allocation: { development: 60, calibration: 20, evaluation: 20 },
+      },
+      developmentCutoffs: {
+        variabilityMadQ33: 1,
+        variabilityMadQ67: 3,
+        medianIntervalQ33: 27,
+        medianIntervalQ67: 29,
+      },
+    };
+    const report = runCycleBenchmark({
+      dataset: {
+        formatVersion: CYCLE_BENCHMARK_DATA_VERSION,
+        users: [calibrationUser],
+      },
+      manifest: calibrationManifest,
+      partition: "calibration",
+      splitSalt: TEST_SALT,
+      manifestSha256: "b".repeat(64),
+      sourceCommit: "test-commit",
+      sourceTreeState: "clean",
+      protocolSha256: "c".repeat(64),
+    });
+
+    expect(report.estimators.map((item) => item.estimatorId)).toEqual([
+      "configured_v1",
+      "last3_mean_v1",
+      "all_median_v1",
+    ]);
+    expect(
+      report.subgroups
+        .find((item) => item.dimension === "historyCount" && item.group === "4-6")
+        ?.estimators.map((item) => item.estimatorId),
+    ).toEqual(["configured_v1", "last3_mean_v1", "all_median_v1"]);
+    expect(report.promotionVerdict).toMatchObject({
+      status: "not_assessed",
+      candidates: [],
+    });
+  });
+
   test("scores promotion criteria while retaining required manual gates", () => {
     const configured = promotionMetric("configured_v1", {
       meanAbsoluteErrorDays: 2,
@@ -551,6 +653,71 @@ describe("cycle benchmark runner", () => {
         subgroups: [],
       }),
     ).toMatchObject({ status: "not_assessed", candidates: [] });
+  });
+
+  test("compares promotion guardrails against baselines on personalized folds", () => {
+    const verdict = deriveCycleBenchmarkPromotionVerdict({
+      datasetClass: "external_academic",
+      partition: "evaluation",
+      selectedEstimatorId: "all_mean_v1",
+      estimators: [
+        promotionMetric("configured_v1", {
+          medianAbsoluteErrorDays: 2,
+          within3DayRate: 0.8,
+        }),
+        promotionMetric("all_median_v1", {
+          medianAbsoluteErrorDays: 1.8,
+          within3DayRate: 0.85,
+        }),
+        promotionMetric("all_mean_v1", {
+          medianAbsoluteErrorDays: 1.5,
+          within3DayRate: 0.9,
+          eligibleBaselineMetrics: {
+            configured_v1: {
+              outcomeCount: 1_000,
+              meanAbsoluteErrorDays: 2,
+              medianAbsoluteErrorDays: 1,
+              within3DayRate: 1,
+            },
+            all_median_v1: {
+              outcomeCount: 1_000,
+              meanAbsoluteErrorDays: 1.8,
+              medianAbsoluteErrorDays: 1,
+              within3DayRate: 1,
+            },
+          },
+        }),
+      ],
+      subgroups: [
+        {
+          dimension: "historyCount",
+          group: "sparse",
+          outcomeCount: 200,
+          estimators: [
+            promotionMetric("configured_v1"),
+            promotionMetric("all_median_v1"),
+            promotionMetric("all_mean_v1", {
+              outcomeCount: 0,
+              meanAbsoluteErrorDays: null,
+              medianAbsoluteErrorDays: null,
+              within3DayRate: null,
+              eligibleBaselineMetrics: null,
+              predictionCalibration: null,
+            }),
+          ],
+        },
+      ],
+    });
+
+    expect(verdict.candidates[0].failedCriteria).toEqual(
+      expect.arrayContaining([
+        "overall_median_error_not_worse",
+        "overall_within_3_day_rate_not_lower",
+      ]),
+    );
+    expect(verdict.candidates[0].failedCriteria).not.toContain(
+      "subgroup:historyCount:sparse:metrics_missing",
+    );
   });
 
   test("signed errors use observed target start minus predicted point", () => {

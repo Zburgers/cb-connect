@@ -131,6 +131,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.cycleInfo).toBeNull();
+    expect(result.nutritionTipsPhase).toBe("menstruation");
     expect(result.painTip).toMatchObject({ title: "Gentle movement" });
     expect(result.nutritionTips).toContainEqual(
       expect.objectContaining({ foodItem: "Lentils" }),

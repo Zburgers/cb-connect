@@ -339,12 +339,12 @@ export function validateCycleBenchmarkManifest(
   if (partition !== "development" && value.developmentCutoffs === undefined) {
     throw new Error("Calibration and evaluation require frozen development cutoffs");
   }
+  if (partition !== "development" && value.selectedEstimatorId === undefined) {
+    throw new Error(
+      "Calibration and evaluation require a development-selected estimator frozen in the manifest",
+    );
+  }
   if (partition === "evaluation") {
-    if (value.selectedEstimatorId === undefined) {
-      throw new Error(
-        "Evaluation requires a development-selected estimator frozen in the manifest",
-      );
-    }
     const authority = value.authority;
     const holdout = authority?.evaluationHoldout;
     if (

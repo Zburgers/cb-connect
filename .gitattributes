@@ -1,0 +1,2 @@
+# The benchmark verifies this fixture by raw-byte SHA-256; preserve its LF bytes on every platform.
+fixtures/cycle-benchmark/data.json -text

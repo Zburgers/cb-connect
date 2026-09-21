@@ -47,7 +47,7 @@ import {
 } from "./cycle-benchmark-manifest";
 
 export const CYCLE_BENCHMARK_DATA_VERSION = "g3-cycle-benchmark-data-v1" as const;
-export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v3" as const;
+export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v4" as const;
 export const CYCLE_BENCHMARK_BOOTSTRAP_VERSION =
   "user-cluster-percentile-95-2000-v1" as const;
 const BOOTSTRAP_SAMPLES = 2000;
@@ -122,6 +122,13 @@ type InternalBenchmarkResult = {
   targetCount: number;
 };
 
+type EligibleBaselineMetrics = {
+  outcomeCount: number;
+  meanAbsoluteErrorDays: number | null;
+  medianAbsoluteErrorDays: number | null;
+  within3DayRate: number | null;
+};
+
 type CandidateMetrics = {
   estimatorId: PredictionEstimatorId;
   estimatorVersion: 1;
@@ -148,6 +155,10 @@ type CandidateMetrics = {
     configured_v1: PairedDifference | null;
     all_median_v1: PairedDifference | null;
   };
+  eligibleBaselineMetrics: {
+    configured_v1: EligibleBaselineMetrics;
+    all_median_v1: EligibleBaselineMetrics;
+  } | null;
   predictionCalibration: PredictionCalibrationSummary | null;
 };
 
@@ -158,6 +169,7 @@ type PromotionMetric = Pick<
   | "meanAbsoluteErrorDays"
   | "medianAbsoluteErrorDays"
   | "within3DayRate"
+  | "eligibleBaselineMetrics"
 > & {
   pairedAbsoluteErrorDifferenceDays: CandidateMetrics["pairedAbsoluteErrorDifferenceDays"];
   predictionCalibration: Pick<
@@ -756,7 +768,33 @@ function emptyCandidateMetrics(
       configured_v1: null,
       all_median_v1: null,
     },
+    eligibleBaselineMetrics: null,
     predictionCalibration: null,
+  };
+}
+
+function summarizeEligibleBaseline(
+  folds: readonly BenchmarkFold[],
+  estimatorId: "configured_v1" | "all_median_v1",
+): EligibleBaselineMetrics {
+  if (folds.length === 0) {
+    return {
+      outcomeCount: 0,
+      meanAbsoluteErrorDays: null,
+      medianAbsoluteErrorDays: null,
+      within3DayRate: null,
+    };
+  }
+  const absoluteErrors = folds.map(
+    (fold) => fold.predictions[estimatorId].absoluteErrorDays,
+  );
+  return {
+    outcomeCount: absoluteErrors.length,
+    meanAbsoluteErrorDays:
+      absoluteErrors.reduce((sum, error) => sum + error, 0) / absoluteErrors.length,
+    medianAbsoluteErrorDays: median(absoluteErrors),
+    within3DayRate:
+      absoluteErrors.filter((error) => error <= 3).length / absoluteErrors.length,
   };
 }
 
@@ -915,22 +953,43 @@ function candidateMetrics(
   bootstrapSeed: string,
   calculateBootstrapCi = false,
 ): CandidateMetrics {
-  if (folds.length === 0) {
-    return emptyCandidateMetrics(
+  const isPersonalizedCandidate = PROMOTION_CANDIDATE_ESTIMATOR_IDS.includes(
+    estimatorId as PromotionCandidateEstimatorId,
+  );
+  const allPredictions = folds.map((fold) => fold.predictions[estimatorId]);
+  const scoredFolds = isPersonalizedCandidate
+    ? folds.filter((fold) => fold.predictions[estimatorId].personalizationEligible)
+    : folds;
+  const scoredPredictions = scoredFolds.map((fold) => fold.predictions[estimatorId]);
+  const insufficientDataCount =
+    unscorableTargetCount +
+    (isPersonalizedCandidate
+      ? folds.length - scoredFolds.length
+      : folds.filter((fold) => fold.historyCount < 3).length);
+  const emptyMetrics = () =>
+    emptyCandidateMetrics(
       estimatorId,
       targetCount === 0 ? 0 : unscorableTargetCount / targetCount,
-      targetCount === 0 ? null : unscorableTargetCount / targetCount,
+      targetCount === 0 ? null : insufficientDataCount / targetCount,
     );
+  if (scoredFolds.length === 0) {
+    return {
+      ...emptyMetrics(),
+      personalizationEligibilityRate:
+        folds.length === 0
+          ? null
+          : allPredictions.filter((prediction) => prediction.personalizationEligible)
+              .length / folds.length,
+    };
   }
-  const predictions = folds.map((fold) => fold.predictions[estimatorId]);
-  const absoluteErrors = predictions.map((prediction) => prediction.absoluteErrorDays);
-  const signedErrors = predictions.map((prediction) => prediction.signedErrorDays);
+  const absoluteErrors = scoredPredictions.map((prediction) => prediction.absoluteErrorDays);
+  const signedErrors = scoredPredictions.map((prediction) => prediction.signedErrorDays);
   const rate = (limit: number) =>
     absoluteErrors.filter((error) => error <= limit).length / absoluteErrors.length;
   const metrics: CandidateMetrics = {
     estimatorId,
     estimatorVersion: 1,
-    outcomeCount: folds.length,
+    outcomeCount: scoredFolds.length,
     meanAbsoluteErrorDays:
       absoluteErrors.reduce((sum, error) => sum + error, 0) / absoluteErrors.length,
     medianAbsoluteErrorDays: median(absoluteErrors),
@@ -955,29 +1014,33 @@ function candidateMetrics(
     insufficientDataRate:
       targetCount === 0
         ? null
-        : (unscorableTargetCount +
-            folds.filter((fold) => fold.historyCount < 3).length) /
-          targetCount,
+        : insufficientDataCount / targetCount,
     personalizationEligibilityRate:
-      predictions.filter((prediction) => prediction.personalizationEligible).length /
-      predictions.length,
+      allPredictions.filter((prediction) => prediction.personalizationEligible).length /
+      allPredictions.length,
     pairedAbsoluteErrorDifferenceDays: {
       configured_v1: pairedDifference(
-        folds,
+        scoredFolds,
         estimatorId,
         "configured_v1",
         `${bootstrapSeed}:configured_v1`,
         calculateBootstrapCi,
       ),
       all_median_v1: pairedDifference(
-        folds,
+        scoredFolds,
         estimatorId,
         "all_median_v1",
         `${bootstrapSeed}:all_median_v1`,
         calculateBootstrapCi,
       ),
     },
-    predictionCalibration: predictionCalibrationSummary(folds, estimatorId),
+    eligibleBaselineMetrics: isPersonalizedCandidate
+      ? {
+          configured_v1: summarizeEligibleBaseline(scoredFolds, "configured_v1"),
+          all_median_v1: summarizeEligibleBaseline(scoredFolds, "all_median_v1"),
+        }
+      : null,
+    predictionCalibration: predictionCalibrationSummary(scoredFolds, estimatorId),
   };
   return metrics;
 }
@@ -1222,12 +1285,6 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
     };
   }
 
-  const configured = args.estimators.find(
-    (metric) => metric.estimatorId === "configured_v1",
-  );
-  const rollingMedian = args.estimators.find(
-    (metric) => metric.estimatorId === "all_median_v1",
-  );
   const candidates = args.estimators
     .filter((metric) => metric.estimatorId === args.selectedEstimatorId)
     .map((candidate): PromotionCandidateVerdict => {
@@ -1249,16 +1306,22 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
         );
       }
 
-      const baselines = [configured, rollingMedian];
-      const medianBaseline = baselines.every(
-        (baseline) => baseline?.medianAbsoluteErrorDays !== null && baseline,
-      )
-        ? Math.min(...baselines.map((baseline) => baseline!.medianAbsoluteErrorDays!))
+      const eligibleBaselines = candidate.eligibleBaselineMetrics;
+      const medianBaseline = eligibleBaselines &&
+        eligibleBaselines.configured_v1.medianAbsoluteErrorDays !== null &&
+        eligibleBaselines.all_median_v1.medianAbsoluteErrorDays !== null
+        ? Math.min(
+            eligibleBaselines.configured_v1.medianAbsoluteErrorDays,
+            eligibleBaselines.all_median_v1.medianAbsoluteErrorDays,
+          )
         : null;
-      const within3Baseline = baselines.every(
-        (baseline) => baseline?.within3DayRate !== null && baseline,
-      )
-        ? Math.max(...baselines.map((baseline) => baseline!.within3DayRate!))
+      const within3Baseline = eligibleBaselines &&
+        eligibleBaselines.configured_v1.within3DayRate !== null &&
+        eligibleBaselines.all_median_v1.within3DayRate !== null
+        ? Math.max(
+            eligibleBaselines.configured_v1.within3DayRate,
+            eligibleBaselines.all_median_v1.within3DayRate,
+          )
         : null;
       failUnless(
         candidate.medianAbsoluteErrorDays !== null &&
@@ -1279,33 +1342,36 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
       );
 
       for (const subgroup of args.subgroups) {
-        if (
-          subgroup.outcomeCount < 200
-        ) {
-          continue;
-        }
         const candidateMetrics = subgroup.estimators.find(
           (metric) => metric.estimatorId === candidate.estimatorId,
         );
-        const subgroupBaselines = ["configured_v1", "all_median_v1"].map(
-          (id) => subgroup.estimators.find((metric) => metric.estimatorId === id),
-        );
-        const baselineMae = subgroupBaselines.every(
-          (metric) => metric?.meanAbsoluteErrorDays !== null && metric,
-        )
+        if (!candidateMetrics) {
+          if (subgroup.outcomeCount >= 200) {
+            failedCriteria.push(
+              `subgroup:${subgroup.dimension}:${subgroup.group}:metrics_missing`,
+            );
+          }
+          continue;
+        }
+        if (candidateMetrics.outcomeCount < 200) continue;
+        const eligibleBaselines = candidateMetrics?.eligibleBaselineMetrics;
+        const baselineMae = eligibleBaselines &&
+          eligibleBaselines.configured_v1.meanAbsoluteErrorDays !== null &&
+          eligibleBaselines.all_median_v1.meanAbsoluteErrorDays !== null
           ? Math.min(
-              ...subgroupBaselines.map((metric) => metric!.meanAbsoluteErrorDays!),
+              eligibleBaselines.configured_v1.meanAbsoluteErrorDays,
+              eligibleBaselines.all_median_v1.meanAbsoluteErrorDays,
             )
           : null;
-        const baselineWithin3 = subgroupBaselines.every(
-          (metric) => metric?.within3DayRate !== null && metric,
-        )
+        const baselineWithin3 = eligibleBaselines &&
+          eligibleBaselines.configured_v1.within3DayRate !== null &&
+          eligibleBaselines.all_median_v1.within3DayRate !== null
           ? Math.max(
-              ...subgroupBaselines.map((metric) => metric!.within3DayRate!),
+              eligibleBaselines.configured_v1.within3DayRate,
+              eligibleBaselines.all_median_v1.within3DayRate,
             )
           : null;
         if (
-          !candidateMetrics ||
           candidateMetrics.meanAbsoluteErrorDays === null ||
           candidateMetrics.within3DayRate === null ||
           baselineMae === null ||
@@ -1373,12 +1439,12 @@ export function runCycleBenchmark(options: {
   protocolSha256: string;
 }): CycleBenchmarkReport {
   if (
-    options.partition === "evaluation" &&
+    options.partition !== "development" &&
     options.manifest.datasetClass !== "synthetic" &&
     options.manifest.selectedEstimatorId === undefined
   ) {
     throw new Error(
-      "Evaluation requires a development-selected estimator frozen in the manifest",
+      "Calibration and evaluation require a development-selected estimator frozen in the manifest",
     );
   }
   const partitionUsers = options.dataset.users.filter(
@@ -1410,18 +1476,13 @@ export function runCycleBenchmark(options: {
   const targetCount = results.reduce((sum, result) => sum + result.targetCount, 0);
   const unscorableTargets = results.flatMap((result) => result.unscorableTargets);
   const unscorableTargetCount = unscorableTargets.length;
-  const evaluationEstimatorIds =
-    options.partition === "evaluation" &&
+  const frozenEstimatorIds: readonly PredictionEstimatorId[] =
+    options.partition !== "development" &&
     options.manifest.datasetClass !== "synthetic" &&
     options.manifest.selectedEstimatorId !== undefined
-      ? PREDICTION_ESTIMATOR_IDS.filter(
-          (id) =>
-            id === "configured_v1" ||
-            id === "all_median_v1" ||
-            id === options.manifest.selectedEstimatorId,
-        )
+      ? ["configured_v1", options.manifest.selectedEstimatorId, "all_median_v1"]
       : PREDICTION_ESTIMATOR_IDS;
-  const estimators = evaluationEstimatorIds.map((id) =>
+  const estimators = frozenEstimatorIds.map((id) =>
     candidateMetrics(
       id,
       folds,
@@ -1434,7 +1495,7 @@ export function runCycleBenchmark(options: {
   const subgroups = buildSubgroups(
     folds,
     unscorableTargets,
-    evaluationEstimatorIds,
+    frozenEstimatorIds,
   );
 
   return {

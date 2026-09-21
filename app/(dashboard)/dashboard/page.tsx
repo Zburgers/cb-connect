@@ -22,6 +22,7 @@ import { getCycleStateCopyState } from "@/components/dashboard/cycleStatePresent
 import {
   isPrimaryCycleState,
 } from "@/convex/_helpers/partnerCycleProjection";
+import { resolveNutritionTipsPhase } from "@/components/dashboard/nutritionTipsPresentation";
 import type { CycleState } from "@/convex/_helpers/cycleState";
 
 export default function DashboardPage() {
@@ -51,6 +52,10 @@ export default function DashboardPage() {
     me?.role === "primary" &&
     capabilities?.periodPredictionV2 === true &&
     periodPredictionV2 !== undefined;
+  const nutritionTipsPhase = resolveNutritionTipsPhase(
+    data?.nutritionTipsPhase,
+    data?.cycleInfo?.phase,
+  );
 
   useEffect(() => {
     if (!isAuthenticated || !data || !me?.role) return;
@@ -173,10 +178,10 @@ export default function DashboardPage() {
         <TipsCard tip={data.painTip} />
       )}
 
-      {data.nutritionTips && data.nutritionTips.length > 0 && data.cycleInfo && (
+      {data.nutritionTips && data.nutritionTips.length > 0 && nutritionTipsPhase && (
         <NutritionSuggestions
           tips={data.nutritionTips}
-          phase={data.cycleInfo.phase}
+          phase={nutritionTipsPhase}
           state={showCycleStateV1 && cycleState ? getCycleStateCopyState(cycleState) : undefined}
         />
       )}
