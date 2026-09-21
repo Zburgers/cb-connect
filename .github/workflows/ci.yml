@@ -50,6 +50,9 @@ jobs:
       - name: Unit tests
         run: npm run test:unit -- --run
 
+      - name: Gate 3 runner policy
+        run: bash scripts/tests/prediction-runner-policy.test.sh
+
       - name: Dependency policy
         run: npm audit --omit=dev
 
