@@ -68,7 +68,8 @@ if [[ "$(wc -l < "$lanes_log")" -ne 4 ]]; then
   exit 1
 fi
 
-if ! grep -Fq -- "--reporter=list" "$runner"; then
+# Use the POSIX utility explicitly; hosted runners do not guarantee ripgrep.
+if ! command grep -Fq -- "--reporter=list" "$runner"; then
   echo "Gate 3 prediction runs must avoid HTML reports that could retain health dates" >&2
   exit 1
 fi
@@ -111,12 +112,12 @@ for flag in \
   fi
 done
 
-if grep -En 'test\.skip|\.skip\(' e2e/prediction-v2.spec.ts; then
+if command grep -En 'test\.skip|\.skip\(' e2e/prediction-v2.spec.ts; then
   echo "Gate 3 authenticated prediction qualification must not silently skip cases" >&2
   exit 1
 fi
 
-if grep -En 'npx[[:space:]]+convex[[:space:]]+env[[:space:]]+set|--prod|production' "$runner"; then
+if command grep -En 'npx[[:space:]]+convex[[:space:]]+env[[:space:]]+set|--prod|production' "$runner"; then
   echo "Gate 3 QA must use the guarded test target and never select production" >&2
   exit 1
 fi
@@ -127,7 +128,7 @@ if run_qa restore-failure CB_CONNECT_PERIOD_PREDICTION_V2 \
   exit 1
 fi
 
-if ! grep -Eq 'failed to restore CB_CONNECT_PERIOD_PREDICTION_V2 to false' \
+if ! command grep -Eq 'failed to restore CB_CONNECT_PERIOD_PREDICTION_V2 to false' \
     "$temp_root/restore-failure.log" ||
     ! tail -n 4 "$temp_root/restore-failure.convex.log" | awk '
       $1 == "convex" && $2 == "env" && $3 == "set" && $5 == "false" {
