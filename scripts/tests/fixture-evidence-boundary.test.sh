@@ -19,4 +19,3 @@ if ! grep -Fq '/e2e/.evidence/' .gitignore; then
 fi
 
 echo 'authenticated fixture evidence boundary: PASS'
-bash scripts/tests/prediction-runner-policy.test.sh
