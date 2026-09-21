@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
@@ -12,6 +13,9 @@ const APPROVED_CONVEX_HOST = `${APPROVED_CONVEX_DEPLOYMENT_NAME}.convex.cloud`;
 
 const CLERK_FRONTEND_HOST_SUFFIX = ".clerk.accounts.dev";
 const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const MAX_EMAIL_LOCAL_PART_LENGTH = 64;
+const FIXTURE_EMAIL_PREFIX = "cb-connect-e2e+";
+const FIXTURE_EMAIL_DOMAIN = "example.com";
 
 export type EnvironmentInput = Readonly<
   Record<string, string | undefined>
@@ -219,13 +223,31 @@ export async function withTransientRetry<T>(
   throw new Error("fixture_operation_failed");
 }
 
+export function fixtureEmail(runId: string, role: FixtureRole): string {
+  const suffix = `-${role}`;
+  const rawLocalPart = `${FIXTURE_EMAIL_PREFIX}${runId}${suffix}`;
+  if (rawLocalPart.length <= MAX_EMAIL_LOCAL_PART_LENGTH) {
+    return `${rawLocalPart}@${FIXTURE_EMAIL_DOMAIN}`;
+  }
+
+  const digest = createHash("sha256").update(runId).digest("hex").slice(0, 12);
+  const retainedRunIdLength =
+    MAX_EMAIL_LOCAL_PART_LENGTH -
+    FIXTURE_EMAIL_PREFIX.length -
+    suffix.length -
+    digest.length -
+    1;
+  const boundedRunId = `${runId.slice(0, retainedRunIdLength)}-${digest}`;
+  return `${FIXTURE_EMAIL_PREFIX}${boundedRunId}${suffix}@${FIXTURE_EMAIL_DOMAIN}`;
+}
+
 function fixtureSpecs(
   environment: AuthEnvironment,
   passwordFactory: (role: FixtureRole) => string,
 ): [FixtureUserSpec, FixtureUserSpec] {
   return (["primary", "partner"] as const).map((role) => ({
     role,
-    email: `cb-connect-e2e+${environment.runId}-${role}@example.com`,
+    email: fixtureEmail(environment.runId, role),
     password: passwordFactory(role),
   })) as [FixtureUserSpec, FixtureUserSpec];
 }

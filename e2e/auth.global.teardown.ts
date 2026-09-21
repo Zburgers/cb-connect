@@ -9,6 +9,7 @@ import {
   cleanupConvexFixturePair,
   cleanupFixturePair,
   createClerkFixtureServices,
+  fixtureEmail,
   getConvexFixtureCleanupStatus,
   loadAuthEnvironment,
   type ProvisionedFixturePair,
@@ -106,7 +107,7 @@ export default async function globalTeardown() {
     await page.goto(`${environment.baseUrl}/`);
     await clerk.signIn({
       page,
-      emailAddress: `cb-connect-e2e+${pair.runId}-primary@example.com`,
+      emailAddress: fixtureEmail(pair.runId, "primary"),
       setupClerkTestingTokenOptions: {
         frontendApiUrl: new URL(environment.clerkFrontendApiUrl).hostname,
       },

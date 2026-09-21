@@ -5,6 +5,7 @@ import {
   APPROVED_CLERK_FRONTEND_API_HOST,
   APPROVED_CONVEX_DEPLOYMENT,
   cleanupFixturePair,
+  fixtureEmail,
   loadAuthEnvironment,
   provisionFixturePair,
   withTransientRetry,
@@ -93,6 +94,19 @@ describe("approved authenticated fixture environment", () => {
         NEXT_PUBLIC_TEST_CONVEX_URL: convexUrl,
       }),
     ).toThrow("Missing approved authenticated fixture environment");
+  });
+
+  test("bounds fixture email local parts for long accepted run ids", () => {
+    const runId = "qa-35577171543-1-prediction-v2-off-desktop";
+    const primary = fixtureEmail(runId, "primary");
+    const partner = fixtureEmail(runId, "partner");
+
+    expect(primary.split("@")[0]?.length).toBeLessThanOrEqual(64);
+    expect(partner.split("@")[0]?.length).toBeLessThanOrEqual(64);
+    expect(primary).toMatch(/^cb-connect-e2e\+.+-primary@example\.com$/);
+    expect(partner).toMatch(/^cb-connect-e2e\+.+-partner@example\.com$/);
+    expect(primary).not.toBe(partner);
+    expect(fixtureEmail(runId, "primary")).toBe(primary);
   });
 
   test("retries transient operations with bounded attempts", async () => {
