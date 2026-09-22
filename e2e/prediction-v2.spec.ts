@@ -533,10 +533,42 @@ test("authenticated prediction V2 qualification is explicit and isolated", async
     await setSharing(primaryClient, true);
     await primary.goto("/dashboard/partner");
     const revokeDialog = primary.waitForEvent("dialog");
-    await primary
-      .getByRole("button", { name: "Close partner access", exact: true })
-      .click();
+    const closePartnerAccess = primary.getByRole("button", {
+      name: "Close partner access",
+      exact: true,
+    });
+    await closePartnerAccess.evaluate((element) => {
+      const navSurface = document.querySelector(
+        'nav[aria-label="Bottom navigation"] > div',
+      );
+      const safeBottom = Math.min(
+        window.innerHeight,
+        navSurface?.getBoundingClientRect().top ?? window.innerHeight,
+      ) - 12;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const bounds = element.getBoundingClientRect();
+        const hitTarget = document.elementFromPoint(
+          bounds.left + bounds.width / 2,
+          bounds.top + bounds.height / 2,
+        );
+        if (
+          bounds.top >= 0 &&
+          bounds.bottom <= safeBottom &&
+          (hitTarget === element || element.contains(hitTarget))
+        ) {
+          return;
+        }
+        const previousScrollY = window.scrollY;
+        window.scrollBy({
+          top: Math.max(80, bounds.bottom - safeBottom),
+          behavior: "instant",
+        });
+        if (window.scrollY === previousScrollY) return;
+      }
+    });
+    const closeClick = closePartnerAccess.click();
     await (await revokeDialog).accept();
+    await closeClick;
     await expect(primary.getByText("Partner access revoked.")).toBeVisible();
     await partner.goto("/dashboard");
     await expect(

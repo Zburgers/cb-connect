@@ -4,6 +4,7 @@ import {
   PREDICTION_ESTIMATOR_IDS,
   type PredictionEstimatorId,
 } from "./predictionEstimators";
+import { PREDICTION_CALIBRATION_VERSION } from "./predictionIntervals";
 import type { PeriodPredictionV2 } from "./periodPrediction";
 import type { PredictionBoundsV2 } from "./predictionBounds";
 
@@ -58,6 +59,7 @@ export function predictionSnapshotMatchesCurrent(
     snapshot.displayStatus !== "visible" ||
     snapshot.contractVersion !== 2 ||
     snapshot.featureVersion !== PREDICTION_SNAPSHOT_FEATURE_VERSION ||
+    snapshot.intervalMethodVersion !== PREDICTION_CALIBRATION_VERSION ||
     snapshot.inputCutoffAt < current.latestInputUpdatedAt ||
     snapshot.inputCutoffAt > current.inputCutoffAt ||
     snapshot.inputCutoffDate !== current.inputCutoffDate ||

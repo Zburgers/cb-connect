@@ -97,7 +97,7 @@ async function seedFixture(t: ReturnType<typeof convexTest>) {
       attemptedAt: Date.now(),
       success: true,
     });
-    await ctx.db.insert("periodEvents", {
+    const periodEventId = await ctx.db.insert("periodEvents", {
       userId: primaryId,
       startDate: "2026-08-04",
       createdByUserId: primaryId,
@@ -106,6 +106,45 @@ async function seedFixture(t: ReturnType<typeof convexTest>) {
       confirmationStatus: "confirmed",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+    });
+    const segmentId = await ctx.db.insert("cyclePredictionSegments", {
+      userId: primaryId,
+      startDate: "2026-08-04",
+      status: "active",
+      createdAt: Date.now(),
+    });
+    const snapshotId = await ctx.db.insert("predictionSnapshots", {
+      userId: primaryId,
+      generatedAt: Date.now(),
+      inputCutoffAt: Date.now(),
+      inputCutoffDate: "2026-08-04",
+      status: "limited_evidence",
+      estimatorId: "cycle-interval",
+      estimatorVersion: 2,
+      intervalMethodVersion: "cycle_intervals_v1",
+      calibrationVersion: "empirical-residual-quantiles-v1",
+      pointDate: "2026-09-01",
+      earliestDate: "2026-08-30",
+      latestDate: "2026-09-03",
+      probabilityLabel: null,
+      quality: "limited_evidence",
+      basisCount: 1,
+      reasonCodes: ["LIMITED_HISTORY"],
+      displayStatus: "shadow",
+      predictionSegmentId: segmentId,
+      featureVersion: "period_prediction_v2",
+      contractVersion: 2,
+    });
+    await ctx.db.insert("predictionSnapshotAssessments", {
+      snapshotId,
+      type: "outcome",
+      observedEligibleStartDate: "2026-08-04",
+      signedErrorDays: 0,
+      absoluteErrorDays: 0,
+      insideWindow: true,
+      sourcePeriodEventId: periodEventId,
+      reason: "eligible_outcome",
+      recordedAt: Date.now(),
     });
     await ctx.db.insert("painLogs", {
       userId: primaryId,
@@ -335,6 +374,9 @@ describe("bounded fixture cleanup", () => {
     expect(result.deleted.couples).toBe(1);
     expect(result.deleted.coupleMessages).toBe(1);
     expect(result.deleted.coupleMessageReactions).toBe(1);
+    expect(result.deleted.cyclePredictionSegments).toBe(1);
+    expect(result.deleted.predictionSnapshots).toBe(1);
+    expect(result.deleted.predictionSnapshotAssessments).toBe(1);
 
     const status = await t
       .withIdentity({ subject: fixtureArgs.primaryClerkId })

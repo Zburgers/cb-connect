@@ -50,6 +50,10 @@ export type CycleBenchmarkManifest = {
   datasetClass: "synthetic" | "external_academic" | "cb_connect";
   datasetSha256: string;
   selectedEstimatorId?: PromotionCandidateEstimatorId;
+  evaluationBinding?: {
+    sourceCommit: string;
+    protocolSha256: string;
+  };
   split: {
     version: typeof CYCLE_BENCHMARK_SPLIT_VERSION;
     saltId: string;
@@ -142,6 +146,7 @@ function requireManifest(value: unknown): asserts value is CycleBenchmarkManifes
       "datasetClass",
       "datasetSha256",
       "selectedEstimatorId",
+      "evaluationBinding",
       "split",
       "synthetic",
       "source",
@@ -176,6 +181,17 @@ function requireManifest(value: unknown): asserts value is CycleBenchmarkManifes
   ) {
     throw new Error("Dataset manifest selected estimator is not a promotion candidate");
   }
+  if (
+    manifest.evaluationBinding !== undefined &&
+    (!isRecord(manifest.evaluationBinding) ||
+      !hasOnlyKeys(manifest.evaluationBinding, ["sourceCommit", "protocolSha256"]) ||
+      typeof manifest.evaluationBinding.sourceCommit !== "string" ||
+      !/^[a-f0-9]{40}$/i.test(manifest.evaluationBinding.sourceCommit) ||
+      typeof manifest.evaluationBinding.protocolSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/i.test(manifest.evaluationBinding.protocolSha256))
+  ) {
+    throw new Error("Dataset manifest evaluation code binding is invalid");
+  }
 
   if (manifest.datasetClass === "synthetic") {
     if (
@@ -183,6 +199,7 @@ function requireManifest(value: unknown): asserts value is CycleBenchmarkManifes
       manifest.authority !== undefined ||
       manifest.developmentCutoffs !== undefined ||
       manifest.selectedEstimatorId !== undefined ||
+      manifest.evaluationBinding !== undefined ||
       (manifest.synthetic !== undefined &&
         (!isRecord(manifest.synthetic) ||
           !hasOnlyKeys(manifest.synthetic, [
@@ -345,6 +362,9 @@ export function validateCycleBenchmarkManifest(
     );
   }
   if (partition === "evaluation") {
+    if (!value.evaluationBinding) {
+      throw new Error("D-013 evaluation requires a frozen source commit and protocol hash");
+    }
     const authority = value.authority;
     const holdout = authority?.evaluationHoldout;
     if (

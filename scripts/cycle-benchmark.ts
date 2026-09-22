@@ -1056,6 +1056,7 @@ function buildSubgroups(
       "calibration_and_personal",
       "personal_walk_forward",
       "none",
+      "mixed",
     ],
     variability: ["stable", "moderate", "high", "unavailable"],
     historyCount: ["sparse", "3", "4-6", "7-12", "13+"],
@@ -1105,14 +1106,13 @@ function buildSubgroups(
   return report;
 }
 
-function calibrationSourceForFold(fold: BenchmarkFold): PredictionCalibrationSource {
+function calibrationSourceForFold(
+  fold: BenchmarkFold,
+): PredictionCalibrationSource | "mixed" {
   const sources = PREDICTION_ESTIMATOR_IDS.map(
     (estimatorId) => fold.predictions[estimatorId].intervals?.calibrationSource ?? "none",
   );
-  if (sources.some((source) => source !== sources[0])) {
-    throw new Error("Calibration source differs across candidate estimators");
-  }
-  return sources[0];
+  return sources.some((source) => source !== sources[0]) ? "mixed" : sources[0];
 }
 
 type EstimatorCalibrationModel = {
@@ -1138,6 +1138,14 @@ function fitCalibrationModel(folds: readonly BenchmarkFold[]): CalibrationModel 
       riskDeciles: new Map(),
     };
     for (const fold of folds) {
+      if (
+        PROMOTION_CANDIDATE_ESTIMATOR_IDS.includes(
+          estimatorId as PromotionCandidateEstimatorId,
+        ) &&
+        !fold.predictions[estimatorId].personalizationEligible
+      ) {
+        continue;
+      }
       const residual = fold.predictions[estimatorId].signedErrorDays;
       estimator.globalResiduals.push(residual);
       const variability = fold.groups.variability;
@@ -1232,6 +1240,14 @@ function applyCalibration(
 
     // Add this target's residual only after its interval has been sized.
     for (const estimatorId of PREDICTION_ESTIMATOR_IDS) {
+      if (
+        PROMOTION_CANDIDATE_ESTIMATOR_IDS.includes(
+          estimatorId as PromotionCandidateEstimatorId,
+        ) &&
+        !fold.predictions[estimatorId].personalizationEligible
+      ) {
+        continue;
+      }
       const residuals = userResiduals.get(estimatorId) ?? [];
       residuals.push(fold.predictions[estimatorId].signedErrorDays);
       userResiduals.set(estimatorId, residuals);
@@ -1582,6 +1598,8 @@ export function loadCycleBenchmarkFiles(options: {
   manifestPath?: string;
   partition: CycleBenchmarkPartition;
   isGoldenFixture: boolean;
+  sourceCommit?: string;
+  protocolSha256?: string;
   evaluationReceiptDirectory?: string;
 }): {
   dataset: CycleBenchmarkDataset;
@@ -1628,7 +1646,19 @@ export function loadCycleBenchmarkFiles(options: {
   }
 
   const manifestSha256 = sha256(manifestBytes);
-  if (options.partition === "evaluation") {
+  const datasetBytes = readFileSync(options.datasetPath);
+  if (sha256(datasetBytes).toLowerCase() !== rawManifest.datasetSha256.toLowerCase()) {
+    throw new Error("Benchmark dataset checksum does not match its manifest");
+  }
+  if (options.partition === "evaluation" && rawManifest.datasetClass !== "synthetic") {
+    const binding = rawManifest.evaluationBinding;
+    if (
+      !binding ||
+      binding.sourceCommit !== options.sourceCommit ||
+      binding.protocolSha256 !== options.protocolSha256
+    ) {
+      throw new Error("D-013 evaluation source commit or protocol hash differs from its frozen manifest");
+    }
     // ponytail: this local receipt blocks repeat runs in this checkout; a shared D-013 ledger is needed across clones.
     recordEvaluationOpening({
       directory: options.evaluationReceiptDirectory ?? EVALUATION_OPENINGS_DIR,
@@ -1636,11 +1666,6 @@ export function loadCycleBenchmarkFiles(options: {
       datasetSha256: rawManifest.datasetSha256,
       manifestSha256,
     });
-  }
-
-  const datasetBytes = readFileSync(options.datasetPath);
-  if (sha256(datasetBytes).toLowerCase() !== rawManifest.datasetSha256.toLowerCase()) {
-    throw new Error("Benchmark dataset checksum does not match its manifest");
   }
   let rawDataset: unknown;
   try {
@@ -1749,18 +1774,21 @@ function runCli(): void {
     ? resolve(REPO_ROOT, GOLDEN_DATASET, "data.json")
     : resolve(options.dataset as string);
   const manifestPath = options.manifest ? resolve(options.manifest) : undefined;
+  const protocolPath = resolve(REPO_ROOT, "docs/research/cycle-benchmark-protocol.md");
+  const protocolSha256 = sha256(readFileSync(protocolPath));
   const loaded = loadCycleBenchmarkFiles({
     datasetPath,
     manifestPath,
     partition: options.partition,
     isGoldenFixture: options.isGoldenFixture,
+    sourceCommit,
+    protocolSha256,
   });
   const salt =
     loaded.manifest.datasetClass === "synthetic"
       ? GOLDEN_SALT
       : process.env.CYCLE_BENCHMARK_SPLIT_SALT;
   if (!salt) throw new Error("D-013 benchmark split salt is unavailable");
-  const protocolPath = resolve(REPO_ROOT, "docs/research/cycle-benchmark-protocol.md");
   const report = runCycleBenchmark({
     dataset: loaded.dataset,
     manifest: loaded.manifest,
@@ -1769,7 +1797,7 @@ function runCli(): void {
     manifestSha256: loaded.manifestSha256,
     sourceCommit,
     sourceTreeState,
-    protocolSha256: sha256(readFileSync(protocolPath)),
+    protocolSha256,
   });
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }

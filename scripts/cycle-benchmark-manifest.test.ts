@@ -160,12 +160,19 @@ describe("cycle benchmark manifest", () => {
       ),
     ).toThrow("not a promotion candidate");
     expect(() => validateCycleBenchmarkManifest(selected, "evaluation")).toThrow(
-      "not approved to open",
+      "frozen source commit and protocol hash",
     );
+    const bound = {
+      ...selected,
+      evaluationBinding: {
+        sourceCommit: "a".repeat(40),
+        protocolSha256: "c".repeat(64),
+      },
+    };
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...selected,
+          ...bound,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -182,7 +189,7 @@ describe("cycle benchmark manifest", () => {
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...selected,
+          ...bound,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -198,7 +205,7 @@ describe("cycle benchmark manifest", () => {
     expect(() =>
       validateCycleBenchmarkManifest(
         {
-          ...selected,
+          ...bound,
           authority: {
             ...frozen.authority,
             evaluationHoldout: {
@@ -222,7 +229,7 @@ describe("cycle benchmark manifest", () => {
     ).not.toThrow();
   });
 
-  test("records one evaluation opening before reading outcome bytes", () => {
+  test("checks the dataset hash before consuming the opening and records before parsing outcomes", () => {
     const directory = mkdtempSync(join(tmpdir(), "cycle-benchmark-evaluation-"));
     tempDirectories.push(directory);
     const datasetPath = join(directory, "outcomes.json");
@@ -236,6 +243,10 @@ describe("cycle benchmark manifest", () => {
       medianIntervalQ67: 30,
     };
     manifest.selectedEstimatorId = "all_mean_v1";
+    manifest.evaluationBinding = {
+      sourceCommit: "a".repeat(40),
+      protocolSha256: "c".repeat(64),
+    };
     manifest.authority!.evaluationHoldout = {
       state: "opened_once",
       openedBy: "Named Holdout Reviewer",
@@ -254,6 +265,8 @@ describe("cycle benchmark manifest", () => {
       manifestPath,
       partition: "evaluation" as const,
       isGoldenFixture: false,
+      sourceCommit: "a".repeat(40),
+      protocolSha256: "c".repeat(64),
       evaluationReceiptDirectory: receiptDirectory,
     };
     try {
@@ -273,6 +286,56 @@ describe("cycle benchmark manifest", () => {
       expect(() => loadCycleBenchmarkFiles(options)).toThrow(
         "already been opened in this checkout",
       );
+    } finally {
+      if (priorSalt === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT;
+      else process.env.CYCLE_BENCHMARK_SPLIT_SALT = priorSalt;
+      if (priorSaltId === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
+      else process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = priorSaltId;
+    }
+  });
+
+  test("does not consume an evaluation opening when the dataset checksum is wrong", () => {
+    const directory = mkdtempSync(join(tmpdir(), "cycle-benchmark-checksum-"));
+    tempDirectories.push(directory);
+    const datasetPath = join(directory, "outcomes.json");
+    const manifestPath = join(directory, "manifest.json");
+    const receiptDirectory = join(directory, "openings");
+    const dataBytes = Buffer.from("{}");
+    const manifest = externalManifest();
+    manifest.datasetSha256 = createHash("sha256").update("expected").digest("hex");
+    manifest.developmentCutoffs = {
+      variabilityMadQ33: 1,
+      variabilityMadQ67: 3,
+      medianIntervalQ33: 27,
+      medianIntervalQ67: 30,
+    };
+    manifest.selectedEstimatorId = "all_mean_v1";
+    manifest.evaluationBinding = {
+      sourceCommit: "a".repeat(40),
+      protocolSha256: "c".repeat(64),
+    };
+    manifest.authority!.evaluationHoldout = {
+      state: "opened_once",
+      openedBy: "Named Holdout Reviewer",
+      openedAt: "2025-09-20T11:00:00Z",
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    writeFileSync(datasetPath, dataBytes);
+    const priorSalt = process.env.CYCLE_BENCHMARK_SPLIT_SALT;
+    const priorSaltId = process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
+    process.env.CYCLE_BENCHMARK_SPLIT_SALT = "0123456789abcdef";
+    process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = "test-salt-v1";
+    try {
+      expect(() => loadCycleBenchmarkFiles({
+        datasetPath,
+        manifestPath,
+        partition: "evaluation",
+        isGoldenFixture: false,
+        sourceCommit: "a".repeat(40),
+        protocolSha256: "c".repeat(64),
+        evaluationReceiptDirectory: receiptDirectory,
+      })).toThrow("checksum does not match");
+      expect(() => readFileSync(receiptDirectory)).toThrow();
     } finally {
       if (priorSalt === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT;
       else process.env.CYCLE_BENCHMARK_SPLIT_SALT = priorSalt;

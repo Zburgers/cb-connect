@@ -399,7 +399,6 @@ async function appendOutcomeIfEarliest(
     .first();
 
   if (latestOutcome?.type === "outcome") {
-    if (event.startDate >= latestOutcome.observedEligibleStartDate) return null;
     const previousSupersession = await ctx.db
       .query("predictionSnapshotAssessments")
       .withIndex("by_snapshot_source_event_and_type", (q) =>
@@ -409,32 +408,46 @@ async function appendOutcomeIfEarliest(
           .eq("type", "superseded"),
       )
       .first();
-    if (previousSupersession) return null;
-
-    await ctx.db.insert("predictionSnapshotAssessments", {
-      snapshotId: snapshot._id,
-      type: "superseded",
-      sourcePeriodEventId: latestOutcome.sourcePeriodEventId,
-      ...(latestOutcome.sourceAuthorityVersion === undefined
-        ? {}
-        : { sourceAuthorityVersion: latestOutcome.sourceAuthorityVersion }),
-      reason: "earlier_eligible_start_discovered",
-      recordedAt: Date.now(),
-    });
-  } else {
-    const latestSupersession = await ctx.db
-      .query("predictionSnapshotAssessments")
-      .withIndex("by_snapshot_and_type", (q) =>
-        q.eq("snapshotId", snapshot._id).eq("type", "superseded"),
-      )
-      .order("desc")
-      .first();
     if (
-      latestSupersession &&
-      latestSupersession.reason !== "earlier_eligible_start_discovered"
+      previousSupersession?.reason === "primary_correction" ||
+      previousSupersession?.reason === "partner_correction"
     ) {
-      return null;
+      const currentEventSupersession = await ctx.db
+        .query("predictionSnapshotAssessments")
+        .withIndex("by_snapshot_source_event_and_type", (q) =>
+          q
+            .eq("snapshotId", snapshot._id)
+            .eq("sourcePeriodEventId", event._id)
+            .eq("type", "superseded"),
+        )
+        .first();
+      if (currentEventSupersession) return null;
+    } else {
+      if (previousSupersession || event.startDate >= latestOutcome.observedEligibleStartDate) {
+        return null;
+      }
+      await ctx.db.insert("predictionSnapshotAssessments", {
+        snapshotId: snapshot._id,
+        type: "superseded",
+        sourcePeriodEventId: latestOutcome.sourcePeriodEventId,
+        ...(latestOutcome.sourceAuthorityVersion === undefined
+          ? {}
+          : { sourceAuthorityVersion: latestOutcome.sourceAuthorityVersion }),
+        reason: "earlier_eligible_start_discovered",
+        recordedAt: Date.now(),
+      });
     }
+  } else {
+    const currentEventSupersession = await ctx.db
+      .query("predictionSnapshotAssessments")
+      .withIndex("by_snapshot_source_event_and_type", (q) =>
+        q
+          .eq("snapshotId", snapshot._id)
+          .eq("sourcePeriodEventId", event._id)
+          .eq("type", "superseded"),
+      )
+      .first();
+    if (currentEventSupersession) return null;
   }
 
   return await appendOutcomeAssessment(ctx, snapshot, event);

@@ -193,6 +193,33 @@ describe("immutable prediction snapshots", () => {
     expect(futureIntervals?.latestEligibleStartDate).toBe("2026-01-31");
   });
 
+  test("records a new eligible outcome after the latest outcome is corrected", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const correctedEventId = await seedOutcomeEvent(t, primaryId, "2026-01-30");
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: correctedEventId,
+    });
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: correctedEventId,
+      expectedAuthorityVersion: 1,
+    });
+
+    const replacementEventId = await seedOutcomeEvent(t, primaryId, "2026-01-20");
+    await expect(
+      t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: replacementEventId,
+      }),
+    ).resolves.toMatchObject({ assessmentId: expect.any(String) });
+  });
+
   test("records an outcome after ordinary period-end completion", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
