@@ -160,8 +160,8 @@ async function showPrimaryPrediction(page: Page): Promise<void> {
   const card = page.getByRole("region", { name: "Period timing estimate" });
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute("data-prediction-status", "active");
-  await expect(card.getByText("Estimated range", { exact: true })).toBeVisible();
-  await expect(page.getByText("80% likely range", { exact: true })).toHaveCount(0);
+  await expect(card).toContainText("Estimated range:");
+  await expect(card).not.toContainText("80% likely range:");
 }
 
 async function setSharing(
