@@ -93,6 +93,11 @@ if rg -q 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; th
   exit 1
 fi
 
+if rg -q 'run_lane gate0-.*e2e/release-smoke\.spec\.ts' scripts/run-gates-0-2-qa.sh; then
+  echo "Gate 0 release smoke must not duplicate the protected authenticated smoke job" >&2
+  exit 1
+fi
+
 if grep -Eq '(^|[[:space:]])rg([[:space:]]|$)' scripts/tests/package-release.test.sh; then
   echo "release packaging policy test must not depend on runner-specific ripgrep" >&2
   exit 1

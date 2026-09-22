@@ -9,6 +9,9 @@ jobs:
   qualify:
     name: Deterministic qualification
     runs-on: ubuntu-latest
+    concurrency:
+      group: cb-connect-qualify-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
@@ -227,7 +230,7 @@ jobs:
           fi
           if [[ -d "$source_root" ]]; then
             while IFS= read -r file; do
-              relative="${file#${source_root}/}"
+              relative="${file#"$source_root"/}"
               destination="$safe_root/$relative"
               mkdir -p "$(dirname "$destination")"
               cp "$file" "$destination"
@@ -270,7 +273,7 @@ jobs:
           fi
           if [[ -d "$source_root" ]]; then
             while IFS= read -r file; do
-              relative="${file#${source_root}/}"
+              relative="${file#"$source_root"/}"
               destination="$safe_root/$relative"
               mkdir -p "$(dirname "$destination")"
               cp "$file" "$destination"
