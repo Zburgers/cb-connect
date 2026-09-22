@@ -116,7 +116,6 @@ async function writeHistory(
   await client.mutation(api.mutations.cycleContext.createPredictionSegment, {
     startDate: starts[0]!,
   });
-  await client.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
   return { today, timeZone, starts };
 }
 
@@ -127,6 +126,7 @@ async function primaryPrediction(
   | ActivePrediction
   | Extract<PeriodPredictionV2, { status: "paused" | "unavailable" }>
 > {
+  await client.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
   const dashboard = await client.query(
     api.queries.dashboard.getDashboardData,
     { todayDate: today },
