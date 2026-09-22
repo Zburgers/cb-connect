@@ -116,6 +116,7 @@ async function writeHistory(
   await client.mutation(api.mutations.cycleContext.createPredictionSegment, {
     startDate: starts[0]!,
   });
+  await client.mutation(api.mutations.predictionSnapshots.ensureForViewer, {});
   return { today, timeZone, starts };
 }
 
