@@ -6,6 +6,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { fixtureEmail } from "../../lib/fixtureEmail";
 
 const APPROVED_DEV_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 const MAX_RECORDS_PER_SCOPE = 500;
@@ -281,7 +282,7 @@ async function loadFixtureRecords(
       .unique();
     if (!user) continue;
 
-    const expectedEmail = `cb-connect-e2e+${args.runId}-${requested.role}@example.com`;
+    const expectedEmail = fixtureEmail(args.runId, requested.role);
     // A durable run is claimed before either account visits the dashboard.
     // During a failed onboarding/linking interval the application user may not
     // yet carry fixtureRunId or a role, but the exact run-owned Clerk ID and
@@ -295,10 +296,12 @@ async function loadFixtureRecords(
     users.push(user);
   }
 
-  const targetUsersByRole = new Map(requestedUsers.map((requested) => [
-    requested.role,
-    users.find((user) => user.clerkId === requested.clerkId),
-  ]));
+  const targetUsersByRole = new Map(
+    requestedUsers.map((requested) => [
+      requested.role,
+      users.find((user) => user.clerkId === requested.clerkId),
+    ]),
+  );
   const allFixtureUserIds = new Set<UserId>(users.map((user) => user._id));
   const coupleIds = new Set<CoupleId>();
   if (fixtureRun.coupleId !== undefined) {
@@ -363,7 +366,9 @@ async function loadFixtureRecords(
     pairingCodes.push(...(await rowsByCouple(ctx, "pairingCodes", coupleId)));
     presence.push(...(await rowsByCouple(ctx, "presence", coupleId)));
     nudges.push(...(await rowsByCouple(ctx, "nudges", coupleId)));
-    coupleMessages.push(...(await rowsByCouple(ctx, "coupleMessages", coupleId)));
+    coupleMessages.push(
+      ...(await rowsByCouple(ctx, "coupleMessages", coupleId)),
+    );
     coupleMessageReactions.push(
       ...(await rowsByCouple(ctx, "coupleMessageReactions", coupleId)),
     );
@@ -387,9 +392,7 @@ async function loadFixtureRecords(
     painLogs.push(...(await rowsByUser(ctx, "painLogs", userId)));
     cycleSettings.push(...(await rowsByUser(ctx, "cycleSettings", userId)));
     hiddenNutrition.push(...(await rowsByUser(ctx, "hiddenNutrition", userId)));
-    notificationLog.push(
-      ...(await rowsByUser(ctx, "notificationLog", userId)),
-    );
+    notificationLog.push(...(await rowsByUser(ctx, "notificationLog", userId)));
   }
 
   for (const code of pairingCodes) {
@@ -540,10 +543,8 @@ export const registerFixtureUser = mutation({
     }
     if (!user) throw new Error("fixture_user_not_found");
 
-    const expectedEmail = `cb-connect-e2e+${args.runId}-${args.role}@example.com`;
-    if (
-      args.email !== expectedEmail
-    ) {
+    const expectedEmail = fixtureEmail(args.runId, args.role);
+    if (args.email !== expectedEmail) {
       throw new Error("fixture_cleanup_email_mismatch");
     }
     if (user.email !== "" && user.email !== expectedEmail) {
@@ -579,7 +580,9 @@ export const registerFixtureUser = mutation({
         .query("periodEvents")
         .withIndex("by_user_and_start", (q) => q.eq("userId", user._id))
         .take(100);
-      if (!existingPeriods.some((period) => period.startCertainty === undefined)) {
+      if (
+        !existingPeriods.some((period) => period.startCertainty === undefined)
+      ) {
         const legacyStart = new Date();
         legacyStart.setUTCDate(legacyStart.getUTCDate() - 14);
         const legacyEnd = new Date(legacyStart);
@@ -623,8 +626,7 @@ export const registerFixtureUser = mutation({
       ]);
       for (const member of members) {
         const memberUser = await ctx.db.get("users", member.userId);
-        const expectedMemberEmail =
-          `cb-connect-e2e+${args.runId}-${member.role}@example.com`;
+        const expectedMemberEmail = fixtureEmail(args.runId, member.role);
         const hasExpectedMemberEmail =
           memberUser?.email === expectedMemberEmail ||
           // Primary registration runs first so it can bind the couple to the
@@ -683,7 +685,8 @@ export const cleanupFixture = mutation({
     const records = await loadFixtureRecords(ctx, args);
     const deleted = countRecords(records);
 
-    for (const row of records.coupleMessageReactions) await ctx.db.delete(row._id);
+    for (const row of records.coupleMessageReactions)
+      await ctx.db.delete(row._id);
     for (const row of records.coupleMessages) await ctx.db.delete(row._id);
     for (const row of records.coupleChatStates) await ctx.db.delete(row._id);
     for (const row of records.nudges) await ctx.db.delete(row._id);
