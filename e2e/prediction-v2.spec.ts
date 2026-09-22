@@ -154,9 +154,12 @@ function predictionWidth(prediction: ActivePrediction): number {
 }
 
 async function showPrimaryPrediction(page: Page): Promise<void> {
-  await page.goto("/dashboard");
+  // Mutations can invalidate the snapshot while the dashboard is already
+  // mounted. Reload so the assertion observes the newly served snapshot.
+  await page.reload({ waitUntil: "domcontentloaded" });
   const card = page.getByRole("region", { name: "Period timing estimate" });
   await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("data-prediction-status", "active");
   await expect(card.getByText("Estimated range", { exact: true })).toBeVisible();
   await expect(page.getByText("80% likely range", { exact: true })).toHaveCount(0);
 }
