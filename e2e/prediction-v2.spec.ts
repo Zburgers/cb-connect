@@ -484,11 +484,15 @@ test("authenticated prediction V2 qualification is explicit and isolated", async
     );
     expect(paused.status).toBe("paused");
     await primary.goto("/dashboard");
+    const pausedCard = primary.getByRole("region", {
+      name: "Period timing estimate",
+    });
+    await expect(pausedCard).toHaveAttribute(
+      "data-prediction-status",
+      "paused",
+    );
     await expect(
-      primary.locator('[aria-label="Period timing estimate"]'),
-    ).toHaveAttribute("data-prediction-status", "paused");
-    await expect(
-      primary.getByText("Prediction paused", { exact: true }),
+      pausedCard.getByText("Prediction paused", { exact: true }).first(),
     ).toBeVisible();
     await primaryClient.mutation(api.mutations.periods.updateCycleSettings, {
       predictionPaused: false,
