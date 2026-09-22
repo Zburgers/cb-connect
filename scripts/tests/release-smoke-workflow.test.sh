@@ -109,7 +109,7 @@ if ! grep -Fq 'await clerkSetup({' e2e/auth.global.teardown.ts; then
 fi
 
 if ! grep -Fq 'await clerk.signIn({' e2e/auth.global.teardown.ts ||
-   ! grep -Fq 'cb-connect-e2e+${pair.runId}-primary@example.com' e2e/auth.global.teardown.ts; then
+   ! grep -Fq 'emailAddress: fixtureEmail(pair.runId, "primary")' e2e/auth.global.teardown.ts; then
   echo "authenticated teardown must reauthenticate the exact deterministic primary fixture" >&2
   exit 1
 fi
