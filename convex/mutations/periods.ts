@@ -803,14 +803,17 @@ export const deletePeriodEvent = mutation({
     if (!period || period.userId !== user._id) {
       throw new Error("You can only delete your own period entries");
     }
+    if (period.tombstoneAt !== undefined) {
+      throw new Error("PERIOD_EVENT_ALREADY_DELETED");
+    }
 
     if (!isCycleFactsV1Enabled()) {
+      await ctx.db.delete("periodEvents", args.periodEventId);
       await appendCorrectionAssessments(ctx, {
         userId: user._id,
         periodEventId: args.periodEventId,
         reason: "primary_correction",
       });
-      await ctx.db.delete("periodEvents", args.periodEventId);
       return { success: true };
     }
 

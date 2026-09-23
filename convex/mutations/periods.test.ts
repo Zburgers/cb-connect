@@ -1198,6 +1198,15 @@ describe("primary cycle fact writes", () => {
       tombstoneByUserId: primaryId,
       tombstoneAuthorityVersion: 2,
     });
+    await expect(
+      asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId: result.eventId,
+        expectedAuthorityVersion: 2,
+      }),
+    ).rejects.toThrow("PERIOD_EVENT_ALREADY_DELETED");
+    await expect(
+      t.run(async (ctx) => ctx.db.get("periodEvents", result.eventId)),
+    ).resolves.toMatchObject({ authorityVersion: 2 });
   });
 
   test("allows deleting a conflicting exact fact to resolve invalid history", async () => {

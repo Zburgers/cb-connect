@@ -222,6 +222,59 @@ describe("immutable prediction snapshots", () => {
     ).resolves.toMatchObject({ assessmentId: expect.any(String) });
   });
 
+  test("Gate 3 does not reinstate a source deleted with Cycle Facts V1 off", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+    const { snapshotId } = await t.mutation(
+      internal.internal.predictionSnapshots.createSnapshot,
+      snapshotArgs(primaryId, predictionSegmentId),
+    );
+    const periodEventId = await seedOutcomeEvent(t, primaryId, "2026-01-30");
+    await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+      snapshotId,
+      sourcePeriodEventId: periodEventId,
+    });
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId,
+      expectedAuthorityVersion: 1,
+    });
+
+    const [event, outcomes, candidates, supersessions] = await Promise.all([
+      t.run(async (ctx) => ctx.db.get("periodEvents", periodEventId)),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+          )
+          .take(3),
+      ),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_source_event", (q) =>
+            q.eq("sourcePeriodEventId", periodEventId),
+          )
+          .take(3),
+      ),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_snapshot_and_type", (q) =>
+            q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+          )
+          .take(3),
+      ),
+    ]);
+    expect(event).toBeNull();
+    expect(outcomes).toHaveLength(1);
+    expect(candidates).toHaveLength(0);
+    expect(supersessions).toHaveLength(1);
+  });
+
   test.each(["correction", "deletion"] as const)(
     "keeps the earliest remaining outcome effective after an earlier start is corrected or deleted (%s)",
     async (change) => {
