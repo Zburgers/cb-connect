@@ -146,6 +146,13 @@ async function seedFixture(t: ReturnType<typeof convexTest>) {
       reason: "eligible_outcome",
       recordedAt: Date.now(),
     });
+    await ctx.db.insert("predictionSnapshotOutcomeCandidates", {
+      snapshotId,
+      sourcePeriodEventId: periodEventId,
+      observedEligibleStartDate: "2026-08-04",
+      status: "eligible",
+      recordedAt: Date.now(),
+    });
     await ctx.db.insert("painLogs", {
       userId: primaryId,
       date: "2026-08-04",
@@ -377,6 +384,7 @@ describe("bounded fixture cleanup", () => {
     expect(result.deleted.cyclePredictionSegments).toBe(1);
     expect(result.deleted.predictionSnapshots).toBe(1);
     expect(result.deleted.predictionSnapshotAssessments).toBe(1);
+    expect(result.deleted.predictionSnapshotOutcomeCandidates).toBe(1);
 
     const status = await t
       .withIdentity({ subject: fixtureArgs.primaryClerkId })

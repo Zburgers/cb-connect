@@ -43,6 +43,7 @@ type FixtureRecords = {
   cyclePredictionSegments: Doc<"cyclePredictionSegments">[];
   predictionSnapshots: Doc<"predictionSnapshots">[];
   predictionSnapshotAssessments: Doc<"predictionSnapshotAssessments">[];
+  predictionSnapshotOutcomeCandidates: Doc<"predictionSnapshotOutcomeCandidates">[];
   painLogs: Doc<"painLogs">[];
   cycleSettings: Doc<"cycleSettings">[];
   hiddenNutrition: Doc<"hiddenNutrition">[];
@@ -389,6 +390,7 @@ async function loadFixtureRecords(
   const cyclePredictionSegments: Doc<"cyclePredictionSegments">[] = [];
   const predictionSnapshots: Doc<"predictionSnapshots">[] = [];
   const predictionSnapshotAssessments: Doc<"predictionSnapshotAssessments">[] = [];
+  const predictionSnapshotOutcomeCandidates: Doc<"predictionSnapshotOutcomeCandidates">[] = [];
 
   for (const userId of allFixtureUserIds) {
     pairingCodeAttempts.push(
@@ -439,8 +441,29 @@ async function loadFixtureRecords(
         ),
       );
     }
+    predictionSnapshotOutcomeCandidates.push(
+      ...bounded(
+        await ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_snapshot_and_status_and_observed_date", (q) =>
+            q.eq("snapshotId", snapshot._id).eq("status", "eligible"),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        "predictionSnapshotOutcomeCandidates",
+      ),
+      ...bounded(
+        await ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_snapshot_and_status_and_observed_date", (q) =>
+            q.eq("snapshotId", snapshot._id).eq("status", "superseded"),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        "predictionSnapshotOutcomeCandidates",
+      ),
+    );
   }
   bounded(predictionSnapshotAssessments, "predictionSnapshotAssessments");
+  bounded(predictionSnapshotOutcomeCandidates, "predictionSnapshotOutcomeCandidates");
 
   for (const code of pairingCodes) {
     if (
@@ -489,6 +512,7 @@ async function loadFixtureRecords(
     }
   }
   const fixtureSnapshotIds = new Set(predictionSnapshots.map((row) => row._id));
+  const fixturePeriodEventIds = new Set(periodEvents.map((row) => row._id));
   for (const segment of cyclePredictionSegments) {
     if (!allFixtureUserIds.has(segment.userId)) {
       throw new Error("fixture_cleanup_identity_mismatch");
@@ -504,6 +528,14 @@ async function loadFixtureRecords(
       throw new Error("fixture_cleanup_identity_mismatch");
     }
   }
+  for (const candidate of predictionSnapshotOutcomeCandidates) {
+    if (
+      !fixtureSnapshotIds.has(candidate.snapshotId) ||
+      !fixturePeriodEventIds.has(candidate.sourcePeriodEventId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
 
   return {
     users,
@@ -515,6 +547,7 @@ async function loadFixtureRecords(
     cyclePredictionSegments,
     predictionSnapshots,
     predictionSnapshotAssessments,
+    predictionSnapshotOutcomeCandidates,
     painLogs,
     cycleSettings,
     hiddenNutrition,
@@ -760,6 +793,8 @@ export const cleanupFixture = mutation({
     for (const row of records.pairingCodeAttempts) await ctx.db.delete(row._id);
     for (const row of records.pairingCodes) await ctx.db.delete(row._id);
     for (const row of records.predictionSnapshotAssessments)
+      await ctx.db.delete(row._id);
+    for (const row of records.predictionSnapshotOutcomeCandidates)
       await ctx.db.delete(row._id);
     for (const row of records.predictionSnapshots) await ctx.db.delete(row._id);
     for (const row of records.cyclePredictionSegments) await ctx.db.delete(row._id);

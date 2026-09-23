@@ -86,12 +86,14 @@ function snapshotArgs(
 async function seedOutcomeEvent(
   t: TestBackend,
   userId: Id<"users">,
-  startDate = "2026-01-30"
+  startDate = "2026-01-30",
+  endDate?: string,
 ) {
   return await t.run(async (ctx) =>
     ctx.db.insert("periodEvents", {
       userId,
       startDate,
+      ...(endDate ? { endDate, endCertainty: "exact" as const } : {}),
       startCertainty: "exact",
       authorityVersion: 1,
       createdAt: outcomeCreatedAt,
@@ -219,6 +221,92 @@ describe("immutable prediction snapshots", () => {
       }),
     ).resolves.toMatchObject({ assessmentId: expect.any(String) });
   });
+
+  test.each(["correction", "deletion"] as const)(
+    "keeps the earliest remaining outcome effective after an earlier start is corrected or deleted (%s)",
+    async (change) => {
+      const t = convexTest(schema, modules);
+      const { asPrimary, primaryId } = await seedActiveCouple(t);
+      const { predictionSegmentId } = await seedPredictionContext(t, primaryId);
+      const { snapshotId } = await t.mutation(
+        internal.internal.predictionSnapshots.createSnapshot,
+        snapshotArgs(primaryId, predictionSegmentId),
+      );
+      const laterEventId = await seedOutcomeEvent(t, primaryId, "2026-02-20", "2026-02-24");
+      const earlierEventId = await seedOutcomeEvent(t, primaryId, "2026-01-23", "2026-01-27");
+
+      await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: laterEventId,
+      });
+      await t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+        snapshotId,
+        sourcePeriodEventId: earlierEventId,
+      });
+
+      if (change === "deletion") {
+        await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+          periodEventId: earlierEventId,
+          expectedAuthorityVersion: 1,
+        });
+      } else {
+        await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+          periodEventId: earlierEventId,
+          startDate: "2026-01-24",
+          endDate: "2026-01-27",
+          startCertainty: "exact",
+          endCertainty: "exact",
+          timeZone: "UTC",
+          expectedAuthorityVersion: 1,
+        });
+      }
+
+      const newerEventId = await seedOutcomeEvent(t, primaryId, "2026-03-20");
+      await expect(
+        t.mutation(internal.internal.predictionSnapshots.recordOutcome, {
+          snapshotId,
+          sourcePeriodEventId: newerEventId,
+        }),
+      ).rejects.toThrow("PREDICTION_SNAPSHOT_ALREADY_ASSESSED");
+
+      const [outcomes, supersessions] = await Promise.all([
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "outcome"),
+            )
+            .take(3),
+        ),
+        t.run(async (ctx) =>
+          ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshotId).eq("type", "superseded"),
+            )
+            .take(3),
+        ),
+      ]);
+      expect(outcomes.map((item) => item.sourcePeriodEventId)).toEqual([
+        laterEventId,
+        earlierEventId,
+        laterEventId,
+      ]);
+      expect(outcomes[2]).toMatchObject({ reason: "outcome_reinstated" });
+      expect(supersessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourcePeriodEventId: laterEventId,
+            reason: "earlier_eligible_start_discovered",
+          }),
+          expect.objectContaining({
+            sourcePeriodEventId: earlierEventId,
+            reason: "primary_correction",
+          }),
+        ]),
+      );
+    },
+  );
 
   test("records an outcome after ordinary period-end completion", async () => {
     const t = convexTest(schema, modules);

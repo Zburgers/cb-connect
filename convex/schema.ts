@@ -374,7 +374,10 @@ export default defineSchema({
         insideWindow: v.boolean(),
         sourcePeriodEventId: v.id("periodEvents"),
         sourceAuthorityVersion: v.optional(v.number()),
-        reason: v.literal("eligible_outcome"),
+        reason: v.union(
+          v.literal("eligible_outcome"),
+          v.literal("outcome_reinstated")
+        ),
         recordedAt: v.number(),
       }),
       v.object({
@@ -401,6 +404,22 @@ export default defineSchema({
       "sourcePeriodEventId",
       "type",
     ]),
+
+  predictionSnapshotOutcomeCandidates: defineTable({
+    snapshotId: v.id("predictionSnapshots"),
+    sourcePeriodEventId: v.id("periodEvents"),
+    observedEligibleStartDate: v.string(),
+    sourceAuthorityVersion: v.optional(v.number()),
+    status: v.union(v.literal("eligible"), v.literal("superseded")),
+    recordedAt: v.number(),
+  })
+    .index("by_snapshot_and_status_and_observed_date", [
+      "snapshotId",
+      "status",
+      "observedEligibleStartDate",
+    ])
+    .index("by_snapshot_and_source_event", ["snapshotId", "sourcePeriodEventId"])
+    .index("by_source_event", ["sourcePeriodEventId"]),
 
   painTips: defineTable({
     phase: v.union(

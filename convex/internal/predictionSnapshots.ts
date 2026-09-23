@@ -359,6 +359,7 @@ async function appendOutcomeAssessment(
   ctx: MutationCtx,
   snapshot: Doc<"predictionSnapshots">,
   event: Doc<"periodEvents">,
+  reason: "eligible_outcome" | "outcome_reinstated" = "eligible_outcome",
 ) {
   const signedErrorDays = daysBetweenCalendarDates(
     snapshot.pointDate,
@@ -379,7 +380,7 @@ async function appendOutcomeAssessment(
     ...(event.authorityVersion === undefined
       ? {}
       : { sourceAuthorityVersion: event.authorityVersion }),
-    reason: "eligible_outcome",
+    reason,
     recordedAt: Date.now(),
   });
   return { assessmentId, signedErrorDays, absoluteErrorDays, insideWindow };
@@ -390,6 +391,28 @@ async function appendOutcomeIfEarliest(
   snapshot: Doc<"predictionSnapshots">,
   event: Doc<"periodEvents">,
 ) {
+  const candidate = await ctx.db
+    .query("predictionSnapshotOutcomeCandidates")
+    .withIndex("by_snapshot_and_source_event", (q) =>
+      q.eq("snapshotId", snapshot._id).eq("sourcePeriodEventId", event._id),
+    )
+    .unique();
+  if (candidate?.status === "superseded") return null;
+  if (!candidate) {
+    await ctx.db.insert("predictionSnapshotOutcomeCandidates", {
+      snapshotId: snapshot._id,
+      sourcePeriodEventId: event._id,
+      observedEligibleStartDate: event.startDate,
+      ...(event.authorityVersion === undefined
+        ? {}
+        : { sourceAuthorityVersion: event.authorityVersion }),
+      status: "eligible",
+      recordedAt: Date.now(),
+    });
+  }
+
+  const earliestEffective = await earliestEligibleCandidate(ctx, snapshot._id);
+  if (!earliestEffective) return null;
   const latestOutcome = await ctx.db
     .query("predictionSnapshotAssessments")
     .withIndex("by_snapshot_and_type", (q) =>
@@ -397,35 +420,17 @@ async function appendOutcomeIfEarliest(
     )
     .order("desc")
     .first();
-
+  if (latestOutcome?.type === "outcome" &&
+    latestOutcome.sourcePeriodEventId === earliestEffective.sourcePeriodEventId) {
+    return null;
+  }
   if (latestOutcome?.type === "outcome") {
-    const previousSupersession = await ctx.db
-      .query("predictionSnapshotAssessments")
-      .withIndex("by_snapshot_source_event_and_type", (q) =>
-        q
-          .eq("snapshotId", snapshot._id)
-          .eq("sourcePeriodEventId", latestOutcome.sourcePeriodEventId)
-          .eq("type", "superseded"),
-      )
-      .first();
+    const latestSource = await ctx.db.get("periodEvents", latestOutcome.sourcePeriodEventId);
     if (
-      previousSupersession?.reason === "primary_correction" ||
-      previousSupersession?.reason === "partner_correction"
+      latestSource &&
+      isUncorrectedOutcomeStart(latestSource) &&
+      latestSource.startDate === latestOutcome.observedEligibleStartDate
     ) {
-      const currentEventSupersession = await ctx.db
-        .query("predictionSnapshotAssessments")
-        .withIndex("by_snapshot_source_event_and_type", (q) =>
-          q
-            .eq("snapshotId", snapshot._id)
-            .eq("sourcePeriodEventId", event._id)
-            .eq("type", "superseded"),
-        )
-        .first();
-      if (currentEventSupersession) return null;
-    } else {
-      if (previousSupersession || event.startDate >= latestOutcome.observedEligibleStartDate) {
-        return null;
-      }
       await ctx.db.insert("predictionSnapshotAssessments", {
         snapshotId: snapshot._id,
         type: "superseded",
@@ -437,20 +442,70 @@ async function appendOutcomeIfEarliest(
         recordedAt: Date.now(),
       });
     }
-  } else {
-    const currentEventSupersession = await ctx.db
-      .query("predictionSnapshotAssessments")
-      .withIndex("by_snapshot_source_event_and_type", (q) =>
-        q
-          .eq("snapshotId", snapshot._id)
-          .eq("sourcePeriodEventId", event._id)
-          .eq("type", "superseded"),
-      )
-      .first();
-    if (currentEventSupersession) return null;
   }
 
-  return await appendOutcomeAssessment(ctx, snapshot, event);
+  const winnerEvent = await ctx.db.get("periodEvents", earliestEffective.sourcePeriodEventId);
+  if (!winnerEvent) return null;
+  const previousAssessment = await ctx.db
+    .query("predictionSnapshotAssessments")
+    .withIndex("by_snapshot_source_event_and_type", (q) =>
+      q
+        .eq("snapshotId", snapshot._id)
+        .eq("sourcePeriodEventId", winnerEvent._id)
+        .eq("type", "outcome"),
+    )
+    .first();
+  const assessment = await appendOutcomeAssessment(
+    ctx,
+    snapshot,
+    winnerEvent,
+    previousAssessment ? "outcome_reinstated" : "eligible_outcome",
+  );
+  return winnerEvent._id === event._id ? assessment : null;
+}
+
+async function earliestEligibleCandidate(
+  ctx: MutationCtx,
+  snapshotId: Id<"predictionSnapshots">,
+) {
+  for (;;) {
+    const candidate = await ctx.db
+      .query("predictionSnapshotOutcomeCandidates")
+      .withIndex("by_snapshot_and_status_and_observed_date", (q) =>
+        q.eq("snapshotId", snapshotId).eq("status", "eligible"),
+      )
+      .first();
+    if (!candidate) return null;
+    const event = await ctx.db.get("periodEvents", candidate.sourcePeriodEventId);
+    if (
+      event &&
+      event.startDate === candidate.observedEligibleStartDate &&
+      isUncorrectedOutcomeStart(event)
+    ) {
+      return candidate;
+    }
+    await ctx.db.patch(candidate._id, { status: "superseded" });
+  }
+}
+
+async function restoreEarliestEffectiveOutcome(
+  ctx: MutationCtx,
+  snapshot: Doc<"predictionSnapshots">,
+) {
+  const latestOutcome = await ctx.db
+    .query("predictionSnapshotAssessments")
+    .withIndex("by_snapshot_and_type", (q) =>
+      q.eq("snapshotId", snapshot._id).eq("type", "outcome"),
+    )
+    .order("desc")
+    .first();
+  if (latestOutcome?.type !== "outcome") return;
+  const candidate = await earliestEligibleCandidate(ctx, snapshot._id);
+  if (!candidate || candidate.sourcePeriodEventId === latestOutcome.sourcePeriodEventId) return;
+  const event = await ctx.db.get("periodEvents", candidate.sourcePeriodEventId);
+  if (event) {
+    await appendOutcomeAssessment(ctx, snapshot, event, "outcome_reinstated");
+  }
 }
 
 export const recordOutcomesForStart = internalMutation({
@@ -507,7 +562,7 @@ export async function appendCorrectionAssessments(
     throw new Error("PREDICTION_SNAPSHOT_INVALID_SOURCE_AUTHORITY_VERSION");
   }
 
-  await appendCorrectionPage(ctx, args, null);
+  await appendCorrectionPage(ctx, args);
 }
 
 export const continueCorrectionAssessments = internalMutation({
@@ -516,7 +571,8 @@ export const continueCorrectionAssessments = internalMutation({
     periodEventId: v.id("periodEvents"),
     sourceAuthorityVersion: v.optional(v.number()),
     reason: correctionReasonValidator,
-    cursor: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    candidateCursor: v.optional(v.union(v.string(), v.null())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -527,7 +583,7 @@ export const continueCorrectionAssessments = internalMutation({
     ) {
       throw new Error("PREDICTION_SNAPSHOT_INVALID_SOURCE_AUTHORITY_VERSION");
     }
-    await appendCorrectionPage(ctx, args, args.cursor);
+    await appendCorrectionPage(ctx, args, args.cursor, args.candidateCursor);
     return null;
   },
 });
@@ -540,20 +596,36 @@ async function appendCorrectionPage(
     sourceAuthorityVersion?: number;
     reason: CorrectionReason;
   },
-  cursor: string | null
+  cursor?: string | null,
+  candidateCursor?: string | null,
 ) {
   // ponytail: process 100 outcomes per transaction; cursor jobs handle larger corrections.
-  const page = await ctx.db
-    .query("predictionSnapshotAssessments")
-    .withIndex("by_source_period_event_and_type", (q) =>
-      q
-        .eq("sourcePeriodEventId", args.periodEventId)
-        .eq("type", "outcome")
-    )
-    .paginate({ numItems: CORRECTION_PAGE_SIZE, cursor });
+  const page =
+    cursor === null
+      ? null
+      : await ctx.db
+          .query("predictionSnapshotAssessments")
+          .withIndex("by_source_period_event_and_type", (q) =>
+            q
+              .eq("sourcePeriodEventId", args.periodEventId)
+              .eq("type", "outcome"),
+          )
+          .paginate({ numItems: CORRECTION_PAGE_SIZE, cursor: cursor ?? null });
+  const candidatePage =
+    candidateCursor === null
+      ? null
+      : await ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_source_event", (q) =>
+            q.eq("sourcePeriodEventId", args.periodEventId),
+          )
+          .paginate({
+            numItems: CORRECTION_PAGE_SIZE,
+            cursor: candidateCursor ?? null,
+          });
 
   const recordedAt = Date.now();
-  for (const assessment of page.page) {
+  for (const assessment of page?.page ?? []) {
     if (assessment.type !== "outcome") continue;
     const snapshot = await ctx.db.get(
       "predictionSnapshots",
@@ -574,7 +646,29 @@ async function appendCorrectionPage(
     });
   }
 
-  if (!page.isDone) {
+  for (const candidate of candidatePage?.page ?? []) {
+    const snapshot = await ctx.db.get("predictionSnapshots", candidate.snapshotId);
+    if (!snapshot || snapshot.userId !== args.userId) {
+      throw new Error("PREDICTION_SNAPSHOT_CORRECTION_REFERENCE_INVALID");
+    }
+    if (candidate.status !== "eligible") continue;
+    await ctx.db.patch(candidate._id, { status: "superseded" });
+    const latestOutcome = await ctx.db
+      .query("predictionSnapshotAssessments")
+      .withIndex("by_snapshot_and_type", (q) =>
+        q.eq("snapshotId", snapshot._id).eq("type", "outcome"),
+      )
+      .order("desc")
+      .first();
+    if (
+      latestOutcome?.type === "outcome" &&
+      latestOutcome.sourcePeriodEventId === args.periodEventId
+    ) {
+      await restoreEarliestEffectiveOutcome(ctx, snapshot);
+    }
+  }
+
+  if ((page && !page.isDone) || (candidatePage && !candidatePage.isDone)) {
     await ctx.scheduler.runAfter(
       0,
       internal.internal.predictionSnapshots.continueCorrectionAssessments,
@@ -585,7 +679,11 @@ async function appendCorrectionPage(
         ...(args.sourceAuthorityVersion === undefined
           ? {}
           : { sourceAuthorityVersion: args.sourceAuthorityVersion }),
-        cursor: page.continueCursor,
+        cursor: page && !page.isDone ? page.continueCursor : null,
+        candidateCursor:
+          candidatePage && !candidatePage.isDone
+            ? candidatePage.continueCursor
+            : null,
       }
     );
   }

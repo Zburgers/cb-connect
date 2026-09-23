@@ -212,7 +212,7 @@ describe("cycle benchmark runner", () => {
       recommendedEstimatorId: null,
       manualGates: [],
     });
-    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v4");
+    expect(report.metricImplementationVersion).toBe("cycle-benchmark-metrics-v5");
     expect(report.calibration.source).toBe("none");
     expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
     expect(report.pairedBootstrapVersion).toBe("user-cluster-percentile-95-2000-v1");
@@ -440,23 +440,29 @@ describe("cycle benchmark runner", () => {
     expect(report.calibration.source).toBe("calibration_partition");
     expect(report.calibration.fitOutcomeCount).toBeGreaterThanOrEqual(20);
     expect(report.calibration.empiricalTargetCoverageLevel).toBeNull();
-    const calibrationSourceSubgroup = (source: string) =>
+    const calibrationSourceSubgroup = (source: string, estimatorId: string) =>
       report.subgroups.find(
         (item) =>
           item.dimension === "calibrationSource" &&
-          item.group === source,
+          item.group === source &&
+          item.estimatorId === estimatorId,
       );
     expect(
-      calibrationSourceSubgroup("calibration_partition")?.targetCount,
+      calibrationSourceSubgroup("calibration_partition", "configured_v1")?.targetCount,
     ).toBeGreaterThan(0);
     expect(
-      calibrationSourceSubgroup("calibration_and_personal")?.targetCount,
+      calibrationSourceSubgroup("calibration_and_personal", "all_median_v1")?.targetCount,
     ).toBeGreaterThan(0);
     expect(
-      calibrationSourceSubgroup("calibration_and_personal")?.estimators.map(
+      calibrationSourceSubgroup("calibration_and_personal", "all_median_v1")?.estimators.map(
         (item) => item.estimatorId,
       ),
-    ).toEqual(expect.arrayContaining(["configured_v1", "all_median_v1"]));
+    ).toEqual(["all_median_v1"]);
+    expect(
+      calibrationSourceSubgroup("calibration_partition", "configured_v1")?.estimators.map(
+        (item) => item.estimatorId,
+      ),
+    ).toEqual(["configured_v1"]);
     expect(baseMetrics).not.toBeNull();
     expect(changedMetrics).not.toBeNull();
     expect(baseMetrics!.medianWindow80Days).toBeGreaterThan(0);

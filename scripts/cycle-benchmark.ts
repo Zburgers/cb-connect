@@ -47,7 +47,7 @@ import {
 } from "./cycle-benchmark-manifest";
 
 export const CYCLE_BENCHMARK_DATA_VERSION = "g3-cycle-benchmark-data-v1" as const;
-export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v4" as const;
+export const CYCLE_BENCHMARK_METRIC_VERSION = "cycle-benchmark-metrics-v5" as const;
 export const CYCLE_BENCHMARK_BOOTSTRAP_VERSION =
   "user-cluster-percentile-95-2000-v1" as const;
 const BOOTSTRAP_SAMPLES = 2000;
@@ -233,6 +233,7 @@ export type CycleBenchmarkReport = {
   subgroups: Array<{
     dimension: string;
     group: string;
+    estimatorId?: PredictionEstimatorId;
     targetCount: number;
     outcomeCount: number;
     unscorableTargetCount: number;
@@ -1056,7 +1057,6 @@ function buildSubgroups(
       "calibration_and_personal",
       "personal_walk_forward",
       "none",
-      "mixed",
     ],
     variability: ["stable", "moderate", "high", "unavailable"],
     historyCount: ["sparse", "3", "4-6", "7-12", "13+"],
@@ -1070,16 +1070,38 @@ function buildSubgroups(
   const report: CycleBenchmarkReport["subgroups"] = [];
   for (const [dimension, groups] of Object.entries(dimensions)) {
     for (const group of groups) {
-      const matched = folds.filter((fold) =>
-        dimension === "calibrationSource"
-          ? calibrationSourceForFold(fold) === group
-          : fold.groups[dimension] === group,
-      );
+      if (dimension === "calibrationSource") {
+        for (const estimatorId of estimatorIds) {
+          const matched = folds.filter(
+            (fold) => calibrationSourceForFold(fold, estimatorId) === group,
+          );
+          const unscorable = group === "none" ? unscorableTargets : [];
+          const groupTargetCount = matched.length + unscorable.length;
+          if (groupTargetCount === 0) continue;
+          report.push({
+            dimension,
+            group,
+            estimatorId,
+            targetCount: groupTargetCount,
+            outcomeCount: matched.length,
+            unscorableTargetCount: unscorable.length,
+            estimators: [
+              candidateMetrics(
+                estimatorId,
+                matched,
+                groupTargetCount,
+                unscorable.length,
+                `${dimension}:${group}:${estimatorId}`,
+              ),
+            ],
+          });
+        }
+        continue;
+      }
+
+      const matched = folds.filter((fold) => fold.groups[dimension] === group);
       const unscorable = unscorableTargets.filter(
-        (target) =>
-          dimension === "calibrationSource"
-            ? group === "none"
-            : target.groups[dimension] === group,
+        (target) => target.groups[dimension] === group,
       );
       const groupTargetCount = matched.length + unscorable.length;
       report.push({
@@ -1108,11 +1130,9 @@ function buildSubgroups(
 
 function calibrationSourceForFold(
   fold: BenchmarkFold,
-): PredictionCalibrationSource | "mixed" {
-  const sources = PREDICTION_ESTIMATOR_IDS.map(
-    (estimatorId) => fold.predictions[estimatorId].intervals?.calibrationSource ?? "none",
-  );
-  return sources.some((source) => source !== sources[0]) ? "mixed" : sources[0];
+  estimatorId: PredictionEstimatorId,
+): PredictionCalibrationSource {
+  return fold.predictions[estimatorId].intervals?.calibrationSource ?? "none";
 }
 
 type EstimatorCalibrationModel = {
@@ -1265,6 +1285,7 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
   subgroups: readonly {
     dimension: string;
     group: string;
+    estimatorId?: PredictionEstimatorId;
     outcomeCount: number;
     estimators: readonly PromotionMetric[];
   }[];
@@ -1358,6 +1379,9 @@ export function deriveCycleBenchmarkPromotionVerdict(args: {
       );
 
       for (const subgroup of args.subgroups) {
+        if (subgroup.estimatorId && subgroup.estimatorId !== candidate.estimatorId) {
+          continue;
+        }
         const candidateMetrics = subgroup.estimators.find(
           (metric) => metric.estimatorId === candidate.estimatorId,
         );
