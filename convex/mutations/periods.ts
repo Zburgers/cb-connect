@@ -815,18 +815,12 @@ export const deletePeriodEvent = mutation({
     }
 
     const authorityVersion = currentAuthorityVersion(period);
-    await requireAllowedPeriodEventWrite(ctx, user._id, {
-      startDate: period.startDate,
-      endDate: period.endDate,
-      startCertainty: storedStartCertainty(period),
-      endCertainty: storedEndCertainty(period),
-      legacyReason: storedLegacyReason(period),
-      authorityVersion: authorityVersion + 1,
-      actorRole: "primary",
-      targetEventId: period._id,
-      expectedAuthorityVersion:
-        args.expectedAuthorityVersion ?? authorityVersion,
-    });
+    if (args.expectedAuthorityVersion === undefined) {
+      throw new Error("AUTHORITY_VERSION_REQUIRED");
+    }
+    if (args.expectedAuthorityVersion !== authorityVersion) {
+      throw new Error("STALE_AUTHORITY_VERSION");
+    }
 
     const tombstoneAt = Date.now();
     await ctx.db.patch(args.periodEventId, {

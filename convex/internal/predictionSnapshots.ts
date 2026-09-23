@@ -22,6 +22,7 @@ import {
 
 const MAX_REASON_CODES = 16;
 const CORRECTION_PAGE_SIZE = 100;
+const OUTCOME_RESTORE_PAGE_SIZE = 100;
 
 const qualityValidator = v.union(
   v.literal("high"),
@@ -390,16 +391,18 @@ async function appendOutcomeIfEarliest(
   ctx: MutationCtx,
   snapshot: Doc<"predictionSnapshots">,
   event: Doc<"periodEvents">,
+  reason?: "eligible_outcome" | "outcome_reinstated",
 ) {
-  const candidate = await ctx.db
-    .query("predictionSnapshotOutcomeCandidates")
-    .withIndex("by_snapshot_and_source_event", (q) =>
-      q.eq("snapshotId", snapshot._id).eq("sourcePeriodEventId", event._id),
-    )
-    .unique();
-  if (candidate?.status === "superseded") return null;
-  if (!candidate) {
-    await ctx.db.insert("predictionSnapshotOutcomeCandidates", {
+  const earliestEffective = await earliestEligibleCandidate(ctx, snapshot._id);
+  let winningCandidate = earliestEffective;
+  if (
+    earliestEffective &&
+    earliestEffective.observedEligibleStartDate <= event.startDate
+  ) {
+    if (earliestEffective.sourcePeriodEventId !== event._id) return null;
+  } else {
+    if (earliestEffective) await ctx.db.delete(earliestEffective._id);
+    const candidateId = await ctx.db.insert("predictionSnapshotOutcomeCandidates", {
       snapshotId: snapshot._id,
       sourcePeriodEventId: event._id,
       observedEligibleStartDate: event.startDate,
@@ -409,10 +412,8 @@ async function appendOutcomeIfEarliest(
       status: "eligible",
       recordedAt: Date.now(),
     });
+    winningCandidate = await ctx.db.get(candidateId);
   }
-
-  const earliestEffective = await earliestEligibleCandidate(ctx, snapshot._id);
-  if (!earliestEffective) return null;
   const latestOutcome = await ctx.db
     .query("predictionSnapshotAssessments")
     .withIndex("by_snapshot_and_type", (q) =>
@@ -420,8 +421,10 @@ async function appendOutcomeIfEarliest(
     )
     .order("desc")
     .first();
-  if (latestOutcome?.type === "outcome" &&
-    latestOutcome.sourcePeriodEventId === earliestEffective.sourcePeriodEventId) {
+  if (
+    latestOutcome?.type === "outcome" &&
+    latestOutcome.sourcePeriodEventId === winningCandidate?.sourcePeriodEventId
+  ) {
     return null;
   }
   if (latestOutcome?.type === "outcome") {
@@ -444,7 +447,11 @@ async function appendOutcomeIfEarliest(
     }
   }
 
-  const winnerEvent = await ctx.db.get("periodEvents", earliestEffective.sourcePeriodEventId);
+  if (!winningCandidate) return null;
+  const winnerEvent = await ctx.db.get(
+    "periodEvents",
+    winningCandidate.sourcePeriodEventId,
+  );
   if (!winnerEvent) return null;
   const previousAssessment = await ctx.db
     .query("predictionSnapshotAssessments")
@@ -459,7 +466,7 @@ async function appendOutcomeIfEarliest(
     ctx,
     snapshot,
     winnerEvent,
-    previousAssessment ? "outcome_reinstated" : "eligible_outcome",
+    reason ?? (previousAssessment ? "outcome_reinstated" : "eligible_outcome"),
   );
   return winnerEvent._id === event._id ? assessment : null;
 }
@@ -484,7 +491,36 @@ async function earliestEligibleCandidate(
     ) {
       return candidate;
     }
-    await ctx.db.patch(candidate._id, { status: "superseded" });
+    await ctx.db.delete(candidate._id);
+  }
+}
+
+async function restoreOutcomePage(
+  ctx: MutationCtx,
+  snapshot: Doc<"predictionSnapshots">,
+  cursor: string | null = null,
+) {
+  const page = await ctx.db
+    .query("periodEvents")
+    .withIndex("by_user_and_start", (q) =>
+      q.eq("userId", snapshot.userId).gt("startDate", snapshot.inputCutoffDate),
+    )
+    .paginate({ numItems: OUTCOME_RESTORE_PAGE_SIZE, cursor });
+  for (const event of page.page) {
+    if (
+      event.createdAt > snapshot.inputCutoffAt &&
+      isUncorrectedOutcomeStart(event)
+    ) {
+      await appendOutcomeIfEarliest(ctx, snapshot, event, "outcome_reinstated");
+      return;
+    }
+  }
+  if (!page.isDone) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.internal.predictionSnapshots.continueOutcomeRestoration,
+      { snapshotId: snapshot._id, cursor: page.continueCursor },
+    );
   }
 }
 
@@ -501,12 +537,27 @@ async function restoreEarliestEffectiveOutcome(
     .first();
   if (latestOutcome?.type !== "outcome") return;
   const candidate = await earliestEligibleCandidate(ctx, snapshot._id);
-  if (!candidate || candidate.sourcePeriodEventId === latestOutcome.sourcePeriodEventId) return;
-  const event = await ctx.db.get("periodEvents", candidate.sourcePeriodEventId);
-  if (event) {
-    await appendOutcomeAssessment(ctx, snapshot, event, "outcome_reinstated");
+  if (candidate) {
+    if (candidate.sourcePeriodEventId === latestOutcome.sourcePeriodEventId) return;
+    const event = await ctx.db.get("periodEvents", candidate.sourcePeriodEventId);
+    if (event) await appendOutcomeIfEarliest(ctx, snapshot, event);
+  } else {
+    await restoreOutcomePage(ctx, snapshot);
   }
 }
+
+export const continueOutcomeRestoration = internalMutation({
+  args: {
+    snapshotId: v.id("predictionSnapshots"),
+    cursor: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { snapshotId, cursor }) => {
+    const snapshot = await ctx.db.get("predictionSnapshots", snapshotId);
+    if (snapshot) await restoreOutcomePage(ctx, snapshot, cursor);
+    return null;
+  },
+});
 
 export const recordOutcomesForStart = internalMutation({
   args: {
@@ -652,7 +703,7 @@ async function appendCorrectionPage(
       throw new Error("PREDICTION_SNAPSHOT_CORRECTION_REFERENCE_INVALID");
     }
     if (candidate.status !== "eligible") continue;
-    await ctx.db.patch(candidate._id, { status: "superseded" });
+    await ctx.db.delete(candidate._id);
     const latestOutcome = await ctx.db
       .query("predictionSnapshotAssessments")
       .withIndex("by_snapshot_and_type", (q) =>

@@ -540,12 +540,14 @@ Create append-only `predictionSnapshotAssessments` for later outcome/supersessio
 - reason;
 - recordedAt.
 
-Keep a separate indexed `predictionSnapshotOutcomeCandidates` read model for
-currently eligible exact starts. Corrections invalidate a candidate without
-rewriting assessment history; when the earliest candidate changes, append a
-new `outcome_reinstated` assessment for the newly effective start. Resolve the
-earliest candidate through its snapshot/status/date index so history growth
-does not require an unbounded transaction read.
+Keep one indexed `predictionSnapshotOutcomeCandidates` read-model row per
+snapshot for its current earliest eligible exact start. Do not retain every
+later start as a candidate: that creates snapshot-by-start storage growth.
+Corrections invalidate the current candidate without rewriting assessment
+history; restore the earliest remaining eligible start by paginating the
+existing user/start-date index. Append an `outcome_reinstated` assessment when
+that restoration completes. Each transaction reads at most 100 events or
+continues through an internal cursor job.
 
 Do not rewrite snapshot point/window/model/input fields after creation.
 

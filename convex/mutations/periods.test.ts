@@ -1200,6 +1200,47 @@ describe("primary cycle fact writes", () => {
     });
   });
 
+  test("allows deleting a conflicting exact fact to resolve invalid history", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const [firstId, conflictingId] = await t.run(async (ctx) => {
+      const common = {
+        userId: primaryId,
+        startCertainty: "exact" as const,
+        endCertainty: "exact" as const,
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      return [
+        await ctx.db.insert("periodEvents", {
+          ...common,
+          startDate: "2026-07-01",
+          endDate: "2026-07-05",
+        }),
+        await ctx.db.insert("periodEvents", {
+          ...common,
+          startDate: "2026-07-04",
+          endDate: "2026-07-08",
+        }),
+      ];
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId: firstId,
+        expectedAuthorityVersion: 1,
+      }),
+    ).resolves.toMatchObject({ success: true });
+    await expect(
+      t.run(async (ctx) => ctx.db.get("periodEvents", firstId)),
+    ).resolves.toMatchObject({ tombstoneAuthorityVersion: 2 });
+    const conflicting = await t.run(async (ctx) =>
+      ctx.db.get("periodEvents", conflictingId),
+    );
+    expect(conflicting).not.toHaveProperty("tombstoneAt");
+  });
+
   test("keeps physical deletion only in the flag-off compatibility branch", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile(
