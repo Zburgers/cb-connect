@@ -1,13 +1,13 @@
 # Gate 3 Qualification Report
 
-**Qualified application source:** `8300805260bbd29311b3fc256f54d7cd2d163bd2` on `codex/gate3implementation`. Local deterministic, synthetic benchmark, authenticated Gate 0–3, and desktop/mobile release-smoke checks pass on this source. Exact-head deterministic CI passes; the protected authenticated CI job is pending. Gate 3 remains default-off and is not enabled in production.
+**Qualified application source:** `8300805260bbd29311b3fc256f54d7cd2d163bd2` on `codex/gate3implementation`. Exact-head run `36010151243` passed on PR head `b1eacb2103bd9d70012b41aa30ea500612c6c07e`, including authenticated release smoke and Gates 0–3. The follow-up evidence/index commit changes documentation only. Gate 3 remains default-off and is not enabled in production.
 
 ## Source and remote status
 
 - PR [#46](https://github.com/Zburgers/cb-connect/pull/46), base `main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`; no branch or PR was created.
-- Current qualified code head: `8300805260bbd29311b3fc256f54d7cd2d163bd2`. Evidence and skill-only documentation refreshes preserve this tested application source.
-- Exact-head CI: [36009587075](https://github.com/Zburgers/cb-connect/actions/runs/36009587075). Deterministic qualification is green (build, post-build typecheck, 552 unit tests, Gate 3 runner policy, dependency policy). Authenticated release smoke is pending the protected `cb-connect-auth-test` environment.
-- The earlier deployment job for superseded head `71d9cd8e66782d65c9bf2c4355ca770c8519768a` was canceled after the new head was pushed.
+- Qualified application source: `8300805260bbd29311b3fc256f54d7cd2d163bd2`. Subsequent commits update the evidence report and planning index only.
+- Exact-head CI: [36010151243](https://github.com/Zburgers/cb-connect/actions/runs/36010151243) passed on PR head `b1eacb2103bd9d70012b41aa30ea500612c6c07e`: deterministic qualification and protected authenticated release smoke, including Gates 0–2 and Gates 0–3 matrices. The production-configured immutable release job was skipped as required by governance.
+- The earlier code-head run [36009587075](https://github.com/Zburgers/cb-connect/actions/runs/36009587075) passed deterministic qualification and was canceled after the report-only head was pushed. The older run for `71d9cd8e66782d65c9bf2c4355ca770c8519768a` was also canceled to prevent concurrent deployment to the shared test target.
 - Both formerly unresolved P1 review threads have been answered with fix/test details and resolved. No unresolved review threads remain.
 - Independent reviewers: code confidence **0.92**, no blocker; implementation/spec confidence **0.91**, conditional on D-013 provisioning the shared ledger before any real evaluation.
 - Local authenticated QA used only synthetic Clerk fixtures and Convex deployment `dev:hallowed-hummingbird-284`. Credentials, cookies, storage state, and fixture identifiers are omitted.
@@ -46,7 +46,7 @@ Each Playwright result was `passed`; each teardown reported `remaining=false` an
 
 The full primary/partner release smoke passed on desktop and mobile with retries disabled. Both runs exercised period deletion and completed teardown with `remaining=false`; the latest sanitized teardown proofs are under `e2e/.evidence/` (ignored). The smoke fix waits for the period-delete success state and ignores empty alert nodes. The approved browser executable was `/opt/google/chrome/chrome`.
 
-Protected authenticated CI for this exact head remains pending; local success does not replace that protected result. Do not report CI green until run `36009587075` completes successfully.
+Protected authenticated CI completed successfully for exact PR head `b1eacb2103bd9d70012b41aa30ea500612c6c07e`; its report/index follow-up changes documentation only and retains the same qualified application source.
 
 ## Gate 3 plan coverage
 
@@ -55,7 +55,7 @@ Protected authenticated CI for this exact head remains pending; local success do
 - **G3.7:** immutable snapshots and correction/deletion restoration are implemented; the regression covers paginated correction history and restoration of the earliest currently effective outcome. Outcome scoring continues for existing snapshots while V2 serving is off.
 - **G3.8–G3.11:** Gate 2 integration, private primary projection, reduced sharing-gated partner projection, notification parity, and feature-off compatibility are covered by code/tests and authenticated flows.
 - **G3.12:** all four authenticated local desktop/mobile feature-off/on lanes and both full release-smoke projects pass with clean fixture teardown.
-- **G3.13:** this report records the tested source commit, exact-head CI state, synthetic provenance, and authenticated local evidence. Protected authenticated CI remains pending.
+- **G3.13:** this report records the tested source commit, exact-head CI result, synthetic provenance, and authenticated local evidence. Protected authenticated Gates 0–3 CI passed on exact PR head `b1eacb2103bd9d70012b41aa30ea500612c6c07e`.
 
 ## Governance and exposure
 
