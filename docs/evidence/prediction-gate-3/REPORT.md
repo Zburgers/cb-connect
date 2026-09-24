@@ -1,60 +1,66 @@
 # Gate 3 Qualification Report
 
-**Verdict: Local Gate 3 implementation and authenticated qualification pass on code commit `5e59a1fbd7573196f76557e5d547c0ce41718ab3`. Merge readiness is pending the protected authenticated CI job on the current PR head.** Gate 3 remains default-off and is not enabled in production.
+**Qualified application source:** `8300805260bbd29311b3fc256f54d7cd2d163bd2` on `codex/gate3implementation`. Local deterministic, synthetic benchmark, authenticated Gate 0–3, and desktop/mobile release-smoke checks pass on this source. Exact-head deterministic CI passes; the protected authenticated CI job is pending. Gate 3 remains default-off and is not enabled in production.
 
 ## Source and remote status
 
-- Branch: `codex/gate3implementation`; PR [#46](https://github.com/Zburgers/cb-connect/pull/46), open and Ready for Review, base `main`.
-- Qualified code commit: `5e59a1fbd7573196f76557e5d547c0ce41718ab3`; base `main`: `2f8dae22b6b2673c75e94d66985e749a303b92df`.
-- Exact-head CI: [35998209088](https://github.com/Zburgers/cb-connect/actions/runs/35998209088). Deterministic qualification passed. Authenticated release smoke is waiting at the protected `cb-connect-auth-test` environment and has not started. The preceding run [35919226261](https://github.com/Zburgers/cb-connect/actions/runs/35919226261) failed in the release-smoke delete helper; the empty-alert race and mobile device context were corrected and the full local smoke now passes.
-- PR review threads: 0 unresolved at the time of this report refresh.
-- Local QA used only approved synthetic Clerk fixtures and the approved test Convex deployment `dev:hallowed-hummingbird-284`. Secret values are not included in this report.
+- PR [#46](https://github.com/Zburgers/cb-connect/pull/46), base `main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`; no branch or PR was created.
+- Current qualified code head: `8300805260bbd29311b3fc256f54d7cd2d163bd2`. Evidence and skill-only documentation refreshes preserve this tested application source.
+- Exact-head CI: [36009587075](https://github.com/Zburgers/cb-connect/actions/runs/36009587075). Deterministic qualification is green (build, post-build typecheck, 552 unit tests, Gate 3 runner policy, dependency policy). Authenticated release smoke is pending the protected `cb-connect-auth-test` environment.
+- The earlier deployment job for superseded head `71d9cd8e66782d65c9bf2c4355ca770c8519768a` was canceled after the new head was pushed.
+- Both formerly unresolved P1 review threads have been answered with fix/test details and resolved. No unresolved review threads remain.
+- Independent reviewers: code confidence **0.92**, no blocker; implementation/spec confidence **0.91**, conditional on D-013 provisioning the shared ledger before any real evaluation.
+- Local authenticated QA used only synthetic Clerk fixtures and Convex deployment `dev:hallowed-hummingbird-284`. Credentials, cookies, storage state, and fixture identifiers are omitted.
 
-## Deterministic qualification
+## Local deterministic qualification
 
-All checks below passed locally against the implementation in commit `5e59a1f`:
+All checks passed locally on the clean application source commit above:
 
 | Check | Result |
 |---|---|
-| `npm run build` | PASS |
-| `npm run typecheck` | PASS |
 | `npm run test:unit -- --run` | PASS, 60 files / 552 tests |
+| `npm run typecheck` | PASS |
+| `npm run build` | PASS |
+| Gate 3 focused snapshot, period, manifest tests | PASS, 77 tests |
 | `npm run test:convex-safe-exec` | PASS |
 | `npm run test:convex-command-policy` | PASS |
 | `npm run test:fixture-evidence-boundary` | PASS |
 | `npm run test:ci-workflow` | PASS |
-| `bash scripts/tests/deploy-workflow.test.sh` | PASS |
 | `npm run test:cycle-facts-plan` | PASS |
 | `bash scripts/tests/prediction-runner-policy.test.sh` | PASS |
-| `npm run benchmark:cycle:golden` | PASS, G3-BENCH-V1 synthetic-only result |
-| Snapshot and period correction tests | PASS, 67 tests |
+| `bash scripts/tests/deploy-workflow.test.sh` | PASS |
+| `npm run benchmark:cycle:golden` | PASS, synthetic-only; `synthetic_not_evidence` |
 
-The golden benchmark ran on a clean source tree at `5e59a1f`. It used manifest `g3-synthetic-golden-v1` (SHA-256 `0b29b505c7bdf4d87bbbbc846f9281ce9abac4512a868d04556b963edae51eae`) and synthetic dataset SHA-256 `b53424a7d8612b761498f84a33831f5d28d9320b598f36637c1ac146e8e14b76`. The dataset contains 7 synthetic users and 36 outcomes. Calibration source is `none`, `fitOutcomeCount=0`, and the verdict is `synthetic_not_evidence`. No real benchmark outcomes were accessed.
+The golden benchmark ran on a clean tree at `8300805260bbd29311b3fc256f54d7cd2d163bd2`; it used 7 synthetic users and 36 synthetic outcomes, with zero calibration fit outcomes. No real benchmark outcomes were inspected. The calibration-source subgroup is computed per estimator. The regression opens semantically identical, differently serialized data from separate checkout directories against one ledger and rejects the second opening. Real evaluation fails closed without a configured external ledger.
 
 ## Authenticated browser qualification
 
-`scripts/run-gates-0-3-qa.sh` passed all four isolated authenticated lanes on the approved dev target: prediction V2 off on desktop/mobile, then on desktop/mobile. Every lane verified the expected feature flags and fixture cleanup (`remaining=false`). Full release smoke also passed on desktop and mobile with retries disabled (one test per lane); each lane's Playwright result is `passed` and fixture teardown is clean.
+The secret-safe local wrapper parsed `.env.auth-test.local`, validated the approved Clerk/Convex identity, removed inherited generic Clerk/Convex credentials, and bound guarded operations to the approved test deployment. The file is ignored by Git.
 
-The E2E coverage includes authenticated primary/partner journeys, history and missing-log cases, outlier and persistent-shift handling, segment reset/restoration, partner-assisted and primary corrections, pause, sharing-off/revocation, and absence of unapproved probability language. The release-smoke helper now ignores empty live alert nodes and checks the period-delete success message before classifying an error. Browser contexts use the configured desktop and iPhone device descriptors.
+The full authenticated Gates 0–3 matrix passed all four isolated lanes on the approved dev target:
 
-CI authenticated release smoke remains pending a required reviewer approval for run `35998209088`; local success does not substitute for the protected CI result. Do not mark remote CI green until that exact-head job completes successfully.
+- prediction V2 off, desktop and mobile;
+- prediction V2 on, desktop and mobile.
+
+Each Playwright result was `passed`; each teardown reported `remaining=false` and zero fixture records, including prediction segments, snapshots, and assessments. Gate flags were verified false after qualification. Sanitized evidence is in `/tmp/cb-connect-gates-0-3-push-20260924`.
+
+The full primary/partner release smoke passed on desktop and mobile with retries disabled. Both runs exercised period deletion and completed teardown with `remaining=false`; the latest sanitized teardown proofs are under `e2e/.evidence/` (ignored). The smoke fix waits for the period-delete success state and ignores empty alert nodes. The approved browser executable was `/opt/google/chrome/chrome`.
+
+Protected authenticated CI for this exact head remains pending; local success does not replace that protected result. Do not report CI green until run `36009587075` completes successfully.
 
 ## Gate 3 plan coverage
 
-- G3.0–G3.4: default-off capability boundaries, private user-controlled segments, Gate 1/2 authority, eligible intervals, and deterministic estimators are implemented and covered by the implementation and tests.
-- G3.5–G3.6: synthetic chronological evaluation, leakage safeguards, estimator-specific calibration grouping, and fail-closed calibration are implemented. Real-outcome evaluation and calibration are deferred under D-013.
-- G3.7: immutable snapshots and correction/deletion restoration are implemented. The correction regression exercises scheduler handoffs across 205 rows (three assessment pages and bounded candidate cleanup batches); earliest currently effective outcome restoration is tested.
-- G3.8–G3.11: Gate 2 integration, private primary projection, reduced sharing-gated partner projection, notification parity, and feature-off compatibility are covered by code and tests.
-- G3.12: four authenticated local desktop/mobile feature-off/on lanes and both full release-smoke lanes pass with fixture teardown proofs.
-- G3.13: this report records the exact qualified code commit, current CI state, synthetic benchmark provenance, and authenticated local evidence. Exact-head protected CI remains pending.
-
-Independent final code critic confidence: **0.93**, no blockers. Independent final spec critic review of this refreshed report and the current protected CI result is pending.
+- **G3.0–G3.4:** default-off capability boundaries, private user-controlled segments, Gate 1/2 authority, eligible intervals, and deterministic estimators are implemented and tested.
+- **G3.5–G3.6:** chronological synthetic evaluation, leakage safeguards, estimator-specific calibration grouping, and fail-closed calibration are implemented. Real evaluation and calibration are deferred under D-013.
+- **G3.7:** immutable snapshots and correction/deletion restoration are implemented; the regression covers paginated correction history and restoration of the earliest currently effective outcome. Outcome scoring continues for existing snapshots while V2 serving is off.
+- **G3.8–G3.11:** Gate 2 integration, private primary projection, reduced sharing-gated partner projection, notification parity, and feature-off compatibility are covered by code/tests and authenticated flows.
+- **G3.12:** all four authenticated local desktop/mobile feature-off/on lanes and both full release-smoke projects pass with clean fixture teardown.
+- **G3.13:** this report records the tested source commit, exact-head CI state, synthetic provenance, and authenticated local evidence. Protected authenticated CI remains pending.
 
 ## Governance and exposure
 
 - **D-012:** production exposure, destructive migration/lifecycle behavior, and final retention claims remain deferred. No production deployment or feature enablement occurred.
-- **D-013:** real outcomes, dataset authority/permission, calibration sources, estimator promotion, and probability claims remain deferred pending approved authority, consent basis, and named statistical/preregistration approval.
+- **D-013:** real outcomes, dataset authority/permission, calibration sources, estimator promotion, and probability claims remain deferred pending approved authority, consent basis, and named statistical/preregistration approval. Before any real evaluation, D-013 must also provision one canonical shared durable ledger for all authorized evaluators; the runner cannot prove that different hosts share a configured path.
 - **D-015:** pilot size and rollout remain deferred.
 - **D-016:** population-trained Gate 7 work remains deferred.
 - Synthetic metrics are pipeline checks only and do not establish real-world accuracy.
-- Gate 3 flags remain false after local QA; rollback remains the guarded test-target process.
