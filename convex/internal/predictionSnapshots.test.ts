@@ -9,6 +9,20 @@ import { seedActiveCouple } from "../test.fixtures";
 
 type TestBackend = ReturnType<typeof convexTest>;
 
+async function withScheduledFunctions<T>(
+  t: TestBackend,
+  action: () => Promise<T>,
+) {
+  vi.useFakeTimers();
+  try {
+    const result = await action();
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+    return result;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 const inputCutoffAt = Date.UTC(2026, 0, 15, 12);
 const generatedAt = inputCutoffAt + 1_000;
 const outcomeCreatedAt = Date.UTC(2026, 0, 20, 12);
@@ -237,10 +251,12 @@ describe("immutable prediction snapshots", () => {
     });
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
 
-    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
-      periodEventId,
-      expectedAuthorityVersion: 1,
-    });
+    await withScheduledFunctions(t, () =>
+      asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId,
+        expectedAuthorityVersion: 1,
+      }),
+    );
 
     const [event, outcomes, candidates, supersessions] = await Promise.all([
       t.run(async (ctx) => ctx.db.get("periodEvents", periodEventId)),
@@ -297,22 +313,22 @@ describe("immutable prediction snapshots", () => {
         sourcePeriodEventId: earlierEventId,
       });
 
-      if (change === "deletion") {
-        await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
-          periodEventId: earlierEventId,
-          expectedAuthorityVersion: 1,
-        });
-      } else {
-        await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
-          periodEventId: earlierEventId,
-          startDate: "2026-01-24",
-          endDate: "2026-01-27",
-          startCertainty: "exact",
-          endCertainty: "exact",
-          timeZone: "UTC",
-          expectedAuthorityVersion: 1,
-        });
-      }
+      await withScheduledFunctions(t, () =>
+        change === "deletion"
+          ? asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+              periodEventId: earlierEventId,
+              expectedAuthorityVersion: 1,
+            })
+          : asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+              periodEventId: earlierEventId,
+              startDate: "2026-02-25",
+              endDate: "2026-02-27",
+              startCertainty: "exact",
+              endCertainty: "exact",
+              timeZone: "UTC",
+              expectedAuthorityVersion: 1,
+            }),
+      );
 
       const newerEventId = await seedOutcomeEvent(t, primaryId, "2026-03-20");
       await expect(
@@ -377,7 +393,12 @@ describe("immutable prediction snapshots", () => {
         "2026-01-23",
         "2026-01-27",
       );
-      const laterEventId = await seedOutcomeEvent(t, primaryId, "2026-02-20");
+      const laterEventId = await seedOutcomeEvent(
+        t,
+        primaryId,
+        "2026-02-20",
+        "2026-02-24",
+      );
 
       await t.mutation(
         internal.internal.predictionSnapshots.recordOutcomesForStart,
@@ -388,22 +409,22 @@ describe("immutable prediction snapshots", () => {
         { sourcePeriodEventId: laterEventId },
       );
 
-      if (change === "deletion") {
-        await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
-          periodEventId: earlierEventId,
-          expectedAuthorityVersion: 1,
-        });
-      } else {
-        await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
-          periodEventId: earlierEventId,
-          startDate: "2026-01-24",
-          endDate: "2026-01-27",
-          startCertainty: "exact",
-          endCertainty: "exact",
-          timeZone: "UTC",
-          expectedAuthorityVersion: 1,
-        });
-      }
+      await withScheduledFunctions(t, () =>
+        change === "deletion"
+          ? asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+              periodEventId: earlierEventId,
+              expectedAuthorityVersion: 1,
+            })
+          : asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+              periodEventId: earlierEventId,
+              startDate: "2026-02-25",
+              endDate: "2026-02-27",
+              startCertainty: "exact",
+              endCertainty: "exact",
+              timeZone: "UTC",
+              expectedAuthorityVersion: 1,
+            }),
+      );
 
       const outcomes = await t.run(async (ctx) =>
         ctx.db
@@ -911,6 +932,14 @@ describe("immutable prediction snapshots", () => {
           reason: "eligible_outcome",
           recordedAt: outcomeCreatedAt,
         });
+        await ctx.db.insert("predictionSnapshotOutcomeCandidates", {
+          snapshotId,
+          sourcePeriodEventId: periodEventId,
+          observedEligibleStartDate: "2026-01-30",
+          sourceAuthorityVersion: 1,
+          status: "superseded",
+          recordedAt: outcomeCreatedAt,
+        });
       }
     });
 
@@ -938,7 +967,16 @@ describe("immutable prediction snapshots", () => {
         )
         .take(outcomeCount + 1)
     );
+    const candidates = await t.run(async (ctx) =>
+      ctx.db
+        .query("predictionSnapshotOutcomeCandidates")
+        .withIndex("by_source_event", (q) =>
+          q.eq("sourcePeriodEventId", periodEventId),
+        )
+        .take(outcomeCount + 1),
+    );
     expect(supersessions).toHaveLength(outcomeCount);
+    expect(candidates).toHaveLength(0);
   });
 
   test.each([true, false])(
