@@ -1,5 +1,6 @@
 .env
 .env.local
+.env.auth-test.local
 .env.*
 !.env.example
 # Do not track .env.production; remove the negation that forced tracking

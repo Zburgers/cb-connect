@@ -416,6 +416,7 @@ npx vitest run convex/_helpers/predictionEstimators.test.ts
 - a deliberate leakage trap that fails when future data is enabled;
 - manifest refuses unapproved/unknown external dataset source metadata;
 - final evaluation command refuses to run until an explicit approved manifest/authority record exists.
+- real locked evaluation also requires an existing shared durable holdout-opening ledger outside every checkout; the runner atomically consumes one opening and fails closed when that ledger is not provisioned.
 
 Add a pinned development-only TypeScript script runner (`tsx`) to `devDependencies` and the lockfile unless the then-current repository already has an equivalent pinned runner. Do not rely on an unpinned `npx` download.
 

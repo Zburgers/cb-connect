@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addCalendarDays } from "../convex/_helpers/cycleCalculations";
 import { isStartAnchorEligible } from "../convex/_helpers/cycleFactEligibility";
@@ -55,10 +55,6 @@ const GOLDEN_SALT = "g3-golden-only-split-salt-v1";
 const GOLDEN_SALT_ID = "synthetic-only-v1";
 const GOLDEN_DATASET = "fixtures/cycle-benchmark";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const EVALUATION_OPENINGS_DIR = resolve(
-  REPO_ROOT,
-  "docs/research/cycle-benchmark-evaluation-openings",
-);
 
 type BenchmarkEvent = CycleIntervalEvent & { eventKey: string };
 type BenchmarkSegment = CycleIntervalSegment & { segmentKey: string };
@@ -1583,16 +1579,47 @@ function sha256(value: Uint8Array | string): string {
 
 function recordEvaluationOpening(options: {
   directory: string;
+  holdoutKey: string;
   protocolVersion: string;
   datasetSha256: string;
   manifestSha256: string;
 }): void {
-  mkdirSync(options.directory, { recursive: true });
+  if (!isAbsolute(options.directory)) {
+    throw new Error(
+      "D-013 evaluation requires CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR to name an existing shared directory",
+    );
+  }
+  const configuredDirectory = resolve(options.directory);
+  const relativeToConfiguredDirectory = relative(REPO_ROOT, configuredDirectory);
+  if (
+    relativeToConfiguredDirectory === "" ||
+    (!relativeToConfiguredDirectory.startsWith(`..${sep}`) &&
+      relativeToConfiguredDirectory !== "..")
+  ) {
+    throw new Error("D-013 evaluation ledger must be outside the repository checkout");
+  }
+  let directory: string;
+  try {
+    directory = realpathSync(configuredDirectory);
+    if (!statSync(directory).isDirectory()) throw new Error();
+  } catch {
+    throw new Error(
+      "D-013 evaluation requires a provisioned shared durable ledger directory",
+    );
+  }
+  const relativeToRepository = relative(REPO_ROOT, directory);
+  if (
+    relativeToRepository === "" ||
+    (!relativeToRepository.startsWith(`..${sep}`) && relativeToRepository !== "..")
+  ) {
+    throw new Error("D-013 evaluation ledger must be outside the repository checkout");
+  }
   const receiptPath = join(
-    options.directory,
-    `${options.datasetSha256.toLowerCase()}.json`,
+    directory,
+    `${options.holdoutKey}.json`,
   );
   const receipt = {
+    holdoutKey: options.holdoutKey,
     protocolVersion: options.protocolVersion,
     datasetSha256: options.datasetSha256,
     manifestSha256: options.manifestSha256,
@@ -1611,7 +1638,7 @@ function recordEvaluationOpening(options: {
       "code" in error &&
       error.code === "EEXIST"
     ) {
-      throw new Error("D-013 evaluation holdout has already been opened in this checkout");
+      throw new Error("D-013 evaluation holdout has already been opened in the shared ledger");
     }
     throw error;
   }
@@ -1624,7 +1651,6 @@ export function loadCycleBenchmarkFiles(options: {
   isGoldenFixture: boolean;
   sourceCommit?: string;
   protocolSha256?: string;
-  evaluationReceiptDirectory?: string;
 }): {
   dataset: CycleBenchmarkDataset;
   manifest: CycleBenchmarkManifest;
@@ -1683,9 +1709,18 @@ export function loadCycleBenchmarkFiles(options: {
     ) {
       throw new Error("D-013 evaluation source commit or protocol hash differs from its frozen manifest");
     }
-    // ponytail: this local receipt blocks repeat runs in this checkout; a shared D-013 ledger is needed across clones.
+    // ponytail: relies on the D-013 shared filesystem honoring atomic exclusive file creation; use a transactional ledger if it does not.
     recordEvaluationOpening({
-      directory: options.evaluationReceiptDirectory ?? EVALUATION_OPENINGS_DIR,
+      directory: process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR ?? "",
+      holdoutKey: sha256(
+        JSON.stringify([
+          rawManifest.protocolVersion,
+          rawManifest.datasetClass,
+          rawManifest.source!.sourceId,
+          rawManifest.source!.version,
+          rawManifest.authority!.authorityReference,
+        ]),
+      ),
       protocolVersion: rawManifest.protocolVersion,
       datasetSha256: rawManifest.datasetSha256,
       manifestSha256,

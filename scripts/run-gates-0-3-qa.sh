@@ -85,6 +85,12 @@ run_lane() {
   local expected="$3"
   local lane_root="$qa_root/$lane"
   local run_id="${base_run_id}-${lane}"
+  local browser="${PLAYWRIGHT_EXECUTABLE_PATH:-/opt/google/chrome/chrome}"
+
+  if [[ ! -x "$browser" ]]; then
+    echo "approved Playwright browser executable is unavailable" >&2
+    return 65
+  fi
 
   mkdir -p "$lane_root"
   printf '%s\n' \
@@ -97,6 +103,7 @@ run_lane() {
   echo "=== Gates 0-3 QA lane: $lane ==="
   set +e
   CI=true \
+  PLAYWRIGHT_EXECUTABLE_PATH="$browser" \
   PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 \
   CB_CONNECT_RELEASE_RUN_ID="$run_id" \
   CB_CONNECT_RELEASE_AUTH_DIR="$lane_root/auth" \

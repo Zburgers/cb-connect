@@ -819,7 +819,7 @@ describe("immutable prediction snapshots", () => {
     }
   });
 
-  test("feature-off period starts do not schedule Gate 3 snapshot work", async () => {
+  test("feature-off period starts keep scoring existing snapshots without creating new ones", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
@@ -855,7 +855,11 @@ describe("immutable prediction snapshots", () => {
         ),
       ]);
       expect(snapshots).toHaveLength(1);
-      expect(assessments).toHaveLength(0);
+      expect(assessments).toHaveLength(1);
+      expect(assessments[0]).toMatchObject({
+        type: "outcome",
+        sourcePeriodEventId: expect.any(String),
+      });
     } finally {
       vi.useRealTimers();
     }

@@ -33,12 +33,12 @@ async function schedulePredictionRefresh(
   userId: Id<"users">,
   eventId: Id<"periodEvents">,
 ) {
-  if (!isPeriodPredictionV2Enabled()) return;
   await ctx.scheduler.runAfter(
     0,
     internal.internal.predictionSnapshots.recordOutcomesForStart,
     { sourcePeriodEventId: eventId },
   );
+  if (!isPeriodPredictionV2Enabled()) return;
   await ctx.scheduler.runAfter(
     0,
     internal.internal.predictionSnapshots.ensureCurrentForUser,

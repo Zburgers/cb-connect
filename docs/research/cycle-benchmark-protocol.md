@@ -143,6 +143,8 @@ Freeze the development-selected estimator ID in the dataset manifest before cali
 
 **Locked evaluation holdout** is opened once for G3-BENCH-V1 after implementation, metrics, subgroups, and calibration rules are frozen. It decides promotion.
 
+Before a real locked evaluation run, D-013 must provision one canonical shared durable ledger for all authorized checkouts and retain it for the lifetime of the holdout. Set `CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR` to that existing absolute path outside the repository. The runner atomically creates a receipt keyed by the frozen holdout identity (protocol version, dataset class, source ID and version, and D-013 authority reference) before parsing outcomes; it stores the dataset and manifest checksums for audit. An existing receipt refuses a second opening across checkouts, including when equivalent data is re-serialized. There is no checkout-local default, and evaluation fails closed when the ledger is absent or unavailable. The runner validates the configured external path but cannot prove that separate machines share it, so real evaluation remains blocked until D-013 approves and provisions this canonical ledger. The filesystem must preserve atomic exclusive file creation; use a transactional ledger if it cannot.
+
 If implementation or protocol changes after holdout review, create G3-BENCH-V2 and a new untouched holdout.
 
 ## 8. Preregistered point-estimator candidates

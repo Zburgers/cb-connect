@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import {
+  mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -16,7 +18,10 @@ import {
   validateCycleBenchmarkManifest,
   type CycleBenchmarkManifest,
 } from "./cycle-benchmark-manifest";
-import { loadCycleBenchmarkFiles } from "./cycle-benchmark";
+import {
+  CYCLE_BENCHMARK_DATA_VERSION,
+  loadCycleBenchmarkFiles,
+} from "./cycle-benchmark";
 
 const manifestHash = "a".repeat(64);
 const tempDirectories: string[] = [];
@@ -229,11 +234,30 @@ describe("cycle benchmark manifest", () => {
     ).not.toThrow();
   });
 
-  test("checks the dataset hash before consuming the opening and records before parsing outcomes", () => {
+  test("uses the same durable holdout opening across separate checkouts", () => {
     const directory = mkdtempSync(join(tmpdir(), "cycle-benchmark-evaluation-"));
     tempDirectories.push(directory);
-    const datasetPath = join(directory, "outcomes.json");
-    const dataBytes = Buffer.from("not-json");
+    const firstCheckout = join(directory, "first-checkout");
+    const secondCheckout = join(directory, "second-checkout");
+    const ledgerDirectory = join(directory, "shared-ledger");
+    mkdirSync(firstCheckout);
+    mkdirSync(secondCheckout);
+    mkdirSync(ledgerDirectory);
+    const datasetPath = join(firstCheckout, "outcomes.json");
+    const dataset = JSON.parse(
+      readFileSync(new URL("../fixtures/cycle-benchmark/data.json", import.meta.url), "utf8"),
+    ) as {
+      formatVersion: string;
+      users: Array<{
+        userKey: string;
+        timezone: string;
+        configuredCycleLength: number;
+        events: Array<Record<string, unknown>>;
+        segments: Array<Record<string, unknown>>;
+      }>;
+    };
+    const dataBytes = Buffer.from(JSON.stringify(dataset, null, 2));
+    const alternateDataBytes = Buffer.from(JSON.stringify(dataset));
     const manifest = externalManifest();
     manifest.datasetSha256 = createHash("sha256").update(dataBytes).digest("hex");
     manifest.developmentCutoffs = {
@@ -252,14 +276,45 @@ describe("cycle benchmark manifest", () => {
       openedBy: "Named Holdout Reviewer",
       openedAt: "2025-09-20T11:00:00Z",
     };
-    const manifestPath = join(directory, "manifest.json");
-    const receiptDirectory = join(directory, "openings");
+    const sourceFields = new Set<string>([
+      "userKey",
+      "timezone",
+      "configuredCycleLength",
+    ]);
+    for (const user of dataset.users) {
+      for (const event of user.events) {
+        for (const field of Object.keys(event)) sourceFields.add(field);
+      }
+      for (const segment of user.segments) {
+        for (const field of Object.keys(segment)) sourceFields.add(field);
+      }
+    }
+    manifest.source!.fieldsUsed = [...sourceFields];
+    manifest.source!.userCount = dataset.users.length;
+    manifest.source!.outcomeCount = dataset.users.reduce(
+      (count, user) =>
+        count + new Set(user.events.map((event) => event.eventKey)).size,
+      0,
+    );
+    const manifestPath = join(firstCheckout, "manifest.json");
     writeFileSync(manifestPath, JSON.stringify(manifest));
     writeFileSync(datasetPath, dataBytes);
+    const secondDatasetPath = join(secondCheckout, "outcomes.json");
+    const secondManifestPath = join(secondCheckout, "manifest.json");
+    writeFileSync(secondDatasetPath, alternateDataBytes);
+    const secondManifest = {
+      ...manifest,
+      datasetSha256: createHash("sha256")
+        .update(alternateDataBytes)
+        .digest("hex"),
+    };
+    writeFileSync(secondManifestPath, JSON.stringify(secondManifest));
     const priorSalt = process.env.CYCLE_BENCHMARK_SPLIT_SALT;
     const priorSaltId = process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
+    const priorLedger = process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR;
     process.env.CYCLE_BENCHMARK_SPLIT_SALT = "0123456789abcdef";
     process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = "test-salt-v1";
+    delete process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR;
     const options = {
       datasetPath,
       manifestPath,
@@ -267,15 +322,17 @@ describe("cycle benchmark manifest", () => {
       isGoldenFixture: false,
       sourceCommit: "a".repeat(40),
       protocolSha256: "c".repeat(64),
-      evaluationReceiptDirectory: receiptDirectory,
     };
     try {
       expect(() => loadCycleBenchmarkFiles(options)).toThrow(
-        "Benchmark data file is not valid JSON",
+        "CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR",
       );
+      process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR = ledgerDirectory;
+      const loaded = loadCycleBenchmarkFiles(options);
+      expect(loaded.dataset.formatVersion).toBe(CYCLE_BENCHMARK_DATA_VERSION);
       const receipt = JSON.parse(
         readFileSync(
-          join(receiptDirectory, `${manifest.datasetSha256}.json`),
+          join(ledgerDirectory, readdirSync(ledgerDirectory)[0]),
           "utf8",
         ),
       );
@@ -283,14 +340,20 @@ describe("cycle benchmark manifest", () => {
         protocolVersion: CYCLE_BENCHMARK_PROTOCOL_VERSION,
         datasetSha256: manifest.datasetSha256,
       });
-      expect(() => loadCycleBenchmarkFiles(options)).toThrow(
-        "already been opened in this checkout",
+      expect(() => loadCycleBenchmarkFiles({
+        ...options,
+        datasetPath: secondDatasetPath,
+        manifestPath: secondManifestPath,
+      })).toThrow(
+        "already been opened in the shared ledger",
       );
     } finally {
       if (priorSalt === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT;
       else process.env.CYCLE_BENCHMARK_SPLIT_SALT = priorSalt;
       if (priorSaltId === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID;
       else process.env.CYCLE_BENCHMARK_SPLIT_SALT_ID = priorSaltId;
+      if (priorLedger === undefined) delete process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR;
+      else process.env.CYCLE_BENCHMARK_EVALUATION_LEDGER_DIR = priorLedger;
     }
   });
 
@@ -300,6 +363,7 @@ describe("cycle benchmark manifest", () => {
     const datasetPath = join(directory, "outcomes.json");
     const manifestPath = join(directory, "manifest.json");
     const receiptDirectory = join(directory, "openings");
+    mkdirSync(receiptDirectory);
     const dataBytes = Buffer.from("{}");
     const manifest = externalManifest();
     manifest.datasetSha256 = createHash("sha256").update("expected").digest("hex");
@@ -333,9 +397,8 @@ describe("cycle benchmark manifest", () => {
         isGoldenFixture: false,
         sourceCommit: "a".repeat(40),
         protocolSha256: "c".repeat(64),
-        evaluationReceiptDirectory: receiptDirectory,
       })).toThrow("checksum does not match");
-      expect(() => readFileSync(receiptDirectory)).toThrow();
+      expect(readdirSync(receiptDirectory)).toHaveLength(0);
     } finally {
       if (priorSalt === undefined) delete process.env.CYCLE_BENCHMARK_SPLIT_SALT;
       else process.env.CYCLE_BENCHMARK_SPLIT_SALT = priorSalt;

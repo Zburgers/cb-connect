@@ -6,6 +6,14 @@ production qualification.
 
 ## Approved target and required variables
 
+For local authenticated work, use the repo-root ignored file
+`.env.auth-test.local`. It must contain the approved synthetic test credentials
+and target configuration listed below. `.gitignore` excludes this file. Never
+copy its values into a report, command transcript, workflow file, or committed
+file. Keep the test deploy key named `CONVEX_TEST_DEPLOY_KEY`; for the guarded
+Convex CLI invocation, map it in memory to `CONVEX_DEPLOY_KEY` and set
+`CB_CONNECT_CONVEX_CREDENTIAL_CLASS=test`.
+
 The fixture harness validates all of these values before provisioning users:
 
 ```text
@@ -13,8 +21,10 @@ CLERK_TEST_ENVIRONMENT_NAME=holy clerk
 CLERK_TEST_SECRET_KEY=<secret test key; never print>
 NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY=<public test key>
 CLERK_TEST_FRONTEND_API_URL=https://holy-clam-29.clerk.accounts.dev
+CONVEX_TEST_DEPLOY_KEY=<target-bound test key; never print>
 CONVEX_TEST_DEPLOYMENT=dev:hallowed-hummingbird-284
 NEXT_PUBLIC_TEST_CONVEX_URL=https://hallowed-hummingbird-284.convex.cloud
+NEXT_PUBLIC_TEST_CONVEX_SITE_URL=<approved test site URL>
 CB_CONNECT_RELEASE_RUN_ID=<safe unique id>
 ```
 
@@ -33,33 +43,22 @@ names. The approved fixture uses synthetic run-scoped users only.
 
 ## Secret-safe environment loading
 
-Load an existing protected environment in the shell without printing it:
+Do not `cat`, source, or print `.env.auth-test.local`: the deploy key contains
+shell metacharacters and must be parsed as dotenv data. Use the repo-local
+wrapper, which validates the approved Clerk/Convex identity, maps the test key
+in memory, unsets `CONVEX_DEPLOYMENT`, and passes variables only to its child:
 
 ```bash
-set -a
-source .env.local
-set +a
-
-required=(
-  CLERK_TEST_ENVIRONMENT_NAME
-  CLERK_TEST_SECRET_KEY
-  NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY
-  CLERK_TEST_FRONTEND_API_URL
-  CONVEX_TEST_DEPLOYMENT
-  NEXT_PUBLIC_TEST_CONVEX_URL
-)
-for name in "${required[@]}"; do
-  test -n "${(P)name-}" || { echo "missing $name" >&2; exit 1; }
-done
-export CB_CONNECT_RELEASE_RUN_ID="manual-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-export CB_CONNECT_RELEASE_AUTH_DIR="${TMPDIR:-/tmp}/cb-connect-release-auth"
-umask 077
-mkdir -p "$CB_CONNECT_RELEASE_AUTH_DIR"
+npx tsx scripts/with-auth-test-env.ts -- <command> [args...]
 ```
 
-The `${(P)name-}` expansion is zsh syntax. In Bash, use an indirect expansion
-such as `${!name-}`. Do not use `env`, `set`, `printenv`, or shell tracing while
-secret variables are loaded.
+The wrapper resolves the repo-root `.env.auth-test.local`, validates all
+required fixture inputs and the exact approved target before spawning the
+command, allowlists its dotenv keys, strips generic Clerk/Convex credentials
+from the inherited environment, and never prints credential values. It is a
+credential-safe loader, not a sandbox for untrusted commands. Use it around
+guarded deploys and authenticated browser commands, not ordinary builds or
+tests.
 
 ## Run commands
 
@@ -70,12 +69,14 @@ evidence:
 npm ci --no-audit --no-fund
 
 PLAYWRIGHT_EXECUTABLE_PATH=/opt/google/chrome/chrome \
-  npm exec -- playwright test --config=playwright.release.config.ts \
-  e2e/release-smoke.spec.ts --project=release-desktop
+  npx tsx scripts/with-auth-test-env.ts -- npx playwright test \
+  --config=playwright.release.config.ts e2e/release-smoke.spec.ts \
+  --project=release-desktop --retries=0
 
 PLAYWRIGHT_EXECUTABLE_PATH=/opt/google/chrome/chrome \
-  npm exec -- playwright test --config=playwright.release.config.ts \
-  e2e/release-smoke.spec.ts --project=release-mobile
+  npx tsx scripts/with-auth-test-env.ts -- npx playwright test \
+  --config=playwright.release.config.ts e2e/release-smoke.spec.ts \
+  --project=release-mobile --retries=0
 ```
 
 To inspect the release project declarations without starting a test:
@@ -137,3 +138,54 @@ screenshots, or videos. Common classifications:
 The CI equivalent is the protected `authenticated-smoke` job in
 `.github/workflows/ci.yml`; it serializes the shared dev deployment and injects
 the deploy key only into the deployment step.
+
+## Local-first qualification before push
+
+When an auth or test environment is involved, run the checks against the
+current code before pushing. Use `scripts/with-auth-test-env.ts` to parse
+`.env.auth-test.local`; never source it or run with shell tracing. The wrapper
+confirms the approved Clerk and Convex target identity, unsets
+`CONVEX_DEPLOYMENT`, and uses `scripts/convex-safe-exec test` for every
+stateful Convex operation.
+
+For Gate 0–3 changes, run these tracks before pushing:
+
+```bash
+npm run build
+npm run typecheck
+npm run test:unit -- --run
+npm run benchmark:cycle:golden
+npm run test:convex-safe-exec
+npm run test:convex-command-policy
+npm run test:fixture-evidence-boundary
+npm run test:ci-workflow
+npm run test:cycle-facts-plan
+bash scripts/tests/prediction-runner-policy.test.sh
+bash scripts/tests/deploy-workflow.test.sh
+npx tsx scripts/with-auth-test-env.ts -- bash scripts/convex-safe-exec test -- \
+  deploy --typecheck disable --codegen enable \
+  --message "cb-connect-auth-test local-qualification"
+npx tsx scripts/with-auth-test-env.ts -- bash scripts/run-gates-0-3-qa.sh
+```
+
+Then run both full authenticated release-smoke projects separately, with retries
+disabled so one attempt gives unambiguous evidence:
+
+```bash
+PLAYWRIGHT_EXECUTABLE_PATH=/opt/google/chrome/chrome \
+  npx tsx scripts/with-auth-test-env.ts -- npx playwright test \
+  --config=playwright.release.config.ts \
+  e2e/release-smoke.spec.ts --project=release-desktop --retries=0
+PLAYWRIGHT_EXECUTABLE_PATH=/opt/google/chrome/chrome \
+  npx tsx scripts/with-auth-test-env.ts -- npx playwright test \
+  --config=playwright.release.config.ts \
+  e2e/release-smoke.spec.ts --project=release-mobile --retries=0
+```
+
+Require all four Gate 0–3 lanes and both smoke projects to pass. Verify each
+Playwright `.last-run.json` says `passed`, teardown proves no fixtures remain,
+and all four feature flags are restored to `false`. Preserve only sanitized
+evidence; do not commit auth state, traces, screenshots, or raw logs. If a local
+lane fails, diagnose and rerun the affected lane after fixing it before pushing.
+After push, still monitor exact-head CI; local proof cannot qualify another
+SHA or replace protected-environment approval.
