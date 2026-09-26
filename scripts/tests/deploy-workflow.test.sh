@@ -57,7 +57,7 @@ required_patterns=(
   'bash scripts/reconcile-convex-env.sh production'
 )
 for pattern in "${required_patterns[@]}"; do
-  if ! rg -q "$pattern" "$workflow"; then
+  if ! grep -Eq "$pattern" "$workflow"; then
     echo "deploy workflow policy is missing: $pattern" >&2
     exit 1
   fi
@@ -74,32 +74,32 @@ if ! (( artifact_identity_line < reconcile_line && reconcile_line < convex_deplo
   exit 1
 fi
 
-if rg -q '^  push:' "$workflow"; then
+if grep -Eq '^  push:' "$workflow"; then
   echo "deploy workflow must not promote directly from a push" >&2
   exit 1
 fi
 
-if rg -q 'run: npm run build|scripts/package-release\.sh "\$release_dir"|CB_CONNECT_RELEASE_DIR: \$\{\{ runner\.temp \}\}' "$workflow"; then
+if grep -Eq 'run: npm run build|scripts/package-release\.sh "\$release_dir"|CB_CONNECT_RELEASE_DIR: \$\{\{ runner\.temp \}\}' "$workflow"; then
   echo "deploy workflow must not rebuild, repackage, or promote from runner temp" >&2
   exit 1
 fi
 
-if rg -q 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK' "$workflow"; then
+if grep -Eq 'PROMOTE_PRODUCTION|DEPLOY_CONVEX|ALLOW_FIRST_PROMOTION_WITHOUT_ROLLBACK' "$workflow"; then
   echo "qualified main releases must deploy without manual promotion variables" >&2
   exit 1
 fi
 
-if rg -n 'CB_CONNECT_CYCLE_FACTS_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_FACTS_V1' .github/workflows/ci.yml "$workflow"; then
+if grep -nE 'CB_CONNECT_CYCLE_FACTS_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_FACTS_V1' .github/workflows/ci.yml "$workflow"; then
   echo "cycle facts capability must remain an optional Convex-only setting" >&2
   exit 1
 fi
 
-if rg -n 'CB_CONNECT_CYCLE_STATE_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_STATE_V1' .github/workflows/ci.yml "$workflow"; then
+if grep -nE 'CB_CONNECT_CYCLE_STATE_V1|NEXT_PUBLIC_CB_CONNECT_CYCLE_STATE_V1' .github/workflows/ci.yml "$workflow"; then
   echo "cycle state capability must remain an optional Convex-only setting" >&2
   exit 1
 fi
 
-if rg -n 'CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2|NEXT_PUBLIC_CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2' .github/workflows/ci.yml "$workflow"; then
+if grep -nE 'CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2|NEXT_PUBLIC_CB_CONNECT_(PERIOD|PARTNER)_PREDICTION_V2' .github/workflows/ci.yml "$workflow"; then
   echo "Gate 3 capabilities must remain optional Convex-only settings" >&2
   exit 1
 fi
@@ -110,26 +110,26 @@ cycle_state_sources=(
   components
   lib
 )
-if rg -n 'NEXT_PUBLIC[^[:space:]]*CYCLE_STATE_V1' "${cycle_state_sources[@]}"; then
+if grep -R -nE 'NEXT_PUBLIC[^[:space:]]*CYCLE_STATE_V1' "${cycle_state_sources[@]}"; then
   echo "cycle state capability must not have a NEXT_PUBLIC mirror" >&2
   exit 1
 fi
 
-if ! rg -q 'CB_CONNECT_CYCLE_STATE_V1' convex/_helpers/cycleStateFlag.ts || \
-   ! rg -q '=== "true"' convex/_helpers/cycleStateFlag.ts; then
+if ! grep -Eq 'CB_CONNECT_CYCLE_STATE_V1' convex/_helpers/cycleStateFlag.ts || \
+   ! grep -Eq '=== "true"' convex/_helpers/cycleStateFlag.ts; then
   echo "cycle state capability must be server-side and exact-true default-off" >&2
   exit 1
 fi
 
 for flag in CB_CONNECT_PERIOD_PREDICTION_V2 CB_CONNECT_PARTNER_PREDICTION_V2; do
-  if ! rg -q "$flag" convex/_helpers/periodPredictionFlag.ts || \
-     ! rg -q '=== "true"' convex/_helpers/periodPredictionFlag.ts; then
+  if ! grep -Eq "$flag" convex/_helpers/periodPredictionFlag.ts || \
+     ! grep -Eq '=== "true"' convex/_helpers/periodPredictionFlag.ts; then
     echo "Gate 3 capability must be server-side and exact-true default-off: $flag" >&2
     exit 1
   fi
 done
 
-if rg -n 'NEXT_PUBLIC[^[:space:]]*(PERIOD|PARTNER)_PREDICTION_V2' convex app components lib; then
+if grep -R -nE 'NEXT_PUBLIC[^[:space:]]*(PERIOD|PARTNER)_PREDICTION_V2' convex app components lib; then
   echo "Gate 3 capabilities must not have a NEXT_PUBLIC mirror" >&2
   exit 1
 fi
@@ -141,7 +141,7 @@ for pattern in \
   'no data reversal' \
   'D-011' \
   'D-015'; do
-  if ! rg -qi "$pattern" docs/runbooks/cycle-state-rollout.md; then
+  if ! grep -Eqi "$pattern" docs/runbooks/cycle-state-rollout.md; then
     echo "cycle state runbook is missing rollout policy: $pattern" >&2
     exit 1
   fi
@@ -152,13 +152,13 @@ for pattern in \
   'flag-off' \
   'backward-compatible reads' \
   'destructive migration'; do
-  if ! rg -qi "$pattern" DEPLOYMENT.md; then
+  if ! grep -Eqi "$pattern" DEPLOYMENT.md; then
     echo "deployment guide is missing Gate 1 rollout policy: $pattern" >&2
     exit 1
   fi
 done
 
-if rg -q 'test "\$CB_CONNECT_RELEASE_ROOT"|\[\[ "\$CB_CONNECT_RELEASE_ROOT" =~' "$workflow"; then
+if grep -Eq 'test "\$CB_CONNECT_RELEASE_ROOT"|\[\[ "\$CB_CONNECT_RELEASE_ROOT" =~' "$workflow"; then
   echo "release-root validation must use the explicit safe-path case contract" >&2
   exit 1
 fi
@@ -169,8 +169,8 @@ if grep -q 'CONVEX_DEPLOY_KEY' <<<"$required_block"; then
   exit 1
 fi
 
-if ! rg -q 'env remove "\$name"' scripts/reconcile-convex-env.sh || \
-   ! rg -q 'CLERK_WEBHOOK_SECRET DISCORD_WEBHOOK_URL' scripts/reconcile-convex-env.sh; then
+if ! grep -Eq 'env remove "\$name"' scripts/reconcile-convex-env.sh || \
+   ! grep -Eq 'CLERK_WEBHOOK_SECRET DISCORD_WEBHOOK_URL' scripts/reconcile-convex-env.sh; then
   echo "deploy workflow must remove absent optional managed Convex keys" >&2
   exit 1
 fi
@@ -178,7 +178,16 @@ fi
 # A missing managed `current` pointer is the exact first-release case. Existing
 # pointers still have to resolve inside the managed release root and verify a
 # compatible manifest before deployment continues.
-if ! rg -Uq 'if \[\[ ! -L "\$current_link" \]\]; then[\s\S]{0,180}first_release=true' "$workflow"; then
+if ! python3 - "$workflow" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+start = text.find('if [[ ! -L "$current_link" ]]; then')
+end = text.find('first_release=true', start)
+raise SystemExit(0 if start >= 0 and 0 <= end - start <= 180 else 1)
+PY
+then
   echo "deploy workflow must classify a missing current pointer as the first managed release" >&2
   exit 1
 fi
@@ -198,7 +207,7 @@ case "$previous_dir" in "$contract_root"/releases/*/extracted) ;; *) echo "curre
 previous_manifest="$(dirname "$previous_dir")/release-manifest.json"
 test -f "$previous_manifest"
 
-if rg -q "if: failure\(\) && steps\.rollback_candidate" "$workflow"; then
+if grep -Eq "if: failure\(\) && steps\.rollback_candidate" "$workflow"; then
   echo "rollback must be limited to a failed frontend promotion or verification, not any prior failure" >&2
   exit 1
 fi
