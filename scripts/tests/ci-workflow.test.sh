@@ -29,6 +29,7 @@ required_patterns=(
   'name: cb-connect-release-\$\{\{ github\.sha \}\}'
   'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
   'environment: cb-connect-auth-test'
+  "if: github\.event_name == 'push' && github\.ref == 'refs/heads/main'"
   'concurrency:'
   'group: cb-connect-auth-test'
   'cancel-in-progress: false'
@@ -45,7 +46,7 @@ required_patterns=(
   'CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true'
 )
 for pattern in "${required_patterns[@]}"; do
-  if ! rg -q "$pattern" "$workflow"; then
+  if ! grep -Eq "$pattern" "$workflow"; then
     echo "CI workflow is missing required policy: $pattern" >&2
     exit 1
   fi
@@ -53,47 +54,72 @@ done
 
 qualify_block="$(sed -n '/^  qualify:/,/^  authenticated-smoke:/p' "$workflow")"
 authenticated_block="$(sed -n '/^  authenticated-smoke:/,/^  release-artifact:/p' "$workflow")"
+auth_job_header="$(sed -n '/^  authenticated-smoke:/,/^    steps:/p' "$workflow")"
 release_block="$(sed -n '/^  release-artifact:/,$p' "$workflow")"
 
+auth_job_env="$(sed -n '/^    env:/,/^    steps:/p' <<<"$authenticated_block")"
+if grep -Eq 'secrets\.' <<<"$auth_job_env"; then
+  echo "authenticated test credentials must not be available at job scope" >&2
+  exit 1
+fi
+if ! grep -Eq "^    if: github\\.event_name == 'push' && github\\.ref == 'refs/heads/main'$" <<<"$auth_job_header"; then
+  echo "authenticated smoke must run only for the trusted main push" >&2
+  exit 1
+fi
+if grep -Eq 'pull_request_target' "$workflow"; then
+  echo "CI must not use privileged pull_request_target execution" >&2
+  exit 1
+fi
+if ! grep -Eq '^permissions:$' "$workflow" || ! grep -Eq '^  contents: read$' "$workflow"; then
+  echo "CI must grant only read access to the repository token by default" >&2
+  exit 1
+fi
+while IFS= read -r action_ref; do
+  if [[ ! "$action_ref" =~ ^[[:xdigit:]]{40}$ ]]; then
+    echo "workflow action is not pinned to a full commit SHA: $action_ref" >&2
+    exit 1
+  fi
+done < <(sed -nE 's/^[[:space:]]*uses:[[:space:]]+[^[:space:]]+@([^[:space:]#]+).*/\1/p' .github/workflows/*.yml)
+
 for pattern in 'name: Run isolated Gates 0-3 matrix' 'bash scripts/run-gates-0-3-qa.sh'; do
-  if ! rg -Fq "$pattern" <<<"$authenticated_block"; then
+  if ! grep -Fq "$pattern" <<<"$authenticated_block"; then
     echo "Gate 3 authenticated qualification must stay in the protected test job: $pattern" >&2
     exit 1
   fi
 done
 
 for value in NEXT_PUBLIC_CONVEX_URL NEXT_PUBLIC_CONVEX_SITE_URL NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; do
-  if ! rg -q "${value}: (https://qualification|pk_test_qualification)" <<<"$qualify_block"; then
+  if ! grep -Eq "${value}: (https://qualification|pk_test_qualification)" <<<"$qualify_block"; then
     echo "secret-free qualification build must supply inert ${value}" >&2
     exit 1
   fi
-  if ! rg -Fq "${value}: "'${{ secrets.' <<<"$release_block"; then
+  if ! grep -Fq "${value}: "'${{ secrets.' <<<"$release_block"; then
     echo "trusted release artifact build must use production ${value}" >&2
     exit 1
   fi
 done
 
-if rg -q 'secrets\.|environment: production|package-release\.sh|upload-artifact' <<<"$qualify_block"; then
+if grep -Eq 'secrets\.|environment: production|package-release\.sh|upload-artifact' <<<"$qualify_block"; then
   echo "generic qualification must not receive production configuration or publish a release artifact" >&2
   exit 1
 fi
 
-if rg -q 'CLERK_SECRET_KEY|CONVEX_DEPLOY_KEY' <<<"$release_block"; then
+if grep -Eq 'CLERK_SECRET_KEY|CONVEX_DEPLOY_KEY' <<<"$release_block"; then
   echo "release artifact job must receive public build configuration only" >&2
   exit 1
 fi
 
-if ! rg -q '^    environment: production$' <<<"$release_block"; then
+if ! grep -Eq '^    environment: production$' <<<"$release_block"; then
   echo "release artifact job must use the protected production environment" >&2
   exit 1
 fi
 
-if rg -q 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; then
+if grep -Eq 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; then
   echo "CI jobs must use runner-provided policy tools instead of network package installs" >&2
   exit 1
 fi
 
-if rg -q 'run_lane gate0-.*e2e/release-smoke\.spec\.ts' scripts/run-gates-0-2-qa.sh; then
+if grep -Eq 'run_lane gate0-.*e2e/release-smoke\.spec\.ts' scripts/run-gates-0-2-qa.sh; then
   echo "Gate 0 release smoke must not duplicate the protected authenticated smoke job" >&2
   exit 1
 fi
@@ -104,7 +130,7 @@ if grep -Eq '(^|[[:space:]])rg([[:space:]]|$)' scripts/tests/package-release.tes
 fi
 
 line_for() {
-  rg -n -m 1 "$1" <<<"$qualify_block" | cut -d: -f1
+  grep -nEm 1 "$1" <<<"$qualify_block" | cut -d: -f1
 }
 
 install_line="$(line_for 'run: npm ci --no-audit --no-fund')"
@@ -119,12 +145,12 @@ if ! (( install_line < build_line && build_line < typecheck_line &&
   exit 1
 fi
 
-if rg -n 'continue-on-error:[[:space:]]*true' "$workflow"; then
+if grep -nE 'continue-on-error:[[:space:]]*true' "$workflow"; then
   echo "CI qualification must fail closed; continue-on-error is not allowed" >&2
   exit 1
 fi
 
-if rg -q 'github\.run_started_at|CB_CONNECT_RELEASE_AUTH_DIR:[[:space:]]*\$\{\{ runner\.temp \}\}' .github/workflows/ci.yml .github/workflows/deploy.yml; then
+if grep -Eq 'github\.run_started_at|CB_CONNECT_RELEASE_AUTH_DIR:[[:space:]]*\$\{\{ runner\.temp \}\}' .github/workflows/ci.yml .github/workflows/deploy.yml; then
   echo "workflow uses a GitHub context that is invalid at workflow/job evaluation time" >&2
   exit 1
 fi
@@ -133,7 +159,7 @@ for pattern in \
   'Record qualification build timestamp' \
   'Record release build timestamp' \
   'Configure isolated auth artifact directory'; do
-  if ! rg -q "$pattern" "$workflow"; then
+  if ! grep -Eq "$pattern" "$workflow"; then
     echo "CI workflow is missing runtime environment setup: $pattern" >&2
     exit 1
   fi

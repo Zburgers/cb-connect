@@ -10,7 +10,7 @@ vi.mock("convex/browser", () => ({
   },
 }));
 
-import { GET } from "./route";
+let GET: typeof import("./route").GET;
 
 const frontendEnvironment = {
   CB_CONNECT_COMMIT_SHA: "0123456789abcdef0123456789abcdef01234567",
@@ -26,7 +26,9 @@ const backendIdentity = {
   deployedAt: "2026-08-05T16:00:00.000Z",
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
+  ({ GET } = await import("./route"));
   vi.stubEnv("CB_CONNECT_COMMIT_SHA", frontendEnvironment.CB_CONNECT_COMMIT_SHA);
   vi.stubEnv("CB_CONNECT_BUILD_ID", frontendEnvironment.CB_CONNECT_BUILD_ID);
   vi.stubEnv(
@@ -66,6 +68,36 @@ describe("compatibility readiness", () => {
         compatibility: "pass",
       },
     });
+  });
+
+  test("shares one Convex probe across simultaneous readiness requests", async () => {
+    let resolveQuery!: (value: typeof backendIdentity) => void;
+    queryMock.mockReturnValue(
+      new Promise<typeof backendIdentity>((resolve) => {
+        resolveQuery = resolve;
+      }),
+    );
+
+    const first = GET();
+    const second = GET();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    resolveQuery(backendIdentity);
+
+    const responses = await Promise.all([first, second]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+  });
+
+  test("reuses a readiness probe for one second and refreshes after expiry", async () => {
+    vi.useFakeTimers();
+    queryMock.mockResolvedValue(backendIdentity);
+
+    await GET();
+    await GET();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1001);
+    await GET();
+    expect(queryMock).toHaveBeenCalledTimes(2);
   });
 
   test("returns bounded 503 when frontend metadata is missing", async () => {
