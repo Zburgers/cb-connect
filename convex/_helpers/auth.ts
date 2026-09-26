@@ -33,15 +33,42 @@ export async function getCoupleForUser(
   ctx: QueryCtx | MutationCtx,
   userId: Id<"users">
 ) {
-  const membership = await ctx.db
+  const memberships = await ctx.db
     .query("coupleMembers")
     .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
+    .take(2);
 
-  if (!membership) return null;
+  if (memberships.length !== 1) return null;
+  const [membership] = memberships;
 
   const couple = await ctx.db.get(membership.coupleId);
   if (!couple || couple.status === "revoked") return null;
+  const user = await ctx.db.get(userId);
+
+  const [primaries, partners] = await Promise.all([
+    ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "primary")
+      )
+      .take(2),
+    ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "partner")
+      )
+      .take(2),
+  ]);
+
+  if (
+    primaries.length !== 1 ||
+    (couple.status === "active" && partners.length !== 1) ||
+    (couple.status === "pending" && partners.length !== 0) ||
+    (membership.role !== "primary" && membership.role !== "partner") ||
+    user?.role !== membership.role
+  ) {
+    return null;
+  }
 
   return { membership, couple };
 }

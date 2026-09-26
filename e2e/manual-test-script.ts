@@ -56,7 +56,7 @@
  * - Click "Generate Pairing Code" button
  * 
  * Expected:
- * - 6-digit code appears in large font (e.g., "847293")
+ * - 12-character code appears in large font
  * - Toast message: "Code generated and copied to clipboard!"
  * - Copy button shows "Copied!" with checkmark icon
  * - Share button visible
@@ -88,7 +88,7 @@
 
 /**
  * Step 8: Record Pairing Code
- * - Write down the 6-digit code for Partner User test
+ * - Copy the 12-character code for Partner User test
  * - Keep this browser window open
  */
 
@@ -117,7 +117,7 @@
  * - Should see heading: "You're all set!"
  * - Should see text: "Ask your partner for their pairing code to link accounts."
  * - Should see button with Heart icon: "Already have a pairing code?"
- * - Should see helper text: "Enter your partner's 6-digit code to link accounts"
+ * - Should see helper text: "Enter your partner's 12-character code to link accounts"
  * 
  * Assertion: Button is visible and clickable
  */
@@ -131,13 +131,13 @@
 
 /**
  * Step 5: Enter Pairing Code
- * - Enter the 6-digit code from Primary User
+ * - Enter the 12-character code from Primary User
  * - Input should only accept numeric characters
- * - Input should auto-limit to 6 digits
+ * - Input should auto-limit to 12 code characters
  * 
  * Expected:
  * - Code displays with spacing (e.g., "8 4 7 2 9 3")
- * - "Link Account" button becomes enabled when 6 digits entered
+ * - "Link Account" button becomes enabled when 12 characters entered
  */
 
 /**
@@ -306,7 +306,7 @@
  * [ ] Card shows "Let your special one take care of you"
  * [ ] Clicking card navigates to /dashboard/partner
  * [ ] "Generate Pairing Code" button works
- * [ ] 6-digit code displays in large font
+ * [ ] 12-character code displays in large font
  * [ ] Auto-copy toast appears
  * [ ] Copy button shows feedback
  * [ ] Share button visible and functional
@@ -315,7 +315,7 @@
  * [ ] Onboarding shows "You're all set!" for partner
  * [ ] "Already have a pairing code?" button visible
  * [ ] Button navigates to /dashboard/partner
- * [ ] Code input accepts only 6 digits
+ * [ ] Code input accepts only valid 12-character codes
  * [ ] "Link Account" button enabled when valid
  * [ ] Successful linking shows toast
  * [ ] Redirects to dashboard after linking

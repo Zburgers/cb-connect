@@ -1,5 +1,5 @@
 import { query } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 export const latestReceived = query({
   args: {},
@@ -9,9 +9,29 @@ export const latestReceived = query({
       return null;
     }
 
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData || coupleData.couple.status !== "active") return null;
+    const partnerMemberships = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role", (q) =>
+        q
+          .eq("coupleId", coupleData.membership.coupleId)
+          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary")
+      )
+      .take(2);
+    if (partnerMemberships.length !== 1) return null;
+    const relationshipStartedAt =
+      coupleData.couple.linkedAt ??
+      Math.max(coupleData.membership.joinedAt, partnerMemberships[0].joinedAt);
+
     const nudge = await ctx.db
       .query("nudges")
-      .withIndex("by_receiver_created", (q) => q.eq("receiverId", user._id))
+      .withIndex("by_couple_receiver_created", (q) =>
+        q
+          .eq("coupleId", coupleData.membership.coupleId)
+          .eq("receiverId", user._id)
+          .gte("createdAt", relationshipStartedAt)
+      )
       .order("desc")
       .first();
 

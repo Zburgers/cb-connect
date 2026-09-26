@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 const NUDGE_MESSAGES: Record<string, string> = {
   "💗": "Thinking of you",
@@ -26,27 +26,25 @@ export const send = mutation({
       throw new Error("Unsupported nudge emoji");
     }
 
-    const membership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!membership) {
-      throw new Error("You are not linked to a couple");
-    }
-
-    const couple = await ctx.db.get(membership.coupleId);
-    if (!couple || couple.status !== "active") {
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData) throw new Error("You are not linked to a couple");
+    const { membership, couple } = coupleData;
+    if (couple.status !== "active") {
       throw new Error("Your couple link is not active");
     }
 
-    const partnerMembership = await ctx.db
+    const partnerMemberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-      .filter((q) => q.neq(q.field("userId"), user._id))
-      .first();
-    if (!partnerMembership) {
+      .withIndex("by_couple_and_role", (q) =>
+        q
+          .eq("coupleId", membership.coupleId)
+          .eq("role", membership.role === "primary" ? "partner" : "primary")
+      )
+      .take(2);
+    if (partnerMemberships.length !== 1) {
       throw new Error("No linked partner found");
     }
+    const partnerMembership = partnerMemberships[0];
 
     const now = Date.now();
     return await ctx.db.insert("nudges", {

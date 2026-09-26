@@ -1,30 +1,28 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-import { getCurrentUser } from "./auth";
+import { getCurrentUser, getCoupleForUser } from "./auth";
 
 export async function getActiveCoupleSpace(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUser(ctx);
-  const membership = await ctx.db
-    .query("coupleMembers")
-    .withIndex("by_user", (q) => q.eq("userId", user._id))
-    .first();
-
-  if (!membership) {
+  const coupleData = await getCoupleForUser(ctx, user._id);
+  if (!coupleData) {
     throw new Error("You are not linked to a couple");
   }
-
-  const couple = await ctx.db.get(membership.coupleId);
-  if (!couple || couple.status !== "active") {
+  const { membership, couple } = coupleData;
+  if (couple.status !== "active") {
     throw new Error("Your couple link is not active");
   }
 
-  const partnerMembership = await ctx.db
+  const partnerMemberships = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-    .filter((q) => q.neq(q.field("userId"), user._id))
-    .first();
+    .withIndex("by_couple_and_role", (q) =>
+      q
+        .eq("coupleId", membership.coupleId)
+        .eq("role", membership.role === "primary" ? "partner" : "primary")
+    )
+    .take(2);
 
-  if (!partnerMembership) {
+  if (partnerMemberships.length !== 1) {
     throw new Error("No linked partner found");
   }
 
@@ -32,7 +30,9 @@ export async function getActiveCoupleSpace(ctx: QueryCtx | MutationCtx) {
     user,
     couple,
     membership,
-    partnerMembership,
+    partnerMembership: partnerMemberships[0],
+    relationshipStartedAt:
+      couple.linkedAt ?? Math.max(membership.joinedAt, partnerMemberships[0].joinedAt),
   };
 }
 
@@ -41,19 +41,14 @@ export async function assertCoupleMember(
   coupleId: Id<"couples">,
   userId: Id<"users">
 ) {
-  const membership = await ctx.db
-    .query("coupleMembers")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!membership || membership.coupleId !== coupleId) {
+  const coupleData = await getCoupleForUser(ctx, userId);
+  if (!coupleData || coupleData.membership.coupleId !== coupleId) {
     throw new Error("Not authorized for this couple");
   }
 
-  const couple = await ctx.db.get(coupleId);
-  if (!couple || couple.status !== "active") {
+  if (coupleData.couple.status !== "active") {
     throw new Error("Your couple link is not active");
   }
 
-  return membership;
+  return coupleData.membership;
 }

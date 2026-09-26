@@ -32,6 +32,7 @@ Engineering must not invent names, credentials, jurisdictions, legal conclusions
 | D-015 | Pilot cohort sizes, staffing, observation windows and staged rollout percentages | Product owner and operator | Only the affected pilot/store rollout | Deferred until affected pilot | — |
 | D-016 | Research consent, withdrawal, secure storage, access logging, cohort sufficiency and independent ML reviewer | Privacy/legal, product and statistical/ML reviewer | Research Gate 7 | Deferred; shadow research only | Minimum cohort rules remain hard entry criteria |
 | D-017 | Gate 3 personalization, variability, partner-assistance, segmentation, confidence, external-data and model-selection contract | Product owner; engineering implements; privacy/statistical authority remains under D-013/D-012 where applicable | Gate 3 implementation semantics | Resolved 2026-09-20 | `docs/decisions/2026-09-20-gate-3-prediction-design-freeze.md` |
+| D-018 | Fresh-relationship default for `sharingPhase` after partner replacement | Product owner; privacy authority for consent boundary | Only phase-sharing behavior for a replacement partner | Required input | Current pairing creation defaults it on; no approved replacement-specific rule is recorded |
 
 ## Gate 0 preflight progress
 
@@ -183,3 +184,13 @@ When resolving a decision, update its row and append a section using:
 - Applies from commit/deployment: Gate 3 planning and subsequent default-off/non-production implementation only; no production exposure implied.
 - Evidence or runbook: `docs/decisions/2026-09-20-gate-3-prediction-design-freeze.md` and `docs/plans/2026-09-20-gate-3-personalized-prediction-implementation.md`.
 - Review/expiry date: Revalidate only on material new evidence, before a protocol-version change, or before promoting a materially different model family.
+
+## D-018 — Fresh-relationship phase-sharing default
+
+- Decision: Pending. Confirm whether phase visibility remains enabled when a new partner is paired after revocation, should be disabled until the primary explicitly enables it, or needs another explicit consent boundary. Existing pairing behavior sets `sharingPhase` to true; relationship-integrity remediation preserves that field until the product owner resolves its replacement behavior.
+- Alternatives considered: Engineering did not choose a new default or consent interaction because neither is approved for a replacement relationship.
+- Approver and authority: Product owner; privacy authority for any consent-boundary decision.
+- Approved on: Pending.
+- Applies from commit/deployment: Re-pairing only; `sharingPain` and `sharingPeriodWrite` use their already-documented false defaults.
+- Evidence or runbook: GitHub issue #43 and the relationship-integrity remediation PR.
+- Review/expiry date: Resolve before claiming #43 fully closed or changing replacement-partner phase access.

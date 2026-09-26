@@ -1,5 +1,5 @@
 import { query } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 export const getCoupleStatus = query({
   handler: async (ctx) => {
@@ -8,19 +8,9 @@ export const getCoupleStatus = query({
       return { isLinked: false, partner: null, activePairingCode: null };
     }
 
-    const membership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-
-    if (!membership) {
-      return { isLinked: false };
-    }
-
-    const couple = await ctx.db.get(membership.coupleId);
-    if (!couple || couple.status === "revoked") {
-      return { isLinked: false };
-    }
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData) return { isLinked: false, partner: null, activePairingCode: null };
+    const { membership, couple } = coupleData;
 
     const partnerMembership = await ctx.db
       .query("coupleMembers")

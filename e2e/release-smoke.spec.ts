@@ -21,9 +21,9 @@ async function ensureLinked(primary: Page, partner: Page) {
       .getByRole("button", { name: /generate pairing code/i })
       .click();
     const code = (
-      await primary.getByText(/^\d{6}$/).last().textContent()
+      await primary.getByText(/^[0-9A-HJKMNP-TV-Z]{12}$/).last().textContent()
     )?.trim();
-    expect(code).toMatch(/^\d{6}$/);
+    expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
 
     await partner.goto("/dashboard/partner");
     await expect(partner.locator("#partner-code")).toBeVisible();
@@ -200,9 +200,9 @@ async function revokeAndRelink(primary: Page, partner: Page) {
     .getByRole("button", { name: /generate pairing code/i })
     .click();
   const code = (
-    await primary.getByText(/^\d{6}$/).last().textContent()
+    await primary.getByText(/^[0-9A-HJKMNP-TV-Z]{12}$/).last().textContent()
   )?.trim();
-  expect(code).toMatch(/^\d{6}$/);
+  expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
 
   await partner.locator("#partner-code").fill(code!);
   await partner.getByRole("button", { name: /link account/i }).click();

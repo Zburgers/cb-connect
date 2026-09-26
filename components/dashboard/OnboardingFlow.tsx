@@ -95,7 +95,7 @@ export default function OnboardingFlow() {
               <ArrowRight className="w-5 h-5" />
             </button>
             <p className="text-xs text-muted-foreground mt-3">
-              Enter your partner's 6-digit code to link accounts
+              Enter your partner's 12-character code to link accounts
             </p>
           </div>
         )}

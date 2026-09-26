@@ -116,10 +116,10 @@ async function linkCouple(primaryPage: Page, partnerPage: Page): Promise<void> {
   });
   await expect(generateCodeButton).toBeVisible({ timeout: 30000 });
   await generateCodeButton.click();
-  const codeLocator = primaryPage.getByText(/^\d{6}$/).last();
+  const codeLocator = primaryPage.getByText(/^[0-9A-HJKMNP-TV-Z]{12}$/).last();
   await expect(codeLocator).toBeVisible({ timeout: 30000 });
   const code = (await codeLocator.textContent())?.trim();
-  if (!code || !/^\d{6}$/.test(code)) {
+  if (!code || !/^[0-9A-HJKMNP-TV-Z]{12}$/.test(code)) {
     throw new Error("pairing_code_creation_failed");
   }
 

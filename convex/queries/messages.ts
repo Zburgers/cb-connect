@@ -7,12 +7,15 @@ export const listForCouple = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user, membership, partnerMembership } = await getActiveCoupleSpace(ctx);
+    const { user, membership, partnerMembership, relationshipStartedAt } =
+      await getActiveCoupleSpace(ctx);
     const limit = Math.min(Math.max(args.limit ?? 80, 1), 120);
 
     const messages = await ctx.db
       .query("coupleMessages")
-      .withIndex("by_couple_created", (q) => q.eq("coupleId", membership.coupleId))
+      .withIndex("by_couple_created", (q) =>
+        q.eq("coupleId", membership.coupleId).gte("createdAt", relationshipStartedAt)
+      )
       .order("desc")
       .take(limit);
 

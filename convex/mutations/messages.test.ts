@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { api } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
-import { seedActiveCouple } from "../test.fixtures";
+import { seedActiveCouple, seedUser } from "../test.fixtures";
 
 describe("couple message state", () => {
   test("increments only the recipient unread counter", async () => {
@@ -56,6 +56,72 @@ describe("couple message state", () => {
     expect(coupleId).toBeDefined();
     await expect(t.withIdentity({ subject: "outsider-clerk" }).mutation(api.mutations.messages.markRead, { messageId }))
       .rejects.toThrow("You are not linked to a couple");
+  });
+
+  test("fails closed for message reads and writes when duplicate partners exist", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId } = await seedActiveCouple(t);
+    const duplicatePartnerId = await seedUser(t, {
+      clerkId: "duplicate-chat-partner",
+      name: "Duplicate Partner",
+      role: "partner",
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("coupleMembers", {
+        coupleId,
+        userId: duplicatePartnerId,
+        role: "partner",
+        sharingPain: false,
+        sharingPhase: false,
+        sharingPeriodWrite: false,
+        joinedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPrimary.query(api.queries.messages.listForCouple, {}),
+    ).rejects.toThrow("You are not linked to a couple");
+    await expect(
+      asPartner.mutation(api.mutations.messages.send, { body: "Private" }),
+    ).rejects.toThrow("You are not linked to a couple");
+  });
+
+  test("replacement partners cannot read the previous relationship chat", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    const oldMessageId = await asPartner.mutation(api.mutations.messages.send, {
+      body: "Previous relationship message",
+    });
+    await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+    const pairing = await asPrimary.action(
+      api.mutations.couples.generatePairingCode,
+      {},
+    );
+    await seedUser(t, {
+      clerkId: "replacement-chat-partner",
+      name: "Replacement Partner",
+      role: "partner",
+    });
+    const asReplacementPartner = t.withIdentity({ subject: "replacement-chat-partner" });
+    await asReplacementPartner.mutation(api.mutations.couples.linkPartnerWithCode, {
+      code: pairing.code,
+    });
+
+    await expect(
+      asReplacementPartner.query(api.queries.messages.listForCouple, {}),
+    ).resolves.toEqual([]);
+    await expect(
+      asPrimary.query(api.queries.messages.listForCouple, {}),
+    ).resolves.toEqual([]);
+    expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
+
+    await asReplacementPartner.mutation(api.mutations.messages.send, {
+      body: "Current relationship message",
+    });
+    const messages = await asPrimary.query(api.queries.messages.listForCouple, {});
+    expect(messages.map((message) => message.body)).toEqual([
+      "Current relationship message",
+    ]);
   });
 
   test("toggles reactions and returns grouped counts", async () => {

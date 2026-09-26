@@ -493,6 +493,7 @@ export default defineSchema({
     seenAt: v.optional(v.number()),
   })
     .index("by_receiver_created", ["receiverId", "createdAt"])
+    .index("by_couple_receiver_created", ["coupleId", "receiverId", "createdAt"])
     .index("by_couple_created", ["coupleId", "createdAt"]),
 
   coupleMessages: defineTable({
