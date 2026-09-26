@@ -121,24 +121,76 @@ async function requireAllowedPeriodEventWrite(
   candidate: PeriodEventCandidate,
   targetedPeriod?: Doc<"periodEvents">
 ) {
-  const existingEvents = await ctx.db
-    .query("periodEvents")
-    .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
-    .order("desc")
-    .take(100);
-  const projections = existingEvents
-    .filter((period) => period.tombstoneAt === undefined)
-    .map(toPeriodEventProjection);
-  if (
-    targetedPeriod &&
-    targetedPeriod.tombstoneAt === undefined &&
-    !projections.some((period) => period.id === targetedPeriod._id)
-  ) {
-    projections.push(toPeriodEventProjection(targetedPeriod));
+  const targeted = targetedPeriod ?? (candidate.targetEventId
+    ? await ctx.db.get("periodEvents", candidate.targetEventId as Id<"periodEvents">)
+    : undefined);
+  const target = targeted && toPeriodEventProjection(targeted);
+  const initial = evaluatePeriodEventInvariants(candidate, target ? [target] : []);
+  if (!initial.allowed) throw new Error(`${initial.code}: ${initial.message}`);
+
+  const seen = new Set<Id<"periodEvents">>();
+  const check = (period: Doc<"periodEvents">) => {
+    if (period.tombstoneAt !== undefined || period._id === candidate.targetEventId || seen.has(period._id)) {
+      return;
+    }
+    seen.add(period._id);
+    const result = evaluatePeriodEventInvariants(candidate, [
+      ...(target ? [target] : []),
+      toPeriodEventProjection(period),
+    ]);
+    if (!result.allowed) throw new Error(`${result.code}: ${result.message}`);
+  };
+
+  let cursor: string | null = null;
+  let done = false;
+  while (!done) {
+    const page = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_start", (q) => {
+        const range = q.eq("userId", userId).gte("startDate", candidate.startDate);
+        return candidate.endDate === undefined
+          ? range
+          : range.lte("startDate", candidate.endDate);
+      })
+      .paginate({ cursor, numItems: 64 });
+    for (const period of page.page) check(period);
+    cursor = page.continueCursor;
+    done = page.isDone;
   }
-  const result = evaluatePeriodEventInvariants(candidate, projections);
-  if (!result.allowed) {
-    throw new Error(`${result.code}: ${result.message}`);
+
+  cursor = null;
+  done = false;
+  while (!done) {
+    const page = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_start", (q) =>
+        q.eq("userId", userId).lt("startDate", candidate.startDate)
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: 64 });
+    const previous = page.page.find(
+      (period) => period.tombstoneAt === undefined && period._id !== candidate.targetEventId
+    );
+    if (previous) check(previous);
+    if (previous || page.isDone) break;
+    cursor = page.continueCursor;
+  }
+
+  cursor = null;
+  done = false;
+  while (!done) {
+    const page = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_end_and_start", (q) => {
+        const range = q.eq("userId", userId).eq("endDate", undefined);
+        return candidate.endDate === undefined
+          ? range
+          : range.lte("startDate", candidate.endDate);
+      })
+      .paginate({ cursor, numItems: 64 });
+    for (const period of page.page) check(period);
+    cursor = page.continueCursor;
+    done = page.isDone;
   }
 }
 
@@ -181,15 +233,21 @@ async function findOpenPeriod(
   userId: Id<"users">,
   options: { strict?: boolean } = {}
 ): Promise<Doc<"periodEvents"> | null> {
-  const recentPeriods = await ctx.db
-    .query("periodEvents")
-    .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
-    .order("desc")
-    .take(100);
-
-  const openPeriods = recentPeriods.filter(
-    (period) => !period.endDate && period.tombstoneAt === undefined
-  );
+  const openPeriods: Doc<"periodEvents">[] = [];
+  let cursor: string | null = null;
+  let done = false;
+  while (!done && openPeriods.length < (options.strict === false ? 1 : 2)) {
+    const page = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_end_and_start", (q) =>
+        q.eq("userId", userId).eq("endDate", undefined)
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: 64 });
+    openPeriods.push(...page.page.filter((period) => period.tombstoneAt === undefined));
+    cursor = page.continueCursor;
+    done = page.isDone;
+  }
   if (options.strict !== false && openPeriods.length > 1) {
     throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one open period fact exists");
   }

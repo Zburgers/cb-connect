@@ -1262,6 +1262,277 @@ describe("primary cycle fact writes", () => {
   });
 });
 
+describe("period invariants beyond the newest 100 rows", () => {
+  test.each([99, 100, 101, 150])(
+    "rejects an exact duplicate with %i retained facts",
+    async (count) => {
+      const t = convexTest(schema, modules);
+      const { asPrimary, primaryId } = await seedActiveCouple(t);
+      const oldestStart = "2019-12-31";
+      await t.run(async (ctx) => {
+        for (let i = 0; i < count; i++) {
+          const startDate = i === 0
+            ? oldestStart
+            : new Date(Date.UTC(2020, 0, i)).toISOString().slice(0, 10);
+          await ctx.db.insert("periodEvents", {
+            userId: primaryId,
+            startDate,
+            endDate: startDate,
+            startCertainty: "exact",
+            endCertainty: "exact",
+            authorityVersion: 1,
+            createdAt: i,
+            updatedAt: i,
+          });
+        }
+      });
+
+      await expect(
+        asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+          startDate: oldestStart,
+          startCertainty: "exact",
+          timeZone: "UTC",
+        }),
+      ).rejects.toThrow("DUPLICATE_EXACT_START");
+    },
+  );
+
+  test("rejects a correction overlapping a neighboring fact beyond the old page", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const [targetId] = await t.run(async (ctx) => {
+      const targetId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2019-12-31",
+        endDate: "2020-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-01-10",
+        endDate: "2020-01-12",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      for (let i = 1; i <= 105; i++) {
+        const startDate = new Date(Date.UTC(2021, 0, i)).toISOString().slice(0, 10);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          endDate: startDate,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: i + 2,
+          updatedAt: i + 2,
+        });
+      }
+      return [targetId];
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: targetId,
+        startDate: "2020-01-09",
+        endDate: "2020-01-10",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 1,
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
+  test("does not treat an old tombstoned duplicate as an active neighbor", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const targetId = await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2019-12-31",
+        endDate: "2019-12-31",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 2,
+        tombstoneByUserId: primaryId,
+        tombstoneAt: 10,
+        tombstoneAuthorityVersion: 2,
+        createdAt: 1,
+        updatedAt: 10,
+      });
+      const targetId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-06-01",
+        endDate: "2020-06-01",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      for (let i = 1; i <= 105; i++) {
+        const startDate = new Date(Date.UTC(2021, 0, i)).toISOString().slice(0, 10);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          endDate: startDate,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: i + 2,
+          updatedAt: i + 2,
+        });
+      }
+      return targetId;
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: targetId,
+        startDate: "2019-12-31",
+        endDate: "2019-12-31",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 1,
+        timeZone: "UTC",
+      }),
+    ).resolves.toMatchObject({ success: true });
+  });
+
+  test("rejects an open start before a closed exact interval", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-07-05",
+        endDate: "2026-07-10",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: "2026-07-03",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
+  test("closed corrections still check active open facts outside the local predecessor", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const targetId = await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-01-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-01-02",
+        endDate: "2020-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      return await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-06-01",
+        endDate: "2020-06-01",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 3,
+        updatedAt: 3,
+      });
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: targetId,
+        startDate: "2020-01-03",
+        endDate: "2020-01-04",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 1,
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
+  test("ignores an old tombstone and finds an open period outside the old page", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const openId = await t.run(async (ctx) => {
+      const tombstonedStart = "2019-12-31";
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: tombstonedStart,
+        endDate: tombstonedStart,
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 2,
+        tombstoneByUserId: primaryId,
+        tombstoneAt: 10,
+        tombstoneAuthorityVersion: 2,
+        createdAt: 1,
+        updatedAt: 10,
+      });
+      const openId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2020-01-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      for (let i = 1; i <= 105; i++) {
+        const startDate = new Date(Date.UTC(2021, 0, i)).toISOString().slice(0, 10);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          endDate: startDate,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: i + 2,
+          updatedAt: i + 2,
+        });
+      }
+      return openId;
+    });
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+        endDate: "2020-01-04",
+        timeZone: "UTC",
+      }),
+    ).resolves.toMatchObject({ eventId: openId });
+    await expect(
+      t.run(async (ctx) => ctx.db.get("periodEvents", openId)),
+    ).resolves.toMatchObject({ endDate: "2020-01-04" });
+  });
+});
+
 describe("derived period endings", () => {
   test("flag-off writes retain legacy auto-close and physical-delete behavior", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");

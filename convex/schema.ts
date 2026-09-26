@@ -252,7 +252,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_and_start", ["userId", "startDate"]),
+    .index("by_user_and_start", ["userId", "startDate"])
+    .index("by_user_and_end_and_start", ["userId", "endDate", "startDate"]),
 
   painLogs: defineTable({
     userId: v.id("users"),
