@@ -293,7 +293,9 @@ function TimelineEntry({
                 )}
                 {period.source === "partner_assist" && period.canCorrect && (
                   <p className="mt-1 text-xs text-foreground/60">
-                    Added with your permission. You can correct this anytime.
+                    {partnerView
+                      ? "You can correct this assisted entry."
+                      : "Added with your permission. You can correct this anytime."}
                   </p>
                 )}
               </div>
@@ -421,15 +423,17 @@ function TimelineEntry({
                   >
                     Cancel
                   </button>
-                  <button
-                    type="button"
-                    onClick={deleteEntry}
-                    disabled={isSaving}
-                    className="touch-target inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold text-destructive outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    Delete entry
-                  </button>
+                  {!partnerView && (
+                    <button
+                      type="button"
+                      onClick={deleteEntry}
+                      disabled={isSaving}
+                      className="touch-target inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-semibold text-destructive outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      Delete entry
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -461,6 +465,9 @@ export default function LogPage() {
   const logPeriodEnd   = useMutation(api.mutations.periods.logPeriodEnd);
   const assistLogPeriodStart = useMutation(api.mutations.periods.assistLogPeriodStart);
   const assistLogPeriodEnd = useMutation(api.mutations.periods.assistLogPeriodEnd);
+  const correctAssistedPeriodEvent = useMutation(
+    api.mutations.periods.correctAssistedPeriodEvent
+  );
   const updatePeriodEvent = useMutation(api.mutations.periods.updatePeriodEvent);
   const deletePeriodEvent = useMutation(api.mutations.periods.deletePeriodEvent);
 
@@ -584,6 +591,20 @@ export default function LogPage() {
     promoteEndCertainty: boolean,
     endCertainty: "exact" | "approximate"
   ) => {
+    if (isPartnerView) {
+      await correctAssistedPeriodEvent({
+        periodEventId,
+        startDate: correctedStartDate,
+        endDate: correctedEndDate,
+        ...(promoteStartCertainty ? { promoteStartCertainty: true } : {}),
+        ...(promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+        ...(correctedEndDate ? { endCertainty } : {}),
+        expectedAuthorityVersion: authorityVersion,
+      });
+      setMessage("Correction saved.");
+      return;
+    }
+
     await updatePeriodEvent({
       periodEventId,
       startDate: correctedStartDate,

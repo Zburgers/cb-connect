@@ -1,8 +1,36 @@
 import { requireValidCalendarDate } from "./calendarDates";
+import type { PredictionQualityState } from "./predictionQuality";
+import {
+  PREDICTION_ESTIMATOR_IDS,
+  type PredictionEstimatorId,
+} from "./predictionEstimators";
 
 const DEFAULT_LEGACY_GRACE_DAYS = 3;
+const PREDICTION_V2_REASON_CODES = [
+  "ELEVATED_CALIBRATION_RISK",
+  "USER_CONFIGURED_BASELINE",
+  "PERSONALIZATION_NOT_APPROVED",
+  "LIMITED_HISTORY",
+  "INSUFFICIENT_CALIBRATION",
+  "SPARSE_HISTORY",
+  "RECENT_TIMING_VARIABLE",
+  "USER_PAUSED",
+  "NO_ELIGIBLE_FACT",
+  "INVALID_CONFIGURATION",
+  "APPROXIMATE_DATE",
+  "LEGACY_UNKNOWN",
+  "POSSIBLE_MISSING_LOG",
+  "CONTEXT_SEGMENT",
+  "RECENT_CORRECTION",
+  "PARTNER_ASSISTED",
+  "TOMBSTONED",
+  "AFTER_CUTOFF",
+  "INVALID_DATE",
+  "NON_POSITIVE_INTERVAL",
+] as const;
+const predictionV2ReasonCodeSet = new Set<string>(PREDICTION_V2_REASON_CODES);
 
-export type PredictionBounds = {
+export type LegacyPredictionBounds = {
   version: 1;
   source: "legacy_configured";
   expectedDate: string;
@@ -11,6 +39,34 @@ export type PredictionBounds = {
   reason: "LEGACY_UNCALIBRATED_GRACE";
   basisCount: 1;
 };
+
+export type PredictionV2ReasonCode =
+  (typeof PREDICTION_V2_REASON_CODES)[number];
+
+export type ApprovedPredictionProbabilityLabel = {
+  level: 80;
+  calibrationStatus: "approved";
+  calibrationVersion: string;
+};
+
+export type PredictionBoundsV2 = {
+  version: 2;
+  source: "period_prediction_v2";
+  status: "configured" | "personalized" | "limited_evidence";
+  pointDate: string;
+  earliestDate: string;
+  latestDate: string;
+  probabilityLabel: ApprovedPredictionProbabilityLabel | null;
+  quality: PredictionQualityState;
+  basisCount: number;
+  estimatorId: PredictionEstimatorId;
+  estimatorVersion: number;
+  calibrationVersion: string | null;
+  reasonCodes: PredictionV2ReasonCode[];
+  snapshotId?: string;
+};
+
+export type PredictionBounds = LegacyPredictionBounds | PredictionBoundsV2;
 
 export type LegacyPredictionBoundsInput = {
   expectedDate: string;
@@ -70,29 +126,94 @@ export function isValidPredictionBounds(
   value: unknown
 ): value is PredictionBounds {
   if (!isRecord(value)) return false;
+  if (value.version === 1) {
+    if (
+      value.source !== "legacy_configured" ||
+      value.reason !== "LEGACY_UNCALIBRATED_GRACE" ||
+      value.basisCount !== 1
+    ) {
+      return false;
+    }
+
+    const expectedDate = value.expectedDate;
+    const earliestDate = value.earliestDate;
+    const latestDate = value.latestDate;
+    return (
+      isCalendarDate(expectedDate) &&
+      isCalendarDate(earliestDate) &&
+      isCalendarDate(latestDate) &&
+      earliestDate <= expectedDate &&
+      expectedDate <= latestDate
+    );
+  }
+
+  const pointDate = value.pointDate;
+  const earliestDate = value.earliestDate;
+  const latestDate = value.latestDate;
+  const calibrationVersion = value.calibrationVersion;
   if (
-    value.version !== 1 ||
-    value.source !== "legacy_configured" ||
-    value.reason !== "LEGACY_UNCALIBRATED_GRACE" ||
-    value.basisCount !== 1
+    value.version !== 2 ||
+    value.source !== "period_prediction_v2" ||
+    !["configured", "personalized", "limited_evidence"].includes(
+      value.status as string,
+    ) ||
+    !isCalendarDate(pointDate) ||
+    !isCalendarDate(earliestDate) ||
+    !isCalendarDate(latestDate) ||
+    earliestDate > pointDate ||
+    pointDate > latestDate ||
+    ![
+      "high",
+      "moderate",
+      "low",
+      "timing_less_predictable",
+      "limited_evidence",
+    ].includes(value.quality as string) ||
+    !Number.isSafeInteger(value.basisCount) ||
+    (value.basisCount as number) < 0 ||
+    !PREDICTION_ESTIMATOR_IDS.includes(value.estimatorId as PredictionEstimatorId) ||
+    !Number.isSafeInteger(value.estimatorVersion) ||
+    (value.estimatorVersion as number) < 1 ||
+    !Array.isArray(value.reasonCodes) ||
+    !value.reasonCodes.every(
+      (reason) =>
+        typeof reason === "string" &&
+        predictionV2ReasonCodeSet.has(reason),
+    ) ||
+    new Set(value.reasonCodes).size !== value.reasonCodes.length ||
+    (calibrationVersion !== null &&
+      (typeof calibrationVersion !== "string" ||
+        calibrationVersion.trim().length === 0 ||
+        calibrationVersion.length > 128))
   ) {
     return false;
   }
 
-  const expectedDate = value.expectedDate;
-  const earliestDate = value.earliestDate;
-  const latestDate = value.latestDate;
-  if (
-    !isCalendarDate(expectedDate) ||
-    !isCalendarDate(earliestDate) ||
-    !isCalendarDate(latestDate)
-  ) {
-    return false;
+  const probabilityLabel = value.probabilityLabel;
+  if (probabilityLabel !== null) {
+    if (
+      !isRecord(probabilityLabel) ||
+      probabilityLabel.level !== 80 ||
+      probabilityLabel.calibrationStatus !== "approved" ||
+      typeof probabilityLabel.calibrationVersion !== "string" ||
+      probabilityLabel.calibrationVersion.trim().length === 0 ||
+      probabilityLabel.calibrationVersion.length > 128 ||
+      probabilityLabel.calibrationVersion !== calibrationVersion
+    ) {
+      return false;
+    }
   }
 
   return (
-    earliestDate <= expectedDate && expectedDate <= latestDate
+    value.snapshotId === undefined ||
+    (typeof value.snapshotId === "string" &&
+      value.snapshotId.trim().length > 0 &&
+      value.snapshotId.length <= 128)
   );
+}
+
+export function predictionPointDate(bounds: PredictionBounds): string {
+  return bounds.version === 1 ? bounds.expectedDate : bounds.pointDate;
 }
 
 export function daysBetweenCalendarDates(

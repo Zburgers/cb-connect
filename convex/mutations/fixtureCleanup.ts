@@ -6,6 +6,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { fixtureEmail } from "../../lib/fixtureEmail";
 
 const APPROVED_DEV_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 const MAX_RECORDS_PER_SCOPE = 500;
@@ -39,6 +40,10 @@ type FixtureRecords = {
   pairingCodes: Doc<"pairingCodes">[];
   pairingCodeAttempts: Doc<"pairingCodeAttempts">[];
   periodEvents: Doc<"periodEvents">[];
+  cyclePredictionSegments: Doc<"cyclePredictionSegments">[];
+  predictionSnapshots: Doc<"predictionSnapshots">[];
+  predictionSnapshotAssessments: Doc<"predictionSnapshotAssessments">[];
+  predictionSnapshotOutcomeCandidates: Doc<"predictionSnapshotOutcomeCandidates">[];
   painLogs: Doc<"painLogs">[];
   cycleSettings: Doc<"cycleSettings">[];
   hiddenNutrition: Doc<"hiddenNutrition">[];
@@ -281,7 +286,7 @@ async function loadFixtureRecords(
       .unique();
     if (!user) continue;
 
-    const expectedEmail = `cb-connect-e2e+${args.runId}-${requested.role}@example.com`;
+    const expectedEmail = fixtureEmail(args.runId, requested.role);
     // A durable run is claimed before either account visits the dashboard.
     // During a failed onboarding/linking interval the application user may not
     // yet carry fixtureRunId or a role, but the exact run-owned Clerk ID and
@@ -295,10 +300,12 @@ async function loadFixtureRecords(
     users.push(user);
   }
 
-  const targetUsersByRole = new Map(requestedUsers.map((requested) => [
-    requested.role,
-    users.find((user) => user.clerkId === requested.clerkId),
-  ]));
+  const targetUsersByRole = new Map(
+    requestedUsers.map((requested) => [
+      requested.role,
+      users.find((user) => user.clerkId === requested.clerkId),
+    ]),
+  );
   const allFixtureUserIds = new Set<UserId>(users.map((user) => user._id));
   const coupleIds = new Set<CoupleId>();
   if (fixtureRun.coupleId !== undefined) {
@@ -363,7 +370,9 @@ async function loadFixtureRecords(
     pairingCodes.push(...(await rowsByCouple(ctx, "pairingCodes", coupleId)));
     presence.push(...(await rowsByCouple(ctx, "presence", coupleId)));
     nudges.push(...(await rowsByCouple(ctx, "nudges", coupleId)));
-    coupleMessages.push(...(await rowsByCouple(ctx, "coupleMessages", coupleId)));
+    coupleMessages.push(
+      ...(await rowsByCouple(ctx, "coupleMessages", coupleId)),
+    );
     coupleMessageReactions.push(
       ...(await rowsByCouple(ctx, "coupleMessageReactions", coupleId)),
     );
@@ -378,6 +387,10 @@ async function loadFixtureRecords(
   const cycleSettings: Doc<"cycleSettings">[] = [];
   const hiddenNutrition: Doc<"hiddenNutrition">[] = [];
   const notificationLog: Doc<"notificationLog">[] = [];
+  const cyclePredictionSegments: Doc<"cyclePredictionSegments">[] = [];
+  const predictionSnapshots: Doc<"predictionSnapshots">[] = [];
+  const predictionSnapshotAssessments: Doc<"predictionSnapshotAssessments">[] = [];
+  const predictionSnapshotOutcomeCandidates: Doc<"predictionSnapshotOutcomeCandidates">[] = [];
 
   for (const userId of allFixtureUserIds) {
     pairingCodeAttempts.push(
@@ -387,10 +400,70 @@ async function loadFixtureRecords(
     painLogs.push(...(await rowsByUser(ctx, "painLogs", userId)));
     cycleSettings.push(...(await rowsByUser(ctx, "cycleSettings", userId)));
     hiddenNutrition.push(...(await rowsByUser(ctx, "hiddenNutrition", userId)));
-    notificationLog.push(
-      ...(await rowsByUser(ctx, "notificationLog", userId)),
+    notificationLog.push(...(await rowsByUser(ctx, "notificationLog", userId)));
+    for (const status of ["active", "superseded"] as const) {
+      cyclePredictionSegments.push(
+        ...bounded(
+          await ctx.db
+            .query("cyclePredictionSegments")
+            .withIndex("by_user_and_status", (q) =>
+              q.eq("userId", userId).eq("status", status),
+            )
+            .take(MAX_RECORDS_PER_SCOPE + 1),
+          "cyclePredictionSegments",
+        ),
+      );
+    }
+    predictionSnapshots.push(
+      ...bounded(
+        await ctx.db
+          .query("predictionSnapshots")
+          .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        "predictionSnapshots",
+      ),
     );
   }
+  bounded(cyclePredictionSegments, "cyclePredictionSegments");
+  bounded(predictionSnapshots, "predictionSnapshots");
+
+  for (const snapshot of predictionSnapshots) {
+    for (const type of ["outcome", "superseded"] as const) {
+      predictionSnapshotAssessments.push(
+        ...bounded(
+          await ctx.db
+            .query("predictionSnapshotAssessments")
+            .withIndex("by_snapshot_and_type", (q) =>
+              q.eq("snapshotId", snapshot._id).eq("type", type),
+            )
+            .take(MAX_RECORDS_PER_SCOPE + 1),
+          "predictionSnapshotAssessments",
+        ),
+      );
+    }
+    predictionSnapshotOutcomeCandidates.push(
+      ...bounded(
+        await ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_snapshot_and_status_and_observed_date", (q) =>
+            q.eq("snapshotId", snapshot._id).eq("status", "eligible"),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        "predictionSnapshotOutcomeCandidates",
+      ),
+      ...bounded(
+        await ctx.db
+          .query("predictionSnapshotOutcomeCandidates")
+          .withIndex("by_snapshot_and_status_and_observed_date", (q) =>
+            q.eq("snapshotId", snapshot._id).eq("status", "superseded"),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        "predictionSnapshotOutcomeCandidates",
+      ),
+    );
+  }
+  bounded(predictionSnapshotAssessments, "predictionSnapshotAssessments");
+  bounded(predictionSnapshotOutcomeCandidates, "predictionSnapshotOutcomeCandidates");
 
   for (const code of pairingCodes) {
     if (
@@ -438,6 +511,31 @@ async function loadFixtureRecords(
       throw new Error("fixture_cleanup_identity_mismatch");
     }
   }
+  const fixtureSnapshotIds = new Set(predictionSnapshots.map((row) => row._id));
+  const fixturePeriodEventIds = new Set(periodEvents.map((row) => row._id));
+  for (const segment of cyclePredictionSegments) {
+    if (!allFixtureUserIds.has(segment.userId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const snapshot of predictionSnapshots) {
+    if (!allFixtureUserIds.has(snapshot.userId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const assessment of predictionSnapshotAssessments) {
+    if (!fixtureSnapshotIds.has(assessment.snapshotId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const candidate of predictionSnapshotOutcomeCandidates) {
+    if (
+      !fixtureSnapshotIds.has(candidate.snapshotId) ||
+      !fixturePeriodEventIds.has(candidate.sourcePeriodEventId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
 
   return {
     users,
@@ -446,6 +544,10 @@ async function loadFixtureRecords(
     pairingCodes,
     pairingCodeAttempts,
     periodEvents,
+    cyclePredictionSegments,
+    predictionSnapshots,
+    predictionSnapshotAssessments,
+    predictionSnapshotOutcomeCandidates,
     painLogs,
     cycleSettings,
     hiddenNutrition,
@@ -540,10 +642,8 @@ export const registerFixtureUser = mutation({
     }
     if (!user) throw new Error("fixture_user_not_found");
 
-    const expectedEmail = `cb-connect-e2e+${args.runId}-${args.role}@example.com`;
-    if (
-      args.email !== expectedEmail
-    ) {
+    const expectedEmail = fixtureEmail(args.runId, args.role);
+    if (args.email !== expectedEmail) {
       throw new Error("fixture_cleanup_email_mismatch");
     }
     if (user.email !== "" && user.email !== expectedEmail) {
@@ -579,7 +679,9 @@ export const registerFixtureUser = mutation({
         .query("periodEvents")
         .withIndex("by_user_and_start", (q) => q.eq("userId", user._id))
         .take(100);
-      if (!existingPeriods.some((period) => period.startCertainty === undefined)) {
+      if (
+        !existingPeriods.some((period) => period.startCertainty === undefined)
+      ) {
         const legacyStart = new Date();
         legacyStart.setUTCDate(legacyStart.getUTCDate() - 14);
         const legacyEnd = new Date(legacyStart);
@@ -623,8 +725,7 @@ export const registerFixtureUser = mutation({
       ]);
       for (const member of members) {
         const memberUser = await ctx.db.get("users", member.userId);
-        const expectedMemberEmail =
-          `cb-connect-e2e+${args.runId}-${member.role}@example.com`;
+        const expectedMemberEmail = fixtureEmail(args.runId, member.role);
         const hasExpectedMemberEmail =
           memberUser?.email === expectedMemberEmail ||
           // Primary registration runs first so it can bind the couple to the
@@ -683,13 +784,20 @@ export const cleanupFixture = mutation({
     const records = await loadFixtureRecords(ctx, args);
     const deleted = countRecords(records);
 
-    for (const row of records.coupleMessageReactions) await ctx.db.delete(row._id);
+    for (const row of records.coupleMessageReactions)
+      await ctx.db.delete(row._id);
     for (const row of records.coupleMessages) await ctx.db.delete(row._id);
     for (const row of records.coupleChatStates) await ctx.db.delete(row._id);
     for (const row of records.nudges) await ctx.db.delete(row._id);
     for (const row of records.presence) await ctx.db.delete(row._id);
     for (const row of records.pairingCodeAttempts) await ctx.db.delete(row._id);
     for (const row of records.pairingCodes) await ctx.db.delete(row._id);
+    for (const row of records.predictionSnapshotAssessments)
+      await ctx.db.delete(row._id);
+    for (const row of records.predictionSnapshotOutcomeCandidates)
+      await ctx.db.delete(row._id);
+    for (const row of records.predictionSnapshots) await ctx.db.delete(row._id);
+    for (const row of records.cyclePredictionSegments) await ctx.db.delete(row._id);
     for (const row of records.periodEvents) await ctx.db.delete(row._id);
     for (const row of records.painLogs) await ctx.db.delete(row._id);
     for (const row of records.cycleSettings) await ctx.db.delete(row._id);

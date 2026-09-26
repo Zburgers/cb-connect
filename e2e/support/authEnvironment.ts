@@ -1,20 +1,25 @@
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
+import { fixtureEmail, type FixtureRole } from "../../lib/fixtureEmail";
+import { resolveLocalBaseUrl } from "./localBaseUrl";
+
+export { fixtureEmail } from "../../lib/fixtureEmail";
+export type { FixtureRole } from "../../lib/fixtureEmail";
 
 export const APPROVED_CLERK_ENVIRONMENT = "holy clerk";
-export const APPROVED_CLERK_FRONTEND_API_HOST = "holy-clam-29.clerk.accounts.dev";
+export const APPROVED_CLERK_FRONTEND_API_HOST =
+  "holy-clam-29.clerk.accounts.dev";
 export const APPROVED_CONVEX_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 
-const [, APPROVED_CONVEX_DEPLOYMENT_NAME] = APPROVED_CONVEX_DEPLOYMENT.split(":");
+const [, APPROVED_CONVEX_DEPLOYMENT_NAME] =
+  APPROVED_CONVEX_DEPLOYMENT.split(":");
 const APPROVED_CONVEX_HOST = `${APPROVED_CONVEX_DEPLOYMENT_NAME}.convex.cloud`;
 
 const CLERK_FRONTEND_HOST_SUFFIX = ".clerk.accounts.dev";
 const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-export type EnvironmentInput = Readonly<
-  Record<string, string | undefined>
->;
+export type EnvironmentInput = Readonly<Record<string, string | undefined>>;
 
 export type AuthEnvironment = {
   clerkEnvironmentName: string;
@@ -29,8 +34,6 @@ export type AuthEnvironment = {
   partnerStorageStatePath: string;
   baseUrl: string;
 };
-
-export type FixtureRole = "primary" | "partner";
 
 export type FixtureUserSpec = {
   role: FixtureRole;
@@ -72,7 +75,9 @@ const defaultSleep = (delayMs: number) =>
 function requiredValue(environment: EnvironmentInput, key: string): string {
   const value = environment[key]?.trim();
   if (!value) {
-    throw new Error(`Missing approved authenticated fixture environment: ${key}`);
+    throw new Error(
+      `Missing approved authenticated fixture environment: ${key}`,
+    );
   }
   return value;
 }
@@ -148,18 +153,9 @@ export function loadAuthEnvironment(
     environment,
     "CLERK_TEST_FRONTEND_API_URL",
   );
-  const convexDeployment = requiredValue(
-    environment,
-    "CONVEX_TEST_DEPLOYMENT",
-  );
-  const convexUrl = requiredValue(
-    environment,
-    "NEXT_PUBLIC_TEST_CONVEX_URL",
-  );
-  const runId = requiredValue(
-    environment,
-    "CB_CONNECT_RELEASE_RUN_ID",
-  );
+  const convexDeployment = requiredValue(environment, "CONVEX_TEST_DEPLOYMENT");
+  const convexUrl = requiredValue(environment, "NEXT_PUBLIC_TEST_CONVEX_URL");
+  const runId = requiredValue(environment, "CB_CONNECT_RELEASE_RUN_ID");
 
   const clerkUrl = isHttpsUrl(clerkFrontendApiUrl);
   if (
@@ -178,7 +174,8 @@ export function loadAuthEnvironment(
     );
   }
 
-  const storageRoot = environment.CB_CONNECT_RELEASE_AUTH_DIR?.trim() || "e2e/.auth";
+  const storageRoot =
+    environment.CB_CONNECT_RELEASE_AUTH_DIR?.trim() || "e2e/.auth";
   const storageDir = `${storageRoot}/${runId}`;
 
   return {
@@ -192,7 +189,7 @@ export function loadAuthEnvironment(
     storageDir,
     primaryStorageStatePath: `${storageDir}/primary.json`,
     partnerStorageStatePath: `${storageDir}/partner.json`,
-    baseUrl: environment.PLAYWRIGHT_BASE_URL?.trim() || "http://localhost:3000",
+    baseUrl: resolveLocalBaseUrl(environment.PLAYWRIGHT_BASE_URL),
   };
 }
 
@@ -224,7 +221,7 @@ function fixtureSpecs(
 ): [FixtureUserSpec, FixtureUserSpec] {
   return (["primary", "partner"] as const).map((role) => ({
     role,
-    email: `cb-connect-e2e+${environment.runId}-${role}@example.com`,
+    email: fixtureEmail(environment.runId, role),
     password: passwordFactory(role),
   })) as [FixtureUserSpec, FixtureUserSpec];
 }
@@ -266,7 +263,10 @@ export async function provisionFixturePair(
     };
   } catch {
     try {
-      await withTransientRetry(() => services.deleteUser(primary.clerkId), options);
+      await withTransientRetry(
+        () => services.deleteUser(primary.clerkId),
+        options,
+      );
     } catch {
       // Preserve the bounded provisioning error; cleanup is retried by teardown.
     }
@@ -300,7 +300,10 @@ export async function cleanupFixturePair(
 
   for (const user of [pair.partner, pair.primary]) {
     try {
-      await withTransientRetry(() => services.deleteUser(user.clerkId), options);
+      await withTransientRetry(
+        () => services.deleteUser(user.clerkId),
+        options,
+      );
     } catch (error) {
       if (!isAlreadyGoneError(error)) {
         errors.push(`${user.role}_user_cleanup_failed`);
@@ -373,11 +376,14 @@ export async function cleanupConvexFixturePair(
 ): Promise<void> {
   const client = new ConvexHttpClient(environment.convexUrl);
   client.setAuth(authToken);
-  const result = await client.mutation(api.mutations.fixtureCleanup.cleanupFixture, {
-    runId: pair.runId,
-    primaryClerkId: pair.primary.clerkId,
-    partnerClerkId: pair.partner.clerkId,
-  });
+  const result = await client.mutation(
+    api.mutations.fixtureCleanup.cleanupFixture,
+    {
+      runId: pair.runId,
+      primaryClerkId: pair.primary.clerkId,
+      partnerClerkId: pair.partner.clerkId,
+    },
+  );
   const status = await client.query(
     api.mutations.fixtureCleanup.getFixtureCleanupStatus,
     {
@@ -398,11 +404,14 @@ export async function getConvexFixtureCleanupStatus(
 ) {
   const client = new ConvexHttpClient(environment.convexUrl);
   client.setAuth(authToken);
-  return await client.query(api.mutations.fixtureCleanup.getFixtureCleanupStatus, {
-    runId: pair.runId,
-    primaryClerkId: pair.primary.clerkId,
-    partnerClerkId: pair.partner.clerkId,
-  });
+  return await client.query(
+    api.mutations.fixtureCleanup.getFixtureCleanupStatus,
+    {
+      runId: pair.runId,
+      primaryClerkId: pair.primary.clerkId,
+      partnerClerkId: pair.partner.clerkId,
+    },
+  );
 }
 
 type ClerkUserResponse = { id: string };
@@ -419,18 +428,18 @@ export function createClerkFixtureServices(
   environment: AuthEnvironment,
   fetchImplementation: typeof fetch = fetch,
 ): FixtureServices {
-  const request = async (
-    path: string,
-    init: RequestInit,
-  ): Promise<unknown> => {
-    const response = await fetchImplementation(`https://api.clerk.com/v1${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${environment.clerkSecretKey}`,
-        "Content-Type": "application/json",
-        ...init.headers,
+  const request = async (path: string, init: RequestInit): Promise<unknown> => {
+    const response = await fetchImplementation(
+      `https://api.clerk.com/v1${path}`,
+      {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${environment.clerkSecretKey}`,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw Object.assign(new Error("clerk_request_failed"), {

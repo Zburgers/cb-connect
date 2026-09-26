@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createLegacyPredictionBounds } from "./predictionBounds";
+import type { PredictionBoundsV2 } from "./predictionBounds";
 import {
   reduceCycleState,
   type CycleStateInput,
@@ -8,6 +9,21 @@ import {
 } from "./cycleState";
 
 const bounds = createLegacyPredictionBounds({ expectedDate: "2026-03-10" });
+const v2Bounds: PredictionBoundsV2 = {
+  version: 2,
+  source: "period_prediction_v2",
+  status: "limited_evidence",
+  pointDate: "2026-03-10",
+  earliestDate: "2026-03-07",
+  latestDate: "2026-03-13",
+  probabilityLabel: null,
+  quality: "limited_evidence",
+  basisCount: 4,
+  estimatorId: "configured_v1",
+  estimatorVersion: 1,
+  calibrationVersion: null,
+  reasonCodes: ["USER_CONFIGURED_BASELINE"],
+};
 
 function fact(
   overrides: Partial<EligibleCycleFact> = {}
@@ -161,6 +177,19 @@ describe("cycle state", () => {
     expect(state.status).toBe("late_or_uncertain");
     expect(state.cycleDay).toBeNull();
     expect(state.phase).toBeNull();
+  });
+
+  test("applies V2's generic latest bound without rolling late dates over", () => {
+    const state = reduceCycleState(
+      input({ targetDate: "2026-03-14", bounds: v2Bounds }),
+    );
+
+    expect(state).toMatchObject({
+      status: "late_or_uncertain",
+      bounds: v2Bounds,
+      cycleDay: null,
+      phase: null,
+    });
   });
 
   test("Paused takes precedence over every other state", () => {

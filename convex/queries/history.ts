@@ -1,8 +1,21 @@
-import { internalQuery, query, type QueryCtx } from "../_generated/server";
+import {
+  internalQuery,
+  query,
+  type QueryCtx,
+} from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { calculateCycleInfo } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
+import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
+import { buildPeriodPrediction } from "../_helpers/periodPrediction";
+import {
+  currentPredictionSnapshotInput,
+  readServedPeriodPrediction,
+} from "../_helpers/predictionSnapshotContract";
+import { projectPeriodPredictionForNotification } from "../_helpers/notificationPrediction";
+import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import {
   getTimelineStateForDate,
   type TimelineStateMetadata,
@@ -15,6 +28,7 @@ import {
   type CycleFactReadLabel,
 } from "../_helpers/cycleFactEligibility";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import {
   projectPartnerPeriodHistory,
   projectPrimaryPeriodHistory,
@@ -22,6 +36,43 @@ import {
 
 const MAX_PERIOD_HISTORY_ROWS = 100;
 const MAX_PAIN_HISTORY_ROWS = 1000;
+
+async function readCurrentPeriodPredictionV2(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+) {
+  const user = await ctx.db.get(userId);
+  if (!user || user.role !== "primary") return null;
+
+  const [predictionData, cycleSettings] = await Promise.all([
+    readCyclePredictionData(ctx, userId, user),
+    ctx.db
+      .query("cycleSettings")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique(),
+  ]);
+  const currentPrediction = buildPeriodPrediction({
+    cycleIntervals: predictionData.cycleIntervals,
+    historyComplete: predictionData.historyComplete,
+    configuredCycleLength: cycleSettings?.cycleLength ?? 28,
+    predictionPaused: cycleSettings?.predictionPaused ?? false,
+  });
+  return {
+    user,
+    prediction: await readServedPeriodPrediction(
+      ctx,
+      userId,
+      currentPredictionSnapshotInput({
+        prediction: currentPrediction,
+        inputCutoffAt: predictionData.cycleIntervals.basis.cutoffAt,
+        inputCutoffDate: predictionData.cycleIntervals.basis.cutoffDate,
+        periodEvents: predictionData.periodEvents,
+        settings: cycleSettings,
+        activeSegment: predictionData.activeSegment,
+      }),
+    ),
+  };
+}
 
 export const getPainHistory = query({
   args: {
@@ -102,13 +153,29 @@ export const getPeriodHistory = query({
       .order("desc")
       .take(MAX_PERIOD_HISTORY_ROWS);
 
-    return await enrichPeriodEvents(
+    const activeSegment =
+      user.role === "primary" && isPeriodPredictionV2Enabled()
+        ? await ctx.db
+            .query("cyclePredictionSegments")
+            .withIndex("by_user_and_status", (q) =>
+              q.eq("userId", user._id).eq("status", "active"),
+            )
+            .unique()
+        : null;
+    const history = await enrichPeriodEvents(
       ctx,
       periods.filter(isHistoryVisible),
       user._id,
       user.role === "partner" ? "partner" : "primary",
       partnerCanWrite,
     );
+
+    return activeSegment
+      ? history.map((period) => ({
+          ...period,
+          predictionSegmentStartDate: activeSegment.startDate,
+        }))
+      : history;
   },
 });
 
@@ -141,6 +208,24 @@ export const getPredictionInputsForUser = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    if (isPeriodPredictionV2Enabled()) {
+      const currentPrediction = await readCurrentPeriodPredictionV2(
+        ctx,
+        args.userId,
+      );
+      if (!currentPrediction || currentPrediction.prediction === null) return null;
+
+      return {
+        periodPredictionV2: projectPeriodPredictionForNotification(
+          currentPrediction.prediction,
+          toCalendarDateInTimeZone(
+            new Date(),
+            currentPrediction.user.timeZone,
+          ),
+        ),
+      };
+    }
+
     const cycleSettings = await ctx.db
       .query("cycleSettings")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
@@ -157,9 +242,7 @@ export const getPredictionInputsForUser = internalQuery({
       isCycleFactsV1Enabled() ? "cycle_facts_v1" : "legacy"
     );
 
-    if (!recentPeriod) {
-      return null;
-    }
+    if (!recentPeriod) return null;
 
     const cycleLength = cycleSettings?.cycleLength ?? 28;
     const periodLength = cycleSettings?.periodLength ?? 5;
@@ -173,6 +256,63 @@ export const getPredictionInputsForUser = internalQuery({
         cycleLength,
         periodLength
       ),
+    };
+  },
+});
+
+export const getCycleIntervalsForUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    if (!isPeriodPredictionV2Enabled()) return null;
+    const predictionData = await readCyclePredictionData(ctx, args.userId);
+    if (!predictionData.user || predictionData.user.role !== "primary") {
+      return null;
+    }
+    if (!predictionData.historyComplete) return null;
+    return predictionData.cycleIntervals;
+  },
+});
+
+export const getPeriodPredictionForUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    if (!isPeriodPredictionV2Enabled()) return null;
+    return (await readCurrentPeriodPredictionV2(ctx, args.userId))?.prediction ?? null;
+  },
+});
+
+export const getPredictionSegmentOptions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrNull(ctx);
+    if (
+      !user ||
+      user.role !== "primary" ||
+      !isPeriodPredictionV2Enabled()
+    ) {
+      return null;
+    }
+
+    const predictionData = await readCyclePredictionData(ctx, user._id, user);
+    if (!predictionData.historyComplete) return null;
+    const { cutoffAt, cutoffDate } = predictionData.cycleIntervals.basis;
+    const eligibleStartDates = [
+      ...new Set(
+        predictionData.periodEvents
+          .filter((event) =>
+            isEligiblePredictionSegmentStart(event, cutoffAt, cutoffDate),
+          )
+          .map((event) => event.startDate),
+      ),
+    ].sort((left, right) => right.localeCompare(left));
+
+    return {
+      activeStartDate: predictionData.activeSegment?.startDate ?? null,
+      eligibleStartDates,
     };
   },
 });
@@ -191,6 +331,7 @@ export const getTimelineHistory = query({
     let targetUserId = user._id;
     let canViewPain = true;
     let canViewPhase = true;
+    let partnerCanWrite = false;
 
     if (user.role === "partner") {
       const coupleData = await getCoupleForUser(ctx, user._id);
@@ -212,6 +353,7 @@ export const getTimelineHistory = query({
       targetUserId = primaryMembership.userId;
       canViewPain = primaryMembership.sharingPain;
       canViewPhase = primaryMembership.sharingPhase;
+      partnerCanWrite = primaryMembership.sharingPeriodWrite ?? false;
     }
 
     if (!canViewPain && !canViewPhase) {
@@ -266,6 +408,7 @@ export const getTimelineHistory = query({
         source: "self" | "partner_assist" | "system";
         confirmationStatus: "confirmed" | "unreviewed";
         certainty: CycleFactReadLabel;
+        authorityVersion?: number;
         createdByName: string;
         updatedByName: string;
         createdByViewer: boolean;
@@ -279,7 +422,7 @@ export const getTimelineHistory = query({
       periods,
       user._id,
       user.role === "partner" ? "partner" : "primary",
-      false,
+      partnerCanWrite,
     );
     for (const period of enrichedPeriods) {
       const state = getTimelineStateForDate(
@@ -298,7 +441,11 @@ export const getTimelineHistory = query({
         type: "period",
         isOngoing: !period.endDate,
         period: {
-          ...(user.role === "partner" ? {} : { id: period._id }),
+          ...(user.role === "partner"
+            ? period.canCorrect
+              ? { id: period._id, authorityVersion: period.authorityVersion }
+              : {}
+            : { id: period._id }),
           startDate: period.startDate,
           endDate: period.endDate,
           startCertainty: period.startCertainty,
@@ -306,11 +453,9 @@ export const getTimelineHistory = query({
           source: period.source,
           confirmationStatus: period.confirmationStatus,
           certainty: period.certainty,
-          ...(user.role === "partner"
+          ...(user.role === "partner" || period.authorityVersion === undefined
             ? {}
-            : {
-                authorityVersion: period.authorityVersion,
-              }),
+            : { authorityVersion: period.authorityVersion }),
           createdByName: period.createdByName,
           updatedByName: period.updatedByName,
           createdByViewer: period.createdByViewer,
@@ -390,7 +535,14 @@ async function enrichPeriodEvents(
       updatedByUserId,
       createdByName: names.get(createdByUserId) ?? "Partner",
       updatedByName: names.get(updatedByUserId) ?? "Partner",
-      canCorrect: period.userId === viewerId,
+      canCorrect:
+        period.userId === viewerId ||
+        (viewerRole === "partner" &&
+          partnerCanWrite &&
+          period.source === "partner_assist" &&
+          period.createdByUserId === viewerId &&
+          period.primaryCorrectionVersion === undefined &&
+          period.updatedByUserId !== period.userId),
     };
 
     return viewerRole === "partner"

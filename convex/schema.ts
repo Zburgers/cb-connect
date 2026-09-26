@@ -244,6 +244,7 @@ export default defineSchema({
     ),
     authorityVersion: v.optional(v.number()),
     primaryCorrectionVersion: v.optional(v.number()),
+    partnerCorrectionVersion: v.optional(v.number()),
     tombstoneByUserId: v.optional(v.id("users")),
     tombstoneAt: v.optional(v.number()),
     tombstoneAuthorityVersion: v.optional(v.number()),
@@ -281,6 +282,144 @@ export default defineSchema({
     predictionPausedAt: v.optional(v.number()),
     lastUpdatedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  cyclePredictionSegments: defineTable({
+    userId: v.id("users"),
+    startDate: v.string(),
+    status: v.union(v.literal("active"), v.literal("superseded")),
+    supersedesSegmentId: v.optional(v.id("cyclePredictionSegments")),
+    createdAt: v.number(),
+    supersededAt: v.optional(v.number()),
+  })
+    .index("by_user_and_status", ["userId", "status"])
+    .index("by_user_and_created_at", ["userId", "createdAt"]),
+
+  predictionSnapshots: defineTable({
+    userId: v.id("users"),
+    generatedAt: v.number(),
+    inputCutoffAt: v.number(),
+    inputCutoffDate: v.string(),
+    status: v.union(
+      v.literal("configured"),
+      v.literal("personalized"),
+      v.literal("limited_evidence")
+    ),
+    estimatorId: v.string(),
+    estimatorVersion: v.number(),
+    intervalMethodVersion: v.string(),
+    calibrationVersion: v.union(v.string(), v.null()),
+    pointDate: v.string(),
+    earliestDate: v.string(),
+    latestDate: v.string(),
+    probabilityLabel: v.union(
+      v.null(),
+      v.object({
+        level: v.literal(80),
+        calibrationStatus: v.literal("approved"),
+        calibrationVersion: v.string(),
+      })
+    ),
+    quality: v.union(
+      v.literal("high"),
+      v.literal("moderate"),
+      v.literal("low"),
+      v.literal("timing_less_predictable"),
+      v.literal("limited_evidence")
+    ),
+    qualityScoreV1: v.optional(v.number()),
+    basisCount: v.number(),
+    reasonCodes: v.array(
+      v.union(
+        v.literal("ELEVATED_CALIBRATION_RISK"),
+        v.literal("USER_CONFIGURED_BASELINE"),
+        v.literal("PERSONALIZATION_NOT_APPROVED"),
+        v.literal("INSUFFICIENT_CALIBRATION"),
+        v.literal("RECENT_TIMING_VARIABLE"),
+        v.literal("SPARSE_HISTORY"),
+        v.literal("LIMITED_HISTORY"),
+        v.literal("USER_PAUSED"),
+        v.literal("NO_ELIGIBLE_FACT"),
+        v.literal("INVALID_CONFIGURATION"),
+        v.literal("APPROXIMATE_DATE"),
+        v.literal("LEGACY_UNKNOWN"),
+        v.literal("POSSIBLE_MISSING_LOG"),
+        v.literal("CONTEXT_SEGMENT"),
+        v.literal("RECENT_CORRECTION"),
+        v.literal("PARTNER_ASSISTED"),
+        v.literal("TOMBSTONED"),
+        v.literal("AFTER_CUTOFF"),
+        v.literal("INVALID_DATE"),
+        v.literal("NON_POSITIVE_INTERVAL")
+      )
+    ),
+    displayStatus: v.union(v.literal("shadow"), v.literal("visible")),
+    predictionSegmentId: v.union(
+      v.id("cyclePredictionSegments"),
+      v.literal("default_all_history_v1")
+    ),
+    featureVersion: v.string(),
+    contractVersion: v.number(),
+  })
+    .index("by_user_and_generated_at", ["userId", "generatedAt"])
+    .index("by_user_and_input_cutoff_at", ["userId", "inputCutoffAt"]),
+
+  predictionSnapshotAssessments: defineTable(
+    v.union(
+      v.object({
+        snapshotId: v.id("predictionSnapshots"),
+        type: v.literal("outcome"),
+        observedEligibleStartDate: v.string(),
+        signedErrorDays: v.number(),
+        absoluteErrorDays: v.number(),
+        insideWindow: v.boolean(),
+        sourcePeriodEventId: v.id("periodEvents"),
+        sourceAuthorityVersion: v.optional(v.number()),
+        reason: v.union(
+          v.literal("eligible_outcome"),
+          v.literal("outcome_reinstated")
+        ),
+        recordedAt: v.number(),
+      }),
+      v.object({
+        snapshotId: v.id("predictionSnapshots"),
+        type: v.literal("superseded"),
+        sourcePeriodEventId: v.id("periodEvents"),
+        sourceAuthorityVersion: v.optional(v.number()),
+        reason: v.union(
+          v.literal("primary_correction"),
+          v.literal("partner_correction"),
+          v.literal("earlier_eligible_start_discovered")
+        ),
+        recordedAt: v.number(),
+      })
+    )
+  )
+    .index("by_snapshot_and_type", ["snapshotId", "type"])
+    .index("by_source_period_event_and_type", [
+      "sourcePeriodEventId",
+      "type",
+    ])
+    .index("by_snapshot_source_event_and_type", [
+      "snapshotId",
+      "sourcePeriodEventId",
+      "type",
+    ]),
+
+  predictionSnapshotOutcomeCandidates: defineTable({
+    snapshotId: v.id("predictionSnapshots"),
+    sourcePeriodEventId: v.id("periodEvents"),
+    observedEligibleStartDate: v.string(),
+    sourceAuthorityVersion: v.optional(v.number()),
+    status: v.union(v.literal("eligible"), v.literal("superseded")),
+    recordedAt: v.number(),
+  })
+    .index("by_snapshot_and_status_and_observed_date", [
+      "snapshotId",
+      "status",
+      "observedEligibleStartDate",
+    ])
+    .index("by_snapshot_and_source_event", ["snapshotId", "sourcePeriodEventId"])
+    .index("by_source_event", ["sourcePeriodEventId"]),
 
   painTips: defineTable({
     phase: v.union(

@@ -45,7 +45,7 @@ continue while later exposure decisions remain pending.
 | Gate 0 reliability | Engineering complete; automatic operations active | No local implementation task remains | Ongoing deployment and SLO measurement |
 | Gate 1 cycle facts | Dated implementation plan approved | Yes, additive/default-off work | D-012 before destructive migration or final deletion behavior |
 | Gate 2 four-phase semantics | Gate-level plan only | No | Post-Gate-1 state-contract execution plan |
-| Gate 3 prediction | Gate-level plan only | No | Frozen benchmark and calibration protocol |
+| Gate 3 prediction | Dated implementation plan + frozen G3-BENCH-V1 available | Yes for default-off/non-production implementation and synthetic qualification; real benchmark outcome viewing remains gated by D-013 | Complete D-013 authority before real outcome evaluation/promotion; D-012 before production exposure |
 | Gate 4 notifications | Gate-level plan only | No | Approved event/privacy/retention execution plan |
 | Gate 5 mobile beta | Gate-level plan only | No | Current Expo/runtime/account decision and execution plan |
 | Gate 6 push/stores | Gate-level plan only | No | Post-device-beta push/store execution plan |
@@ -154,6 +154,18 @@ Additionally:
 ## Promotion authority
 
 The product owner approves product scope. Engineering signs implementation and rollback evidence. A named operator approves SLO/error-budget readiness. A clinician approves health-adjacent wording. A privacy/legal reviewer approves consent, partner disclosure, retention and store declarations. Missing authority blocks only the affected exposure; it does not justify inventing approval.
+
+
+### Gate 3 implementation freeze (2026-09-20)
+
+Gate 3 execution is governed by:
+
+- `docs/decisions/2026-09-20-gate-3-prediction-design-freeze.md`;
+- `docs/research/2026-09-20-gate-3-prediction-literature-review.md`;
+- `docs/research/cycle-benchmark-protocol.md`; and
+- `docs/plans/2026-09-20-gate-3-personalized-prediction-implementation.md`.
+
+The first user-facing prediction model remains robust personal statistics, not population-trained ML. External academic data may support estimator selection, robustness evaluation and initial history-band calibration under D-013, while the Gate 3 point prediction remains driven by the user's configured baseline and eligible personal history. Research Gate 7 remains the population-to-person hierarchical-model lane.
 
 ## Program completion definition
 

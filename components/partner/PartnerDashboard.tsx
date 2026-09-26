@@ -7,6 +7,10 @@ import {
   isPartnerCycleStateExposed,
   type PartnerCyclePresentation,
 } from "./partnerCyclePresentation";
+import {
+  getPartnerPredictionPresentation,
+  type PartnerPredictionPresentation,
+} from "./partnerPredictionPresentation";
 import PartnerPulse from "./PartnerPulse";
 
 interface PartnerDashboardProps {
@@ -110,8 +114,86 @@ export function PartnerCycleStateCard({
   );
 }
 
+export function PartnerPredictionCard({
+  presentation,
+}: {
+  presentation: PartnerPredictionPresentation;
+}) {
+  return (
+    <section
+      className="contrast-glass rounded-[1.5rem] p-6"
+      aria-labelledby="partner-prediction-title"
+    >
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        Shared prediction
+      </p>
+      <h2
+        id="partner-prediction-title"
+        className="mt-2 text-xl font-semibold text-foreground"
+      >
+        {presentation.statusLabel}
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-foreground">
+        {presentation.timingLabel}
+      </p>
+
+      <dl
+        className="mt-5 grid gap-3 border-t pt-4 text-sm sm:grid-cols-2"
+        style={{ borderColor: "var(--color-glass-border)" }}
+      >
+        {presentation.pointText && (
+          <div>
+            <dt className="text-muted-foreground">Estimated around</dt>
+            <dd className="mt-1 font-semibold text-foreground">
+              {presentation.pointText}
+            </dd>
+          </div>
+        )}
+        {presentation.rangeText && (
+          <div>
+            <dt className="text-muted-foreground">Estimated range</dt>
+            <dd className="mt-1 font-semibold text-foreground">
+              {presentation.rangeText}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-muted-foreground">Quality</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {presentation.qualityLabel}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Evidence basis</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {presentation.basisText}
+          </dd>
+        </div>
+      </dl>
+
+      <div
+        className="mt-5 border-t pt-4"
+        style={{ borderColor: "var(--color-glass-border)" }}
+      >
+        <h3 className="text-sm font-semibold text-foreground">
+          {presentation.careHeading}
+        </h3>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-foreground">
+          {presentation.careSuggestions.map((suggestion) => (
+            <li key={suggestion}>{suggestion}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 export default function PartnerDashboard({ data, partnerPresent = false }: PartnerDashboardProps) {
   const showCycleStateV1 = isPartnerCycleStateExposed(data.cycleStateV1Exposed);
+  const partnerPredictionPresentation =
+    data.partnerPredictionV2Exposed === true
+      ? getPartnerPredictionPresentation(data.partnerPredictionV2 ?? null)
+      : null;
   const partnerProjection = showCycleStateV1
     ? data.cycleStateV1 ?? null
     : null;
@@ -143,9 +225,11 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
             {data.message || "Waiting for your partner to set up their account."}
           </p>
         </div>
-        {showCycleStateV1 && (
+        {partnerPredictionPresentation ? (
+          <PartnerPredictionCard presentation={partnerPredictionPresentation} />
+        ) : showCycleStateV1 ? (
           <PartnerCycleStateCard presentation={partnerPresentation} />
-        )}
+        ) : null}
       </motion.div>
     );
   }
@@ -168,7 +252,9 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
         </p>
       </div>
 
-      {showCycleStateV1 ? (
+      {partnerPredictionPresentation ? (
+        <PartnerPredictionCard presentation={partnerPredictionPresentation} />
+      ) : showCycleStateV1 ? (
         <PartnerCycleStateCard presentation={partnerPresentation} />
       ) : (
         <PartnerPulse
@@ -234,7 +320,7 @@ export default function PartnerDashboard({ data, partnerPresent = false }: Partn
       )}
 
       {/* How to help tip */}
-      {!showCycleStateV1 && data.painTip && (
+      {!partnerPredictionPresentation && !showCycleStateV1 && data.painTip && (
         <motion.div
           className="bento-cell-warm p-6"
           style={{ borderRadius: "var(--radius-xl)" }}

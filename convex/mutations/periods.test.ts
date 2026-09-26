@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
@@ -26,6 +27,32 @@ async function setPrimaryTimeZone(t: TestBackend) {
     }
     await ctx.db.patch(primary._id, { timeZone: "UTC" });
   });
+}
+
+async function seedAssistedPeriodEvent(
+  t: TestBackend,
+  primaryId: Id<"users">,
+  partnerId: Id<"users">,
+  overrides: {
+    userId?: Id<"users">;
+    createdByUserId?: Id<"users">;
+    source?: "self" | "partner_assist" | "system";
+  } = {}
+) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert("periodEvents", {
+      userId: overrides.userId ?? primaryId,
+      startDate: "2026-06-20",
+      createdByUserId: overrides.createdByUserId ?? partnerId,
+      updatedByUserId: overrides.createdByUserId ?? partnerId,
+      source: overrides.source ?? "partner_assist",
+      confirmationStatus: "confirmed",
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+  );
 }
 
 describe("partner-assisted period logging", () => {
@@ -417,6 +444,22 @@ describe("partner-assisted period logging", () => {
 });
 
 describe("prediction pause cycle settings", () => {
+  test("rejects non-finite cycle lengths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: Number.NaN,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: Number.POSITIVE_INFINITY,
+      }),
+    ).rejects.toThrow();
+  });
+
   test("pausing preserves existing lengths and records a timestamp", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
@@ -533,6 +576,291 @@ describe("prediction pause cycle settings", () => {
       predictionPaused: true,
     });
     expect(settings?.predictionPausedAt).toEqual(expect.any(Number));
+  });
+});
+
+describe("partner-assisted period correction", () => {
+  test("partner can correct only their own assisted fact", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+
+    await asPartner.mutation(
+      api.mutations.periods.correctAssistedPeriodEvent,
+      {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-06-21",
+        endDate: "2026-06-25",
+        endCertainty: "exact",
+      }
+    );
+
+    const correctedEvent = await t.run(async (ctx) =>
+      ctx.db.get("periodEvents", eventId)
+    );
+    expect(correctedEvent).toMatchObject({
+      userId: primaryId,
+      startDate: "2026-06-21",
+      endDate: "2026-06-25",
+      source: "partner_assist",
+      createdByUserId: partnerId,
+      updatedByUserId: partnerId,
+      authorityVersion: 2,
+      partnerCorrectionVersion: 2,
+      endCertainty: "exact",
+    });
+    expect(correctedEvent).not.toHaveProperty("primaryCorrectionVersion");
+  });
+
+  test("correction requires active partner access and period-write permission", async () => {
+    for (const disabledAccess of ["revoked", "share-off"] as const) {
+      const t = convexTest(schema, modules);
+      const { asPartner, coupleId, primaryId, partnerId } =
+        await seedActiveCouple(t, {
+          sharingPhase: true,
+          sharingPeriodWrite: true,
+        });
+      const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+      await t.run(async (ctx) => {
+        if (disabledAccess === "revoked") {
+          await ctx.db.patch(coupleId, { status: "revoked" });
+          return;
+        }
+        const primaryMembership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_user", (q) => q.eq("userId", primaryId))
+          .unique();
+        if (!primaryMembership) throw new Error("Primary membership missing");
+        await ctx.db.patch(primaryMembership._id, { sharingPeriodWrite: false });
+      });
+
+      await expect(
+        asPartner.mutation(
+          api.mutations.periods.correctAssistedPeriodEvent,
+          {
+            periodEventId: eventId,
+            expectedAuthorityVersion: 1,
+            startDate: "2026-06-21",
+          }
+        )
+      ).rejects.toThrow(
+        disabledAccess === "revoked" ? "active couple" : "not enabled"
+      );
+    }
+  });
+
+  test("correction rejects stale authority versions", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 0,
+        startDate: "2026-06-21",
+      })
+    ).rejects.toThrow("STALE_AUTHORITY_VERSION");
+  });
+
+  test("correction keeps exact intervals from overlapping", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-26",
+        endDate: "2026-06-29",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-06-23",
+        endDate: "2026-06-28",
+        endCertainty: "exact",
+      })
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
+  test("correction requires the primary user's timezone", async () => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: undefined });
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-06-21",
+      })
+    ).rejects.toThrow("Time zone is required for an identified user");
+  });
+
+  test("primary correction and tombstone remain authoritative", async () => {
+    const correctionTest = convexTest(schema, modules);
+    const corrected = await seedActiveCouple(correctionTest, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(correctionTest);
+    const correctedEventId = await seedAssistedPeriodEvent(
+      correctionTest,
+      corrected.primaryId,
+      corrected.partnerId
+    );
+    await corrected.asPrimary.mutation(
+      api.mutations.periods.updatePeriodEvent,
+      {
+        periodEventId: correctedEventId,
+        startDate: "2026-06-21",
+        timeZone: "UTC",
+        expectedAuthorityVersion: 1,
+      }
+    );
+    await expect(
+      corrected.asPartner.mutation(
+        api.mutations.periods.correctAssistedPeriodEvent,
+        {
+          periodEventId: correctedEventId,
+          expectedAuthorityVersion: 2,
+          startDate: "2026-06-22",
+        }
+      )
+    ).rejects.toThrow("PRIMARY_AUTHORITY_REQUIRED");
+
+    const tombstoneTest = convexTest(schema, modules);
+    const tombstoned = await seedActiveCouple(tombstoneTest, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const tombstonedEventId = await seedAssistedPeriodEvent(
+      tombstoneTest,
+      tombstoned.primaryId,
+      tombstoned.partnerId
+    );
+    await tombstoned.asPrimary.mutation(
+      api.mutations.periods.deletePeriodEvent,
+      { periodEventId: tombstonedEventId, expectedAuthorityVersion: 1 }
+    );
+    await expect(
+      tombstoned.asPartner.mutation(
+        api.mutations.periods.correctAssistedPeriodEvent,
+        {
+          periodEventId: tombstonedEventId,
+          expectedAuthorityVersion: 2,
+          startDate: "2026-06-22",
+        }
+      )
+    ).rejects.toThrow("TARGET_EVENT_TOMBSTONED");
+  });
+
+  test("primary correction stays authoritative with Cycle Facts V1 off", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } =
+      await seedActiveCouple(t, {
+        sharingPhase: true,
+        sharingPeriodWrite: true,
+      });
+    await setPrimaryTimeZone(t);
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      timeZone: "UTC",
+    });
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-06-22",
+      })
+    ).rejects.toThrow("PRIMARY_AUTHORITY_REQUIRED");
+  });
+
+  test.each([
+    {
+      name: "primary-created event",
+      owner: "primary",
+      creator: "primary",
+      expectedError: "PARTNER_CORRECTION_NOT_ALLOWED",
+    },
+    {
+      name: "another user's event",
+      owner: "partner",
+      creator: "partner",
+      expectedError: "TARGET_EVENT_NOT_FOUND",
+    },
+    {
+      name: "another partner's assisted event",
+      owner: "primary",
+      creator: "other-partner",
+      expectedError: "PARTNER_CORRECTION_NOT_ALLOWED",
+    },
+  ] as const)("rejects correction of a $name", async ({
+    owner,
+    creator,
+    expectedError,
+  }) => {
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    const otherPartnerId =
+      creator === "other-partner"
+        ? await seedUser(t, {
+            clerkId: "previous-partner-clerk",
+            name: "Previous Partner",
+            role: "partner",
+          })
+        : undefined;
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId, {
+      ...(creator === "primary"
+        ? { createdByUserId: primaryId, source: "self" as const }
+        : {}),
+      ...(otherPartnerId ? { createdByUserId: otherPartnerId } : {}),
+      ...(owner === "partner" ? { userId: partnerId } : {}),
+    });
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: eventId,
+        expectedAuthorityVersion: 1,
+        startDate: "2026-06-21",
+      })
+    ).rejects.toThrow(expectedError);
   });
 });
 
@@ -870,6 +1198,56 @@ describe("primary cycle fact writes", () => {
       tombstoneByUserId: primaryId,
       tombstoneAuthorityVersion: 2,
     });
+    await expect(
+      asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId: result.eventId,
+        expectedAuthorityVersion: 2,
+      }),
+    ).rejects.toThrow("PERIOD_EVENT_ALREADY_DELETED");
+    await expect(
+      t.run(async (ctx) => ctx.db.get("periodEvents", result.eventId)),
+    ).resolves.toMatchObject({ authorityVersion: 2 });
+  });
+
+  test("allows deleting a conflicting exact fact to resolve invalid history", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const [firstId, conflictingId] = await t.run(async (ctx) => {
+      const common = {
+        userId: primaryId,
+        startCertainty: "exact" as const,
+        endCertainty: "exact" as const,
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      return [
+        await ctx.db.insert("periodEvents", {
+          ...common,
+          startDate: "2026-07-01",
+          endDate: "2026-07-05",
+        }),
+        await ctx.db.insert("periodEvents", {
+          ...common,
+          startDate: "2026-07-04",
+          endDate: "2026-07-08",
+        }),
+      ];
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+        periodEventId: firstId,
+        expectedAuthorityVersion: 1,
+      }),
+    ).resolves.toMatchObject({ success: true });
+    await expect(
+      t.run(async (ctx) => ctx.db.get("periodEvents", firstId)),
+    ).resolves.toMatchObject({ tombstoneAuthorityVersion: 2 });
+    const conflicting = await t.run(async (ctx) =>
+      ctx.db.get("periodEvents", conflictingId),
+    );
+    expect(conflicting).not.toHaveProperty("tombstoneAt");
   });
 
   test("keeps physical deletion only in the flag-off compatibility branch", async () => {

@@ -10,6 +10,7 @@ fail() {
 helper="components/dashboard/cycleStateCopy.ts"
 source_paths=(
   "$helper"
+  "components/partner/partnerPredictionPresentation.ts"
   "components/dashboard/TipsCard.tsx"
   "components/dashboard/NutritionSuggestions.tsx"
   "convex/seed.ts"
@@ -49,5 +50,10 @@ fi
 for key in recorded calendarEstimate late unknown paused estimatedOvulationDisclaimer genericCheckIn; do
   rg -q "^[[:space:]]*$key:" "$helper" || fail "missing explicit copy key: $key"
 done
+
+rg -q 'Ideas, not assumptions\.' "components/partner/partnerPredictionPresentation.ts" ||
+  fail "partner prediction care copy must be framed as ideas, not assumptions"
+rg -q 'Ask what kind of support would feel helpful today\.' "components/partner/partnerPredictionPresentation.ts" ||
+  fail "partner prediction care copy must invite a direct check-in"
 
 echo "Gate 2 copy policy: PASS"

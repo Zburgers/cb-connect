@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -15,6 +16,96 @@ beforeEach(() => {
 });
 
 describe("period history attribution", () => {
+  test("fails closed when prediction history exceeds its bounded read", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 1_001; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate: "2026-08-01",
+          startCertainty: "exact",
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+      }
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: primaryId },
+    );
+
+    expect(prediction).toMatchObject({
+      status: "unavailable",
+      pointDate: null,
+      reasonCodes: expect.arrayContaining(["LIMITED_HISTORY"]),
+    });
+  });
+
+  test("exposes the active prediction baseline to primary history only", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+    await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: "2026-08-01" },
+    );
+
+    const [primaryHistory, partnerHistory] = await Promise.all([
+      asPrimary.query(api.queries.history.getPeriodHistory, {}),
+      asPartner.query(api.queries.history.getPeriodHistory, {}),
+    ]);
+
+    expect(primaryHistory[0]).toMatchObject({
+      predictionSegmentStartDate: "2026-08-01",
+    });
+    expect(partnerHistory[0]).not.toHaveProperty("predictionSegmentStartDate");
+    expect(partnerHistory[0]).not.toHaveProperty("segmentId");
+    expect(partnerHistory[0]).not.toHaveProperty("supersedesSegmentId");
+  });
+
+  test("keeps stored prediction segment metadata hidden when Gate 3 is off", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("cyclePredictionSegments", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        status: "active",
+        createdAt: Date.now(),
+      });
+    });
+
+    const history = await asPrimary.query(
+      api.queries.history.getPeriodHistory,
+      {},
+    );
+
+    expect(history[0]).not.toHaveProperty("predictionSegmentStartDate");
+  });
+
   test("legacy events render with safe defaults and owner correction", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
@@ -70,7 +161,7 @@ describe("period history attribution", () => {
       _id: eventId,
       source: "partner_assist",
       createdByName: "Partner Person",
-      canCorrect: false,
+      canCorrect: true,
     });
     expect(history[0]).not.toHaveProperty("userId");
     expect(history[0]).not.toHaveProperty("createdByUserId");
@@ -85,13 +176,15 @@ describe("period history attribution", () => {
     expect(timeline[0]).toMatchObject({
       type: "period",
       period: {
+        id: eventId,
+        authorityVersion: 0,
         source: "partner_assist",
         confirmationStatus: "confirmed",
         createdByName: "Partner Person",
         updatedByName: "Partner Person",
         createdByViewer: true,
         updatedByViewer: true,
-        canCorrect: false,
+        canCorrect: true,
       },
     });
     expect(timeline[0].period).not.toHaveProperty("userId");
@@ -100,8 +193,51 @@ describe("period history attribution", () => {
     expect(timeline[0].period).not.toHaveProperty("_creationTime");
     expect(timeline[0].period).not.toHaveProperty("createdAt");
     expect(timeline[0].period).not.toHaveProperty("updatedAt");
-    expect(timeline[0].period).not.toHaveProperty("authorityVersion");
+    expect(timeline[0].period).toHaveProperty("authorityVersion");
     expect(timeline[0].period).not.toHaveProperty("legacyReason");
+  });
+
+  test("primary corrections revoke partner correction projection", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } =
+      await seedActiveCouple(t, {
+        sharingPhase: true,
+        sharingPeriodWrite: true,
+      });
+    const eventId = await t.run(async (ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-06-20",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      timeZone: "UTC",
+      expectedAuthorityVersion: 1,
+    });
+
+    const history = await asPartner.query(api.queries.history.getPeriodHistory, {});
+    const timeline = await asPartner.query(api.queries.history.getTimelineHistory, {
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+    });
+    const primaryCorrected = timeline.find(
+      (entry) => entry.type === "period" && entry.period?.startDate === "2026-06-21"
+    );
+
+    expect(history[0]).toMatchObject({ _id: eventId, canCorrect: false });
+    expect(primaryCorrected?.period).toMatchObject({ canCorrect: false });
+    expect(primaryCorrected?.period).not.toHaveProperty("id");
+    expect(primaryCorrected?.period).not.toHaveProperty("authorityVersion");
   });
 
   test("read-only partner history has presentation only", async () => {
@@ -154,6 +290,7 @@ describe("period history attribution", () => {
 describe("fact-aware history and prediction reads", () => {
   test("flag-off prediction keeps the newest legacy row without certainty", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
     await t.run(async (ctx) => {
@@ -179,9 +316,297 @@ describe("fact-aware history and prediction reads", () => {
     );
 
     expect(prediction).toMatchObject({ recentPeriodStart: "2026-08-01" });
+    expect(prediction).not.toHaveProperty("cycleIntervals");
+    expect(prediction).not.toHaveProperty("periodPredictionV2");
+    expect(
+      await t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ).toBeNull();
+  });
+
+  test("V2 derives intervals from the full eligible history", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      let startDate = "2024-01-01";
+      for (let index = 0; index < 105; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+        startDate = addCalendarDays(startDate, 5);
+      }
+    });
+
+    const cycleIntervals = await t.query(
+      internal.queries.history.getCycleIntervalsForUser,
+      { userId: primaryId },
+    );
+
+    expect(cycleIntervals).toMatchObject({
+      eligibleAnchorCount: 105,
+      eligibleIntervalCount: 104,
+      basis: { version: "cycle_intervals_v1" },
+    });
+    expect(cycleIntervals?.intervals).toHaveLength(104);
+    expect(cycleIntervals?.intervals[0]).not.toHaveProperty(
+      "startDate",
+    );
+  });
+
+  test("serves the V2 prediction internally for primaries only", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      let startDate = "2026-06-01";
+      for (let index = 0; index < 4; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: Date.now() - 1_000 + index,
+          updatedAt: Date.now() - 1_000 + index,
+        });
+        startDate = addCalendarDays(startDate, 28);
+      }
+    });
+
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+
+    const prediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: primaryId },
+    );
+    const partnerNotificationInputs = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: partnerId },
+    );
+    const partnerPrediction = await t.query(
+      internal.queries.history.getPeriodPredictionForUser,
+      { userId: partnerId },
+    );
+    const partnerIntervals = await t.query(
+      internal.queries.history.getCycleIntervalsForUser,
+      { userId: partnerId },
+    );
+
+    expect(prediction).toMatchObject({
+      version: 2,
+      status: "limited_evidence",
+      pointDate: "2026-09-21",
+      estimatorId: "configured_v1",
+      basisCount: 3,
+      probabilityLabel: null,
+      reasonCodes: expect.arrayContaining([
+        "PERSONALIZATION_NOT_APPROVED",
+        "USER_CONFIGURED_BASELINE",
+      ]),
+    });
+    expect(partnerNotificationInputs).toBeNull();
+    expect(partnerPrediction).toBeNull();
+    expect(partnerIntervals).toBeNull();
+  });
+
+  test("V2 finds exact anchors beyond 100 newer ineligible rows", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      let startDate = "2026-05-01";
+      for (let index = 0; index < 105; index += 1) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "approximate",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 2,
+          updatedAt: index + 2,
+        });
+        startDate = addCalendarDays(startDate, 1);
+      }
+    });
+
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+
+    const [notificationPrediction, cycleIntervals] = await Promise.all([
+      t.query(internal.queries.history.getPredictionInputsForUser, {
+        userId: primaryId,
+      }),
+      t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ]);
+
+    expect(notificationPrediction?.periodPredictionV2).toMatchObject({
+      version: 2,
+      status: "available",
+    });
+    expect(notificationPrediction?.periodPredictionV2).not.toHaveProperty(
+      "pointDate",
+    );
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
+    expect(cycleIntervals).toMatchObject({
+      latestEligibleStartDate: "2026-01-01",
+      eligibleAnchorCount: 1,
+      eligibleIntervalCount: 0,
+      reasonCodes: expect.arrayContaining(["LIMITED_HISTORY"]),
+    });
+  });
+
+  test("primary segment options include full eligible history and reject partner reads", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t);
+    const startDates: string[] = [];
+
+    await t.run(async (ctx) => {
+      let startDate = "2018-01-01";
+      for (let index = 0; index < 105; index += 1) {
+        startDates.push(startDate);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          source: "self",
+          confirmationStatus: "confirmed",
+          authorityVersion: 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+        startDate = addCalendarDays(startDate, 28);
+      }
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2017-12-31",
+        startCertainty: "exact",
+        confirmationStatus: "unreviewed",
+        createdAt: 500,
+        updatedAt: 500,
+      });
+    });
+
+    const activeStartDate = startDates[startDates.length - 1];
+    await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: activeStartDate },
+    );
+    const [options, partnerOptions] = await Promise.all([
+      asPrimary.query(api.queries.history.getPredictionSegmentOptions, {}),
+      asPartner.query(api.queries.history.getPredictionSegmentOptions, {}),
+    ]);
+
+    expect(options).toMatchObject({ activeStartDate });
+    expect(options?.eligibleStartDates).toHaveLength(105);
+    expect(options?.eligibleStartDates).toContain(startDates[0]);
+    expect(options?.eligibleStartDates?.[0]).toBe(activeStartDate);
+    expect(options?.eligibleStartDates).not.toContain("2017-12-31");
+    expect(partnerOptions).toBeNull();
+  });
+
+  test("V2 notification inputs use the shared period prediction", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-08-01",
+        startCertainty: "exact",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-09-01",
+        startCertainty: "approximate",
+        source: "self",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+    });
+
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+
+    const [notificationPrediction, cycleIntervals] = await Promise.all([
+      t.query(internal.queries.history.getPredictionInputsForUser, {
+        userId: primaryId,
+      }),
+      t.query(internal.queries.history.getCycleIntervalsForUser, {
+        userId: primaryId,
+      }),
+    ]);
+
+    expect(notificationPrediction?.periodPredictionV2).toMatchObject({
+      version: 2,
+      status: "available",
+      dueInThreeDays: expect.any(Boolean),
+    });
+    expect(notificationPrediction?.periodPredictionV2).not.toHaveProperty(
+      "pointDate",
+    );
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
+    expect(notificationPrediction).not.toHaveProperty("cycleIntervals");
+    expect(cycleIntervals?.latestEligibleStartDate).toBe(
+      "2026-08-01",
+    );
+  });
+
+  test("V2 notification inputs preserve unavailable without a legacy fallback", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+
+    const notificationPrediction = await t.query(
+      internal.queries.history.getPredictionInputsForUser,
+      { userId: primaryId },
+    );
+
+    expect(notificationPrediction?.periodPredictionV2).toEqual({
+      version: 2,
+      status: "unavailable",
+      dueInThreeDays: false,
+    });
+    expect(notificationPrediction).not.toHaveProperty("cycleInfo");
   });
 
   test("historical timeline state ignores today's prediction pause", async () => {
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
     await t.run(async (ctx) => {

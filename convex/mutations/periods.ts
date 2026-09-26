@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
 import {
   mutation,
   internalMutation,
@@ -15,17 +16,52 @@ import {
   evaluatePeriodEventInvariants,
   type PeriodEventCandidate,
 } from "../_helpers/periodEventInvariants";
+import { isStartAnchorEligible } from "../_helpers/cycleFactEligibility";
 import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
+import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
   v.literal("approximate")
 );
 
+async function schedulePredictionRefresh(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  eventId: Id<"periodEvents">,
+) {
+  await ctx.scheduler.runAfter(
+    0,
+    internal.internal.predictionSnapshots.recordOutcomesForStart,
+    { sourcePeriodEventId: eventId },
+  );
+  if (!isPeriodPredictionV2Enabled()) return;
+  await ctx.scheduler.runAfter(
+    0,
+    internal.internal.predictionSnapshots.ensureCurrentForUser,
+    { userId },
+  );
+}
+
 function currentAuthorityVersion(period: Doc<"periodEvents">): number {
   return period.authorityVersion ?? 0;
+}
+
+function nextPrimaryCorrectionVersion(period: Doc<"periodEvents">): number {
+  return Math.max(
+    currentAuthorityVersion(period),
+    period.primaryCorrectionVersion ?? 0
+  ) + 1;
+}
+
+function nextPartnerCorrectionVersion(period: Doc<"periodEvents">): number {
+  return Math.max(
+    currentAuthorityVersion(period),
+    period.partnerCorrectionVersion ?? 0
+  ) + 1;
 }
 
 function storedStartCertainty(
@@ -47,6 +83,20 @@ function storedLegacyReason(period: Doc<"periodEvents">) {
   return startUnknown || endUnknown
     ? period.legacyReason ?? "missing_provenance"
     : undefined;
+}
+
+function hasPredictionStartChange(
+  period: Doc<"periodEvents">,
+  next: Pick<
+    Doc<"periodEvents">,
+    "startDate" | "startCertainty" | "legacyReason"
+  >,
+): boolean {
+  const nextPeriod = { ...period, ...next };
+  return (
+    period.startDate !== next.startDate ||
+    isStartAnchorEligible(period) !== isStartAnchorEligible(nextPeriod)
+  );
 }
 
 function toPeriodEventProjection(period: Doc<"periodEvents">) {
@@ -219,6 +269,7 @@ export const logPeriodStart = mutation({
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      await schedulePredictionRefresh(ctx, user._id, eventId);
       return { eventId };
     }
 
@@ -241,6 +292,7 @@ export const logPeriodStart = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    await schedulePredictionRefresh(ctx, user._id, eventId);
 
     return { eventId };
   },
@@ -358,6 +410,7 @@ export const assistLogPeriodStart = mutation({
         createdAt: now,
         updatedAt: now,
       });
+      await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
       await ctx.db.insert("notificationLog", {
         userId: primaryMembership.userId,
         type: "partner_assisted_period_start",
@@ -393,6 +446,7 @@ export const assistLogPeriodStart = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
 
     await ctx.db.insert("notificationLog", {
       userId: primaryMembership.userId,
@@ -501,6 +555,120 @@ export const assistLogPeriodEnd = mutation({
   },
 });
 
+export const correctAssistedPeriodEvent = mutation({
+  args: {
+    periodEventId: v.id("periodEvents"),
+    expectedAuthorityVersion: v.number(),
+    startDate: v.string(),
+    endDate: v.optional(v.string()),
+    endCertainty: v.optional(cycleFactCertaintyValidator),
+    promoteStartCertainty: v.optional(v.boolean()),
+    promoteEndCertainty: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { partner, primaryMembership, primaryUser } =
+      await getAssistedLoggingContext(ctx);
+    const period = await ctx.db.get("periodEvents", args.periodEventId);
+    if (!period || period.userId !== primaryMembership.userId) {
+      throw new Error("TARGET_EVENT_NOT_FOUND");
+    }
+    if (period.tombstoneAt !== undefined) {
+      throw new Error("TARGET_EVENT_TOMBSTONED");
+    }
+    if (
+      period.source !== "partner_assist" ||
+      period.createdByUserId !== partner._id
+    ) {
+      throw new Error("PARTNER_CORRECTION_NOT_ALLOWED");
+    }
+
+    const authorityVersion = currentAuthorityVersion(period);
+    if (
+      period.primaryCorrectionVersion !== undefined ||
+      period.updatedByUserId === primaryMembership.userId
+    ) {
+      if (authorityVersion !== args.expectedAuthorityVersion) {
+        throw new Error("STALE_AUTHORITY_VERSION");
+      }
+      throw new Error("PRIMARY_AUTHORITY_REQUIRED");
+    }
+
+    const timeZone = resolveCalendarTimeZone(primaryUser.timeZone);
+    requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
+    if (args.endDate !== undefined) {
+      requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
+      if (args.endDate < args.startDate) {
+        throw new Error("End date cannot be before start date");
+      }
+      if (
+        period.endDate === undefined &&
+        args.endCertainty === undefined &&
+        args.promoteEndCertainty !== true
+      ) {
+        throw new Error("END_CERTAINTY_REQUIRED");
+      }
+    }
+
+    const { startCertainty, endCertainty, legacyReason } =
+      resolveCycleFactCorrection({
+        existingStartCertainty: storedStartCertainty(period),
+        existingEndCertainty: storedEndCertainty(period),
+        existingEndDate: period.endDate,
+        existingLegacyReason: period.legacyReason,
+        correctedEndDate: args.endDate,
+        correctedEndCertainty: args.endCertainty,
+        promoteStartCertainty: args.promoteStartCertainty === true,
+        promoteEndCertainty: args.promoteEndCertainty === true,
+      });
+    await requireAllowedPeriodEventWrite(
+      ctx,
+      primaryMembership.userId,
+      {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        startCertainty,
+        endCertainty,
+        legacyReason,
+        authorityVersion: authorityVersion + 1,
+        actorRole: "partner",
+        partnerAccess: "active",
+        targetEventId: period._id,
+        expectedAuthorityVersion: args.expectedAuthorityVersion,
+      },
+      period
+    );
+
+    const startOutcomeChanged = hasPredictionStartChange(period, {
+      startDate: args.startDate,
+      startCertainty,
+      legacyReason,
+    });
+    await ctx.db.patch(period._id, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      startCertainty,
+      endCertainty,
+      legacyReason,
+      updatedByUserId: partner._id,
+      authorityVersion: authorityVersion + 1,
+      ...(startOutcomeChanged
+        ? { partnerCorrectionVersion: nextPartnerCorrectionVersion(period) }
+        : {}),
+      updatedAt: Date.now(),
+    });
+    if (startOutcomeChanged) {
+      await appendCorrectionAssessments(ctx, {
+        userId: primaryMembership.userId,
+        periodEventId: period._id,
+        sourceAuthorityVersion: authorityVersion + 1,
+        reason: "partner_correction",
+      });
+    }
+
+    return { eventId: period._id };
+  },
+});
+
 export const updatePeriodEvent = mutation({
   args: {
     periodEventId: v.id("periodEvents"),
@@ -534,13 +702,28 @@ export const updatePeriodEvent = mutation({
     }
 
     if (!isCycleFactsV1Enabled()) {
+      const startOutcomeChanged = hasPredictionStartChange(period, {
+        startDate: args.startDate,
+        startCertainty: period.startCertainty,
+        legacyReason: period.legacyReason,
+      });
       await ctx.db.patch(args.periodEventId, {
         startDate: args.startDate,
         endDate: args.endDate,
         updatedByUserId: user._id,
         confirmationStatus: "confirmed",
+        ...(startOutcomeChanged
+          ? { primaryCorrectionVersion: nextPrimaryCorrectionVersion(period) }
+          : {}),
         updatedAt: Date.now(),
       });
+      if (startOutcomeChanged) {
+        await appendCorrectionAssessments(ctx, {
+          userId: user._id,
+          periodEventId: args.periodEventId,
+          reason: "primary_correction",
+        });
+      }
       return { success: true };
     }
 
@@ -564,6 +747,11 @@ export const updatePeriodEvent = mutation({
         promoteStartCertainty: args.promoteStartCertainty === true,
         promoteEndCertainty: args.promoteEndCertainty === true,
       });
+    const startOutcomeChanged = hasPredictionStartChange(period, {
+      startDate: args.startDate,
+      startCertainty,
+      legacyReason,
+    });
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -586,9 +774,19 @@ export const updatePeriodEvent = mutation({
       updatedByUserId: user._id,
       confirmationStatus: "confirmed",
       authorityVersion: authorityVersion + 1,
-      primaryCorrectionVersion: authorityVersion + 1,
+      ...(startOutcomeChanged
+        ? { primaryCorrectionVersion: nextPrimaryCorrectionVersion(period) }
+        : {}),
       updatedAt: Date.now(),
     });
+    if (startOutcomeChanged) {
+      await appendCorrectionAssessments(ctx, {
+        userId: user._id,
+        periodEventId: args.periodEventId,
+        sourceAuthorityVersion: authorityVersion + 1,
+        reason: "primary_correction",
+      });
+    }
     return { success: true };
   },
 });
@@ -605,25 +803,27 @@ export const deletePeriodEvent = mutation({
     if (!period || period.userId !== user._id) {
       throw new Error("You can only delete your own period entries");
     }
+    if (period.tombstoneAt !== undefined) {
+      throw new Error("PERIOD_EVENT_ALREADY_DELETED");
+    }
 
     if (!isCycleFactsV1Enabled()) {
       await ctx.db.delete("periodEvents", args.periodEventId);
+      await appendCorrectionAssessments(ctx, {
+        userId: user._id,
+        periodEventId: args.periodEventId,
+        reason: "primary_correction",
+      });
       return { success: true };
     }
 
     const authorityVersion = currentAuthorityVersion(period);
-    await requireAllowedPeriodEventWrite(ctx, user._id, {
-      startDate: period.startDate,
-      endDate: period.endDate,
-      startCertainty: storedStartCertainty(period),
-      endCertainty: storedEndCertainty(period),
-      legacyReason: storedLegacyReason(period),
-      authorityVersion: authorityVersion + 1,
-      actorRole: "primary",
-      targetEventId: period._id,
-      expectedAuthorityVersion:
-        args.expectedAuthorityVersion ?? authorityVersion,
-    });
+    if (args.expectedAuthorityVersion === undefined) {
+      throw new Error("AUTHORITY_VERSION_REQUIRED");
+    }
+    if (args.expectedAuthorityVersion !== authorityVersion) {
+      throw new Error("STALE_AUTHORITY_VERSION");
+    }
 
     const tombstoneAt = Date.now();
     await ctx.db.patch(args.periodEventId, {
@@ -632,8 +832,14 @@ export const deletePeriodEvent = mutation({
       tombstoneAt,
       tombstoneAuthorityVersion: authorityVersion + 1,
       updatedByUserId: user._id,
-      primaryCorrectionVersion: authorityVersion + 1,
+      primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: tombstoneAt,
+    });
+    await appendCorrectionAssessments(ctx, {
+      userId: user._id,
+      periodEventId: args.periodEventId,
+      sourceAuthorityVersion: authorityVersion + 1,
+      reason: "primary_correction",
     });
     return { success: true };
   },
@@ -686,7 +892,11 @@ export const updateCycleSettings = mutation({
     requirePrimaryUser(user);
 
     if (args.cycleLength !== undefined) {
-      if (args.cycleLength < 21 || args.cycleLength > 40) {
+      if (
+        !Number.isFinite(args.cycleLength) ||
+        args.cycleLength < 21 ||
+        args.cycleLength > 40
+      ) {
         throw new Error("Cycle length must be between 21 and 40 days");
       }
     }

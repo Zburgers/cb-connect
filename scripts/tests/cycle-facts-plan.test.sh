@@ -43,7 +43,7 @@ contains "$plan_file" 'production exposure'
 contains "$plan_file" 'No production target'
 contains "$plan_file" 'additive'
 
-contains "$plan_index" 'D-012 blocks production exposure'
+contains "$plan_index" 'D-012 blocks production feature exposure'
 contains "$plan_index" 'D-008'
 contains "$plan_index" 'D-009'
 

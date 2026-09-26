@@ -27,3 +27,39 @@ Convex crons/actions -> internal user-scoped data access -> notification logging
 6. Operations: `/api/health` for liveness and `/api/webhook/clerk` for verified identity synchronization.
 
 Authorization is enforced in Convex through the authenticated identity and couple membership helpers; UI state is not the security boundary (`convex/_helpers/auth.ts`, `convex/_helpers/coupleSpace.ts`).
+
+## Gate 3 prediction seam
+
+Current merged Gate 2 path:
+
+```text
+Gate 1 exact eligible facts
+  -> cycleReadModel
+  -> legacy configured PredictionBounds
+  -> cycleState reducer
+  -> primary/reduced partner presentation
+```
+
+Planned Gate 3 path:
+
+```text
+Gate 1 exact eligible facts
+  -> private active prediction segment
+  -> cycleIntervals
+  -> predictionEstimators
+  -> predictionIntervals + predictionQuality
+  -> immutable prediction snapshot
+  -> periodPrediction V2 / PredictionBounds V2
+  -> existing cycleState reducer
+  -> primary + reduced partner + notification projections
+```
+
+Architectural rules:
+
+- `periodEvents` remains observation storage; predictions never become observed facts.
+- `cycleState` remains the semantic state machine; Gate 3 replaces the bounds-generation seam rather than duplicating state logic.
+- prediction segment metadata is primary-private and stored separately from events.
+- snapshot core fields are immutable; later outcome/supersession information is append-only assessment data.
+- partner output is a reduced server-side projection and never exposes private segment, residual, internal score, or research metadata.
+- the notification action must consume the same versioned prediction source instead of maintaining independent date arithmetic.
+- population-trained probabilistic modelling remains Research Gate 7 and outside the request path.

@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import GlassPanel from "@/components/common/GlassPanel";
 import { Bell, BellOff, Eye, EyeOff, HandHeart, Lock, Shield } from "lucide-react";
+import { formatPredictionCalendarDate } from "@/components/dashboard/predictionPresentation";
 
 const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
@@ -34,12 +35,28 @@ export default function SettingsPage() {
     isLoaded && isSignedIn ? {} : "skip"
   );
   const me = useQuery(api.queries.users.getMe, isLoaded && isSignedIn ? {} : "skip");
+  const capabilities = useQuery(
+    api.queries.capabilities.getCapabilities,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
+  const predictionSegmentOptions = useQuery(
+    api.queries.history.getPredictionSegmentOptions,
+    isLoaded &&
+      isSignedIn &&
+      me?.role === "primary" &&
+      capabilities?.periodPredictionV2 === true
+      ? {}
+      : "skip"
+  );
   const notificationLog = useQuery(
     api.queries.users.getMyNotificationLog,
     isLoaded && isSignedIn ? { limit: 5 } : "skip"
   );
   const updateSettings = useMutation(api.mutations.periods.updateCycleSettings);
   const updatePreferences = useMutation(api.mutations.users.updateUserPreferences);
+  const createPredictionSegment = useMutation(
+    api.mutations.cycleContext.createPredictionSegment
+  );
 
   const [cycleLength, setCycleLength] = useState(28);
   const [periodLength, setPeriodLength] = useState(5);
@@ -52,6 +69,10 @@ export default function SettingsPage() {
   const [externalNotificationConsent, setExternalNotificationConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [selectedPredictionStartDate, setSelectedPredictionStartDate] = useState("");
+  const [isSavingPredictionStart, setIsSavingPredictionStart] = useState(false);
+  const [predictionStartSaved, setPredictionStartSaved] = useState(false);
+  const [predictionStartError, setPredictionStartError] = useState<string | null>(null);
 
   useEffect(() => {
     if (cycleSettings) {
@@ -88,6 +109,17 @@ export default function SettingsPage() {
   const periodWriteAllowed = Boolean(
     isLinked && coupleStatus?.sharingSettings?.periodWrite
   );
+  const activePredictionStartDate =
+    predictionSegmentOptions?.activeStartDate ?? null;
+  const predictionStartDates = predictionSegmentOptions?.eligibleStartDates ?? [];
+  const selectedPredictionStart = predictionStartDates.includes(
+    selectedPredictionStartDate
+  )
+    ? selectedPredictionStartDate
+    : activePredictionStartDate &&
+        predictionStartDates.includes(activePredictionStartDate)
+      ? activePredictionStartDate
+      : "";
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -108,6 +140,27 @@ export default function SettingsPage() {
       console.error("Failed to save settings:", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handlePredictionStartSave = async () => {
+    if (!selectedPredictionStart || selectedPredictionStart === activePredictionStartDate) {
+      return;
+    }
+
+    setIsSavingPredictionStart(true);
+    setPredictionStartSaved(false);
+    setPredictionStartError(null);
+    try {
+      await createPredictionSegment({ startDate: selectedPredictionStart });
+      setSelectedPredictionStartDate(selectedPredictionStart);
+      setPredictionStartSaved(true);
+    } catch {
+      setPredictionStartError(
+        "Could not update the private baseline. Refresh and try again."
+      );
+    } finally {
+      setIsSavingPredictionStart(false);
     }
   };
 
@@ -268,6 +321,94 @@ export default function SettingsPage() {
           >
             {isSaving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
           </button>
+        </GlassPanel>
+      )}
+
+      {isPrimary && capabilities?.periodPredictionV2 === true && (
+        <GlassPanel variant="quiet" className="space-y-4 p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Private prediction baseline
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Choose an exact period start for a private prediction baseline. Starting later
+              leaves your earlier dates in the log; choose an earlier date any time to use
+              more history again.
+            </p>
+          </div>
+
+          <p className="text-sm text-foreground" aria-live="polite">
+            Current baseline: {predictionSegmentOptions === undefined
+              ? "Loading…"
+              : predictionSegmentOptions === null
+                ? "unavailable"
+                : activePredictionStartDate
+                  ? formatPredictionCalendarDate(activePredictionStartDate) ?? activePredictionStartDate
+                  : "all eligible history"}
+          </p>
+
+          {predictionSegmentOptions === undefined ? (
+            <p className="text-sm text-muted-foreground">Loading eligible period starts…</p>
+          ) : predictionSegmentOptions === null ? (
+            <p className="text-sm text-muted-foreground">
+              Private prediction history controls are unavailable right now.
+            </p>
+          ) : predictionStartDates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No exact eligible period starts are available for a new baseline.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-foreground">
+                  New baseline starts on
+                </span>
+                <select
+                  value={selectedPredictionStart}
+                  onChange={(event) => {
+                    setSelectedPredictionStartDate(event.target.value);
+                    setPredictionStartSaved(false);
+                    setPredictionStartError(null);
+                  }}
+                  className="min-h-11 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Choose an exact period start</option>
+                  {predictionStartDates.map((date) => (
+                    <option key={date} value={date}>
+                      {formatPredictionCalendarDate(date) ?? date}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={handlePredictionStartSave}
+                disabled={
+                  isSavingPredictionStart ||
+                  !selectedPredictionStart ||
+                  selectedPredictionStart === activePredictionStartDate
+                }
+                className="min-h-11 rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {isSavingPredictionStart ? "Updating…" : "Use this baseline"}
+              </button>
+            </div>
+          )}
+
+          <p className="text-xs leading-5 text-muted-foreground">
+            This changes which dates inform future estimates. It never edits or deletes your
+            saved period history.
+          </p>
+          {predictionStartError && (
+            <p role="alert" className="text-sm text-destructive">
+              {predictionStartError}
+            </p>
+          )}
+          {predictionStartSaved && (
+            <p role="status" className="text-sm font-medium text-foreground">
+              Private prediction baseline updated.
+            </p>
+          )}
         </GlassPanel>
       )}
 

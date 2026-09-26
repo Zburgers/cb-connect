@@ -1,4 +1,4 @@
-import { type Locator, type Page } from "@playwright/test";
+import { devices, type Locator, type Page } from "@playwright/test";
 import { expect, getApprovedReleaseFixture, test } from "./fixtures";
 
 const RELEASE_MESSAGE = "E3 release smoke: private chat works.";
@@ -64,7 +64,23 @@ async function closeExistingPeriod(primary: Page) {
     await primary
       .getByRole("button", { name: "Delete entry", exact: true })
       .click();
-    await expect(primary.getByText("Period entry removed.")).toBeVisible();
+    const removed = primary.getByText("Period entry removed.");
+    const error = primary.getByRole("alert").filter({ hasText: /\S/ });
+    await expect(removed.or(error).first()).toBeVisible();
+    if (!(await removed.isVisible()) && (await error.isVisible())) {
+      const message = await error.textContent();
+      const code = [
+        "AUTHORITY_VERSION_REQUIRED",
+        "STALE_AUTHORITY_VERSION",
+        "PERIOD_EVENT_ALREADY_DELETED",
+        "PREDICTION_SNAPSHOT_CORRECTION_REFERENCE_INVALID",
+        "PREDICTION_SNAPSHOT_INVALID_SOURCE_AUTHORITY_VERSION",
+        "EXACT_INTERVAL_OVERLAP",
+        "OPEN_EVENT_EXISTS",
+      ].find((candidate) => message?.includes(candidate));
+      throw new Error(`period_delete_failed:${code ?? "unclassified"}`);
+    }
+    await expect(removed).toBeVisible();
   }
 }
 
@@ -208,10 +224,16 @@ test("release smoke: primary and partner complete the shared journey", async ({
 }) => {
   test.setTimeout(180000);
 
+  const device =
+    test.info().project.name === "release-mobile"
+      ? devices["iPhone 13"]
+      : devices["Desktop Chrome"];
   const primaryContext = await browser.newContext({
+    ...device,
     storageState: getApprovedReleaseFixture("primary"),
   });
   const partnerContext = await browser.newContext({
+    ...device,
     storageState: getApprovedReleaseFixture("partner"),
   });
   const primary = await primaryContext.newPage();

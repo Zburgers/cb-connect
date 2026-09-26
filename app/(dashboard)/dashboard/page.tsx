@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useEffect } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
@@ -13,11 +14,15 @@ import TipsCard from "@/components/dashboard/TipsCard";
 import NutritionSuggestions from "@/components/dashboard/NutritionSuggestions";
 import OnboardingFlow from "@/components/dashboard/OnboardingFlow";
 import PartnerDashboard from "@/components/partner/PartnerDashboard";
+import {
+  shouldEnsurePartnerPredictionSnapshot,
+} from "@/components/partner/partnerPredictionPresentation";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
 import { getCycleStateCopyState } from "@/components/dashboard/cycleStatePresentation";
 import {
   isPrimaryCycleState,
 } from "@/convex/_helpers/partnerCycleProjection";
+import { resolveNutritionTipsPhase } from "@/components/dashboard/nutritionTipsPresentation";
 import type { CycleState } from "@/convex/_helpers/cycleState";
 
 export default function DashboardPage() {
@@ -26,6 +31,9 @@ export default function DashboardPage() {
   const data = useQuery(
     api.queries.dashboard.getDashboardData,
     isAuthenticated ? { todayDate: toLocalDateString() } : "skip"
+  );
+  const ensurePredictionSnapshot = useMutation(
+    api.mutations.predictionSnapshots.ensureForViewer,
   );
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
   const capabilities = useQuery(
@@ -39,6 +47,43 @@ export default function DashboardPage() {
     : null;
   const showCycleStateV1 =
     capabilities?.cycleFactsV1 === true && cycleStateEnabled && cycleState != null;
+  const periodPredictionV2 = data?.periodPredictionV2;
+  const showPeriodPredictionV2 =
+    me?.role === "primary" &&
+    capabilities?.periodPredictionV2 === true &&
+    periodPredictionV2 !== undefined;
+  const nutritionTipsPhase = resolveNutritionTipsPhase(
+    data?.nutritionTipsPhase,
+    data?.cycleInfo?.phase,
+  );
+
+  useEffect(() => {
+    if (!isAuthenticated || !data || !me?.role) return;
+    const needsPrimarySnapshot =
+      me.role === "primary" &&
+      capabilities?.periodPredictionV2 === true &&
+      data.hasData &&
+      (data.periodPredictionV2 === null ||
+        data.periodPredictionV2 === undefined);
+    const needsPartnerSnapshot =
+      me.role === "partner" &&
+      shouldEnsurePartnerPredictionSnapshot(
+        capabilities?.periodPredictionV2 === true &&
+          capabilities.partnerPredictionV2 === true,
+        data.hasData,
+        data.partnerPredictionV2,
+      );
+    if (needsPrimarySnapshot || needsPartnerSnapshot) {
+      ensurePredictionSnapshot().catch(() => {});
+    }
+  }, [
+    capabilities?.partnerPredictionV2,
+    capabilities?.periodPredictionV2,
+    data,
+    ensurePredictionSnapshot,
+    isAuthenticated,
+    me?.role,
+  ]);
 
   if (
     isLoading ||
@@ -82,7 +127,7 @@ export default function DashboardPage() {
 
   return (
     <div
-      data-phase={showCycleStateV1 ? cycleState?.phase ?? "unknown" : data.cycleInfo?.phase ?? "follicular"}
+      data-phase={showCycleStateV1 ? cycleState?.phase ?? "unknown" : data.cycleInfo?.phase ?? (showPeriodPredictionV2 ? "unknown" : "follicular")}
       data-cycle-state={showCycleStateV1 ? cycleState?.status : undefined}
       className="space-y-6 animate-fade-in"
     >
@@ -98,7 +143,14 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {showCycleStateV1 ? (
+      {showPeriodPredictionV2 ? (
+        <CurrentPhase
+          cycleStateV1={showCycleStateV1 ? cycleState : null}
+          periodPredictionV2={periodPredictionV2}
+          painScore={data.painData?.score ?? null}
+          partnerPresent={partnerPresent}
+        />
+      ) : showCycleStateV1 ? (
         <CurrentPhase
           cycleStateV1={cycleState}
           cycleInfo={data.cycleInfo}
@@ -126,10 +178,10 @@ export default function DashboardPage() {
         <TipsCard tip={data.painTip} />
       )}
 
-      {data.nutritionTips && data.nutritionTips.length > 0 && data.cycleInfo && (
+      {data.nutritionTips && data.nutritionTips.length > 0 && nutritionTipsPhase && (
         <NutritionSuggestions
           tips={data.nutritionTips}
-          phase={data.cycleInfo.phase}
+          phase={nutritionTipsPhase}
           state={showCycleStateV1 && cycleState ? getCycleStateCopyState(cycleState) : undefined}
         />
       )}

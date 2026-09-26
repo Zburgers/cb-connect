@@ -32,10 +32,11 @@ describe("period date boundaries", () => {
 
   test("rejects tomorrow across every public period write path", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary, asPartner, primaryId } = await seedActiveCouple(t, {
-      sharingPhase: true,
-      sharingPeriodWrite: true,
-    });
+    const { asPrimary, asPartner, primaryId, partnerId } =
+      await seedActiveCouple(t, {
+        sharingPhase: true,
+        sharingPeriodWrite: true,
+      });
     await t.run(async (ctx) => {
       const primary = await ctx.db
         .query("users")
@@ -58,6 +59,20 @@ describe("period date boundaries", () => {
         updatedAt: Date.now(),
       });
     });
+    const assistedEventId = await t.run(async (ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: pastStart,
+        startCertainty: "exact",
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        authorityVersion: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
 
     await expect(
       asPrimary.mutation(api.mutations.periods.logPeriodStart, {
@@ -86,6 +101,14 @@ describe("period date boundaries", () => {
     ).rejects.toThrow("End date cannot be in the future");
 
     await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: assistedEventId,
+        expectedAuthorityVersion: 1,
+        startDate: tomorrow,
+      })
+    ).rejects.toThrow("Start date cannot be in the future");
+
+    await expect(
       asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
         periodEventId: eventId,
         startDate: tomorrow,
@@ -99,6 +122,16 @@ describe("period date boundaries", () => {
         startDate: pastStart,
         endDate: tomorrow,
         timeZone: "UTC",
+      })
+    ).rejects.toThrow("End date cannot be in the future");
+
+    await expect(
+      asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+        periodEventId: assistedEventId,
+        expectedAuthorityVersion: 1,
+        startDate: pastStart,
+        endDate: tomorrow,
+        endCertainty: "exact",
       })
     ).rejects.toThrow("End date cannot be in the future");
   });

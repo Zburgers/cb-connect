@@ -2,10 +2,7 @@
 
 **Status:** Canonical planning dashboard under the approved
 [feature-first delivery policy](2026-08-19-feature-first-delivery-design.md).
-Gate 0 engineering is complete. Gate 1 implementation is complete for
-deterministic qualification; authenticated desktop/mobile qualification is
-pending on the current feature branch. Gate 1 is not qualified and production
-exposure remains blocked by D-012 plus a separate exposure decision.
+Gates 1 and 2 are merged on current `main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`. Gate 3 has a frozen product/model contract, prediction-specific literature review, G3-BENCH-V1 protocol, and a dated implementation plan. Branch `codex/gate3implementation` has qualified application source `8300805260bbd29311b3fc256f54d7cd2d163bd2`. Exact-head CI run [36013749921](https://github.com/Zburgers/cb-connect/actions/runs/36013749921) passed on PR head `7a19ecb19d7f9da373d1cdcfaf27be6a52491537`: deterministic qualification and the protected authenticated release smoke, including Gates 0–2 and Gates 0–3. That tested head changes documentation only from the qualified application source. Local build, typecheck, all 552 unit tests, synthetic benchmark, authenticated desktop/mobile feature-off/on lanes, and full desktop/mobile release smoke also pass on the qualified source. PR [#46](https://github.com/Zburgers/cb-connect/pull/46) is open and Ready for Review, with zero unresolved review threads. See the [Gate 3 qualification report](../evidence/prediction-gate-3/REPORT.md). D-013 still blocks real benchmark outcome evaluation/promotion until dataset authority, permission, named statistical approval, and a canonical shared durable ledger are provisioned; D-012 blocks production feature exposure.
 
 This index controls implementation order and planning readiness. Running code, current production evidence and `issues.md` override stale factual claims. The [major-release program](2026-08-01-cb-connect-major-release-program.md) controls product scope and invariants; the [decision register](../decisions/major-release-decision-register.md) controls unresolved authority and contract choices.
 
@@ -27,9 +24,9 @@ The historical `docs/v0.2.0-product-specs` branch is not an implementation base.
 |---:|---|---|---|---|
 | Continuous | Evidence-backed issue remediation | `issues.md` | None | Active; each fix requires its own acceptance evidence |
 | 1 | Production reliability | [Gate 0](2026-08-01-01-production-reliability-foundation.md) | Continuous automated deployment and measurement | Engineering complete; operations continue in parallel |
-| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [current implementation plan](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md) | Approved current execution plan | Deterministic qualification passed; authenticated desktop/mobile qualification pending; D-012 blocks production exposure and destructive lifecycle work |
-| 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) | Approved Gate 1 evidence | Gate-level only |
-| 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md) | Approved Gate 2 evidence and frozen protocol | Gate-level only |
+| 2 | Trustworthy cycle facts | [Gate 1](2026-08-01-02-trustworthy-cycle-facts.md) and [implementation plan](2026-08-20-gate-1-trustworthy-cycle-facts-implementation.md) | Gate 0 reliability foundation | Merged as PR #35; D-012 still blocks destructive lifecycle work/production exposure |
+| 3 | Four-phase state semantics | [Gate 2](2026-08-01-03-four-phase-state-semantics.md) and [implementation plan](2026-08-20-gate-2-four-phase-state-semantics-implementation.md) | Gate 1 facts | Merged as PR #36 at current main |
+| 4 | Personalized prediction | [Gate 3](2026-08-01-04-personalized-prediction-and-evaluation.md), [design freeze](../decisions/2026-09-20-gate-3-prediction-design-freeze.md), [benchmark protocol](../research/cycle-benchmark-protocol.md), and [dated implementation plan](2026-09-20-gate-3-personalized-prediction-implementation.md) | Merged Gate 2 + G3-BENCH-V1 | Default-off code has local deterministic qualification; deterministic CI passes; authenticated CI awaits protected-environment reviewer approval; D-013 gates real outcome evaluation/promotion and D-012 gates production exposure |
 | 5 | In-app notification platform | [Gate 4](2026-08-01-05-notification-platform.md) | Approved Gates 0-3 contracts | Gate-level only |
 | 6 | Mobile internal beta | [Gate 5](2026-08-01-06-mobile-internal-beta.md) | Approved Gates 0-4 APIs | Gate-level only |
 | 7 | Push and staged stores | [Gate 6](2026-08-01-07-push-and-store-qualification.md) | Gate 5 real-device evidence | Gate-level only |
@@ -67,6 +64,16 @@ C3, V1 isolated-dev identity, V2 implementation and X1 guardrails have
 passing local, protected-CI or synthetic evidence. Production V1/V2 runtime
 evidence and measurement remain useful operational history. Gate 1 code may
 proceed behind its default-off feature flag.
+
+
+## Current Gate 3 boundary
+
+1. The implementation branch is `codex/gate3implementation`, based on Gate 2 merged `main` at `2f8dae22b6b2673c75e94d66985e749a303b92df`.
+2. Product/model choices are frozen in `docs/decisions/2026-09-20-gate-3-prediction-design-freeze.md`.
+3. G3-BENCH-V1 freezes eligibility, estimator candidates, 60/20/20 user-level development/calibration/locked-evaluation partitioning, walk-forward rules, metrics, calibration semantics, subgroups and promotion thresholds before real outcome review.
+4. Synthetic/golden benchmark implementation and default-off application work may proceed. Real external/CB Connect outcome reports must fail closed until D-013's remaining authority is recorded.
+5. Gate 3 user-visible point predictions are personal-history/configured-baseline driven. Population-trained hierarchical ML remains Research Gate 7.
+6. D-012 continues to prohibit production feature exposure from this planning/implementation branch.
 
 ## Planning policy
 

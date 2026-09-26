@@ -23,6 +23,18 @@ export const getAllPrimaryUsers = internalQuery({
   },
 });
 
+export const hasExternalNotificationConsent = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    return (
+      user?.role === "primary" && user.externalNotificationConsent === true
+    );
+  },
+});
+
 export const getMyNotificationLog = query({
   args: {
     limit: v.optional(v.number()),
@@ -63,6 +75,6 @@ function summarizeNotificationPayload(payload: unknown) {
   return {
     kind: "object",
     keys: Object.keys(record),
-    message: typeof message === "string" ? message : undefined,
+    message: typeof message === "string" ? "[redacted]" : undefined,
   };
 }

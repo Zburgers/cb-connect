@@ -4,10 +4,13 @@ description: >-
   Run safe CB Connect QA and test workflows across the browser and CLI
   environments. Use when the user says "QA", "go test it manually", "test it
   manually", "check the UI", "browser test", "smoke test", "run E2E", or asks
-  to validate a CB Connect flow. Covers deterministic CLI checks, visible
-  Playwright with Fedora system Chrome, authenticated release smoke tests, and
-  evidence-based reporting. Do not use for unit-only coding questions unless
-  test execution or QA is part of the request.
+  to validate a CB Connect flow, Clerk/Convex authentication, an authenticated
+  workflow, a protected test deployment, or any local/CI test environment.
+  Covers local-first deterministic checks, approved test-target deployment,
+  authenticated Gates 0–3 desktop/mobile qualification, release smoke, and
+  evidence-based reporting. Never rely on CI alone to discover a failure; run
+  the relevant flow locally before pushing. This skill applies only to the
+  CB Connect repository.
 ---
 
 # CB Connect Browser QA

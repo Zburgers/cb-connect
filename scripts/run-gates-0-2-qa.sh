@@ -99,11 +99,10 @@ run_lane() {
   return "$status"
 }
 
-# Gate 0 and default-off compatibility. Every lane receives a fresh synthetic
-# Clerk/Convex fixture so destructive journeys cannot contaminate later lanes.
+# The authenticated release-smoke job immediately before this matrix covers
+# Gate 0 on desktop and mobile. Keep this matrix focused on Gate 1/2 flag
+# compatibility so the same destructive release journey is not run twice.
 set_mode false false
-run_lane gate0-desktop e2e/release-smoke.spec.ts release-desktop disabled disabled
-run_lane gate0-mobile e2e/release-smoke.spec.ts release-mobile disabled disabled
 run_lane gate1-off-desktop e2e/cycle-facts.spec.ts release-desktop disabled disabled
 run_lane gate1-off-mobile e2e/cycle-facts.spec.ts release-mobile disabled disabled
 run_lane gate2-off-desktop e2e/cycle-state.spec.ts release-desktop disabled disabled

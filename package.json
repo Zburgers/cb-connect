@@ -16,6 +16,8 @@
     "test:convex-safe-exec": "bash scripts/tests/convex-safe-exec.test.sh",
     "test:convex-command-policy": "bash scripts/tests/convex-command-policy.test.sh",
     "test:fixture-evidence-boundary": "bash scripts/tests/fixture-evidence-boundary.test.sh",
+    "benchmark:cycle:golden": "tsx scripts/cycle-benchmark.ts --dataset fixtures --partition development",
+    "benchmark:cycle": "tsx scripts/cycle-benchmark.ts",
     "test:e2e": "playwright test",
     "test:e2e:release": "playwright test --config=playwright.release.config.ts"
   },
@@ -35,7 +37,7 @@
     "convex": "^1.43.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.474.0",
-    "next": "^15.5.22",
+    "next": "^15.5.24",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -53,13 +55,14 @@
     "convex-test": "^0.0.53",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "4.23.13",
     "typescript": "^5.7.3",
     "vitest": "^4.1.9"
   },
   "overrides": {
     "next": {
       "postcss": "8.5.25",
-      "sharp": "0.35.3"
+      "sharp": "0.35.4"
     }
   }
 }

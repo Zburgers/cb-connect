@@ -1,4 +1,5 @@
 import type { PartnerCycleProjection } from "@/convex/_helpers/partnerCycleProjection";
+import type { CycleState } from "@/convex/_helpers/cycleState";
 
 type PartnerStatusLabel =
   | "Recorded"
@@ -32,6 +33,19 @@ export function isPartnerCycleStateExposed(
   serverExposure: boolean | null | undefined,
 ): boolean {
   return serverExposure === true;
+}
+
+function isPartnerProjection(
+  value: PartnerCycleProjection | CycleState,
+): value is PartnerCycleProjection {
+  if (value.version !== 1) return false;
+  if (value.status === "recorded_period" && "coveringEventId" in value) {
+    return false;
+  }
+  return !(
+    (value.status === "estimated" || value.status === "late_or_uncertain") &&
+    value.bounds.version !== 1
+  );
 }
 
 const EMPTY_PRESENTATION: PartnerCyclePresentation = {
@@ -103,9 +117,9 @@ function copyBounds(
 }
 
 export function getPartnerCyclePresentation(
-  projection: PartnerCycleProjection | null,
+  projection: PartnerCycleProjection | CycleState | null,
 ): PartnerCyclePresentation {
-  if (!projection) {
+  if (!projection || !isPartnerProjection(projection)) {
     return { ...EMPTY_PRESENTATION };
   }
 

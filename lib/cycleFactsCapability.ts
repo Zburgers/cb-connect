@@ -10,6 +10,8 @@ import { api } from "../convex/_generated/api";
 export type CycleFactsCapability = {
   cycleFactsV1: boolean;
   cycleStateV1?: boolean;
+  periodPredictionV2?: boolean;
+  partnerPredictionV2?: boolean;
 };
 
 export function readCycleFactsCapability(

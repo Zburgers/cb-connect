@@ -5,6 +5,7 @@ import {
   APPROVED_CLERK_FRONTEND_API_HOST,
   APPROVED_CONVEX_DEPLOYMENT,
   cleanupFixturePair,
+  fixtureEmail,
   loadAuthEnvironment,
   provisionFixturePair,
   withTransientRetry,
@@ -31,7 +32,34 @@ describe("approved authenticated fixture environment", () => {
       clerkEnvironmentName: APPROVED_CLERK_ENVIRONMENT,
       convexDeployment: APPROVED_CONVEX_DEPLOYMENT,
       runId: "run-123",
+      baseUrl: "http://localhost:3000",
     });
+  });
+
+  test("accepts an explicit loopback browser origin", () => {
+    expect(
+      loadAuthEnvironment({
+        ...validEnvironment,
+        PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3012",
+      }).baseUrl,
+    ).toBe("http://127.0.0.1:3012");
+  });
+
+  test.each([
+    "https://example.com",
+    "http://localhost:0",
+    "http://192.0.2.10:3000",
+    "http://localhost.attacker.example:3000",
+    "http://user@localhost:3000",
+    "http://localhost:3000/dashboard",
+    "http://localhost:3000/?target=remote",
+  ])("rejects an unsafe browser origin: %s", (baseUrl) => {
+    expect(() =>
+      loadAuthEnvironment({
+        ...validEnvironment,
+        PLAYWRIGHT_BASE_URL: baseUrl,
+      }),
+    ).toThrow("Authenticated browser tests require a local HTTP origin");
   });
 
   test.each([
@@ -66,6 +94,19 @@ describe("approved authenticated fixture environment", () => {
         NEXT_PUBLIC_TEST_CONVEX_URL: convexUrl,
       }),
     ).toThrow("Missing approved authenticated fixture environment");
+  });
+
+  test("bounds fixture email local parts for long accepted run ids", () => {
+    const runId = "qa-35577171543-1-prediction-v2-off-desktop";
+    const primary = fixtureEmail(runId, "primary");
+    const partner = fixtureEmail(runId, "partner");
+
+    expect(primary.split("@")[0]?.length).toBeLessThanOrEqual(64);
+    expect(partner.split("@")[0]?.length).toBeLessThanOrEqual(64);
+    expect(primary).toMatch(/^cb-connect-e2e\+.+-primary@example\.com$/);
+    expect(partner).toMatch(/^cb-connect-e2e\+.+-partner@example\.com$/);
+    expect(primary).not.toBe(partner);
+    expect(fixtureEmail(runId, "primary")).toBe(primary);
   });
 
   test("retries transient operations with bounded attempts", async () => {

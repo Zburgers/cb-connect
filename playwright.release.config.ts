@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
+import { resolveLocalBaseUrl } from "./e2e/support/localBaseUrl";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const baseURL = resolveLocalBaseUrl(process.env.PLAYWRIGHT_BASE_URL);
 const basePort = new URL(baseURL).port || "3000";
 const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 
