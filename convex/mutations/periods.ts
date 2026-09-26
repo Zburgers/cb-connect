@@ -146,51 +146,56 @@ async function requireAllowedPeriodEventWrite(
   while (!done) {
     const page = await ctx.db
       .query("periodEvents")
-      .withIndex("by_user_and_start", (q) => {
-        const range = q.eq("userId", userId).gte("startDate", candidate.startDate);
-        return candidate.endDate === undefined
-          ? range
-          : range.lte("startDate", candidate.endDate);
-      })
-      .paginate({ cursor, numItems: 64 });
-    for (const period of page.page) check(period);
-    cursor = page.continueCursor;
-    done = page.isDone;
-  }
-
-  cursor = null;
-  done = false;
-  while (!done) {
-    const page = await ctx.db
-      .query("periodEvents")
       .withIndex("by_user_and_start", (q) =>
-        q.eq("userId", userId).lt("startDate", candidate.startDate)
+        q.eq("userId", userId).eq("startDate", candidate.startDate)
       )
-      .order("desc")
-      .paginate({ cursor, numItems: 64 });
-    const previous = page.page.find(
-      (period) => period.tombstoneAt === undefined && period._id !== candidate.targetEventId
-    );
-    if (previous) check(previous);
-    if (previous || page.isDone) break;
-    cursor = page.continueCursor;
-  }
-
-  cursor = null;
-  done = false;
-  while (!done) {
-    const page = await ctx.db
-      .query("periodEvents")
-      .withIndex("by_user_and_end_and_start", (q) => {
-        const range = q.eq("userId", userId).eq("endDate", undefined);
-        return candidate.endDate === undefined
-          ? range
-          : range.lte("startDate", candidate.endDate);
-      })
       .paginate({ cursor, numItems: 64 });
     for (const period of page.page) check(period);
     cursor = page.continueCursor;
     done = page.isDone;
+  }
+
+  const candidateIsExact =
+    candidate.startCertainty === "exact" &&
+    (candidate.endDate === undefined || candidate.endCertainty === "exact");
+  if (candidateIsExact) {
+    // ponytail: historical candidates may scan later non-overlaps; use an interval index if this reaches transaction limits.
+    cursor = null;
+    done = false;
+    while (!done) {
+      const page = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user_and_end", (q) =>
+          q.eq("userId", userId).gte("endDate", candidate.startDate)
+        )
+        .paginate({ cursor, numItems: 64 });
+      for (const period of page.page) {
+        if (candidate.endDate === undefined || period.startDate <= candidate.endDate) {
+          check(period);
+        }
+      }
+      cursor = page.continueCursor;
+      done = page.isDone;
+    }
+  }
+
+  if (candidate.endDate === undefined || candidateIsExact) {
+    cursor = null;
+    done = false;
+    while (!done) {
+      const page = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user_and_end_and_start", (q) => {
+          const range = q.eq("userId", userId).eq("endDate", undefined);
+          return candidate.endDate === undefined
+            ? range
+            : range.lte("startDate", candidate.endDate);
+        })
+        .paginate({ cursor, numItems: 64 });
+      for (const period of page.page) check(period);
+      cursor = page.continueCursor;
+      done = page.isDone;
+    }
   }
 }
 

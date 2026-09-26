@@ -1478,6 +1478,36 @@ describe("period invariants beyond the newest 100 rows", () => {
     ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
   });
 
+  test("finds an older spanning interval behind a closer non-overlapping fact", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      for (const [startDate, endDate] of [
+        ["2020-01-01", "2020-01-30"],
+        ["2020-01-05", "2020-01-05"],
+      ] as const) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          endDate,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+        startDate: "2020-01-10",
+        startCertainty: "exact",
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("EXACT_INTERVAL_OVERLAP");
+  });
+
   test("ignores an old tombstone and finds an open period outside the old page", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
