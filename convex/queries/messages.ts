@@ -49,6 +49,20 @@ export const listForCouple = query({
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
 
+    const [userState, partnerState] = await Promise.all([
+      ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", membership.coupleId).eq("userId", user._id)
+        )
+        .first(),
+      ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", membership.coupleId).eq("userId", partnerMembership.userId)
+        )
+        .first(),
+    ]);
     const ordered = messages.reverse();
     return await Promise.all(
       ordered.map(async (message) => {
@@ -79,6 +93,12 @@ export const listForCouple = query({
             });
           }
         }
+        const recipientState = isMine ? partnerState : userState;
+        const readThrough = recipientState?.lastReadSequence ?? 0;
+        const isReadByCursor = message.recipientSequence !== undefined
+          ? message.recipientSequence <= readThrough
+          : readThrough > (recipientState?.legacySequenceBase ?? 0) ||
+            message.createdAt <= (recipientState?.legacyReadThroughAt ?? 0);
 
         return {
           _id: message._id,
@@ -88,7 +108,9 @@ export const listForCouple = query({
           senderImageUrl: sender?.imageUrl ?? null,
           isMine,
           deliveredAt: message.deliveredAt ?? null,
-          readAt: message.readAt ?? null,
+          readAt: message.readAt ?? (
+            isReadByCursor ? recipientState?.lastReadAt ?? message.createdAt : null
+          ),
           reactions: [...grouped.values()],
         };
       })

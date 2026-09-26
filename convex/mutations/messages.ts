@@ -27,27 +27,46 @@ export const send = mutation({
     const body = sanitizeMessage(args.body);
     const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
 
-    const messageId = await ctx.db.insert("coupleMessages", {
-      coupleId: membership.coupleId,
-      relationshipMembershipId,
-      senderId: user._id,
-      body,
-      createdAt: now,
-    });
-
     const recipientState = await ctx.db
       .query("coupleChatStates")
       .withIndex("by_couple_and_user", (q) =>
         q.eq("coupleId", membership.coupleId).eq("userId", partnerMembership.userId)
       )
       .first();
+    const sequenceBase = recipientState?.lastMessageSequence ?? recipientState?.unreadCount ?? 0;
+    const legacySequenceBase =
+      recipientState?.legacySequenceBase ??
+      (recipientState?.lastMessageSequence === undefined ? sequenceBase : 0);
+    const legacyUnreadCount =
+      recipientState?.legacyUnreadCount ??
+      (recipientState?.lastMessageSequence === undefined ? recipientState?.unreadCount ?? 0 : 0);
+    const sequence = sequenceBase + 1;
+    const messageId = await ctx.db.insert("coupleMessages", {
+      coupleId: membership.coupleId,
+      relationshipMembershipId,
+      senderId: user._id,
+      body,
+      createdAt: now,
+      recipientSequence: sequence,
+    });
     if (recipientState) {
-      await ctx.db.patch(recipientState._id, { unreadCount: recipientState.unreadCount + 1 });
+      await ctx.db.patch(recipientState._id, {
+        lastMessageSequence: sequence,
+        legacySequenceBase,
+        legacyUnreadCount,
+        unreadCount:
+          legacyUnreadCount +
+          Math.max(0, sequence - Math.max(recipientState.lastReadSequence ?? 0, legacySequenceBase)),
+      });
     } else {
       await ctx.db.insert("coupleChatStates", {
         coupleId: membership.coupleId,
         userId: partnerMembership.userId,
         unreadCount: 1,
+        lastMessageSequence: sequence,
+        lastReadSequence: 0,
+        legacySequenceBase: 0,
+        legacyUnreadCount: 0,
       });
     }
 
@@ -97,7 +116,7 @@ export const markDelivered = mutation({
   },
 });
 
-export const markRead = mutation({
+export const markReadThrough = mutation({
   args: { messageId: v.id("coupleMessages") },
   handler: async (ctx, args) => {
     const { user, couple, membership, relationshipStartedAt, relationshipMembershipId } =
@@ -113,22 +132,82 @@ export const markRead = mutation({
     );
     if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
     const now = Date.now();
-    if (!message.deliveredAt || message.deliveredAt < now) {
-      await ctx.db.patch(message._id, { deliveredAt: message.deliveredAt ?? now });
-    }
-    if (!message.readAt || message.readAt < now) {
-      await ctx.db.patch(message._id, { readAt: message.readAt ?? now });
+    const latestLegacyUnread = message.recipientSequence === undefined
+      ? await ctx.db
+          .query("coupleMessages")
+          .withIndex("by_couple_sender_sequence_read_created", (q) =>
+            q
+              .eq("coupleId", message.coupleId)
+              .eq("senderId", message.senderId)
+              .eq("recipientSequence", undefined)
+              .eq("readAt", undefined)
+              .eq("clearedAt", undefined)
+          )
+          .order("desc")
+          .first()
+      : null;
+    if (!message.deliveredAt || !message.readAt) {
+      await ctx.db.patch(message._id, {
+        deliveredAt: message.deliveredAt ?? now,
+        readAt: message.readAt ?? now,
+      });
     }
     const state = await ctx.db
       .query("coupleChatStates")
       .withIndex("by_couple_and_user", (q) => q.eq("coupleId", message.coupleId).eq("userId", user._id))
       .first();
-    if (state) {
-      await ctx.db.patch(state._id, {
-        unreadCount: 0,
-        lastReadAt: Math.max(state.lastReadAt ?? 0, message.createdAt),
-        lastDeliveredAt: Math.max(state.lastDeliveredAt ?? 0, message.createdAt),
-      });
+    if (message.recipientSequence === undefined) {
+      if (state) {
+        const isLatestLegacyUnread = latestLegacyUnread?._id === message._id;
+        const legacySequenceBase =
+          state.legacySequenceBase ??
+          (state.lastMessageSequence === undefined ? state.unreadCount : 0);
+        const legacyUnreadCount =
+          state.legacyUnreadCount ??
+          (state.lastMessageSequence === undefined ? state.unreadCount : 0);
+        const canDecrementLegacyUnread =
+          state.lastMessageSequence === undefined ||
+          (state.lastReadSequence ?? 0) < legacySequenceBase;
+        const nextLegacyUnreadCount = canDecrementLegacyUnread
+          ? isLatestLegacyUnread
+            ? 0
+            : Math.max(0, legacyUnreadCount - (message.readAt === undefined ? 1 : 0))
+          : 0;
+        const sequenceUnread = Math.max(
+          0,
+          (state.lastMessageSequence ?? 0) -
+            Math.max(state.lastReadSequence ?? 0, legacySequenceBase),
+        );
+        await ctx.db.patch(state._id, {
+          legacyUnreadCount: nextLegacyUnreadCount,
+          legacyReadThroughAt: isLatestLegacyUnread
+            ? Math.max(state.legacyReadThroughAt ?? 0, message.createdAt)
+            : state.legacyReadThroughAt,
+          unreadCount:
+            state.lastMessageSequence === undefined
+              ? nextLegacyUnreadCount
+              : nextLegacyUnreadCount + sequenceUnread,
+          lastReadAt: Math.max(state.lastReadAt ?? 0, message.createdAt),
+          lastDeliveredAt: Math.max(state.lastDeliveredAt ?? 0, message.createdAt),
+        });
+      }
+    } else if (state) {
+      const lastReadSequence = state.lastReadSequence ?? 0;
+      if (message.recipientSequence > lastReadSequence) {
+        const legacySequenceBase = state.legacySequenceBase ?? 0;
+        await ctx.db.patch(state._id, {
+          lastReadSequence: message.recipientSequence,
+          legacySequenceBase,
+          legacyUnreadCount: 0,
+          unreadCount: Math.max(
+            0,
+            (state.lastMessageSequence ?? message.recipientSequence) -
+              Math.max(message.recipientSequence, legacySequenceBase),
+          ),
+          lastReadAt: Math.max(state.lastReadAt ?? 0, message.createdAt),
+          lastDeliveredAt: Math.max(state.lastDeliveredAt ?? 0, message.createdAt),
+        });
+      }
     } else {
       await ctx.db.insert("coupleChatStates", {
         coupleId: message.coupleId,
@@ -136,11 +215,17 @@ export const markRead = mutation({
         unreadCount: 0,
         lastReadAt: message.createdAt,
         lastDeliveredAt: message.createdAt,
+        lastMessageSequence: message.recipientSequence,
+        lastReadSequence: message.recipientSequence,
+        legacySequenceBase: 0,
+        legacyUnreadCount: 0,
       });
     }
     return { readAt: message.readAt ?? now };
   },
 });
+
+export const markRead = markReadThrough;
 
 export const react = mutation({
   args: {
@@ -198,7 +283,7 @@ export const react = mutation({
 export const clear = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user, couple, membership, partnerMembership, relationshipStartedAt, relationshipMembershipId } =
+    const { user, couple, membership, partnerMembership } =
       await getActiveCoupleSpace(ctx);
     const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
     await ctx.db.patch(couple._id, { chatClearedAt: now });
@@ -213,7 +298,15 @@ export const clear = mutation({
       )
     );
     for (const state of states) {
-      if (state) await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
+      if (state) {
+        await ctx.db.patch(state._id, {
+          unreadCount: 0,
+          lastReadSequence: state.lastMessageSequence ?? state.lastReadSequence,
+          legacyUnreadCount: 0,
+          legacyReadThroughAt: now,
+          lastReadAt: now,
+        });
+      }
     }
 
     await ctx.db.insert("notificationLog", {
