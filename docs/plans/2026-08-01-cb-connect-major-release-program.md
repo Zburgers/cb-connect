@@ -45,8 +45,8 @@ continue while later exposure decisions remain pending.
 | Gate 0 reliability | Engineering complete; automatic operations active | No local implementation task remains | Ongoing deployment and SLO measurement |
 | Gate 1 cycle facts | Dated implementation plan approved | Yes, additive/default-off work | D-012 before destructive migration or final deletion behavior |
 | Gate 2 four-phase semantics | Gate-level plan only | No | Post-Gate-1 state-contract execution plan |
-| Gate 3 prediction | Dated implementation plan + frozen G3-BENCH-V1 available | Yes for default-off/non-production implementation and synthetic qualification; real benchmark outcome viewing remains gated by D-013 | Complete D-013 authority before real outcome evaluation/promotion; D-012 before production exposure |
-| Gate 4 notifications | Gate-level plan only | No | Approved event/privacy/retention execution plan |
+| Gate 3 prediction | Merged as PR #46 at `275b4075f00e3c95ca6662f1e9be5a9ad0ff3c8b` | Keep production V2 flags off; real benchmark outcome viewing remains gated by D-013 | Complete D-013 authority before real outcome evaluation/promotion; D-012 before production exposure |
+| Gate 4 notifications | Dated event/privacy/retention execution plan proposed 2026-09-27 | Default-off non-destructive work only after plan approval; no production exposure under D-012 | Review and approve [Gate 4 execution plan](2026-09-27-gate-4-event-privacy-retention-execution.md); resolve D-012 for lifecycle/exposure, D-011 for health-adjacent copy, D-015 for pilot |
 | Gate 5 mobile beta | Gate-level plan only | No | Current Expo/runtime/account decision and execution plan |
 | Gate 6 push/stores | Gate-level plan only | No | Post-device-beta push/store execution plan |
 | Research Gate 7 | Research design only | No user-visible work | Consent, cohort, access and statistical-review approval |
