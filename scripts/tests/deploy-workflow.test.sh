@@ -19,7 +19,7 @@ required_patterns=(
   "github\.event\.workflow_run\.head_branch == 'main'"
   'group: cb-connect-production'
   'cancel-in-progress: false'
-  'actions/download-artifact@v4'
+  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093'
   'name: cb-connect-release-\$\{\{ github\.event\.workflow_run\.head_sha \}\}'
   'run-id: \$\{\{ github\.event\.workflow_run\.id \}\}'
   'github-token: \$\{\{ github\.token \}\}'
@@ -54,7 +54,7 @@ required_patterns=(
   'CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY'
   'Record backend deployment timestamp'
   'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
-  'bash scripts/convex-safe-exec production -- env set --from-file "\$env_file" --force'
+  'bash scripts/reconcile-convex-env.sh production'
 )
 for pattern in "${required_patterns[@]}"; do
   if ! rg -q "$pattern" "$workflow"; then
@@ -62,6 +62,17 @@ for pattern in "${required_patterns[@]}"; do
     exit 1
   fi
 done
+
+line_for() {
+  grep -nF "$1" "$workflow" | head -n 1 | cut -d: -f1
+}
+artifact_identity_line="$(line_for 'Verify qualified artifact identity and checksum')"
+reconcile_line="$(line_for 'run: bash scripts/reconcile-convex-env.sh production')"
+convex_deploy_line="$(line_for 'Deploy explicit Convex compatibility release')"
+if ! (( artifact_identity_line < reconcile_line && reconcile_line < convex_deploy_line )); then
+  echo "production mutation must follow exact qualified artifact verification" >&2
+  exit 1
+fi
 
 if rg -q '^  push:' "$workflow"; then
   echo "deploy workflow must not promote directly from a push" >&2
@@ -158,8 +169,9 @@ if grep -q 'CONVEX_DEPLOY_KEY' <<<"$required_block"; then
   exit 1
 fi
 
-if ! rg -q 'if \[\[ -s "\$env_file" \]\]; then' "$workflow"; then
-  echo "deploy workflow must skip Convex environment sync when the generated file is empty" >&2
+if ! rg -q 'env remove "\$name"' scripts/reconcile-convex-env.sh || \
+   ! rg -q 'CLERK_WEBHOOK_SECRET DISCORD_WEBHOOK_URL' scripts/reconcile-convex-env.sh; then
+  echo "deploy workflow must remove absent optional managed Convex keys" >&2
   exit 1
 fi
 

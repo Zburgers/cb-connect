@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   qualify:
     name: Deterministic qualification
@@ -15,10 +18,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20.19.1
           cache: npm
@@ -56,12 +59,22 @@ jobs:
       - name: Gate 3 runner policy
         run: bash scripts/tests/prediction-runner-policy.test.sh
 
+      - name: Workflow security and release policy
+        run: |
+          bash scripts/tests/ci-workflow.test.sh
+          bash scripts/tests/deploy-workflow.test.sh
+          bash scripts/tests/release-smoke-workflow.test.sh
+
       - name: Dependency policy
         run: npm audit --omit=dev
+
+      - name: Convex runtime environment reconciliation transitions
+        run: bash scripts/tests/convex-env-reconciliation.test.sh
 
   authenticated-smoke:
     name: Authenticated release smoke
     needs: qualify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: cb-connect-auth-test
     concurrency:
@@ -69,15 +82,6 @@ jobs:
       cancel-in-progress: false
     timeout-minutes: 90
     env:
-      CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
-      CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
-      NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
-      CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
-      CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
-      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
-      NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
-      NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
-      CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
       CB_CONNECT_BACKEND_DEPLOYMENT: dev:hallowed-hummingbird-284
       CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
       CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true
@@ -86,13 +90,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Configure isolated auth artifact directory
         run: printf 'CB_CONNECT_RELEASE_AUTH_DIR=%s/cb-connect-release-auth\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20.19.1
           cache: npm
@@ -134,6 +138,12 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -187,6 +197,14 @@ jobs:
           bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
 
       - name: Run authenticated release smoke
+        env:
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
         shell: bash
         run: |
           set +e
@@ -209,7 +227,17 @@ jobs:
           exit "$status"
 
       - name: Run isolated Gates 0-2 matrix
-        if: github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        env:
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         shell: bash
         run: |
           set -euo pipefail
@@ -218,7 +246,7 @@ jobs:
           bash scripts/run-gates-0-2-qa.sh
 
       - name: Prepare redacted Gates 0-2 evidence
-        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -243,8 +271,8 @@ jobs:
             > "$safe_root/qualification.env"
 
       - name: Upload redacted Gates 0-2 evidence
-        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
-        uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-2-qa.sh') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cb-connect-gates-0-2-qa-${{ github.sha }}
           path: ${{ runner.temp }}/cb-connect-gates-0-2-qa-redacted
@@ -252,7 +280,17 @@ jobs:
           retention-days: 7
 
       - name: Run isolated Gates 0-3 matrix
-        if: github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        env:
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
         shell: bash
         run: |
           set -euo pipefail
@@ -261,7 +299,7 @@ jobs:
           bash scripts/run-gates-0-3-qa.sh
 
       - name: Prepare redacted Gates 0-3 evidence
-        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -286,8 +324,8 @@ jobs:
             > "$safe_root/qualification.env"
 
       - name: Upload redacted Gates 0-3 evidence
-        if: always() && github.event_name == 'pull_request' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
-        uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('scripts/run-gates-0-3-qa.sh') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cb-connect-gates-0-3-qa-${{ github.sha }}
           path: ${{ runner.temp }}/cb-connect-gates-0-3-qa-redacted
@@ -306,7 +344,7 @@ jobs:
 
       - name: Upload redacted failure artifact
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cb-connect-release-smoke-failure-${{ github.run_id }}
           path: ${{ runner.temp }}/cb-connect-redacted-artifacts
@@ -319,20 +357,13 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
-    env:
-      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
-      NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-      CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
-      CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
-      CB_CONNECT_COMPATIBILITY_VERSION: v1
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20.19.1
           cache: npm
@@ -349,6 +380,10 @@ jobs:
         run: printf 'CB_CONNECT_BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
 
       - name: Validate production public build configuration
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
           required=(
@@ -364,6 +399,13 @@ jobs:
           [[ "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" == pk_* ]]
 
       - name: Build the production-configured release artifact
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_SITE_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CB_CONNECT_COMMIT_SHA: ${{ github.sha }}
+          CB_CONNECT_BUILD_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          CB_CONNECT_COMPATIBILITY_VERSION: v1
         run: npm run build
 
       - name: Package immutable standalone release
@@ -376,7 +418,7 @@ jobs:
         run: bash scripts/tests/standalone-runtime.test.sh
 
       - name: Upload immutable standalone release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cb-connect-release-${{ github.sha }}
           path: ${{ runner.temp }}/cb-connect-release

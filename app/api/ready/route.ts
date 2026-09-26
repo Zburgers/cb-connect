@@ -12,6 +12,8 @@ import {
 // second is shorter than the cold/TLS path on the production VPS, producing a
 // false 503 even when the backend is healthy.
 const READINESS_TIMEOUT_MS = 5000;
+const READINESS_CACHE_TTL_MS = 1000;
+// ponytail: this bounds each Node process; use proxy admission control if horizontally scaled.
 const REQUIRED_COMPATIBILITY_VERSION = "v1";
 const DEPLOYMENT_PATTERN =
   /^(dev|preview|test|prod):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -38,6 +40,11 @@ type ReadinessResponse = {
 };
 
 class ReadinessTimeoutError extends Error {}
+
+let cachedBackendResult:
+  | { expiresAt: number; result: Awaited<ReturnType<typeof queryBackendIdentity>> }
+  | undefined;
+let backendProbe: Promise<Awaited<ReturnType<typeof queryBackendIdentity>>> | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -140,6 +147,27 @@ async function queryBackendIdentity(): Promise<
   }
 }
 
+function queryBackendIdentityBounded() {
+  const now = Date.now();
+  if (cachedBackendResult && cachedBackendResult.expiresAt > now) {
+    return Promise.resolve(cachedBackendResult.result);
+  }
+  if (backendProbe) return backendProbe;
+
+  backendProbe = queryBackendIdentity()
+    .then((result) => {
+      cachedBackendResult = {
+        expiresAt: Date.now() + READINESS_CACHE_TTL_MS,
+        result,
+      };
+      return result;
+    })
+    .finally(() => {
+      backendProbe = undefined;
+    });
+  return backendProbe;
+}
+
 export async function GET() {
   const frontend = serializeReleaseInfo(
     parseReleaseInfo(process.env as Record<string, string | undefined>),
@@ -153,7 +181,7 @@ export async function GET() {
     });
   }
 
-  const backendResult = await queryBackendIdentity();
+  const backendResult = await queryBackendIdentityBounded();
   if (backendResult.kind !== "pass") {
     return createNotReadyResponse(frontend, null, {
       metadata: "pass",

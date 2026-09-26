@@ -29,6 +29,7 @@ required_patterns=(
   'name: cb-connect-release-\$\{\{ github\.sha \}\}'
   'date -u \+%Y-%m-%dT%H:%M:%S\.000Z'
   'environment: cb-connect-auth-test'
+  "if: github\.event_name == 'push' && github\.ref == 'refs/heads/main'"
   'concurrency:'
   'group: cb-connect-auth-test'
   'cancel-in-progress: false'
@@ -53,7 +54,32 @@ done
 
 qualify_block="$(sed -n '/^  qualify:/,/^  authenticated-smoke:/p' "$workflow")"
 authenticated_block="$(sed -n '/^  authenticated-smoke:/,/^  release-artifact:/p' "$workflow")"
+auth_job_header="$(sed -n '/^  authenticated-smoke:/,/^    steps:/p' "$workflow")"
 release_block="$(sed -n '/^  release-artifact:/,$p' "$workflow")"
+
+auth_job_env="$(sed -n '/^    env:/,/^    steps:/p' <<<"$authenticated_block")"
+if rg -q 'secrets\.' <<<"$auth_job_env"; then
+  echo "authenticated test credentials must not be available at job scope" >&2
+  exit 1
+fi
+if ! rg -q "^    if: github\\.event_name == 'push' && github\\.ref == 'refs/heads/main'$" <<<"$auth_job_header"; then
+  echo "authenticated smoke must run only for the trusted main push" >&2
+  exit 1
+fi
+if rg -q 'pull_request_target' "$workflow"; then
+  echo "CI must not use privileged pull_request_target execution" >&2
+  exit 1
+fi
+if ! rg -q '^permissions:$' "$workflow" || ! rg -q '^  contents: read$' "$workflow"; then
+  echo "CI must grant only read access to the repository token by default" >&2
+  exit 1
+fi
+while IFS= read -r action_ref; do
+  if [[ ! "$action_ref" =~ ^[[:xdigit:]]{40}$ ]]; then
+    echo "workflow action is not pinned to a full commit SHA: $action_ref" >&2
+    exit 1
+  fi
+done < <(sed -nE 's/^[[:space:]]*uses:[[:space:]]+[^[:space:]]+@([^[:space:]#]+).*/\1/p' .github/workflows/*.yml)
 
 for pattern in 'name: Run isolated Gates 0-3 matrix' 'bash scripts/run-gates-0-3-qa.sh'; do
   if ! rg -Fq "$pattern" <<<"$authenticated_block"; then

@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout the qualified commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
@@ -43,12 +43,12 @@ jobs:
           test "$QUALIFIED_SHA" = "$(git rev-parse origin/main)"
 
       - name: Setup Node.js for artifact verification
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20.19.1
 
       - name: Download the exact qualified release artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cb-connect-release-${{ github.event.workflow_run.head_sha }}
           path: ${{ runner.temp }}/cb-connect-qualified-release
@@ -202,7 +202,7 @@ jobs:
           test -n "$CONVEX_DEPLOY_KEY"
 
       - name: Setup Node.js for explicit Convex release
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20.19.1
           cache: npm
@@ -213,7 +213,7 @@ jobs:
       - name: Record backend deployment timestamp
         run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
 
-      - name: Sync Convex runtime secrets
+      - name: Reconcile Convex runtime environment
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CB_CONNECT_CONVEX_CREDENTIAL_CLASS: production
@@ -226,22 +226,7 @@ jobs:
           CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_FRONTEND_API_URL }}
           CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          set -euo pipefail
-          env_file="$(mktemp)"
-          trap 'rm -f "$env_file"' EXIT
-          umask 077
-          node - "$env_file" <<'NODE'
-          const fs = require('node:fs');
-          const names = ['CLERK_FRONTEND_API_URL', 'CLERK_WEBHOOK_SECRET', 'DISCORD_WEBHOOK_URL', 'CB_CONNECT_BACKEND_DEPLOYMENT', 'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION', 'CB_CONNECT_BACKEND_DEPLOYED_AT', 'CB_CONNECT_MIGRATION_ATTESTED_ENVIRONMENT', 'CB_CONNECT_MIGRATION_ATTESTED_DEPLOYMENT', 'CB_CONNECT_MIGRATION_ANNOTATION_CAPABILITY'];
-          const content = names.filter((name) => process.env[name]).map((name) => `${name}=${process.env[name]}`).join('\n');
-          fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', { mode: 0o600 });
-          NODE
-          if [[ -s "$env_file" ]]; then
-            bash scripts/convex-safe-exec production -- env set --from-file "$env_file" --force
-          else
-            echo 'Skipping Convex runtime secret sync; no optional values are configured.'
-          fi
+        run: bash scripts/reconcile-convex-env.sh production
 
       - name: Deploy explicit Convex compatibility release
         env:
