@@ -47,6 +47,9 @@ export const generatePairingCodeInternal = internalMutation({
     if (memberships.length === MAX_MEMBERSHIPS_PER_USER) {
       throw new Error("Pairing state is ambiguous. Please contact support.");
     }
+    if (memberships.length > 1) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
     const membershipCouples = await Promise.all(
       memberships.map(async (membership) => ({
         membership,

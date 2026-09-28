@@ -453,7 +453,43 @@ describe("revoke and relink lifecycle", () => {
 
     await expect(
       asPrimary.action(api.mutations.couples.generatePairingCode, {}),
-    ).rejects.toThrow("You are already linked to a partner");
+    ).rejects.toThrow("Pairing state is ambiguous. Please contact support.");
+  });
+
+  test("fails closed for mixed pending and revoked primary memberships", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId, coupleId: revokedCoupleId } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+    const pendingCoupleId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("couples", {
+        createdAt: Date.now(),
+        status: "pending",
+      });
+      await ctx.db.insert("coupleMembers", {
+        coupleId: id,
+        userId: primaryId,
+        role: "primary",
+        sharingPain: false,
+        sharingPhase: true,
+        sharingPeriodWrite: false,
+        joinedAt: Date.now(),
+      });
+      return id;
+    });
+
+    await expect(
+      asPrimary.action(api.mutations.couples.generatePairingCode, {}),
+    ).rejects.toThrow("Pairing state is ambiguous. Please contact support.");
+    const [pendingCouple, revokedCouple, codes] = await t.run(async (ctx) =>
+      Promise.all([
+        ctx.db.get(pendingCoupleId),
+        ctx.db.get(revokedCoupleId),
+        ctx.db.query("pairingCodes").collect(),
+      ]),
+    );
+    expect(pendingCouple?.status).toBe("pending");
+    expect(revokedCouple?.status).toBe("revoked");
+    expect(codes).toEqual([]);
   });
 
   test("reopens the sole revoked membership when historical data is otherwise unambiguous", async () => {
