@@ -22,10 +22,10 @@ export const send = mutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user, membership, partnerMembership, relationshipMembershipId } =
+    const { user, couple, membership, partnerMembership, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
     const body = sanitizeMessage(args.body);
-    const now = Date.now();
+    const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
 
     const messageId = await ctx.db.insert("coupleMessages", {
       coupleId: membership.coupleId,
@@ -70,7 +70,7 @@ export const send = mutation({
 export const markDelivered = mutation({
   args: { messageId: v.id("coupleMessages") },
   handler: async (ctx, args) => {
-    const { user, membership, relationshipStartedAt, relationshipMembershipId } =
+    const { user, couple, membership, relationshipStartedAt, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
     const message = await ctx.db.get(args.messageId);
     if (!message) throw new Error("Message not found");
@@ -79,6 +79,7 @@ export const markDelivered = mutation({
       membership.coupleId,
       relationshipMembershipId,
       relationshipStartedAt,
+      couple.chatClearedAt,
     );
     if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
     const now = Date.now();
@@ -99,7 +100,7 @@ export const markDelivered = mutation({
 export const markRead = mutation({
   args: { messageId: v.id("coupleMessages") },
   handler: async (ctx, args) => {
-    const { user, membership, relationshipStartedAt, relationshipMembershipId } =
+    const { user, couple, membership, relationshipStartedAt, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
     const message = await ctx.db.get(args.messageId);
     if (!message) throw new Error("Message not found");
@@ -108,6 +109,7 @@ export const markRead = mutation({
       membership.coupleId,
       relationshipMembershipId,
       relationshipStartedAt,
+      couple.chatClearedAt,
     );
     if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
     const now = Date.now();
@@ -146,7 +148,7 @@ export const react = mutation({
     emoji: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user, membership, relationshipStartedAt, relationshipMembershipId } =
+    const { user, couple, membership, relationshipStartedAt, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
     if (!ALLOWED_REACTIONS.has(args.emoji)) {
       throw new Error("Unsupported reaction");
@@ -161,6 +163,7 @@ export const react = mutation({
       membership.coupleId,
       relationshipMembershipId,
       relationshipStartedAt,
+      couple.chatClearedAt,
     );
 
     const existing = await ctx.db
@@ -195,38 +198,22 @@ export const react = mutation({
 export const clear = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user, membership, partnerMembership, relationshipStartedAt, relationshipMembershipId } =
+    const { user, couple, membership, partnerMembership, relationshipStartedAt, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
-    const [epochMessages, legacyMessages] = await Promise.all([
-      ctx.db
-        .query("coupleMessages")
-        .withIndex("by_relationship_created", (q) =>
-          q
-            .eq("coupleId", membership.coupleId)
-            .eq("relationshipMembershipId", relationshipMembershipId)
-        )
-        .collect(),
-      ctx.db
-        .query("coupleMessages")
-        .withIndex("by_couple_created", (q) =>
-          q.eq("coupleId", membership.coupleId).gt("createdAt", relationshipStartedAt)
-        )
-        .filter((q) => q.eq(q.field("relationshipMembershipId"), undefined))
-        .collect(),
-    ]);
-    const messages = [...epochMessages, ...legacyMessages];
-
-    const now = Date.now();
-    const unclearedMessages = messages.filter((message) => message.clearedAt === undefined);
-    for (const message of unclearedMessages) {
-      await ctx.db.patch(message._id, { clearedAt: now });
-    }
-    const states = await ctx.db
-      .query("coupleChatStates")
-      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", membership.coupleId))
-      .collect();
+    const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
+    await ctx.db.patch(couple._id, { chatClearedAt: now });
+    const states = await Promise.all(
+      [user._id, partnerMembership.userId].map((userId) =>
+        ctx.db
+          .query("coupleChatStates")
+          .withIndex("by_couple_and_user", (q) =>
+            q.eq("coupleId", membership.coupleId).eq("userId", userId)
+          )
+          .unique()
+      )
+    );
     for (const state of states) {
-      await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
+      if (state) await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
     }
 
     await ctx.db.insert("notificationLog", {
@@ -239,7 +226,7 @@ export const clear = mutation({
       status: "sent",
     });
 
-    return { clearedMessages: unclearedMessages.length };
+    return { clearedAt: now };
   },
 });
 
@@ -253,10 +240,12 @@ function assertCurrentRelationshipMessage(
   coupleId: Id<"couples">,
   relationshipMembershipId: Id<"coupleMembers">,
   relationshipStartedAt: number,
+  chatClearedAt?: number,
 ) {
   if (
     message.coupleId !== coupleId ||
     message.clearedAt !== undefined ||
+    (chatClearedAt !== undefined && message.createdAt <= chatClearedAt) ||
     (message.relationshipMembershipId !== relationshipMembershipId &&
       !(
         message.relationshipMembershipId === undefined &&

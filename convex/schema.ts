@@ -149,6 +149,7 @@ export default defineSchema({
 
   couples: defineTable({
     createdAt: v.number(),
+    chatClearedAt: v.optional(v.number()),
     linkedAt: v.optional(v.number()),
     connectedSinceDate: v.optional(v.string()),
     connectedSinceUpdatedAt: v.optional(v.number()),

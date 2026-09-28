@@ -11,6 +11,7 @@ export const listForCouple = query({
       user,
       membership,
       partnerMembership,
+      couple,
       relationshipStartedAt,
       relationshipMembershipId,
     } =
@@ -24,6 +25,7 @@ export const listForCouple = query({
           q
             .eq("coupleId", membership.coupleId)
             .eq("relationshipMembershipId", relationshipMembershipId)
+            .gt("createdAt", couple.chatClearedAt ?? 0)
         )
         .filter((q) => q.eq(q.field("clearedAt"), undefined))
         .order("desc")
@@ -31,12 +33,13 @@ export const listForCouple = query({
       ctx.db
         .query("coupleMessages")
         .withIndex("by_couple_created", (q) =>
-          q.eq("coupleId", membership.coupleId).gt("createdAt", relationshipStartedAt)
+          q
+            .eq("coupleId", membership.coupleId)
+            .gt("createdAt", Math.max(relationshipStartedAt, couple.chatClearedAt ?? 0))
         )
         .filter((q) =>
           q.and(
             q.eq(q.field("relationshipMembershipId"), undefined),
-            q.eq(q.field("clearedAt"), undefined),
           )
         )
         .order("desc")

@@ -167,11 +167,12 @@ describe("couple message state", () => {
       "Current relationship message",
     ]);
 
-    await expect(
-      asPrimary.mutation(api.mutations.messages.clear, {}),
-    ).resolves.toEqual({ clearedMessages: 1 });
+    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {});
+    expect(clearResult.clearedAt).toBeGreaterThan(0);
     expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
-    expect(await t.run(async (ctx) => (await ctx.db.get(currentMessageId))?.clearedAt)).toBeDefined();
+    expect(
+      await t.run(async (ctx) => Boolean((await ctx.db.get(currentMessageId))?.clearedAt)),
+    ).toBe(false);
     await expect(asPrimary.query(api.queries.messages.listForCouple, {})).resolves.toEqual([]);
     const currentReactions = await t.run(async (ctx) =>
       ctx.db
@@ -187,6 +188,18 @@ describe("couple message state", () => {
         .collect(),
     );
     expect(oldReactions).toHaveLength(1);
+
+    const nextMessageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "After clear",
+    });
+    expect((await asPrimary.query(api.queries.messages.listForCouple, {})).map((message) => message._id))
+      .toEqual([nextMessageId]);
+    await expect(
+      asPrimary.mutation(api.mutations.messages.react, {
+        messageId: currentMessageId,
+        emoji: "✨",
+      }),
+    ).rejects.toThrow("Message not found");
   });
 
   test("toggles reactions and returns grouped counts", async () => {
