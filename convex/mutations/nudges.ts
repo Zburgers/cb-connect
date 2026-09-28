@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
+import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
 
 const NUDGE_MESSAGES: Record<string, string> = {
   "💗": "Thinking of you",
@@ -45,10 +46,13 @@ export const send = mutation({
       throw new Error("No linked partner found");
     }
     const partnerMembership = partnerMemberships[0];
+    const relationshipMembershipId =
+      membership.role === "partner" ? membership._id : partnerMembership._id;
 
     const now = Date.now();
     return await ctx.db.insert("nudges", {
       coupleId: membership.coupleId,
+      relationshipMembershipId,
       senderId: user._id,
       receiverId: partnerMembership.userId,
       emoji: args.emoji,
@@ -63,13 +67,19 @@ export const markSeen = mutation({
     nudgeId: v.id("nudges"),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
-    if (!user) {
-      throw new Error("Unauthenticated");
-    }
-
+    const { user, membership, relationshipStartedAt, relationshipMembershipId } =
+      await getActiveCoupleSpace(ctx);
     const nudge = await ctx.db.get(args.nudgeId);
-    if (!nudge || nudge.receiverId !== user._id) {
+    if (
+      !nudge ||
+      nudge.receiverId !== user._id ||
+      nudge.coupleId !== membership.coupleId ||
+      (nudge.relationshipMembershipId !== relationshipMembershipId &&
+        !(
+          nudge.relationshipMembershipId === undefined &&
+          nudge.createdAt > relationshipStartedAt
+        ))
+    ) {
       return;
     }
 

@@ -40,6 +40,24 @@ describe("couple message state", () => {
     expect(afterSecondDelivery?.readAt).toBe(afterRead?.readAt);
   });
 
+  test("keeps legacy chat rows visible within the active relationship", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, coupleId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      const couple = await ctx.db.get(coupleId);
+      await ctx.db.insert("coupleMessages", {
+        coupleId,
+        senderId: partnerId,
+        body: "Legacy active message",
+        createdAt: couple!.linkedAt! + 1,
+      });
+    });
+
+    await expect(
+      asPrimary.query(api.queries.messages.listForCouple, {}),
+    ).resolves.toEqual([expect.objectContaining({ body: "Legacy active message" })]);
+  });
+
   test("rejects acknowledgements from a user outside the couple", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, coupleId, primaryId } = await seedActiveCouple(t);
@@ -88,7 +106,7 @@ describe("couple message state", () => {
 
   test("replacement partners cannot read the previous relationship chat", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    const { asPrimary, asPartner, coupleId } = await seedActiveCouple(t);
     const oldMessageId = await asPartner.mutation(api.mutations.messages.send, {
       body: "Previous relationship message",
     });
@@ -110,6 +128,12 @@ describe("couple message state", () => {
     await asReplacementPartner.mutation(api.mutations.couples.linkPartnerWithCode, {
       code: pairing.code,
     });
+    const linkedAt = await t.run(async (ctx) => {
+      const couple = await ctx.db.get(coupleId);
+      await ctx.db.patch(oldMessageId, { createdAt: couple!.linkedAt! });
+      return couple!.linkedAt!;
+    });
+    expect(await t.run(async (ctx) => (await ctx.db.get(oldMessageId))?.createdAt)).toBe(linkedAt);
 
     await expect(
       asReplacementPartner.query(api.queries.messages.listForCouple, {}),
@@ -145,9 +169,17 @@ describe("couple message state", () => {
 
     await expect(
       asPrimary.mutation(api.mutations.messages.clear, {}),
-    ).resolves.toEqual({ deletedMessages: 1 });
+    ).resolves.toEqual({ clearedMessages: 1 });
     expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
-    expect(await t.run(async (ctx) => ctx.db.get(currentMessageId))).toBeNull();
+    expect(await t.run(async (ctx) => (await ctx.db.get(currentMessageId))?.clearedAt)).toBeDefined();
+    await expect(asPrimary.query(api.queries.messages.listForCouple, {})).resolves.toEqual([]);
+    const currentReactions = await t.run(async (ctx) =>
+      ctx.db
+        .query("coupleMessageReactions")
+        .withIndex("by_message", (q) => q.eq("messageId", currentMessageId))
+        .collect(),
+    );
+    expect(currentReactions).toHaveLength(1);
     const oldReactions = await t.run(async (ctx) =>
       ctx.db
         .query("coupleMessageReactions")

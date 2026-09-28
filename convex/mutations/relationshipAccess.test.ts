@@ -74,8 +74,8 @@ describe("relationship access integrity", () => {
 
   test("a replacement relationship cannot read the previous partner's nudge", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary, asPartner } = await seedActiveCouple(t);
-    await asPartner.mutation(api.mutations.nudges.send, { emoji: "💗" });
+    const { asPrimary, asPartner, coupleId } = await seedActiveCouple(t);
+    const nudgeId = await asPartner.mutation(api.mutations.nudges.send, { emoji: "💗" });
     await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
     const pairing = await asPrimary.action(
       api.mutations.couples.generatePairingCode,
@@ -90,9 +90,37 @@ describe("relationship access integrity", () => {
       api.mutations.couples.linkPartnerWithCode,
       { code: pairing.code },
     );
+    await t.run(async (ctx) => {
+      const couple = await ctx.db.get(coupleId);
+      await ctx.db.patch(nudgeId, { createdAt: couple!.linkedAt! });
+    });
+    await asPrimary.mutation(api.mutations.nudges.markSeen, { nudgeId });
+    expect(await t.run(async (ctx) => (await ctx.db.get(nudgeId))?.seenAt ?? null)).toBeNull();
 
     await expect(
       asPrimary.query(api.queries.nudges.latestReceived, {}),
     ).resolves.toBeNull();
+  });
+
+  test("keeps legacy nudges visible within the active relationship", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, coupleId, partnerId, primaryId } = await seedActiveCouple(t);
+    const nudgeId = await t.run(async (ctx) => {
+      const couple = await ctx.db.get(coupleId);
+      return await ctx.db.insert("nudges", {
+        coupleId,
+        senderId: partnerId,
+        receiverId: primaryId,
+        emoji: "✨",
+        message: "Legacy active nudge",
+        createdAt: couple!.linkedAt! + 1,
+      });
+    });
+
+    await expect(
+      asPrimary.query(api.queries.nudges.latestReceived, {}),
+    ).resolves.toEqual(expect.objectContaining({ emoji: "✨" }));
+    await asPrimary.mutation(api.mutations.nudges.markSeen, { nudgeId });
+    expect(await t.run(async (ctx) => (await ctx.db.get(nudgeId))?.seenAt)).toBeDefined();
   });
 });

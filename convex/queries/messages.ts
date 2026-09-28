@@ -7,17 +7,44 @@ export const listForCouple = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user, membership, partnerMembership, relationshipStartedAt } =
+    const {
+      user,
+      membership,
+      partnerMembership,
+      relationshipStartedAt,
+      relationshipMembershipId,
+    } =
       await getActiveCoupleSpace(ctx);
     const limit = Math.min(Math.max(args.limit ?? 80, 1), 120);
 
-    const messages = await ctx.db
-      .query("coupleMessages")
-      .withIndex("by_couple_created", (q) =>
-        q.eq("coupleId", membership.coupleId).gte("createdAt", relationshipStartedAt)
-      )
-      .order("desc")
-      .take(limit);
+    const [epochMessages, legacyMessages] = await Promise.all([
+      ctx.db
+        .query("coupleMessages")
+        .withIndex("by_relationship_created", (q) =>
+          q
+            .eq("coupleId", membership.coupleId)
+            .eq("relationshipMembershipId", relationshipMembershipId)
+        )
+        .filter((q) => q.eq(q.field("clearedAt"), undefined))
+        .order("desc")
+        .take(limit),
+      ctx.db
+        .query("coupleMessages")
+        .withIndex("by_couple_created", (q) =>
+          q.eq("coupleId", membership.coupleId).gt("createdAt", relationshipStartedAt)
+        )
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("relationshipMembershipId"), undefined),
+            q.eq(q.field("clearedAt"), undefined),
+          )
+        )
+        .order("desc")
+        .take(limit),
+    ]);
+    const messages = [...epochMessages, ...legacyMessages]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
 
     const ordered = messages.reverse();
     return await Promise.all(

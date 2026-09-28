@@ -33,6 +33,8 @@ export async function getActiveCoupleSpace(ctx: QueryCtx | MutationCtx) {
     partnerMembership: partnerMemberships[0],
     relationshipStartedAt:
       couple.linkedAt ?? Math.max(membership.joinedAt, partnerMemberships[0].joinedAt),
+    relationshipMembershipId:
+      membership.role === "partner" ? membership._id : partnerMemberships[0]._id,
   };
 }
 

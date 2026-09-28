@@ -23,17 +23,38 @@ export const latestReceived = query({
     const relationshipStartedAt =
       coupleData.couple.linkedAt ??
       Math.max(coupleData.membership.joinedAt, partnerMemberships[0].joinedAt);
+    const relationshipMembershipId =
+      coupleData.membership.role === "partner"
+        ? coupleData.membership._id
+        : partnerMemberships[0]._id;
 
-    const nudge = await ctx.db
-      .query("nudges")
-      .withIndex("by_couple_receiver_created", (q) =>
-        q
-          .eq("coupleId", coupleData.membership.coupleId)
-          .eq("receiverId", user._id)
-          .gte("createdAt", relationshipStartedAt)
-      )
-      .order("desc")
-      .first();
+    const [epochNudge, legacyNudge] = await Promise.all([
+      ctx.db
+        .query("nudges")
+        .withIndex("by_relationship_receiver_created", (q) =>
+          q
+            .eq("coupleId", coupleData.membership.coupleId)
+            .eq("relationshipMembershipId", relationshipMembershipId)
+            .eq("receiverId", user._id)
+        )
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("nudges")
+        .withIndex("by_couple_receiver_created", (q) =>
+          q
+            .eq("coupleId", coupleData.membership.coupleId)
+            .eq("receiverId", user._id)
+            .gt("createdAt", relationshipStartedAt)
+        )
+        .filter((q) => q.eq(q.field("relationshipMembershipId"), undefined))
+        .order("desc")
+        .first(),
+    ]);
+    const nudge =
+      !legacyNudge || (epochNudge && epochNudge.createdAt >= legacyNudge.createdAt)
+        ? epochNudge
+        : legacyNudge;
 
     if (!nudge || nudge.seenAt) {
       return null;
