@@ -15,10 +15,10 @@ async function getPartnerPresenceState(ctx: QueryCtx) {
 
   const partnerMemberships = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
       q
         .eq("coupleId", membership.coupleId)
-        .eq("role", membership.role === "primary" ? "partner" : "primary")
+        .eq("role", membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
     )
     .take(2);
 

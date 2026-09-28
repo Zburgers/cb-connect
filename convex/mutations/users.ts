@@ -23,7 +23,9 @@ export const updateUserRole = mutation({
 
     const membership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
       .take(1);
     if (membership.length > 0 && user.role !== args.role) {
       throw new Error("Role cannot be changed after joining a couple");

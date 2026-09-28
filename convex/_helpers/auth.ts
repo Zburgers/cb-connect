@@ -35,7 +35,9 @@ export async function getCoupleForUser(
 ) {
   const memberships = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .withIndex("by_user_and_revoked_at", (q) =>
+      q.eq("userId", userId).eq("revokedAt", undefined)
+    )
     .take(2);
 
   if (memberships.length !== 1) return null;
@@ -48,14 +50,14 @@ export async function getCoupleForUser(
   const [primaries, partners] = await Promise.all([
     ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", couple._id).eq("role", "primary")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "primary").eq("revokedAt", undefined)
       )
       .take(2),
     ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", couple._id).eq("role", "partner")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "partner").eq("revokedAt", undefined)
       )
       .take(2),
   ]);
@@ -85,8 +87,8 @@ export async function canViewPainData(
 
   const targetMembership = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
-      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary")
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
     )
     .first();
 
@@ -95,8 +97,8 @@ export async function canViewPainData(
   // Check if primary's membership has pain sharing on
   const primaryMembership = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
-      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary")
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
     )
     .first();
 

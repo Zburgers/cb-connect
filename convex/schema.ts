@@ -169,10 +169,13 @@ export default defineSchema({
     sharingPeriodWrite: v.optional(v.boolean()),
     partnerNickname: v.optional(v.string()),
     joinedAt: v.number(),
+    revokedAt: v.optional(v.number()),
   })
     .index("by_couple", ["coupleId"])
     .index("by_user", ["userId"])
-    .index("by_couple_and_role", ["coupleId", "role"]),
+    .index("by_couple_and_role", ["coupleId", "role"])
+    .index("by_user_and_revoked_at", ["userId", "revokedAt"])
+    .index("by_couple_and_role_and_revoked_at", ["coupleId", "role", "revokedAt"]),
 
   pairingCodes: defineTable({
     code: v.string(),

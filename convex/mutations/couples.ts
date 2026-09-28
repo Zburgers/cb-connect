@@ -42,7 +42,9 @@ export const generatePairingCodeInternal = internalMutation({
 
     const memberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
       .take(MAX_MEMBERSHIPS_PER_USER);
     if (memberships.length === MAX_MEMBERSHIPS_PER_USER) {
       throw new Error("Pairing state is ambiguous. Please contact support.");
@@ -87,8 +89,8 @@ export const generatePairingCodeInternal = internalMutation({
     if (selected?.couple.status === "pending") {
       const existingPartners = await ctx.db
         .query("coupleMembers")
-        .withIndex("by_couple_and_role", (q) =>
-          q.eq("coupleId", selected.couple._id).eq("role", "partner")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", selected.couple._id).eq("role", "partner").eq("revokedAt", undefined)
         )
         .take(1);
       if (existingPartners.length > 0) {
@@ -97,15 +99,13 @@ export const generatePairingCodeInternal = internalMutation({
     }
 
     if (selected?.couple.status === "revoked") {
-      // Revocation removes the partner membership but intentionally keeps the
-      // primary membership. Reopen that couple for a fresh invite so the
-      // primary does not accumulate duplicate memberships that hide the new
-      // active link behind the revoked one.
+      // The revoked member row remains as relationship history; active lookups
+      // use the revokedAt index so a re-link is a fresh membership epoch.
       coupleId = selected.membership.coupleId;
       const remainingPartners = await ctx.db
         .query("coupleMembers")
-        .withIndex("by_couple_and_role", (q) =>
-          q.eq("coupleId", coupleId).eq("role", "partner")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined)
         )
         .take(1);
       if (remainingPartners.length > 0) {
@@ -294,14 +294,14 @@ export const linkPartnerWithCode = mutation({
     const couple = await ctx.db.get(pairingCode.coupleId);
     const primaryMemberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
       )
       .take(2);
     const partnerMemberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "partner")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "partner").eq("revokedAt", undefined)
       )
       .take(1);
 
@@ -324,7 +324,9 @@ export const linkPartnerWithCode = mutation({
     // Check if partner already linked
     const existingMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
       .take(1);
 
     if (existingMembership.length > 0) {
@@ -372,8 +374,8 @@ export const linkPartnerWithCode = mutation({
     // Find the primary user to notify them
     const primaryMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
       )
       .first();
 
@@ -403,7 +405,9 @@ export const revokePartnerAccess = mutation({
 
     const memberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
       .take(2);
     if (memberships.length !== 1 || memberships[0].role !== "primary") {
       throw new Error("You are not part of a couple");
@@ -443,12 +447,18 @@ export const revokePartnerAccess = mutation({
       });
     }
 
+    const revokedAt = Date.now();
     for await (const partnerMembership of ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", memberships[0].coupleId).eq("role", "partner")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", memberships[0].coupleId)
+          .eq("role", "partner").eq("revokedAt", undefined)
       )) {
-      await ctx.db.delete(partnerMembership._id);
+      await ctx.db.patch(partnerMembership._id, {
+        revokedAt,
+        sharingPain: false,
+        sharingPeriodWrite: false,
+      });
     }
 
     return { success: true };
@@ -572,8 +582,11 @@ export const updateConnectedSinceDate = mutation({
 
     const partnerMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple", (q) => q.eq("coupleId", coupleData.membership.coupleId))
-      .filter((q) => q.neq(q.field("userId"), user._id))
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q
+          .eq("coupleId", coupleData.membership.coupleId)
+          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+      )
       .first();
 
     if (partnerMembership) {

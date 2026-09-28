@@ -14,8 +14,11 @@ export const getCoupleStatus = query({
 
     const partnerMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-      .filter((q) => q.neq(q.field("userId"), user._id))
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q
+          .eq("coupleId", membership.coupleId)
+          .eq("role", membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+      )
       .first();
 
     let partnerInfo = null;
@@ -37,8 +40,8 @@ export const getCoupleStatus = query({
     if (membership.role === "partner") {
       const primaryMembership = await ctx.db
         .query("coupleMembers")
-        .withIndex("by_couple_and_role", (q) =>
-          q.eq("coupleId", membership.coupleId).eq("role", "primary")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
         )
         .first();
 

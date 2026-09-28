@@ -13,10 +13,10 @@ export const latestReceived = query({
     if (!coupleData || coupleData.couple.status !== "active") return null;
     const partnerMemberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
         q
           .eq("coupleId", coupleData.membership.coupleId)
-          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary")
+          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
       )
       .take(2);
     if (partnerMemberships.length !== 1) return null;

@@ -317,18 +317,25 @@ describe("revoke and relink lifecycle", () => {
     ).resolves.toMatchObject({ isLinked: false });
     await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
 
-    const [remainingPartners, code] = await t.run(async (ctx) =>
+    const [remainingPartners, retainedPartner, code] = await t.run(async (ctx) =>
       Promise.all([
+        ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+            q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+          )
+          .collect(),
         ctx.db
           .query("coupleMembers")
           .withIndex("by_couple_and_role", (q) =>
             q.eq("coupleId", coupleId).eq("role", "partner"),
           )
-          .collect(),
+          .first(),
         ctx.db.get(oldCode),
       ]),
     );
     expect(remainingPartners).toHaveLength(0);
+    expect(retainedPartner?.revokedAt).toBeDefined();
     expect(code?.status).toBe("expired");
   });
 
@@ -384,8 +391,8 @@ describe("revoke and relink lifecycle", () => {
     const partners = await t.run(async (ctx) =>
       ctx.db
         .query("coupleMembers")
-        .withIndex("by_couple_and_role", (q) =>
-          q.eq("coupleId", coupleId).eq("role", "partner"),
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
         )
         .collect(),
     );
@@ -428,7 +435,9 @@ describe("revoke and relink lifecycle", () => {
 
     expect(primaryStatus.isLinked).toBe(true);
     expect(partnerStatus.isLinked).toBe(true);
-    expect(memberships).toHaveLength(2);
+    expect(memberships).toHaveLength(3);
+    expect(memberships.filter((membership) => membership.revokedAt === undefined)).toHaveLength(2);
+    expect(memberships.find((membership) => membership.revokedAt !== undefined)).toBeDefined();
   });
 
   test("rejects multiple historical revoked memberships instead of reopening an arbitrary couple", async () => {
