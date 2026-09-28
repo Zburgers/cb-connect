@@ -135,7 +135,7 @@ if grep -Eq 'run_lane gate0-.*e2e/release-smoke\.spec\.ts' scripts/run-gates-0-2
 fi
 
 for flag in CB_CONNECT_PERIOD_PREDICTION_V2 CB_CONNECT_PARTNER_PREDICTION_V2; do
-  if ! rg -Fq "env set $flag false" scripts/run-gates-0-2-qa.sh; then
+  if ! grep -Fq "env set $flag false" scripts/run-gates-0-2-qa.sh; then
     echo "Gate 0-2 QA must keep the independent Gate 3 flag off: $flag" >&2
     exit 1
   fi
