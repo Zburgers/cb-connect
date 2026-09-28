@@ -166,7 +166,7 @@ export default function PartnerPage() {
   };
 
   const handleLinkPartner = async () => {
-    if (code.length !== 12) return;
+    if (code.length !== 6 && code.length !== 12) return;
     setIsSubmitting(true);
     try {
       const result = await linkPartner({ code });
@@ -558,7 +558,7 @@ export default function PartnerPage() {
       {!coupleStatus?.isLinked && me.role === "partner" && (
         <DigitalLocket
           title="Unlock the shared space"
-          description="Enter the 12-character code your partner generated. You will only see what they choose to share."
+          description="Enter the 6-digit or 12-character code your partner generated. You will only see what they choose to share."
           className="animate-slide-up"
         >
           <label className="text-sm font-semibold text-foreground" htmlFor="partner-code">
@@ -576,14 +576,14 @@ export default function PartnerPage() {
                   .slice(0, 12),
               )
             }
-            placeholder="Enter 12-character code"
+            placeholder="Enter 6-digit or 12-character code"
             className="contrast-glass w-full rounded-[1.4rem] px-4 py-4 text-center font-data text-3xl tracking-widest text-foreground outline-none transition-colors placeholder:text-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/15"
             maxLength={12}
           />
 
           <button
             onClick={handleLinkPartner}
-            disabled={isSubmitting || code.length !== 12}
+            disabled={isSubmitting || (code.length !== 6 && code.length !== 12)}
             className="w-full rounded-[1.4rem] bg-secondary py-4 font-semibold text-secondary-foreground transition-all press-feedback disabled:opacity-50"
           >
             {isSubmitting ? "Linking..." : "Link Account"}

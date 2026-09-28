@@ -64,9 +64,21 @@ describe("assisted period sharing settings", () => {
 
   test("re-pairing clears prior partner metadata and resets approved sharing defaults", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary, primaryId, coupleId } = await seedActiveCouple(t, {
+    const { asPrimary, primaryId, partnerId, coupleId } = await seedActiveCouple(t, {
       sharingPhase: true,
       sharingPeriodWrite: true,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: primaryId,
+        unreadCount: 4,
+      });
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 3,
+      });
     });
     await asPrimary.mutation(api.mutations.couples.updateSharingSettings, {
       sharingPain: true,
@@ -133,6 +145,13 @@ describe("assisted period sharing settings", () => {
       isLinked: true,
       sharingSettings: { pain: false, phase: true, periodWrite: false },
     });
+    const existingChatStates = await t.run(async (ctx) =>
+      ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) => q.eq("coupleId", coupleId))
+        .collect(),
+    );
+    expect(existingChatStates.map((state) => state.unreadCount)).toEqual([0, 0]);
     expect(newPartnerId).toBeDefined();
   });
 });
@@ -162,6 +181,75 @@ describe("revoke and relink lifecycle", () => {
     expect(pairing.code).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
     expect(pairing.expiresAt).toBeGreaterThanOrEqual(before + 24 * 60 * 60 * 1000);
     expect(pairing.expiresAt).toBeLessThanOrEqual(after + 24 * 60 * 60 * 1000);
+  });
+
+  test("keeps the five-invites-per-hour generation limit", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+
+    for (let i = 0; i < 5; i += 1) {
+      await asPrimary.action(api.mutations.couples.generatePairingCode, {});
+    }
+
+    await expect(
+      asPrimary.action(api.mutations.couples.generatePairingCode, {}),
+    ).rejects.toThrow("Too many pairing codes generated");
+  });
+
+  test("redeems an already-issued active unexpired legacy six-digit invite", async () => {
+    const t = convexTest(schema, modules);
+    const primaryId = await seedUser(t, {
+      clerkId: "legacy-code-primary",
+      name: "Primary",
+      role: "primary",
+    });
+    const coupleId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("couples", {
+        createdAt: Date.now(),
+        status: "pending",
+      });
+      await ctx.db.insert("coupleMembers", {
+        coupleId: id,
+        userId: primaryId,
+        role: "primary",
+        sharingPain: false,
+        sharingPhase: true,
+        sharingPeriodWrite: false,
+        joinedAt: Date.now(),
+      });
+      return id;
+    });
+    const legacyExpiresAt = Date.now() + 30 * 60 * 1000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("pairingCodes", {
+        code: "482731",
+        coupleId,
+        createdBy: primaryId,
+        expiresAt: legacyExpiresAt,
+        status: "active",
+      });
+    });
+    await seedUser(t, {
+      clerkId: "legacy-code-partner",
+      name: "Legacy Code Partner",
+      role: "partner",
+    });
+
+    const result = await t.withIdentity({ subject: "legacy-code-partner" }).mutation(
+      api.mutations.couples.linkPartnerWithCode,
+      { code: "482731" },
+    );
+
+    expect(result).toMatchObject({ success: true, coupleId });
+    const redeemedCode = await t.run(async (ctx) =>
+      ctx.db
+        .query("pairingCodes")
+        .withIndex("by_code", (q) => q.eq("code", "482731"))
+        .unique(),
+    );
+    expect(redeemedCode).toMatchObject({ status: "used", usedBy: expect.any(String) });
+    expect(redeemedCode?.expiresAt).toBe(legacyExpiresAt);
   });
 
   test("per-user and per-code throttles do not extend their own windows", async () => {

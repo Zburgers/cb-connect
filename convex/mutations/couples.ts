@@ -10,6 +10,7 @@ const MAX_MEMBERSHIPS_PER_USER = 3;
 const PAIRING_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const PAIRING_CODE_LENGTH = 12;
 const PAIRING_CODE_PATTERN = /^[0-9A-HJKMNP-TV-Z]{12}$/;
+const LEGACY_PAIRING_CODE_PATTERN = /^\d{6}$/;
 
 export const generatePairingCode = action({
   args: {},
@@ -151,9 +152,13 @@ export const generatePairingCodeInternal = internalMutation({
       // Invalidate existing active codes
       const existingCodes = await ctx.db
         .query("pairingCodes")
-        .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
-        .filter((q) => q.eq(q.field("status"), "active"))
-        .collect();
+        .withIndex("by_couple_and_status", (q) =>
+          q.eq("coupleId", coupleId).eq("status", "active")
+        )
+        .take(2);
+      if (existingCodes.length > 1) {
+        throw new Error("Pairing state is ambiguous. Please contact support.");
+      }
 
       for (const code of existingCodes) {
         await ctx.db.patch(code._id, { status: "expired" });
@@ -164,9 +169,10 @@ export const generatePairingCodeInternal = internalMutation({
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     const recentCodes = await ctx.db
       .query("pairingCodes")
-      .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
-      .filter((q) => q.gte(q.field("_creationTime"), oneHourAgo))
-      .collect();
+      .withIndex("by_couple", (q) =>
+        q.eq("coupleId", coupleId).gte("_creationTime", oneHourAgo)
+      )
+      .take(5);
 
     if (recentCodes.length >= 5) {
       throw new Error("Too many pairing codes generated. Please wait before generating another.");
@@ -219,7 +225,9 @@ export const linkPartnerWithCode = mutation({
     }
 
     const submittedCode = args.code.length <= 64 ? args.code.trim().toUpperCase() : "";
-    const hasValidFormat = PAIRING_CODE_PATTERN.test(submittedCode);
+    const hasValidFormat =
+      PAIRING_CODE_PATTERN.test(submittedCode) ||
+      LEGACY_PAIRING_CODE_PATTERN.test(submittedCode);
     const enteredCode = hasValidFormat ? submittedCode : "";
     const now = Date.now();
     const failedAttemptWindowStart = now - PAIRING_CODE_ATTEMPT_WINDOW_MS;
@@ -351,6 +359,18 @@ export const linkPartnerWithCode = mutation({
       joinedAt: Date.now(),
     });
 
+    for (const userId of [primaryMemberships[0].userId, user._id]) {
+      const state = await ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", pairingCode.coupleId).eq("userId", userId)
+        )
+        .first();
+      if (state) {
+        await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
+      }
+    }
+
     // Mark code as used
     await ctx.db.patch(pairingCode._id, {
       status: "used",
@@ -416,6 +436,18 @@ export const revokePartnerAccess = mutation({
     if (!couple || couple.status === "revoked") {
       throw new Error("You are not part of a couple");
     }
+    const activePartners = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "partner").eq("revokedAt", undefined)
+      )
+      .take(3);
+    if (
+      activePartners.length > 2 ||
+      (couple.status === "active" && activePartners.length === 0)
+    ) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
 
     await ctx.db.patch(memberships[0].coupleId, {
       status: "revoked",
@@ -431,29 +463,34 @@ export const revokePartnerAccess = mutation({
 
     const activeCodes = await ctx.db
       .query("pairingCodes")
-      .withIndex("by_couple", (q) => q.eq("coupleId", memberships[0].coupleId))
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .collect();
+      .withIndex("by_couple_and_status", (q) =>
+        q.eq("coupleId", memberships[0].coupleId).eq("status", "active")
+      )
+      .take(6);
+    if (activeCodes.length === 6) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
     for (const code of activeCodes) {
       await ctx.db.patch(code._id, { status: "expired" });
     }
 
-    for await (const state of ctx.db
-      .query("coupleChatStates")
-      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", memberships[0].coupleId))) {
-      await ctx.db.patch(state._id, {
-        unreadCount: 0,
-        lastReadAt: Date.now(),
-      });
+    for (const userId of [memberships[0].userId, ...activePartners.map(({ userId }) => userId)]) {
+      const state = await ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", memberships[0].coupleId).eq("userId", userId)
+        )
+        .first();
+      if (state) {
+        await ctx.db.patch(state._id, {
+          unreadCount: 0,
+          lastReadAt: Date.now(),
+        });
+      }
     }
 
     const revokedAt = Date.now();
-    for await (const partnerMembership of ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
-        q.eq("coupleId", memberships[0].coupleId)
-          .eq("role", "partner").eq("revokedAt", undefined)
-      )) {
+    for (const partnerMembership of activePartners) {
       await ctx.db.patch(partnerMembership._id, {
         revokedAt,
         sharingPain: false,
@@ -472,10 +509,9 @@ async function countRecentFailedPairingAttemptsByUser(
 ) {
   const attempts = await ctx.db
     .query("pairingCodeAttempts")
-    .withIndex("by_user_and_attempted_at", (q) =>
-      q.eq("userId", userId).gte("attemptedAt", since)
+    .withIndex("by_user_and_success_and_attempted_at", (q) =>
+      q.eq("userId", userId).eq("success", false).gte("attemptedAt", since)
     )
-    .filter((q) => q.eq(q.field("success"), false))
     .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
 
   return attempts.length;
@@ -488,10 +524,9 @@ async function countRecentFailedPairingAttemptsByCode(
 ) {
   const attempts = await ctx.db
     .query("pairingCodeAttempts")
-    .withIndex("by_entered_code_and_attempted_at", (q) =>
-      q.eq("enteredCode", enteredCode).gte("attemptedAt", since)
+    .withIndex("by_entered_code_and_success_and_attempted_at", (q) =>
+      q.eq("enteredCode", enteredCode).eq("success", false).gte("attemptedAt", since)
     )
-    .filter((q) => q.eq(q.field("success"), false))
     .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
 
   return attempts.length;

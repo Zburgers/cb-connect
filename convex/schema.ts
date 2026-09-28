@@ -192,6 +192,7 @@ export default defineSchema({
   })
     .index("by_code", ["code"])
     .index("by_couple", ["coupleId"])
+    .index("by_couple_and_status", ["coupleId", "status"])
     .index("by_status_and_expiry", ["status", "expiresAt"]),
 
   pairingCodeAttempts: defineTable({
@@ -203,8 +204,10 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_and_attempted_at", ["userId", "attemptedAt"])
+    .index("by_user_and_success_and_attempted_at", ["userId", "success", "attemptedAt"])
     .index("by_entered_code", ["enteredCode"])
-    .index("by_entered_code_and_attempted_at", ["enteredCode", "attemptedAt"]),
+    .index("by_entered_code_and_attempted_at", ["enteredCode", "attemptedAt"])
+    .index("by_entered_code_and_success_and_attempted_at", ["enteredCode", "success", "attemptedAt"]),
 
   periodEvents: defineTable({
     userId: v.id("users"),
