@@ -92,6 +92,10 @@ describe("couple message state", () => {
     const oldMessageId = await asPartner.mutation(api.mutations.messages.send, {
       body: "Previous relationship message",
     });
+    await asPrimary.mutation(api.mutations.messages.react, {
+      messageId: oldMessageId,
+      emoji: "💗",
+    });
     await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
     const pairing = await asPrimary.action(
       api.mutations.couples.generatePairingCode,
@@ -114,14 +118,43 @@ describe("couple message state", () => {
       asPrimary.query(api.queries.messages.listForCouple, {}),
     ).resolves.toEqual([]);
     expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
+    await expect(
+      asPrimary.mutation(api.mutations.messages.markRead, { messageId: oldMessageId }),
+    ).rejects.toThrow("Message not found");
+    await expect(
+      asPrimary.mutation(api.mutations.messages.markDelivered, { messageId: oldMessageId }),
+    ).rejects.toThrow("Message not found");
+    await expect(
+      asPrimary.mutation(api.mutations.messages.react, {
+        messageId: oldMessageId,
+        emoji: "✨",
+      }),
+    ).rejects.toThrow("Message not found");
 
-    await asReplacementPartner.mutation(api.mutations.messages.send, {
+    const currentMessageId = await asReplacementPartner.mutation(api.mutations.messages.send, {
       body: "Current relationship message",
+    });
+    await asPrimary.mutation(api.mutations.messages.react, {
+      messageId: currentMessageId,
+      emoji: "✨",
     });
     const messages = await asPrimary.query(api.queries.messages.listForCouple, {});
     expect(messages.map((message) => message.body)).toEqual([
       "Current relationship message",
     ]);
+
+    await expect(
+      asPrimary.mutation(api.mutations.messages.clear, {}),
+    ).resolves.toEqual({ deletedMessages: 1 });
+    expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
+    expect(await t.run(async (ctx) => ctx.db.get(currentMessageId))).toBeNull();
+    const oldReactions = await t.run(async (ctx) =>
+      ctx.db
+        .query("coupleMessageReactions")
+        .withIndex("by_message", (q) => q.eq("messageId", oldMessageId))
+        .collect(),
+    );
+    expect(oldReactions).toHaveLength(1);
   });
 
   test("toggles reactions and returns grouped counts", async () => {

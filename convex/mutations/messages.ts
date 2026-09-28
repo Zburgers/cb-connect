@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
-import { getActiveCoupleSpace, assertCoupleMember } from "../_helpers/coupleSpace";
+import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
 
 const MAX_MESSAGE_LENGTH = 500;
 const ALLOWED_REACTIONS = new Set(["💗", "✨", "🫶", "😂", "🥺", "🌙"]);
@@ -67,10 +67,10 @@ export const send = mutation({
 export const markDelivered = mutation({
   args: { messageId: v.id("coupleMessages") },
   handler: async (ctx, args) => {
-    const { user } = await getActiveCoupleSpace(ctx);
+    const { user, membership, relationshipStartedAt } = await getActiveCoupleSpace(ctx);
     const message = await ctx.db.get(args.messageId);
     if (!message) throw new Error("Message not found");
-    await assertCoupleMember(ctx, message.coupleId, user._id);
+    assertCurrentRelationshipMessage(message, membership.coupleId, relationshipStartedAt);
     if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
     const now = Date.now();
     if (!message.deliveredAt || message.deliveredAt < now) {
@@ -90,10 +90,10 @@ export const markDelivered = mutation({
 export const markRead = mutation({
   args: { messageId: v.id("coupleMessages") },
   handler: async (ctx, args) => {
-    const { user } = await getActiveCoupleSpace(ctx);
+    const { user, membership, relationshipStartedAt } = await getActiveCoupleSpace(ctx);
     const message = await ctx.db.get(args.messageId);
     if (!message) throw new Error("Message not found");
-    await assertCoupleMember(ctx, message.coupleId, user._id);
+    assertCurrentRelationshipMessage(message, membership.coupleId, relationshipStartedAt);
     if (message.senderId === user._id) throw new Error("Cannot acknowledge your own message");
     const now = Date.now();
     if (!message.deliveredAt || message.deliveredAt < now) {
@@ -131,7 +131,7 @@ export const react = mutation({
     emoji: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user } = await getActiveCoupleSpace(ctx);
+    const { user, membership, relationshipStartedAt } = await getActiveCoupleSpace(ctx);
     if (!ALLOWED_REACTIONS.has(args.emoji)) {
       throw new Error("Unsupported reaction");
     }
@@ -140,7 +140,7 @@ export const react = mutation({
     if (!message) {
       throw new Error("Message not found");
     }
-    await assertCoupleMember(ctx, message.coupleId, user._id);
+    assertCurrentRelationshipMessage(message, membership.coupleId, relationshipStartedAt);
 
     const existing = await ctx.db
       .query("coupleMessageReactions")
@@ -174,20 +174,21 @@ export const react = mutation({
 export const clear = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user, membership, partnerMembership } = await getActiveCoupleSpace(ctx);
+    const { user, membership, partnerMembership, relationshipStartedAt } =
+      await getActiveCoupleSpace(ctx);
     const messages = await ctx.db
       .query("coupleMessages")
-      .withIndex("by_couple_created", (q) => q.eq("coupleId", membership.coupleId))
-      .collect();
-    const reactions = await ctx.db
-      .query("coupleMessageReactions")
-      .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
+      .withIndex("by_couple_created", (q) =>
+        q.eq("coupleId", membership.coupleId).gte("createdAt", relationshipStartedAt)
+      )
       .collect();
 
-    for (const reaction of reactions) {
-      await ctx.db.delete(reaction._id);
-    }
     for (const message of messages) {
+      const reactions = await ctx.db
+        .query("coupleMessageReactions")
+        .withIndex("by_message", (q) => q.eq("messageId", message._id))
+        .collect();
+      for (const reaction of reactions) await ctx.db.delete(reaction._id);
       await ctx.db.delete(message._id);
     }
     const states = await ctx.db
@@ -211,3 +212,13 @@ export const clear = mutation({
     return { deletedMessages: messages.length };
   },
 });
+
+function assertCurrentRelationshipMessage(
+  message: { coupleId: string; createdAt: number },
+  coupleId: string,
+  relationshipStartedAt: number,
+) {
+  if (message.coupleId !== coupleId || message.createdAt < relationshipStartedAt) {
+    throw new Error("Message not found");
+  }
+}
