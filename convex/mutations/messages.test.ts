@@ -8,6 +8,57 @@ import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
 
 describe("couple message state", () => {
+  test("preserves exactly 80 legacy unread messages when sequencing begins", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      for (let i = 1; i <= 80; i += 1) {
+        await ctx.db.insert("coupleMessages", {
+          coupleId,
+          senderId: primaryId,
+          body: `Legacy ${i}`,
+          createdAt: i,
+        });
+      }
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 80,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "First sequenced" });
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 81,
+    });
+
+    const page = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    const latestLegacy = page.find((message) => message.body === "Legacy 80");
+    expect(latestLegacy).toBeDefined();
+    await asPartner.mutation(api.mutations.messages.markReadThrough, {
+      messageId: latestLegacy!._id,
+    });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 1,
+    });
+    const state = await t.run(async (ctx) =>
+      ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", coupleId).eq("userId", partnerId)
+        )
+        .unique(),
+    );
+    expect(state).toMatchObject({
+      lastMessageSequence: 81,
+      legacySequenceBase: 80,
+      legacyUnreadCount: 0,
+      unreadCount: 1,
+    });
+  });
+
   test("increments only the recipient unread counter", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);

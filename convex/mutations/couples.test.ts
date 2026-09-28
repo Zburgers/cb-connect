@@ -73,6 +73,11 @@ describe("assisted period sharing settings", () => {
         coupleId,
         userId: primaryId,
         unreadCount: 4,
+        lastMessageSequence: 7,
+        lastReadSequence: 3,
+        legacySequenceBase: 4,
+        legacyUnreadCount: 2,
+        legacyReadThroughAt: 10,
       });
       await ctx.db.insert("coupleChatStates", {
         coupleId,
@@ -100,8 +105,21 @@ describe("assisted period sharing settings", () => {
       name: "Replacement Partner",
       role: "partner",
     });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: newPartnerId,
+        unreadCount: 9,
+        lastMessageSequence: 12,
+        lastReadSequence: 5,
+        legacySequenceBase: 6,
+        legacyUnreadCount: 3,
+        legacyReadThroughAt: 20,
+      });
+    });
 
-    await t.withIdentity({ subject: "replacement-partner" }).mutation(
+    const replacement = t.withIdentity({ subject: "replacement-partner" });
+    await replacement.mutation(
       api.mutations.couples.linkPartnerWithCode,
       { code: pairing.code },
     );
@@ -151,7 +169,42 @@ describe("assisted period sharing settings", () => {
         .withIndex("by_couple_and_user", (q) => q.eq("coupleId", coupleId))
         .collect(),
     );
-    expect(existingChatStates.map((state) => state.unreadCount)).toEqual([0, 0]);
+    expect(existingChatStates.map((state) => state.unreadCount)).toEqual([0, 0, 0]);
+    const currentRelationshipStates = await t.run(async (ctx) =>
+      Promise.all([primaryId, newPartnerId].map(async (userId) =>
+        ctx.db
+          .query("coupleChatStates")
+          .withIndex("by_couple_and_user", (q) =>
+            q.eq("coupleId", coupleId).eq("userId", userId)
+          )
+          .unique(),
+      )),
+    );
+    expect(currentRelationshipStates).toEqual([
+      expect.objectContaining({
+        unreadCount: 0,
+        lastMessageSequence: 0,
+        lastReadSequence: 0,
+        legacySequenceBase: 0,
+        legacyUnreadCount: 0,
+      }),
+      expect.objectContaining({
+        unreadCount: 0,
+        lastMessageSequence: 0,
+        lastReadSequence: 0,
+        legacySequenceBase: 0,
+        legacyUnreadCount: 0,
+      }),
+    ]);
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "New relationship primary" });
+    await replacement.mutation(api.mutations.messages.send, { body: "New relationship partner" });
+    await expect(
+      asPrimary.query(api.queries.messages.unreadSummary, {}),
+    ).resolves.toMatchObject({ unreadCount: 1 });
+    await expect(
+      replacement.query(api.queries.messages.unreadSummary, {}),
+    ).resolves.toMatchObject({ unreadCount: 1 });
     expect(newPartnerId).toBeDefined();
   });
 });
