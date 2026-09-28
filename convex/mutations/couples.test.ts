@@ -62,7 +62,7 @@ describe("assisted period sharing settings", () => {
     });
   });
 
-  test("re-pairing resets pain and assisted-write sharing before the new partner joins", async () => {
+  test("re-pairing clears prior partner metadata and resets approved sharing defaults", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId, coupleId } = await seedActiveCouple(t, {
       sharingPhase: true,
@@ -71,6 +71,12 @@ describe("assisted period sharing settings", () => {
     await asPrimary.mutation(api.mutations.couples.updateSharingSettings, {
       sharingPain: true,
       sharingPeriodWrite: true,
+    });
+    await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+      connectedSinceDate: "2000-01-01",
+    });
+    await asPrimary.mutation(api.mutations.couples.updatePartnerNickname, {
+      nickname: "Previous Partner",
     });
     await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
     const pairing = await asPrimary.action(
@@ -101,6 +107,22 @@ describe("assisted period sharing settings", () => {
       sharingPain: false,
       sharingPeriodWrite: false,
       sharingPhase: true,
+    });
+    expect(primaryMembership?.partnerNickname).toBeUndefined();
+    const couple = await t.run(async (ctx) => ctx.db.get(coupleId));
+    expect(couple?.status).toBe("active");
+    expect(couple?.connectedSinceDate).toBeUndefined();
+    expect(couple?.connectedSinceUpdatedAt).toBeUndefined();
+    expect(couple?.connectedSinceUpdatedBy).toBeUndefined();
+    const primaryStatus = await asPrimary.query(api.queries.couples.getCoupleStatus, {});
+    expect(primaryStatus).toMatchObject({
+      connectedSinceDate: null,
+      anniversary: null,
+      partner: {
+        name: "Replacement Partner",
+        displayName: "Replacement Partner",
+        nickname: null,
+      },
     });
     expect(
       await t.withIdentity({ subject: "replacement-partner" }).query(

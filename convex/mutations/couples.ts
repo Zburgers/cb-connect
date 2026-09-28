@@ -114,16 +114,21 @@ export const generatePairingCodeInternal = internalMutation({
       await ctx.db.patch(selected.membership._id, {
         sharingPain: false,
         sharingPeriodWrite: false,
+        partnerNickname: undefined,
       });
       await ctx.db.patch(coupleId, {
         status: "pending",
         linkedAt: undefined,
+        connectedSinceDate: undefined,
+        connectedSinceUpdatedAt: undefined,
+        connectedSinceUpdatedBy: undefined,
       });
     } else if (selected) {
       coupleId = selected.couple._id;
       await ctx.db.patch(selected.membership._id, {
         sharingPain: false,
         sharingPeriodWrite: false,
+        partnerNickname: undefined,
       });
     } else {
       coupleId = await ctx.db.insert("couples", {
@@ -410,10 +415,14 @@ export const revokePartnerAccess = mutation({
 
     await ctx.db.patch(memberships[0].coupleId, {
       status: "revoked",
+      connectedSinceDate: undefined,
+      connectedSinceUpdatedAt: undefined,
+      connectedSinceUpdatedBy: undefined,
     });
     await ctx.db.patch(memberships[0]._id, {
       sharingPain: false,
       sharingPeriodWrite: false,
+      partnerNickname: undefined,
     });
 
     const activeCodes = await ctx.db
