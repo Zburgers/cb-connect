@@ -743,6 +743,9 @@ export const updatePeriodEvent = mutation({
     if (!period || period.userId !== user._id) {
       throw new Error("You can only correct your own period entries");
     }
+    if (isCycleFactsV1Enabled() && period.tombstoneAt !== undefined) {
+      throw new Error("TARGET_EVENT_NOT_FOUND");
+    }
 
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {

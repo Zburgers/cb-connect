@@ -773,6 +773,16 @@ describe("partner-assisted period correction", () => {
       { periodEventId: tombstonedEventId, expectedAuthorityVersion: 1 }
     );
     await expect(
+      tombstoned.asPrimary.mutation(
+        api.mutations.periods.updatePeriodEvent,
+        {
+          periodEventId: tombstonedEventId,
+          startDate: "2026-06-22",
+          timeZone: "UTC",
+        }
+      )
+    ).rejects.toThrow("TARGET_EVENT_NOT_FOUND");
+    await expect(
       tombstoned.asPartner.mutation(
         api.mutations.periods.correctAssistedPeriodEvent,
         {
