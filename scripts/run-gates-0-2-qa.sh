@@ -45,6 +45,8 @@ fi
 set_mode() {
   local facts="$1"
   local state="$2"
+  bash scripts/convex-safe-exec test -- env set CB_CONNECT_PERIOD_PREDICTION_V2 false
+  bash scripts/convex-safe-exec test -- env set CB_CONNECT_PARTNER_PREDICTION_V2 false
   bash scripts/convex-safe-exec test -- env set CB_CONNECT_CYCLE_FACTS_V1 "$facts"
   bash scripts/convex-safe-exec test -- env set CB_CONNECT_CYCLE_STATE_V1 "$state"
   bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
@@ -52,6 +54,8 @@ set_mode() {
 
 restore_flags() {
   set +e
+  bash scripts/convex-safe-exec test -- env set CB_CONNECT_PARTNER_PREDICTION_V2 false >/dev/null 2>&1
+  bash scripts/convex-safe-exec test -- env set CB_CONNECT_PERIOD_PREDICTION_V2 false >/dev/null 2>&1
   bash scripts/convex-safe-exec test -- env set CB_CONNECT_CYCLE_STATE_V1 false >/dev/null 2>&1
   bash scripts/convex-safe-exec test -- env set CB_CONNECT_CYCLE_FACTS_V1 false >/dev/null 2>&1
 }
