@@ -400,6 +400,75 @@ describe("bounded fixture cleanup", () => {
     ).not.toBeNull();
   });
 
+  test("cleans revoked partner membership history after a relink", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const seeded = await seedFixture(t);
+    await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", seeded.coupleId)
+            .eq("role", "partner")
+            .eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("fixture_partner_membership_missing");
+      await ctx.db.patch(partnerMembership._id, { revokedAt: Date.now() - 1 });
+      await ctx.db.insert("coupleMembers", {
+        coupleId: seeded.coupleId,
+        userId: seeded.partnerId,
+        role: "partner",
+        sharingPain: false,
+        sharingPhase: true,
+        sharingPeriodWrite: false,
+        joinedAt: Date.now(),
+      });
+    });
+
+    const result = await t
+      .withIdentity({ subject: fixtureArgs.primaryClerkId })
+      .mutation(api.mutations.fixtureCleanup.cleanupFixture, fixtureArgs);
+
+    expect(result).toMatchObject({ ok: true, remaining: false });
+    expect(result.deleted.coupleMembers).toBe(3);
+  });
+
+  test("preserves a third-party membership when cleaning a fixture couple", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const seeded = await seedFixture(t);
+    await t.run(async (ctx) => {
+      const unrelatedUserId = await ctx.db.insert("users", {
+        clerkId: "unrelated-member",
+        email: "",
+        name: "Unrelated member",
+        role: "partner",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
+      await ctx.db.insert("coupleMembers", {
+        coupleId: seeded.coupleId,
+        userId: unrelatedUserId,
+        role: "partner",
+        sharingPain: false,
+        sharingPhase: false,
+        sharingPeriodWrite: false,
+        joinedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t
+        .withIdentity({ subject: fixtureArgs.primaryClerkId })
+        .mutation(api.mutations.fixtureCleanup.cleanupFixture, fixtureArgs),
+    ).rejects.toThrow("fixture_cleanup_identity_mismatch");
+    const remainingUsers = await t.run(async (ctx) =>
+      ctx.db.query("users").collect(),
+    );
+    expect(remainingUsers).toHaveLength(3);
+  });
+
   test("cleans a partially deleted pair and is safe to repeat", async () => {
     enableFixtureCleanup();
     const t = convexTest(schema, modules);
