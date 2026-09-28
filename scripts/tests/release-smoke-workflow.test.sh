@@ -2,6 +2,8 @@
 set -euo pipefail
 
 workflow=".github/workflows/ci.yml"
+dispatcher=".github/workflows/trusted-exact-sha-auth-smoke.yml"
+candidate_validator=".github/scripts/validate-exact-sha-smoke.sh"
 
 if [[ ! -f "$workflow" ]]; then
   echo "missing CI workflow: $workflow" >&2
@@ -156,5 +158,57 @@ if grep -Fq 'apt-get install --yes ripgrep' "$workflow"; then
   echo "authenticated smoke must not install a package for policy checks" >&2
   exit 1
 fi
+
+if [[ ! -f "$dispatcher" || ! -f "$candidate_validator" ]]; then
+  echo "missing trusted exact-SHA authenticated smoke workflow or validator" >&2
+  exit 1
+fi
+
+dispatcher_patterns=(
+  'workflow_dispatch:'
+  'type: choice'
+  'options:'
+  'if: github.ref == '\''refs/heads/main'\'''
+  'ref: ${{ github.sha }}'
+  'ref: ${{ needs.validate-candidate.outputs.candidate_sha }}'
+  'path: candidate'
+  'persist-credentials: false'
+  'environment: cb-connect-auth-test'
+  'group: cb-connect-auth-test'
+  'cancel-in-progress: false'
+  'bash .github/scripts/validate-exact-sha-smoke.sh'
+  'bash ../scripts/convex-safe-exec test -- deploy'
+  'CB_CONNECT_REUSE_PRESTARTED_RELEASE_APP: "1"'
+  'for project in release-desktop release-mobile'
+  'npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project"'
+  "grep -Eq '[1-9][0-9]* skipped'"
+  'Only PRs 49, 50, and 51 are allowed'
+  'PR 51 must be based on the exact current PR 50 head'
+  'refs/heads/main'
+  'dev:hallowed-hummingbird-284'
+)
+for pattern in "${dispatcher_patterns[@]}"; do
+  if ! grep -Fq "$pattern" "$dispatcher" "$candidate_validator"; then
+    echo "trusted smoke dispatcher is missing required policy: $pattern" >&2
+    exit 1
+  fi
+done
+
+if grep -En '^[[:space:]]+(push|pull_request|pull_request_target):' "$dispatcher"; then
+  echo "trusted candidate smoke must remain manual-only" >&2
+  exit 1
+fi
+
+if grep -En 'production|prod:' "$dispatcher"; then
+  echo "trusted candidate smoke must not target production" >&2
+  exit 1
+fi
+
+for harness_file in e2e/auth.global.setup.ts e2e/release-smoke.spec.ts; do
+  if ! grep -Fq 'CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH' "$harness_file"; then
+    echo "trusted release harness must verify candidate pairing-code length: $harness_file" >&2
+    exit 1
+  fi
+done
 
 echo "authenticated release-smoke workflow policy: PASS"

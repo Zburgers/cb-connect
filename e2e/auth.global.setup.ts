@@ -27,6 +27,13 @@ type FixtureManifest = {
   partner: { role: "partner"; clerkId: string };
 };
 
+const pairingCodePattern =
+  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "6"
+    ? /^\d{6}$/
+    : process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "12"
+      ? /^\d{12}$/
+      : /^(?:\d{6}|\d{12})$/;
+
 function syntheticPastDate(): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() - 1);
@@ -116,10 +123,10 @@ async function linkCouple(primaryPage: Page, partnerPage: Page): Promise<void> {
   });
   await expect(generateCodeButton).toBeVisible({ timeout: 30000 });
   await generateCodeButton.click();
-  const codeLocator = primaryPage.getByText(/^\d{6}$/).last();
+  const codeLocator = primaryPage.getByText(pairingCodePattern).last();
   await expect(codeLocator).toBeVisible({ timeout: 30000 });
   const code = (await codeLocator.textContent())?.trim();
-  if (!code || !/^\d{6}$/.test(code)) {
+  if (!code || !pairingCodePattern.test(code)) {
     throw new Error("pairing_code_creation_failed");
   }
 
