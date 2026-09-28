@@ -1613,6 +1613,49 @@ describe("period invariants beyond the newest 100 rows", () => {
       }),
     ).rejects.toThrow("PERIOD_HISTORY_TOO_DENSE");
   });
+
+  test("allows exactly 256 non-overlapping overlap candidates", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const targetId = await t.run(async (ctx) => {
+      const targetId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2010-01-01",
+        endDate: "2010-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      for (let i = 1; i <= 256; i += 1) {
+        const date = new Date(Date.UTC(2020, 0, i)).toISOString().slice(0, 10);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate: date,
+          endDate: date,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: i + 1,
+          updatedAt: i + 1,
+        });
+      }
+      return targetId;
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: targetId,
+        startDate: "2010-01-01",
+        endDate: "2010-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 1,
+        timeZone: "UTC",
+      }),
+    ).resolves.toMatchObject({ success: true });
+  });
 });
 
 describe("derived period endings", () => {
