@@ -1512,20 +1512,19 @@ describe("period invariants beyond the newest 100 rows", () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
     const openId = await t.run(async (ctx) => {
-      const tombstonedStart = "2019-12-31";
-      await ctx.db.insert("periodEvents", {
-        userId: primaryId,
-        startDate: tombstonedStart,
-        endDate: tombstonedStart,
-        startCertainty: "exact",
-        endCertainty: "exact",
-        authorityVersion: 2,
-        tombstoneByUserId: primaryId,
-        tombstoneAt: 10,
-        tombstoneAuthorityVersion: 2,
-        createdAt: 1,
-        updatedAt: 10,
-      });
+      for (let i = 1; i <= 105; i++) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate: new Date(Date.UTC(2021, 0, i)).toISOString().slice(0, 10),
+          startCertainty: "exact",
+          authorityVersion: 2,
+          tombstoneByUserId: primaryId,
+          tombstoneAt: i,
+          tombstoneAuthorityVersion: 2,
+          createdAt: i,
+          updatedAt: i,
+        });
+      }
       const openId = await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2020-01-01",
@@ -1560,6 +1559,49 @@ describe("period invariants beyond the newest 100 rows", () => {
     await expect(
       t.run(async (ctx) => ctx.db.get("periodEvents", openId)),
     ).resolves.toMatchObject({ endDate: "2020-01-04" });
+  });
+
+  test("fails closed after a hard bounded conflict lookup", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const targetId = await t.run(async (ctx) => {
+      const targetId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2010-01-01",
+        endDate: "2010-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      for (let i = 1; i <= 257; i++) {
+        const date = new Date(Date.UTC(2020, 0, i)).toISOString().slice(0, 10);
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate: date,
+          endDate: date,
+          startCertainty: "exact",
+          endCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: i + 1,
+          updatedAt: i + 1,
+        });
+      }
+      return targetId;
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+        periodEventId: targetId,
+        startDate: "2010-01-01",
+        endDate: "2010-01-02",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 1,
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("PERIOD_HISTORY_TOO_DENSE");
   });
 });
 

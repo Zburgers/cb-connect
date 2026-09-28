@@ -23,6 +23,8 @@ import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
+const MAX_PERIOD_OVERLAP_CANDIDATES = 256;
+
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
   v.literal("approximate")
@@ -128,12 +130,8 @@ async function requireAllowedPeriodEventWrite(
   const initial = evaluatePeriodEventInvariants(candidate, target ? [target] : []);
   if (!initial.allowed) throw new Error(`${initial.code}: ${initial.message}`);
 
-  const seen = new Set<Id<"periodEvents">>();
   const check = (period: Doc<"periodEvents">) => {
-    if (period.tombstoneAt !== undefined || period._id === candidate.targetEventId || seen.has(period._id)) {
-      return;
-    }
-    seen.add(period._id);
+    if (period.tombstoneAt !== undefined || period._id === candidate.targetEventId) return;
     const result = evaluatePeriodEventInvariants(candidate, [
       ...(target ? [target] : []),
       toPeriodEventProjection(period),
@@ -141,60 +139,60 @@ async function requireAllowedPeriodEventWrite(
     if (!result.allowed) throw new Error(`${result.code}: ${result.message}`);
   };
 
-  let cursor: string | null = null;
-  let done = false;
-  while (!done) {
-    const page = await ctx.db
-      .query("periodEvents")
-      .withIndex("by_user_and_start", (q) =>
-        q.eq("userId", userId).eq("startDate", candidate.startDate)
-      )
-      .paginate({ cursor, numItems: 64 });
-    for (const period of page.page) check(period);
-    cursor = page.continueCursor;
-    done = page.isDone;
-  }
-
   const candidateIsExact =
     candidate.startCertainty === "exact" &&
     (candidate.endDate === undefined || candidate.endCertainty === "exact");
+
   if (candidateIsExact) {
-    // ponytail: historical candidates may scan later non-overlaps; use an interval index if this reaches transaction limits.
-    cursor = null;
-    done = false;
-    while (!done) {
-      const page = await ctx.db
-        .query("periodEvents")
-        .withIndex("by_user_and_end", (q) =>
-          q.eq("userId", userId).gte("endDate", candidate.startDate)
-        )
-        .paginate({ cursor, numItems: 64 });
-      for (const period of page.page) {
-        if (candidate.endDate === undefined || period.startDate <= candidate.endDate) {
-          check(period);
-        }
-      }
-      cursor = page.continueCursor;
-      done = page.isDone;
+    const sameStart = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_start_and_tombstone", (q) =>
+        q.eq("userId", userId)
+          .eq("startDate", candidate.startDate)
+          .eq("tombstoneAt", undefined)
+      )
+      .take(2);
+    for (const period of sameStart) check(period);
+  }
+
+  if (candidateIsExact) {
+    // ponytail: cap overlap candidates at 256; use a materialized interval index if valid histories exceed this ceiling.
+    const possibleOverlaps = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_tombstone_and_end", (q) =>
+        q.eq("userId", userId)
+          .eq("tombstoneAt", undefined)
+          .gte("endDate", candidate.startDate)
+      )
+      .take(MAX_PERIOD_OVERLAP_CANDIDATES + 2);
+    const otherPossibleOverlaps = possibleOverlaps.filter(
+      (period) => period._id !== candidate.targetEventId,
+    );
+    if (otherPossibleOverlaps.length > MAX_PERIOD_OVERLAP_CANDIDATES) {
+      throw new Error("PERIOD_HISTORY_TOO_DENSE: Cannot safely validate this correction");
+    }
+    for (const period of otherPossibleOverlaps) {
+      if (candidate.endDate === undefined || period.startDate <= candidate.endDate) check(period);
     }
   }
 
   if (candidate.endDate === undefined || candidateIsExact) {
-    cursor = null;
-    done = false;
-    while (!done) {
-      const page = await ctx.db
-        .query("periodEvents")
-        .withIndex("by_user_and_end_and_start", (q) => {
-          const range = q.eq("userId", userId).eq("endDate", undefined);
-          return candidate.endDate === undefined
-            ? range
-            : range.lte("startDate", candidate.endDate);
-        })
-        .paginate({ cursor, numItems: 64 });
-      for (const period of page.page) check(period);
-      cursor = page.continueCursor;
-      done = page.isDone;
+    const openPeriods = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_tombstone_and_end_and_start", (q) =>
+        q.eq("userId", userId)
+          .eq("tombstoneAt", undefined)
+          .eq("endDate", undefined)
+      )
+      .take(3);
+    const otherOpenPeriods = openPeriods.filter(
+      (period) => period._id !== candidate.targetEventId,
+    );
+    if (otherOpenPeriods.length > 1) {
+      throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one active open period fact exists");
+    }
+    for (const period of otherOpenPeriods) {
+      if (candidate.endDate === undefined || period.startDate <= candidate.endDate) check(period);
     }
   }
 }
@@ -238,21 +236,15 @@ async function findOpenPeriod(
   userId: Id<"users">,
   options: { strict?: boolean } = {}
 ): Promise<Doc<"periodEvents"> | null> {
-  const openPeriods: Doc<"periodEvents">[] = [];
-  let cursor: string | null = null;
-  let done = false;
-  while (!done && openPeriods.length < (options.strict === false ? 1 : 2)) {
-    const page = await ctx.db
-      .query("periodEvents")
-      .withIndex("by_user_and_end_and_start", (q) =>
-        q.eq("userId", userId).eq("endDate", undefined)
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: 64 });
-    openPeriods.push(...page.page.filter((period) => period.tombstoneAt === undefined));
-    cursor = page.continueCursor;
-    done = page.isDone;
-  }
+  const openPeriods = await ctx.db
+    .query("periodEvents")
+    .withIndex("by_user_and_tombstone_and_end_and_start", (q) =>
+      q.eq("userId", userId)
+        .eq("tombstoneAt", undefined)
+        .eq("endDate", undefined)
+    )
+    .order("desc")
+    .take(options.strict === false ? 1 : 2);
   if (options.strict !== false && openPeriods.length > 1) {
     throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one open period fact exists");
   }
