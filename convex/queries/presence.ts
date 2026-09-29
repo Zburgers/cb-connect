@@ -1,5 +1,5 @@
 import { query, QueryCtx } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 const PRESENCE_TIMEOUT_MS = 25 * 1000;
 
@@ -9,25 +9,21 @@ async function getPartnerPresenceState(ctx: QueryCtx) {
     return null;
   }
 
-  // Find the caller's membership and couple.
-  const membership = await ctx.db
-    .query("coupleMembers")
-    .withIndex("by_user", (q) => q.eq("userId", user._id))
-    .first();
-  if (!membership) {
-    return null;
-  }
+  const coupleData = await getCoupleForUser(ctx, user._id);
+  if (!coupleData || coupleData.couple.status !== "active") return null;
+  const { membership } = coupleData;
 
-  // Find partner membership (the other member in the same couple).
-  const partnerMembership = await ctx.db
+  const partnerMemberships = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-    .filter((q) => q.neq(q.field("userId"), user._id))
-    .first();
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q
+        .eq("coupleId", membership.coupleId)
+        .eq("role", membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+    )
+    .take(2);
 
-  if (!partnerMembership) {
-    return null;
-  }
+  if (partnerMemberships.length !== 1) return null;
+  const partnerMembership = partnerMemberships[0];
 
   // Lookup partner's presence record.
   const presence = await ctx.db

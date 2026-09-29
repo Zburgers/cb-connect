@@ -323,37 +323,33 @@ async function loadFixtureRecords(
     const couple = await ctx.db.get("couples", coupleId);
     if (couple) couples.push(couple);
     const members = await rowsByCouple(ctx, "coupleMembers", coupleId);
-    if (members.length > 2) {
-      throw new Error("fixture_cleanup_scope_too_large:couple_members");
-    }
     const memberRoles = new Set<string>();
+    const activeMemberRoles = new Set<string>();
     for (const member of members) {
-      if (memberRoles.has(member.role)) {
-        throw new Error("fixture_cleanup_identity_mismatch");
-      }
-      memberRoles.add(member.role);
       const expectedUser = targetUsersByRole.get(member.role);
       if (
         (expectedUser !== undefined && expectedUser._id !== member.userId) ||
-        (expectedUser === undefined && fixtureRun.coupleId !== coupleId)
+        (expectedUser === undefined &&
+          (fixtureRun.coupleId !== coupleId || memberRoles.has(member.role)))
       ) {
         throw new Error("fixture_cleanup_identity_mismatch");
       }
+      if (member.revokedAt === undefined) {
+        if (activeMemberRoles.has(member.role)) {
+          throw new Error("fixture_cleanup_identity_mismatch");
+        }
+        activeMemberRoles.add(member.role);
+      }
+      memberRoles.add(member.role);
       // A previously finalized run can be retried after Clerk/user deletion;
       // its exact couple marker authorizes cleanup of dangling memberships.
       allFixtureUserIds.add(member.userId);
       coupleMemberById.set(member._id, member);
     }
-    // Before a partner consumes the code, a synthetic primary-only pending
-    // couple is valid and must be recoverable. Any other partial relationship
-    // fails closed rather than risking deletion outside this run.
-    if (
-      members.length > 0 &&
-      !(
-        (members.length === 1 && members[0].role === "primary") ||
-        (members.length === 2 && memberRoles.size === 2)
-      )
-    ) {
+    // Revoked partner memberships remain as history after relinking. Keep the
+    // cleanup bounded by rowsByCouple and require one active primary; repeated
+    // history is accepted only when each row maps to this exact fixture user.
+    if (members.length > 0 && !activeMemberRoles.has("primary")) {
       throw new Error("fixture_cleanup_identity_mismatch");
     }
   }

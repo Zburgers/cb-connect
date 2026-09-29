@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useConvexAuth } from "convex/react";
+import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
@@ -38,7 +38,7 @@ export default function PartnerPage() {
   const ensurePredictionSnapshot = useMutation(
     api.mutations.predictionSnapshots.ensureForViewer,
   );
-  const generateCode = useMutation(api.mutations.couples.generatePairingCode);
+  const generateCode = useAction(api.mutations.couples.generatePairingCode);
   const linkPartner = useMutation(api.mutations.couples.linkPartnerWithCode);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
   const revokeAccess = useMutation(api.mutations.couples.revokePartnerAccess);
@@ -166,10 +166,11 @@ export default function PartnerPage() {
   };
 
   const handleLinkPartner = async () => {
-    if (code.length !== 6) return;
+    if (code.length !== 6 && code.length !== 12) return;
     setIsSubmitting(true);
     try {
-      await linkPartner({ code });
+      const result = await linkPartner({ code });
+      if (!result.success) throw new Error(result.error);
       setCode("");
       setMessage("Successfully linked!");
     } catch (error: any) {
@@ -557,7 +558,7 @@ export default function PartnerPage() {
       {!coupleStatus?.isLinked && me.role === "partner" && (
         <DigitalLocket
           title="Unlock the shared space"
-          description="Enter the 6-digit code your partner generated. You will only see what they choose to share."
+          description="Enter the 6-digit or 12-character code your partner generated. You will only see what they choose to share."
           className="animate-slide-up"
         >
           <label className="text-sm font-semibold text-foreground" htmlFor="partner-code">
@@ -567,15 +568,22 @@ export default function PartnerPage() {
             id="partner-code"
             type="text"
             value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="Enter 6-digit code"
+            onChange={(e) =>
+              setCode(
+                e.target.value
+                  .toUpperCase()
+                  .replace(/[^0-9A-HJKMNP-TV-Z]/g, "")
+                  .slice(0, 12),
+              )
+            }
+            placeholder="Enter 6-digit or 12-character code"
             className="contrast-glass w-full rounded-[1.4rem] px-4 py-4 text-center font-data text-3xl tracking-widest text-foreground outline-none transition-colors placeholder:text-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/15"
-            maxLength={6}
+            maxLength={12}
           />
 
           <button
             onClick={handleLinkPartner}
-            disabled={isSubmitting || code.length !== 6}
+            disabled={isSubmitting || (code.length !== 6 && code.length !== 12)}
             className="w-full rounded-[1.4rem] bg-secondary py-4 font-semibold text-secondary-foreground transition-all press-feedback disabled:opacity-50"
           >
             {isSubmitting ? "Linking..." : "Link Account"}

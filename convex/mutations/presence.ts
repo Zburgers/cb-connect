@@ -1,5 +1,5 @@
 import { mutation } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 /**
  * Record a heartbeat for the currently authenticated user.
@@ -15,15 +15,12 @@ export const heartbeat = mutation({
       throw new Error("Unauthenticated");
     }
 
-    // Look up the caller's couple membership.
-    const membership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!membership) {
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData || coupleData.couple.status !== "active") {
       // No couple membership – nothing to update.
       return;
     }
+    const { membership } = coupleData;
 
     const now = Date.now();
     const existing = await ctx.db
@@ -53,13 +50,9 @@ export const goOffline = mutation({
       return;
     }
 
-    const membership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!membership) {
-      return;
-    }
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData || coupleData.couple.status !== "active") return;
+    const { membership } = coupleData;
 
     const existing = await ctx.db
       .query("presence")

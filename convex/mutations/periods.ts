@@ -264,8 +264,8 @@ async function getAssistedLoggingContext(ctx: MutationCtx) {
 
   const primaryMembership = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
-      q.eq("coupleId", coupleData.couple._id).eq("role", "primary")
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q.eq("coupleId", coupleData.couple._id).eq("role", "primary").eq("revokedAt", undefined)
     )
     .unique();
   if (!primaryMembership) {

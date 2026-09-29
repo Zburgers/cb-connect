@@ -1,5 +1,5 @@
 import { query } from "../_generated/server";
-import { getCurrentUserOrNull } from "../_helpers/auth";
+import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 
 export const getCoupleStatus = query({
   handler: async (ctx) => {
@@ -8,24 +8,17 @@ export const getCoupleStatus = query({
       return { isLinked: false, partner: null, activePairingCode: null };
     }
 
-    const membership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-
-    if (!membership) {
-      return { isLinked: false };
-    }
-
-    const couple = await ctx.db.get(membership.coupleId);
-    if (!couple || couple.status === "revoked") {
-      return { isLinked: false };
-    }
+    const coupleData = await getCoupleForUser(ctx, user._id);
+    if (!coupleData) return { isLinked: false, partner: null, activePairingCode: null };
+    const { membership, couple } = coupleData;
 
     const partnerMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple", (q) => q.eq("coupleId", membership.coupleId))
-      .filter((q) => q.neq(q.field("userId"), user._id))
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q
+          .eq("coupleId", membership.coupleId)
+          .eq("role", membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+      )
       .first();
 
     let partnerInfo = null;
@@ -47,8 +40,8 @@ export const getCoupleStatus = query({
     if (membership.role === "partner") {
       const primaryMembership = await ctx.db
         .query("coupleMembers")
-        .withIndex("by_couple_and_role", (q) =>
-          q.eq("coupleId", membership.coupleId).eq("role", "primary")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
         )
         .first();
 

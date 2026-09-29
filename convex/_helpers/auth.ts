@@ -33,15 +33,44 @@ export async function getCoupleForUser(
   ctx: QueryCtx | MutationCtx,
   userId: Id<"users">
 ) {
-  const membership = await ctx.db
+  const memberships = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
+    .withIndex("by_user_and_revoked_at", (q) =>
+      q.eq("userId", userId).eq("revokedAt", undefined)
+    )
+    .take(2);
 
-  if (!membership) return null;
+  if (memberships.length !== 1) return null;
+  const [membership] = memberships;
 
   const couple = await ctx.db.get(membership.coupleId);
   if (!couple || couple.status === "revoked") return null;
+  const user = await ctx.db.get(userId);
+
+  const [primaries, partners] = await Promise.all([
+    ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "primary").eq("revokedAt", undefined)
+      )
+      .take(2),
+    ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "partner").eq("revokedAt", undefined)
+      )
+      .take(2),
+  ]);
+
+  if (
+    primaries.length !== 1 ||
+    (couple.status === "active" && partners.length !== 1) ||
+    (couple.status === "pending" && partners.length !== 0) ||
+    (membership.role !== "primary" && membership.role !== "partner") ||
+    user?.role !== membership.role
+  ) {
+    return null;
+  }
 
   return { membership, couple };
 }
@@ -58,8 +87,8 @@ export async function canViewPainData(
 
   const targetMembership = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
-      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary")
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
     )
     .first();
 
@@ -68,8 +97,8 @@ export async function canViewPainData(
   // Check if primary's membership has pain sharing on
   const primaryMembership = await ctx.db
     .query("coupleMembers")
-    .withIndex("by_couple_and_role", (q) =>
-      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary")
+    .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+      q.eq("coupleId", viewerCouple.membership.coupleId).eq("role", "primary").eq("revokedAt", undefined)
     )
     .first();
 

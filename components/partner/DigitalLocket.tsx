@@ -82,8 +82,8 @@ export default function DigitalLocket({
               Pairing code
             </p>
             <p
-              className="mt-2 font-data text-5xl font-semibold tracking-[0.18em] text-primary"
-              style={{ letterSpacing: "0.18em" }}
+              className="mt-2 break-all font-data text-2xl font-semibold tracking-[0.12em] text-primary sm:text-4xl"
+              style={{ letterSpacing: "0.12em" }}
             >
               {code}
             </p>

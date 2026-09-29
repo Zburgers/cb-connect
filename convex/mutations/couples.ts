@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, MutationCtx } from "../_generated/server";
+import { action, internalMutation, mutation, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 import { internal } from "../_generated/api";
@@ -7,11 +7,34 @@ import { internal } from "../_generated/api";
 const PAIRING_CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_PAIRING_CODE_ATTEMPTS = 10;
 const MAX_MEMBERSHIPS_PER_USER = 3;
+const PAIRING_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const PAIRING_CODE_LENGTH = 12;
+const PAIRING_CODE_PATTERN = /^[0-9A-HJKMNP-TV-Z]{12}$/;
+const LEGACY_PAIRING_CODE_PATTERN = /^\d{6}$/;
 
-export const generatePairingCode = mutation({
+export const generatePairingCode = action({
   args: {},
   returns: v.object({ code: v.string(), expiresAt: v.number() }),
   handler: async (ctx) => {
+    const candidates = Array.from({ length: 4 }, () => {
+      const randomBytes = crypto.getRandomValues(new Uint8Array(PAIRING_CODE_LENGTH));
+      return Array.from(
+        randomBytes,
+        (byte) => PAIRING_CODE_ALPHABET[byte & 31],
+      ).join("");
+    });
+    const result: { code: string; expiresAt: number } = await ctx.runMutation(
+      internal.mutations.couples.generatePairingCodeInternal,
+      { codes: candidates },
+    );
+    return result;
+  },
+});
+
+export const generatePairingCodeInternal = internalMutation({
+  args: { codes: v.array(v.string()) },
+  returns: v.object({ code: v.string(), expiresAt: v.number() }),
+  handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
 
     if (user.role !== "primary") {
@@ -20,9 +43,14 @@ export const generatePairingCode = mutation({
 
     const memberships = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
       .take(MAX_MEMBERSHIPS_PER_USER);
     if (memberships.length === MAX_MEMBERSHIPS_PER_USER) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    if (memberships.length > 1) {
       throw new Error("Pairing state is ambiguous. Please contact support.");
     }
     const membershipCouples = await Promise.all(
@@ -41,30 +69,68 @@ export const generatePairingCode = mutation({
       (entry): entry is { membership: typeof memberships[number]; couple: NonNullable<typeof entry.couple> } =>
         entry.couple !== null,
     );
-    const activeOrPending = usableMemberships.filter(
-      ({ couple }) => couple.status === "active" || couple.status === "pending",
+    const active = usableMemberships.filter(
+      ({ couple }) => couple.status === "active",
+    );
+    const pending = usableMemberships.filter(
+      ({ couple }) => couple.status === "pending",
     );
     const revoked = usableMemberships.filter(
       ({ couple }) => couple.status === "revoked",
     );
-    if (activeOrPending.length > 1 || (activeOrPending.length === 0 && revoked.length > 1)) {
+    if (active.length > 1 || pending.length > 1 || (active.length === 0 && pending.length === 0 && revoked.length > 1)) {
       throw new Error("Pairing state is ambiguous. Please contact support.");
     }
-    const selected = activeOrPending[0] ?? revoked[0] ?? null;
+    if (active.length > 0) {
+      throw new Error("You are already linked to a partner");
+    }
+    const selected = pending[0] ?? revoked[0] ?? null;
     let coupleId: Id<"couples">;
 
+    if (selected?.couple.status === "pending") {
+      const existingPartners = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", selected.couple._id).eq("role", "partner").eq("revokedAt", undefined)
+        )
+        .take(1);
+      if (existingPartners.length > 0) {
+        throw new Error("Pairing state is ambiguous. Please contact support.");
+      }
+    }
+
     if (selected?.couple.status === "revoked") {
-      // Revocation removes the partner membership but intentionally keeps the
-      // primary membership. Reopen that couple for a fresh invite so the
-      // primary does not accumulate duplicate memberships that hide the new
-      // active link behind the revoked one.
+      // The revoked member row remains as relationship history; active lookups
+      // use the revokedAt index so a re-link is a fresh membership epoch.
       coupleId = selected.membership.coupleId;
+      const remainingPartners = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined)
+        )
+        .take(1);
+      if (remainingPartners.length > 0) {
+        throw new Error("Pairing state is ambiguous. Please contact support.");
+      }
+      await ctx.db.patch(selected.membership._id, {
+        sharingPain: false,
+        sharingPeriodWrite: false,
+        partnerNickname: undefined,
+      });
       await ctx.db.patch(coupleId, {
         status: "pending",
         linkedAt: undefined,
+        connectedSinceDate: undefined,
+        connectedSinceUpdatedAt: undefined,
+        connectedSinceUpdatedBy: undefined,
       });
     } else if (selected) {
       coupleId = selected.couple._id;
+      await ctx.db.patch(selected.membership._id, {
+        sharingPain: false,
+        sharingPeriodWrite: false,
+        partnerNickname: undefined,
+      });
     } else {
       coupleId = await ctx.db.insert("couples", {
         createdAt: Date.now(),
@@ -86,9 +152,13 @@ export const generatePairingCode = mutation({
       // Invalidate existing active codes
       const existingCodes = await ctx.db
         .query("pairingCodes")
-        .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
-        .filter((q) => q.eq(q.field("status"), "active"))
-        .collect();
+        .withIndex("by_couple_and_status", (q) =>
+          q.eq("coupleId", coupleId).eq("status", "active")
+        )
+        .take(2);
+      if (existingCodes.length > 1) {
+        throw new Error("Pairing state is ambiguous. Please contact support.");
+      }
 
       for (const code of existingCodes) {
         await ctx.db.patch(code._id, { status: "expired" });
@@ -99,31 +169,31 @@ export const generatePairingCode = mutation({
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     const recentCodes = await ctx.db
       .query("pairingCodes")
-      .withIndex("by_couple", (q) => q.eq("coupleId", coupleId))
-      .filter((q) => q.gte(q.field("_creationTime"), oneHourAgo))
-      .collect();
+      .withIndex("by_couple", (q) =>
+        q.eq("coupleId", coupleId).gte("_creationTime", oneHourAgo)
+      )
+      .take(5);
 
     if (recentCodes.length >= 5) {
       throw new Error("Too many pairing codes generated. Please wait before generating another.");
     }
 
-    // Generate unique 6-digit code
-    let code: string = "";
-    let isUnique = false;
-
-    while (!isUnique) {
-      code = Math.floor(100000 + Math.random() * 900000).toString();
-
+    let code: string | undefined;
+    for (const candidate of args.codes) {
+      if (!PAIRING_CODE_PATTERN.test(candidate)) {
+        throw new Error("Invalid pairing code candidate");
+      }
       const existing = await ctx.db
         .query("pairingCodes")
-        .withIndex("by_code", (q) => q.eq("code", code))
-        .filter((q) => q.eq(q.field("status"), "active"))
+        .withIndex("by_code", (q) => q.eq("code", candidate))
         .first();
 
       if (!existing) {
-        isUnique = true;
+        code = candidate;
+        break;
       }
     }
+    if (!code) throw new Error("Could not generate a unique pairing code");
 
     const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -143,6 +213,10 @@ export const linkPartnerWithCode = mutation({
   args: {
     code: v.string(),
   },
+  returns: v.union(
+    v.object({ success: v.literal(true), coupleId: v.id("couples") }),
+    v.object({ success: v.literal(false), error: v.string() }),
+  ),
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
 
@@ -150,7 +224,11 @@ export const linkPartnerWithCode = mutation({
       throw new Error("Only partner users can use pairing codes");
     }
 
-    const enteredCode = args.code.trim();
+    const submittedCode = args.code.length <= 64 ? args.code.trim().toUpperCase() : "";
+    const hasValidFormat =
+      PAIRING_CODE_PATTERN.test(submittedCode) ||
+      LEGACY_PAIRING_CODE_PATTERN.test(submittedCode);
+    const enteredCode = hasValidFormat ? submittedCode : "";
     const now = Date.now();
     const failedAttemptWindowStart = now - PAIRING_CODE_ATTEMPT_WINDOW_MS;
 
@@ -160,33 +238,13 @@ export const linkPartnerWithCode = mutation({
       failedAttemptWindowStart
     );
     if (recentFailedByUser >= MAX_FAILED_PAIRING_CODE_ATTEMPTS) {
-      await recordPairingCodeAttempt(ctx, {
-        userId: user._id,
-        enteredCode,
-        attemptedAt: now,
-        success: false,
-        failureReason: "throttled",
-      });
-      throw new Error("Too many failed pairing attempts. Please wait before trying again.");
+      return {
+        success: false as const,
+        error: "Too many failed pairing attempts. Please wait before trying again.",
+      };
     }
 
-    const recentFailedByCode = await countRecentFailedPairingAttemptsByCode(
-      ctx,
-      enteredCode,
-      failedAttemptWindowStart
-    );
-    if (recentFailedByCode >= MAX_FAILED_PAIRING_CODE_ATTEMPTS) {
-      await recordPairingCodeAttempt(ctx, {
-        userId: user._id,
-        enteredCode,
-        attemptedAt: now,
-        success: false,
-        failureReason: "throttled",
-      });
-      throw new Error("Too many failed pairing attempts. Please wait before trying again.");
-    }
-
-    if (!/^\d{6}$/.test(enteredCode)) {
+    if (!hasValidFormat) {
       await recordPairingCodeAttempt(ctx, {
         userId: user._id,
         enteredCode,
@@ -194,14 +252,29 @@ export const linkPartnerWithCode = mutation({
         success: false,
         failureReason: "invalid_format",
       });
-      throw new Error("Invalid or expired pairing code");
+      return { success: false as const, error: "Invalid or expired pairing code" };
     }
 
-    const pairingCode = await ctx.db
+    const recentFailedByCode = await countRecentFailedPairingAttemptsByCode(
+      ctx,
+      enteredCode,
+      failedAttemptWindowStart,
+    );
+    if (recentFailedByCode >= MAX_FAILED_PAIRING_CODE_ATTEMPTS) {
+      return {
+        success: false as const,
+        error: "Too many failed pairing attempts. Please wait before trying again.",
+      };
+    }
+
+    const matchingCodes = await ctx.db
       .query("pairingCodes")
       .withIndex("by_code", (q) => q.eq("code", enteredCode))
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
+      .take(2);
+    const pairingCode =
+      matchingCodes.length === 1 && matchingCodes[0].status === "active"
+        ? matchingCodes[0]
+        : null;
 
     if (!pairingCode) {
       await recordPairingCodeAttempt(ctx, {
@@ -211,7 +284,7 @@ export const linkPartnerWithCode = mutation({
         success: false,
         failureReason: "not_found",
       });
-      throw new Error("Invalid or expired pairing code");
+      return { success: false as const, error: "Invalid or expired pairing code" };
     }
 
     if (pairingCode.expiresAt < Date.now()) {
@@ -223,16 +296,48 @@ export const linkPartnerWithCode = mutation({
         success: false,
         failureReason: "expired",
       });
-      throw new Error("Pairing code has expired");
+      return { success: false as const, error: "Pairing code has expired" };
+    }
+
+    const couple = await ctx.db.get(pairingCode.coupleId);
+    const primaryMemberships = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
+      )
+      .take(2);
+    const partnerMemberships = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "partner").eq("revokedAt", undefined)
+      )
+      .take(1);
+
+    if (
+      !couple ||
+      couple.status !== "pending" ||
+      primaryMemberships.length !== 1 ||
+      partnerMemberships.length !== 0
+    ) {
+      await recordPairingCodeAttempt(ctx, {
+        userId: user._id,
+        enteredCode,
+        attemptedAt: now,
+        success: false,
+        failureReason: "stale_or_ambiguous_relationship",
+      });
+      return { success: false as const, error: "Invalid or expired pairing code" };
     }
 
     // Check if partner already linked
     const existingMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
+      .take(1);
 
-    if (existingMembership) {
+    if (existingMembership.length > 0) {
       await recordPairingCodeAttempt(ctx, {
         userId: user._id,
         enteredCode,
@@ -240,7 +345,7 @@ export const linkPartnerWithCode = mutation({
         success: false,
         failureReason: "already_linked",
       });
-      throw new Error("You are already linked to a couple");
+      return { success: false as const, error: "You are already linked to a couple" };
     }
 
     // Create partner membership
@@ -253,6 +358,18 @@ export const linkPartnerWithCode = mutation({
       sharingPeriodWrite: false,
       joinedAt: Date.now(),
     });
+
+    for (const userId of [primaryMemberships[0].userId, user._id]) {
+      const state = await ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", pairingCode.coupleId).eq("userId", userId)
+        )
+        .first();
+      if (state) {
+        await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
+      }
+    }
 
     // Mark code as used
     await ctx.db.patch(pairingCode._id, {
@@ -277,8 +394,8 @@ export const linkPartnerWithCode = mutation({
     // Find the primary user to notify them
     const primaryMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
       )
       .first();
 
@@ -293,7 +410,7 @@ export const linkPartnerWithCode = mutation({
       }
     }
 
-    return { success: true, coupleId: pairingCode.coupleId };
+    return { success: true as const, coupleId: pairingCode.coupleId };
   },
 });
 
@@ -306,50 +423,79 @@ export const revokePartnerAccess = mutation({
       throw new Error("Only primary users can revoke partner access");
     }
 
-    const coupleData = await getCoupleForUser(ctx, user._id);
-    if (!coupleData) {
+    const memberships = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
+      .take(2);
+    if (memberships.length !== 1 || memberships[0].role !== "primary") {
       throw new Error("You are not part of a couple");
     }
+    const couple = await ctx.db.get(memberships[0].coupleId);
+    if (!couple || couple.status === "revoked") {
+      throw new Error("You are not part of a couple");
+    }
+    const activePartners = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q.eq("coupleId", couple._id).eq("role", "partner").eq("revokedAt", undefined)
+      )
+      .take(3);
+    if (
+      activePartners.length > 2 ||
+      (couple.status === "active" && activePartners.length === 0)
+    ) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
 
-    await ctx.db.patch(coupleData.membership.coupleId, {
+    await ctx.db.patch(memberships[0].coupleId, {
       status: "revoked",
+      connectedSinceDate: undefined,
+      connectedSinceUpdatedAt: undefined,
+      connectedSinceUpdatedBy: undefined,
+    });
+    await ctx.db.patch(memberships[0]._id, {
+      sharingPain: false,
+      sharingPeriodWrite: false,
+      partnerNickname: undefined,
     });
 
-    const chatReactions = await ctx.db
-      .query("coupleMessageReactions")
-      .withIndex("by_couple", (q) => q.eq("coupleId", coupleData.membership.coupleId))
-      .collect();
-    for (const reaction of chatReactions) {
-      await ctx.db.delete(reaction._id);
-    }
-
-    const chatMessages = await ctx.db
-      .query("coupleMessages")
-      .withIndex("by_couple_created", (q) => q.eq("coupleId", coupleData.membership.coupleId))
-      .collect();
-    for (const message of chatMessages) {
-      await ctx.db.delete(message._id);
-    }
-
-    const chatStates = await ctx.db
-      .query("coupleChatStates")
-      .withIndex("by_couple_and_user", (q) => q.eq("coupleId", coupleData.membership.coupleId))
-      .collect();
-    for (const state of chatStates) {
-      await ctx.db.delete(state._id);
-    }
-
-    const partnerMembership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role", (q) =>
-        q
-          .eq("coupleId", coupleData.membership.coupleId)
-          .eq("role", "partner")
+    const activeCodes = await ctx.db
+      .query("pairingCodes")
+      .withIndex("by_couple_and_status", (q) =>
+        q.eq("coupleId", memberships[0].coupleId).eq("status", "active")
       )
-      .first();
+      .take(6);
+    if (activeCodes.length === 6) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+    for (const code of activeCodes) {
+      await ctx.db.patch(code._id, { status: "expired" });
+    }
 
-    if (partnerMembership) {
-      await ctx.db.delete(partnerMembership._id);
+    for (const userId of [memberships[0].userId, ...activePartners.map(({ userId }) => userId)]) {
+      const state = await ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", memberships[0].coupleId).eq("userId", userId)
+        )
+        .first();
+      if (state) {
+        await ctx.db.patch(state._id, {
+          unreadCount: 0,
+          lastReadAt: Date.now(),
+        });
+      }
+    }
+
+    const revokedAt = Date.now();
+    for (const partnerMembership of activePartners) {
+      await ctx.db.patch(partnerMembership._id, {
+        revokedAt,
+        sharingPain: false,
+        sharingPeriodWrite: false,
+      });
     }
 
     return { success: true };
@@ -363,10 +509,9 @@ async function countRecentFailedPairingAttemptsByUser(
 ) {
   const attempts = await ctx.db
     .query("pairingCodeAttempts")
-    .withIndex("by_user_and_attempted_at", (q) =>
-      q.eq("userId", userId).gte("attemptedAt", since)
+    .withIndex("by_user_and_success_and_attempted_at", (q) =>
+      q.eq("userId", userId).eq("success", false).gte("attemptedAt", since)
     )
-    .filter((q) => q.eq(q.field("success"), false))
     .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
 
   return attempts.length;
@@ -379,10 +524,9 @@ async function countRecentFailedPairingAttemptsByCode(
 ) {
   const attempts = await ctx.db
     .query("pairingCodeAttempts")
-    .withIndex("by_entered_code_and_attempted_at", (q) =>
-      q.eq("enteredCode", enteredCode).gte("attemptedAt", since)
+    .withIndex("by_entered_code_and_success_and_attempted_at", (q) =>
+      q.eq("enteredCode", enteredCode).eq("success", false).gte("attemptedAt", since)
     )
-    .filter((q) => q.eq(q.field("success"), false))
     .take(MAX_FAILED_PAIRING_CODE_ATTEMPTS + 1);
 
   return attempts.length;
@@ -473,8 +617,11 @@ export const updateConnectedSinceDate = mutation({
 
     const partnerMembership = await ctx.db
       .query("coupleMembers")
-      .withIndex("by_couple", (q) => q.eq("coupleId", coupleData.membership.coupleId))
-      .filter((q) => q.neq(q.field("userId"), user._id))
+      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+        q
+          .eq("coupleId", coupleData.membership.coupleId)
+          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+      )
       .first();
 
     if (partnerMembership) {

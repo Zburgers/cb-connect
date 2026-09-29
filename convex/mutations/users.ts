@@ -17,6 +17,20 @@ export const updateUserRole = mutation({
 
     if (!user) throw new Error("User not found");
 
+    if (user.role !== undefined && user.role !== args.role) {
+      throw new Error("Role can only be selected during onboarding");
+    }
+
+    const membership = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", user._id).eq("revokedAt", undefined)
+      )
+      .take(1);
+    if (membership.length > 0 && user.role !== args.role) {
+      throw new Error("Role cannot be changed after joining a couple");
+    }
+
     await ctx.db.patch(user._id, { role: args.role });
     return user._id;
   },

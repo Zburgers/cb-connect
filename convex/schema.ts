@@ -149,6 +149,7 @@ export default defineSchema({
 
   couples: defineTable({
     createdAt: v.number(),
+    chatClearedAt: v.optional(v.number()),
     linkedAt: v.optional(v.number()),
     connectedSinceDate: v.optional(v.string()),
     connectedSinceUpdatedAt: v.optional(v.number()),
@@ -169,10 +170,13 @@ export default defineSchema({
     sharingPeriodWrite: v.optional(v.boolean()),
     partnerNickname: v.optional(v.string()),
     joinedAt: v.number(),
+    revokedAt: v.optional(v.number()),
   })
     .index("by_couple", ["coupleId"])
     .index("by_user", ["userId"])
-    .index("by_couple_and_role", ["coupleId", "role"]),
+    .index("by_couple_and_role", ["coupleId", "role"])
+    .index("by_user_and_revoked_at", ["userId", "revokedAt"])
+    .index("by_couple_and_role_and_revoked_at", ["coupleId", "role", "revokedAt"]),
 
   pairingCodes: defineTable({
     code: v.string(),
@@ -189,6 +193,7 @@ export default defineSchema({
   })
     .index("by_code", ["code"])
     .index("by_couple", ["coupleId"])
+    .index("by_couple_and_status", ["coupleId", "status"])
     .index("by_status_and_expiry", ["status", "expiresAt"]),
 
   pairingCodeAttempts: defineTable({
@@ -200,8 +205,10 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_and_attempted_at", ["userId", "attemptedAt"])
+    .index("by_user_and_success_and_attempted_at", ["userId", "success", "attemptedAt"])
     .index("by_entered_code", ["enteredCode"])
-    .index("by_entered_code_and_attempted_at", ["enteredCode", "attemptedAt"]),
+    .index("by_entered_code_and_attempted_at", ["enteredCode", "attemptedAt"])
+    .index("by_entered_code_and_success_and_attempted_at", ["enteredCode", "success", "attemptedAt"]),
 
   periodEvents: defineTable({
     userId: v.id("users"),
@@ -489,6 +496,7 @@ export default defineSchema({
 
   nudges: defineTable({
     coupleId: v.id("couples"),
+    relationshipMembershipId: v.optional(v.id("coupleMembers")),
     senderId: v.id("users"),
     receiverId: v.id("users"),
     emoji: v.string(),
@@ -497,10 +505,19 @@ export default defineSchema({
     seenAt: v.optional(v.number()),
   })
     .index("by_receiver_created", ["receiverId", "createdAt"])
+    .index("by_couple_receiver_created", ["coupleId", "receiverId", "createdAt"])
+    .index("by_relationship_receiver_created", [
+      "coupleId",
+      "relationshipMembershipId",
+      "receiverId",
+      "createdAt",
+    ])
     .index("by_couple_created", ["coupleId", "createdAt"]),
 
   coupleMessages: defineTable({
     coupleId: v.id("couples"),
+    relationshipMembershipId: v.optional(v.id("coupleMembers")),
+    clearedAt: v.optional(v.number()),
     senderId: v.id("users"),
     body: v.string(),
     createdAt: v.number(),
@@ -508,6 +525,7 @@ export default defineSchema({
     deliveredAt: v.optional(v.number()),
     readAt: v.optional(v.number()),
   })
+    .index("by_relationship_created", ["coupleId", "relationshipMembershipId", "createdAt"])
     .index("by_couple_created", ["coupleId", "createdAt"])
     .index("by_sender_created", ["senderId", "createdAt"]),
 

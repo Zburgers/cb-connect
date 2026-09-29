@@ -94,20 +94,20 @@ test.describe("Partner Linking Flow", () => {
       test.skip(); // Skip until auth is set up
     });
 
-    test("should validate 6-digit code input", async ({ page }) => {
+    test("should validate 12-character pairing code input", async ({ page }) => {
       await page.goto("/dashboard/partner");
 
       // After auth as partner user
-      const codeInput = page.getByPlaceholder("Enter 6-digit code");
+      const codeInput = page.getByPlaceholder("Enter 12-character code");
       
       // Test input validation
-      await codeInput.fill("12345"); // Only 5 digits
+      await codeInput.fill("12345"); // Only 5 characters
       await expect(page.getByRole("button", { name: "Link Account" })).toBeDisabled();
 
-      await codeInput.fill("1234567"); // More than 6 digits
-      // Should only accept first 6
+      await codeInput.fill("1234567890123"); // More than 12 characters
+      // Should only accept the first 12 valid characters
       const value = await codeInput.inputValue();
-      expect(value.length).toBeLessThanOrEqual(6);
+      expect(value.length).toBeLessThanOrEqual(12);
     });
 
     test("should show error for invalid pairing code", async ({ page }) => {
