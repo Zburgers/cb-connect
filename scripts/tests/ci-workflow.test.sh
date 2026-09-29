@@ -56,6 +56,7 @@ qualify_block="$(sed -n '/^  qualify:/,/^  authenticated-smoke:/p' "$workflow")"
 authenticated_block="$(sed -n '/^  authenticated-smoke:/,/^  release-artifact:/p' "$workflow")"
 auth_job_header="$(sed -n '/^  authenticated-smoke:/,/^    steps:/p' "$workflow")"
 release_block="$(sed -n '/^  release-artifact:/,$p' "$workflow")"
+release_job_header="$(sed -n '/^  release-artifact:/,/^    steps:/p' "$workflow")"
 
 auth_job_env="$(sed -n '/^    env:/,/^    steps:/p' <<<"$authenticated_block")"
 if grep -Eq 'secrets\.' <<<"$auth_job_env"; then
@@ -113,6 +114,15 @@ if ! grep -Eq '^    environment: production$' <<<"$release_block"; then
   echo "release artifact job must use the protected production environment" >&2
   exit 1
 fi
+for pattern in \
+  '^      CB_CONNECT_COMMIT_SHA: \$\{\{ github\.sha \}\}$' \
+  '^      CB_CONNECT_BUILD_ID: run-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}$' \
+  '^      CB_CONNECT_COMPATIBILITY_VERSION: v1$'; do
+  if ! grep -Eq "$pattern" <<<"$release_job_header"; then
+    echo "release metadata must be available to every artifact step: $pattern" >&2
+    exit 1
+  fi
+done
 
 if grep -Eq 'apt-get install.*ripgrep|Install release policy tools' "$workflow"; then
   echo "CI jobs must use runner-provided policy tools instead of network package installs" >&2
