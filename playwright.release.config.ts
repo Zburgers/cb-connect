@@ -60,7 +60,8 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${basePort}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer:
+      !process.env.CI || process.env.CB_CONNECT_REUSE_PRESTARTED_RELEASE_APP === "1",
     timeout: 120000,
     env: {
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:

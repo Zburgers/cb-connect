@@ -1,0 +1,263 @@
+name: Trusted exact-SHA authenticated smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request to qualify
+        required: true
+        type: choice
+        options:
+          - "49"
+          - "50"
+          - "51"
+      candidate_sha:
+        description: Current full head SHA of the selected pull request
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-candidate:
+    name: Validate exact candidate head
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      candidate_sha: ${{ steps.validate.outputs.candidate_sha }}
+    steps:
+      - name: Checkout trusted main workflow code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate PR state, exact head, and merge order
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: bash .github/scripts/validate-exact-sha-smoke.sh
+
+  authenticated-smoke:
+    name: Authenticated desktop and mobile smoke
+    needs: validate-candidate
+    if: github.ref == 'refs/heads/main' && needs.validate-candidate.outputs.candidate_sha != ''
+    runs-on: ubuntu-latest
+    environment: cb-connect-auth-test
+    concurrency:
+      group: cb-connect-auth-test
+      cancel-in-progress: false
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      PR_NUMBER: ${{ inputs.pr_number }}
+      CANDIDATE_SHA: ${{ needs.validate-candidate.outputs.candidate_sha }}
+      CB_CONNECT_BACKEND_DEPLOYMENT: dev:hallowed-hummingbird-284
+      CB_CONNECT_BACKEND_COMPATIBILITY_VERSION: v1
+      CB_CONNECT_FIXTURE_CLEANUP_ENABLED: true
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Checkout trusted main test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Revalidate candidate after environment approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CANDIDATE_SHA: ${{ needs.validate-candidate.outputs.candidate_sha }}
+        run: bash .github/scripts/validate-exact-sha-smoke.sh
+
+      - name: Checkout candidate application and Convex code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-candidate.outputs.candidate_sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20.19.1
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            candidate/package-lock.json
+
+      - name: Verify pinned toolchain
+        run: |
+          test "$(node --version)" = "v20.19.1"
+          test "$(npm --version)" = "10.8.2"
+
+      - name: Install trusted harness and candidate dependencies without credentials
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix candidate --no-audit --no-fund
+
+      - name: Configure runner Chrome
+        run: |
+          set -euo pipefail
+          browser_path="$(command -v google-chrome)"
+          test -x "$browser_path"
+          printf 'PLAYWRIGHT_EXECUTABLE_PATH=%s\n' "$browser_path" >> "$GITHUB_ENV"
+
+      - name: Record isolated test backend deployment timestamp
+        run: printf 'CB_CONNECT_BACKEND_DEPLOYED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_ENV"
+
+      - name: Validate trusted smoke and fixture contracts
+        run: |
+          bash scripts/tests/release-smoke-workflow.test.sh
+          bash scripts/tests/fixture-evidence-boundary.test.sh
+
+      - name: Preflight isolated Convex deploy key target
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
+        run: bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
+
+      - name: Sync isolated Convex runtime config
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CLERK_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CLERK_TEST_ENVIRONMENT_NAME" = "holy clerk"
+          test "$CONVEX_TEST_DEPLOYMENT" = "dev:hallowed-hummingbird-284"
+          test "$NEXT_PUBLIC_TEST_CONVEX_URL" = "https://hallowed-hummingbird-284.convex.cloud"
+          test "$NEXT_PUBLIC_TEST_CONVEX_SITE_URL" = "https://hallowed-hummingbird-284.convex.site"
+          test "$CLERK_TEST_FRONTEND_API_URL" = "https://holy-clam-29.clerk.accounts.dev"
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+          umask 077
+          node - "$env_file" <<'NODE'
+          const fs = require('node:fs');
+          const names = [
+            'CLERK_FRONTEND_API_URL',
+            'CB_CONNECT_BACKEND_DEPLOYMENT',
+            'CB_CONNECT_BACKEND_COMPATIBILITY_VERSION',
+            'CB_CONNECT_BACKEND_DEPLOYED_AT',
+            'CB_CONNECT_FIXTURE_CLEANUP_ENABLED',
+          ];
+          const content = names
+            .filter((name) => process.env[name])
+            .map((name) => `${name}=${process.env[name]}`)
+            .join('\n');
+          fs.writeFileSync(process.argv[2], content ? `${content}\n` : '', {
+            mode: 0o600,
+          });
+          NODE
+          test -s "$env_file"
+          bash scripts/convex-safe-exec test -- env set --from-file "$env_file" --force
+
+      - name: Deploy candidate Convex code to the isolated test deployment
+        working-directory: candidate
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
+        run: bash ../scripts/convex-safe-exec test -- deploy --typecheck disable --codegen enable --message "trusted-auth-smoke PR $PR_NUMBER $CANDIDATE_SHA"
+
+      - name: Verify isolated backend identity
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_TEST_DEPLOY_KEY }}
+          CB_CONNECT_CONVEX_CREDENTIAL_CLASS: test
+        run: bash scripts/convex-safe-exec test -- run queries/system:getBackendIdentity '{}'
+
+      - name: Run trusted desktop and mobile smoke against candidate app
+        env:
+          CLERK_TEST_ENVIRONMENT_NAME: ${{ secrets.CLERK_TEST_ENVIRONMENT_NAME }}
+          CLERK_TEST_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY }}
+          CLERK_TEST_FRONTEND_API_URL: ${{ secrets.CLERK_TEST_FRONTEND_API_URL }}
+          CONVEX_TEST_DEPLOYMENT: ${{ secrets.CONVEX_TEST_DEPLOYMENT }}
+          NEXT_PUBLIC_TEST_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_URL }}
+          NEXT_PUBLIC_TEST_CONVEX_SITE_URL: ${{ secrets.NEXT_PUBLIC_TEST_CONVEX_SITE_URL }}
+          CB_CONNECT_RELEASE_AUTH_DIR: ${{ runner.temp }}/cb-connect-release-auth
+          CB_CONNECT_REUSE_PRESTARTED_RELEASE_APP: "1"
+          CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH: ${{ inputs.pr_number == '49' && '6' || '12' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CB_CONNECT_RELEASE_AUTH_DIR"
+          chmod 700 "$CB_CONNECT_RELEASE_AUTH_DIR"
+          app_log="$RUNNER_TEMP/cb-connect-candidate-app.log"
+          (
+            cd candidate
+            export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="$NEXT_PUBLIC_CLERK_TEST_PUBLISHABLE_KEY"
+            export CLERK_SECRET_KEY="$CLERK_TEST_SECRET_KEY"
+            export CLERK_FRONTEND_API_URL="$CLERK_TEST_FRONTEND_API_URL"
+            export NEXT_PUBLIC_CONVEX_URL="$NEXT_PUBLIC_TEST_CONVEX_URL"
+            export NEXT_PUBLIC_CONVEX_SITE_URL="$NEXT_PUBLIC_TEST_CONVEX_SITE_URL"
+            export CONVEX_DEPLOYMENT="$CONVEX_TEST_DEPLOYMENT"
+            exec npm run dev -- --port 3000
+          ) >"$app_log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for _ in $(seq 1 120); do
+            if curl --fail --silent "$PLAYWRIGHT_BASE_URL/api/health" >/dev/null; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              echo "Candidate app exited before becoming healthy." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            echo "Candidate app did not become healthy within 120 seconds." >&2
+            exit 1
+          fi
+
+          base_run_id="manual-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-pr${PR_NUMBER}"
+          status=0
+          : > "$RUNNER_TEMP/cb-connect-release-smoke.log"
+          for project in release-desktop release-mobile; do
+            project_log="$RUNNER_TEMP/cb-connect-release-smoke-${project}.log"
+            set +e
+            CB_CONNECT_RELEASE_RUN_ID="${base_run_id}-${project}" npx playwright test --config=playwright.release.config.ts e2e/release-smoke.spec.ts --project="$project" 2>&1 | tee "$project_log" | tee -a "$RUNNER_TEMP/cb-connect-release-smoke.log"
+            project_status=${PIPESTATUS[0]}
+            set -e
+            if (( project_status == 0 )) && grep -Eq '[1-9][0-9]* skipped' "$project_log"; then
+              project_status=1
+            fi
+            if (( project_status != 0 )); then
+              status="$project_status"
+              break
+            fi
+          done
+          printf '%s\n' "$status" > "$RUNNER_TEMP/cb-connect-release-smoke.status"
+          exit "$status"
+
+      - name: Confirm candidate head remained exact and record evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CANDIDATE_SHA: ${{ needs.validate-candidate.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/validate-exact-sha-smoke.sh
+          {
+            echo "## Authenticated exact-head smoke passed"
+            echo "- PR: #${PR_NUMBER}"
+            echo "- Candidate SHA: ${CANDIDATE_SHA}"
+            echo "- Test environment: cb-connect-auth-test (holy clerk / dev:hallowed-hummingbird-284)"
+            echo "- Desktop and mobile journeys: passed with zero skipped tests"
+          } >> "$GITHUB_STEP_SUMMARY"
