@@ -367,7 +367,16 @@ export const linkPartnerWithCode = mutation({
         )
         .first();
       if (state) {
-        await ctx.db.patch(state._id, { unreadCount: 0, lastReadAt: now });
+        await ctx.db.patch(state._id, {
+          unreadCount: 0,
+          lastReadAt: undefined,
+          lastDeliveredAt: undefined,
+          lastMessageSequence: 0,
+          lastReadSequence: 0,
+          legacySequenceBase: 0,
+          legacyUnreadCount: 0,
+          legacyReadThroughAt: undefined,
+        });
       }
     }
 

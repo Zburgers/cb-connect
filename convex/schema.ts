@@ -524,8 +524,17 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     deliveredAt: v.optional(v.number()),
     readAt: v.optional(v.number()),
+    recipientSequence: v.optional(v.number()),
   })
     .index("by_relationship_created", ["coupleId", "relationshipMembershipId", "createdAt"])
+    .index("by_couple_sender_sequence_read_created", [
+      "coupleId",
+      "senderId",
+      "recipientSequence",
+      "readAt",
+      "clearedAt",
+      "createdAt",
+    ])
     .index("by_couple_created", ["coupleId", "createdAt"])
     .index("by_sender_created", ["senderId", "createdAt"]),
 
@@ -546,6 +555,11 @@ export default defineSchema({
     unreadCount: v.number(),
     lastReadAt: v.optional(v.number()),
     lastDeliveredAt: v.optional(v.number()),
+    lastMessageSequence: v.optional(v.number()),
+    lastReadSequence: v.optional(v.number()),
+    legacySequenceBase: v.optional(v.number()),
+    legacyUnreadCount: v.optional(v.number()),
+    legacyReadThroughAt: v.optional(v.number()),
   })
     .index("by_couple_and_user", ["coupleId", "userId"])
     .index("by_user_and_couple", ["userId", "coupleId"]),

@@ -30,7 +30,7 @@ export default function PartnerChat({
   const sendMessage = useMutation(api.mutations.messages.send);
   const reactToMessage = useMutation(api.mutations.messages.react);
   const markDelivered = useMutation(api.mutations.messages.markDelivered);
-  const markRead = useMutation(api.mutations.messages.markRead);
+  const markReadThrough = useMutation(api.mutations.messages.markReadThrough);
   const clearChat = useMutation(api.mutations.messages.clear);
   const [body, setBody] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -61,10 +61,12 @@ export default function PartnerChat({
 
   useEffect(() => {
     if (!isOpen || !messages) return;
-    for (const message of messages) {
-      if (!message.isMine && !message.readAt) void markRead({ messageId: message._id });
-    }
-  }, [isOpen, messages, markRead]);
+    const lastUnread = messages.reduce<typeof messages[number] | null>(
+      (last, message) => !message.isMine && !message.readAt ? message : last,
+      null,
+    );
+    if (lastUnread) void markReadThrough({ messageId: lastUnread._id });
+  }, [isOpen, messages, markReadThrough]);
 
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);

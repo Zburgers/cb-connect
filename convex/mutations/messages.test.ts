@@ -2,11 +2,63 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 
 import { api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
 
 describe("couple message state", () => {
+  test("preserves exactly 80 legacy unread messages when sequencing begins", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      for (let i = 1; i <= 80; i += 1) {
+        await ctx.db.insert("coupleMessages", {
+          coupleId,
+          senderId: primaryId,
+          body: `Legacy ${i}`,
+          createdAt: i,
+        });
+      }
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 80,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "First sequenced" });
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 81,
+    });
+
+    const page = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    const latestLegacy = page.find((message) => message.body === "Legacy 80");
+    expect(latestLegacy).toBeDefined();
+    await asPartner.mutation(api.mutations.messages.markReadThrough, {
+      messageId: latestLegacy!._id,
+    });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 1,
+    });
+    const state = await t.run(async (ctx) =>
+      ctx.db
+        .query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", coupleId).eq("userId", partnerId)
+        )
+        .unique(),
+    );
+    expect(state).toMatchObject({
+      lastMessageSequence: 81,
+      legacySequenceBase: 80,
+      legacyUnreadCount: 0,
+      unreadCount: 1,
+    });
+  });
+
   test("increments only the recipient unread counter", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
@@ -18,9 +70,21 @@ describe("couple message state", () => {
     expect(states).toEqual([expect.objectContaining({ userId: partnerId, unreadCount: 1 })]);
     expect(states.some((state) => state.userId === primaryId)).toBe(false);
 
-    await asPartner.mutation(api.mutations.messages.markRead, { messageId });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId });
     const summary = await asPartner.query(api.queries.messages.unreadSummary, {});
     expect(summary.unreadCount).toBe(0);
+  });
+
+  test("keeps the old acknowledgement endpoint compatible", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, { body: "Rolling deploy" });
+
+    await asPartner.mutation(api.mutations.messages.markRead, { messageId });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 0,
+    });
   });
 
   test("delivery and read acknowledgements remain monotonic", async () => {
@@ -29,7 +93,7 @@ describe("couple message state", () => {
     const messageId = await asPrimary.mutation(api.mutations.messages.send, { body: "Status" });
 
     await asPartner.mutation(api.mutations.messages.markDelivered, { messageId });
-    await asPartner.mutation(api.mutations.messages.markRead, { messageId });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId });
     const afterRead = await t.run(async (ctx) => ctx.db.get(messageId));
     await asPartner.mutation(api.mutations.messages.markDelivered, { messageId });
     const afterSecondDelivery = await t.run(async (ctx) => ctx.db.get(messageId));
@@ -72,7 +136,7 @@ describe("couple message state", () => {
     }));
     expect(outsiderId).not.toBe(primaryId);
     expect(coupleId).toBeDefined();
-    await expect(t.withIdentity({ subject: "outsider-clerk" }).mutation(api.mutations.messages.markRead, { messageId }))
+    await expect(t.withIdentity({ subject: "outsider-clerk" }).mutation(api.mutations.messages.markReadThrough, { messageId }))
       .rejects.toThrow("You are not linked to a couple");
   });
 
@@ -200,6 +264,225 @@ describe("couple message state", () => {
         emoji: "✨",
       }),
     ).rejects.toThrow("Message not found");
+  });
+
+  test("a stale boundary acknowledgement preserves later unread messages", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    const first = await asPrimary.mutation(api.mutations.messages.send, { body: "First" });
+    const second = await asPrimary.mutation(api.mutations.messages.send, { body: "Second" });
+
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: second });
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Third" });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: first });
+
+    const summary = await asPartner.query(api.queries.messages.unreadSummary, {});
+    expect(summary.unreadCount).toBe(1);
+  });
+
+  test("a stale legacy acknowledgement cannot decrement post-migration unread state", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const legacyMessage = await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        senderId: primaryId,
+        body: "Legacy unread",
+        createdAt: 1,
+      });
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 1,
+      });
+      return messageId;
+    });
+
+    const migrationBoundary = await asPrimary.mutation(api.mutations.messages.send, { body: "New" });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: migrationBoundary });
+    await asPrimary.mutation(api.mutations.messages.send, { body: "After boundary" });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: legacyMessage });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 1,
+    });
+  });
+
+  test("the latest visible legacy message acknowledges a backlog larger than the page", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      for (let i = 1; i <= 125; i++) {
+        await ctx.db.insert("coupleMessages", {
+          coupleId,
+          senderId: primaryId,
+          body: `Legacy ${i}`,
+          createdAt: i,
+        });
+      }
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 125,
+      });
+    });
+
+    const page = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    expect(page).toHaveLength(80);
+    await asPartner.mutation(api.mutations.messages.markReadThrough, {
+      messageId: page.at(-1)!._id,
+    });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 0,
+    });
+    const readPage = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    expect(readPage.every((message) => message.readAt !== null)).toBe(true);
+  });
+
+  test("a legacy decrement survives a later sequenced send", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const [firstLegacy, secondLegacy] = await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      const first = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        senderId: primaryId,
+        body: "Legacy first",
+        createdAt: 1,
+      });
+      const second = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        senderId: primaryId,
+        body: "Legacy second",
+        createdAt: 2,
+      });
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 2,
+      });
+      return [first, second] as const;
+    });
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "First sequenced" });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: firstLegacy });
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Second sequenced" });
+
+    const [summary, state, second] = await Promise.all([
+      asPartner.query(api.queries.messages.unreadSummary, {}),
+      t.run(async (ctx) =>
+        ctx.db
+          .query("coupleChatStates")
+          .withIndex("by_couple_and_user", (q) =>
+            q.eq("coupleId", coupleId).eq("userId", partnerId)
+          )
+          .first(),
+      ),
+      t.run(async (ctx) => ctx.db.get(secondLegacy)),
+    ]);
+    expect(second?.readAt).toBeUndefined();
+    expect(state).toMatchObject({ legacyUnreadCount: 1, unreadCount: 3 });
+    expect(summary.unreadCount).toBe(3);
+  });
+
+  test("a new read boundary projects onto legacy messages in the visible page", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(coupleId, { linkedAt: 0 });
+      for (const [body, createdAt] of [["Legacy one", 1], ["Legacy two", 2]] as const) {
+        await ctx.db.insert("coupleMessages", {
+          coupleId,
+          senderId: primaryId,
+          body,
+          createdAt,
+        });
+      }
+      await ctx.db.insert("coupleChatStates", {
+        coupleId,
+        userId: partnerId,
+        unreadCount: 2,
+      });
+    });
+
+    const boundary = await asPrimary.mutation(api.mutations.messages.send, { body: "Sequenced" });
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: boundary });
+
+    const messages = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    expect(messages).toHaveLength(3);
+    expect(messages.every((message) => message.readAt !== null)).toBe(true);
+  });
+
+  test("clear advances an existing cursor before the next message", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Unread before clear" });
+    await asPartner.mutation(api.mutations.messages.clear, {});
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Unread after clear" });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 1,
+    });
+  });
+
+  test("concurrent send and older acknowledgement retain the newer unread", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    const first = await asPrimary.mutation(api.mutations.messages.send, { body: "First" });
+
+    await Promise.all([
+      asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: first }),
+      asPrimary.mutation(api.mutations.messages.send, { body: "Concurrent" }),
+    ]);
+
+    const summary = await asPartner.query(api.queries.messages.unreadSummary, {});
+    expect(summary.unreadCount).toBe(1);
+  });
+
+  test("one latest-page boundary acknowledges the older pages too", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    let latest: Id<"coupleMessages"> | undefined;
+    for (let i = 0; i < 125; i++) {
+      latest = await asPrimary.mutation(api.mutations.messages.send, { body: `Message ${i}` });
+    }
+
+    const page = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    expect(page).toHaveLength(80);
+    expect(latest).toBeDefined();
+    expect(page.at(-1)?._id).toBe(latest);
+    await asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: latest! });
+
+    expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
+      unreadCount: 0,
+    });
+    const readPage = await asPartner.query(api.queries.messages.listForCouple, { limit: 80 });
+    expect(readPage.every((message) => message.isMine || message.readAt !== null)).toBe(true);
+  });
+
+  test("read cursors advance monotonically across two sessions", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, partnerId } = await seedActiveCouple(t);
+    const first = await asPrimary.mutation(api.mutations.messages.send, { body: "First" });
+    const second = await asPrimary.mutation(api.mutations.messages.send, { body: "Second" });
+    const secondSession = t.withIdentity({ subject: "partner-clerk" });
+
+    await Promise.all([
+      asPartner.mutation(api.mutations.messages.markReadThrough, { messageId: second }),
+      secondSession.mutation(api.mutations.messages.markReadThrough, { messageId: first }),
+    ]);
+
+    const state = await t.run(async (ctx) =>
+      ctx.db.query("coupleChatStates")
+        .withIndex("by_couple_and_user", (q) =>
+          q.eq("coupleId", coupleId).eq("userId", partnerId)
+        )
+        .first(),
+    );
+    expect(state).toMatchObject({ lastReadSequence: 2, unreadCount: 0 });
   });
 
   test("toggles reactions and returns grouped counts", async () => {
