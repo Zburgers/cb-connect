@@ -2,6 +2,12 @@ import { devices, type Locator, type Page } from "@playwright/test";
 import { expect, getApprovedReleaseFixture, test } from "./fixtures";
 
 const RELEASE_MESSAGE = "E3 release smoke: private chat works.";
+const pairingCodePattern =
+  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "6"
+    ? /^\d{6}$/
+    : process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "12"
+      ? /^\d{12}$/
+      : /^(?:\d{6}|\d{12})$/;
 
 async function isVisible(locator: Locator) {
   return locator.isVisible().catch(() => false);
@@ -21,9 +27,9 @@ async function ensureLinked(primary: Page, partner: Page) {
       .getByRole("button", { name: /generate pairing code/i })
       .click();
     const code = (
-      await primary.getByText(/^[0-9A-HJKMNP-TV-Z]{12}$/).last().textContent()
+      await primary.getByText(pairingCodePattern).last().textContent()
     )?.trim();
-    expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+    expect(code).toMatch(pairingCodePattern);
 
     await partner.goto("/dashboard/partner");
     await expect(partner.locator("#partner-code")).toBeVisible();
@@ -200,9 +206,9 @@ async function revokeAndRelink(primary: Page, partner: Page) {
     .getByRole("button", { name: /generate pairing code/i })
     .click();
   const code = (
-    await primary.getByText(/^[0-9A-HJKMNP-TV-Z]{12}$/).last().textContent()
+    await primary.getByText(pairingCodePattern).last().textContent()
   )?.trim();
-  expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+  expect(code).toMatch(pairingCodePattern);
 
   await partner.locator("#partner-code").fill(code!);
   await partner.getByRole("button", { name: /link account/i }).click();

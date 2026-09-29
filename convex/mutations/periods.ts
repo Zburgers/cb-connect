@@ -23,6 +23,8 @@ import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
+const MAX_PERIOD_OVERLAP_CANDIDATES = 256;
+
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
   v.literal("approximate")
@@ -121,24 +123,77 @@ async function requireAllowedPeriodEventWrite(
   candidate: PeriodEventCandidate,
   targetedPeriod?: Doc<"periodEvents">
 ) {
-  const existingEvents = await ctx.db
-    .query("periodEvents")
-    .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
-    .order("desc")
-    .take(100);
-  const projections = existingEvents
-    .filter((period) => period.tombstoneAt === undefined)
-    .map(toPeriodEventProjection);
-  if (
-    targetedPeriod &&
-    targetedPeriod.tombstoneAt === undefined &&
-    !projections.some((period) => period.id === targetedPeriod._id)
-  ) {
-    projections.push(toPeriodEventProjection(targetedPeriod));
+  const targeted = targetedPeriod ?? (candidate.targetEventId
+    ? await ctx.db.get("periodEvents", candidate.targetEventId as Id<"periodEvents">)
+    : undefined);
+  const target = targeted && toPeriodEventProjection(targeted);
+  const initial = evaluatePeriodEventInvariants(candidate, target ? [target] : []);
+  if (!initial.allowed) throw new Error(`${initial.code}: ${initial.message}`);
+
+  const check = (period: Doc<"periodEvents">) => {
+    if (period.tombstoneAt !== undefined || period._id === candidate.targetEventId) return;
+    const result = evaluatePeriodEventInvariants(candidate, [
+      ...(target ? [target] : []),
+      toPeriodEventProjection(period),
+    ]);
+    if (!result.allowed) throw new Error(`${result.code}: ${result.message}`);
+  };
+
+  const candidateIsExact =
+    candidate.startCertainty === "exact" &&
+    (candidate.endDate === undefined || candidate.endCertainty === "exact");
+
+  if (candidateIsExact) {
+    const sameStart = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_start_and_tombstone", (q) =>
+        q.eq("userId", userId)
+          .eq("startDate", candidate.startDate)
+          .eq("tombstoneAt", undefined)
+      )
+      .take(2);
+    for (const period of sameStart) check(period);
   }
-  const result = evaluatePeriodEventInvariants(candidate, projections);
-  if (!result.allowed) {
-    throw new Error(`${result.code}: ${result.message}`);
+
+  if (candidateIsExact) {
+    // ponytail: cap overlap candidates at 256; use a materialized interval index if valid histories exceed this ceiling.
+    const possibleOverlaps = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_tombstone_and_end", (q) =>
+        q.eq("userId", userId)
+          .eq("tombstoneAt", undefined)
+          .gte("endDate", candidate.startDate)
+      )
+      .take(MAX_PERIOD_OVERLAP_CANDIDATES + 2);
+    const otherPossibleOverlaps = possibleOverlaps.filter(
+      (period) => period._id !== candidate.targetEventId,
+    );
+    if (otherPossibleOverlaps.length > MAX_PERIOD_OVERLAP_CANDIDATES) {
+      throw new Error("PERIOD_HISTORY_TOO_DENSE: Cannot safely validate this correction");
+    }
+    for (const period of otherPossibleOverlaps) {
+      if (candidate.endDate === undefined || period.startDate <= candidate.endDate) check(period);
+    }
+  }
+
+  if (candidate.endDate === undefined || candidateIsExact) {
+    const openPeriods = await ctx.db
+      .query("periodEvents")
+      .withIndex("by_user_and_tombstone_and_end_and_start", (q) =>
+        q.eq("userId", userId)
+          .eq("tombstoneAt", undefined)
+          .eq("endDate", undefined)
+      )
+      .take(3);
+    const otherOpenPeriods = openPeriods.filter(
+      (period) => period._id !== candidate.targetEventId,
+    );
+    if (otherOpenPeriods.length > 1) {
+      throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one active open period fact exists");
+    }
+    for (const period of otherOpenPeriods) {
+      if (candidate.endDate === undefined || period.startDate <= candidate.endDate) check(period);
+    }
   }
 }
 
@@ -181,15 +236,15 @@ async function findOpenPeriod(
   userId: Id<"users">,
   options: { strict?: boolean } = {}
 ): Promise<Doc<"periodEvents"> | null> {
-  const recentPeriods = await ctx.db
+  const openPeriods = await ctx.db
     .query("periodEvents")
-    .withIndex("by_user_and_start", (q) => q.eq("userId", userId))
+    .withIndex("by_user_and_tombstone_and_end_and_start", (q) =>
+      q.eq("userId", userId)
+        .eq("tombstoneAt", undefined)
+        .eq("endDate", undefined)
+    )
     .order("desc")
-    .take(100);
-
-  const openPeriods = recentPeriods.filter(
-    (period) => !period.endDate && period.tombstoneAt === undefined
-  );
+    .take(options.strict === false ? 1 : 2);
   if (options.strict !== false && openPeriods.length > 1) {
     throw new Error("AMBIGUOUS_OPEN_PERIOD: More than one open period fact exists");
   }
@@ -687,6 +742,9 @@ export const updatePeriodEvent = mutation({
     const period = await ctx.db.get("periodEvents", args.periodEventId);
     if (!period || period.userId !== user._id) {
       throw new Error("You can only correct your own period entries");
+    }
+    if (isCycleFactsV1Enabled() && period.tombstoneAt !== undefined) {
+      throw new Error("TARGET_EVENT_NOT_FOUND");
     }
 
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);

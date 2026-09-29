@@ -259,7 +259,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_and_start", ["userId", "startDate"]),
+    .index("by_user_and_start", ["userId", "startDate"])
+    .index("by_user_and_end", ["userId", "endDate"])
+    .index("by_user_and_start_and_tombstone", ["userId", "startDate", "tombstoneAt"])
+    .index("by_user_and_tombstone_and_end", ["userId", "tombstoneAt", "endDate"])
+    .index("by_user_and_tombstone_and_end_and_start", ["userId", "tombstoneAt", "endDate", "startDate"]),
 
   painLogs: defineTable({
     userId: v.id("users"),
