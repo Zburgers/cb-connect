@@ -126,8 +126,8 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   <steps>
     <step>Write boundary tests for Asia/Kolkata, positive/negative offsets, DST, correction, deletion, new start, pause and revocation.</step>
     <step>Resolve due user-local dates from stored IANA timezone; persisted due work plus transactional generation-guarded runAt wakeups; cron reconciles bounded indexed pending work and never scans all users.</step>
-    <step>Reference prediction snapshot/version rather than recomputing untraceable notification dates.</step>
-    <step>Expire or supersede stale work before inbox projection/delivery.</step>
+    <step>Reference the shared served prediction/snapshot contract plus G4-SOURCE-V1, independent of CycleState schema versions. Persist indexed Late day-boundary work for clock-only transitions; same-day source corrections must create distinct valid replacements.</step>
+    <step>Expire or supersede stale work before inbox projection/delivery. VEGA integrates the real purpose/reminder-time preference mutation with CHRONOS's bounded scheduler helper in N5c; enable/time edits/disable take effect without an unrelated refresh. N7b/N8 qualify that API/UI path.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/internal/notificationScheduler.test.ts</command>
