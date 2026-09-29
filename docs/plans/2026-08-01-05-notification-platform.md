@@ -4,7 +4,9 @@
 
 **Goal:** Deliver a private, auditable in-app notification inbox and channel-ready event pipeline without assuming consent or duplicating external effects.
 
-**Architecture:** Domain transactions create versioned notification events in a durable outbox. Recipient projection, consent, quiet time, template rendering and destination are resolved before separate delivery attempts. The in-app inbox is canonical; Discord is removed from health-event delivery and future push/email adapters consume the same idempotent contract.
+**Architecture:** Domain transactions create versioned events in a durable outbox. Current policy creates one logical `notificationDelivery` per event/channel/destination identity; each delivery owns timing, frozen render identity, retry/claim state and normalized outcomes. In-app persistence is the first adapter and the canonical user surface. Later push/email providers implement the same small adapter contract with separate attempts, late destination resolution and honest acceptance/receipt/unknown semantics. Convex durable scheduling and bounded reconciliation provide execution; no additional queue infrastructure is required.
+
+**Execution authority:** The [dated Gate 4 plan](2026-09-27-gate-4-event-privacy-retention-execution.md), revised 2026-09-30 after the owner architecture review, contains the proposed `G4-EVENT-V1` / `G4-DELIVERY-V1` freeze, task dependencies and failure matrix. Its approval is required before application work. This gate-level summary does not override its file ownership or lifecycle boundaries.
 
 **Tech Stack:** Convex tables/mutations/actions/crons, TypeScript, Next.js, Vitest/convex-test, Playwright.
 
@@ -18,7 +20,7 @@
 
 **Planning status:** Gate-level work packages only. Resolve applicable D-012 retention/deletion rules and D-015 pilot input before exposure.
 
-**Required task order:** N1 versioned event/privacy catalog -> N2 additive schema/preferences/inbox -> N3 transactional outbox -> N4 approved templates -> N5 timezone/snapshot scheduling -> N6 legacy Discord/log migration and shutdown -> N7 bounded inbox/preferences pilot. N6 may disable an unsafe legacy path earlier as a separately qualified remediation, but migration must not copy arbitrary payloads.
+**Work-package dependencies:** N1 event/delivery contracts -> N2 schema/policy freeze -> N3 domain outbox, N4 templates and N5 scheduling in the disjoint lanes defined by the dated plan. N4 precedes N2 runtime adapter completion; N7 requires the completed in-app adapter and templates. N6 shutdown precedes any exposure and may ship earlier as a separately qualified safety remediation. N8 integrates/qualifies the whole tree; migration/pilot tasks wait for their owner decisions. The dated ledger supplies the exact edges and shared-file serialization.
 
 ## Initial channel scope
 
@@ -42,7 +44,7 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   </files>
   <steps>
     <step>Write exhaustive tests requiring purpose, recipient, sensitivity, expiry, idempotency components and allowed destinations for every event.</step>
-    <step>Start with assisted-record confirmation, period-window approaching, Late, explicit pain check-in, partner nudge/message and operational account events.</step>
+    <step>Start with assisted-record confirmation, period-window approaching, Late, explicit pain check-in, partner nudge/message; reserve operational account events until their separate producer/policy is approved.</step>
     <step>Separate primary-private, partner-shareable and account/security classes.</step>
     <step>Prohibit diagnostic, deterministic mood/hormone and fertility template intents.</step>
   </steps>
@@ -52,8 +54,8 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   </verification>
 </task>
 
-<task id="N2" name="Add outbox, inbox, preferences and attempts">
-  <description>Replace the overloaded log with stateful records that distinguish domain event, recipient inbox item and each channel attempt.</description>
+<task id="N2" name="Add outbox, inbox, preferences, logical deliveries and attempts">
+  <description>Replace the overloaded log with stateful records that distinguish domain event, recipient inbox item, logical delivery and each attempt, with provider-neutral eligibility/outcome semantics.</description>
   <files>
     <modify>convex/schema.ts</modify>
     <create>convex/mutations/notifications.ts</create>
@@ -62,9 +64,9 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   </files>
   <steps>
     <step>Write failing tests for unique idempotency key, recipient authorization, unread/read/dismissed state and preference defaults.</step>
-    <step>Add indexed/bounded `notificationEvents`, `notificationInbox`, `notificationPreferences` and `notificationDeliveryAttempts` tables.</step>
+    <step>Add indexed/bounded `notificationEvents`, `notificationInbox`, `notificationPreferences`, `notificationDeliveries` and `notificationDeliveryAttempts` tables plus bounded due work and protected controls.</step>
     <step>Default optional health/cycle and partner destinations off until expressly enabled; account-security notices remain separately governed.</step>
-    <step>Store structured redacted template variables, not arbitrary `v.any()` payloads.</step>
+    <step>Store strict immutable render/version identity with safe static copy, not arbitrary `v.any()` payloads; freeze three idempotency scopes and explicit unknown outcome. Implement the in-app adapter and test future provider outcomes using injected fake adapters only.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/mutations/notifications.test.ts</command>
@@ -103,7 +105,7 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   </files>
   <steps>
     <step>Write snapshot tests and prohibited-token tests for dates, pain scores, tags, notes and diagnostic/fertility terms.</step>
-    <step>Provide private in-app body content and a separate generic external preview such as “You have a private update in CB Connect.”</step>
+    <step>Provide reviewed static in-app labels plus an authorized source link and a separate generic external preview such as “You have a private update in CB Connect.”</step>
     <step>Use role-aware but non-assumptive relationship wording.</step>
     <step>Require content/privacy approval per template version.</step>
   </steps>
@@ -118,14 +120,14 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
   <files>
     <create>convex/internal/notificationScheduler.ts</create>
     <create>convex/internal/notificationScheduler.test.ts</create>
-    <modify>convex/actions/notifications.ts</modify>
+    <modify>convex/internal/predictionSnapshots.ts</modify>
     <modify>convex/crons.ts</modify>
   </files>
   <steps>
     <step>Write boundary tests for Asia/Kolkata, positive/negative offsets, DST, correction, deletion, new start, pause and revocation.</step>
-    <step>Resolve due user-local dates from stored IANA timezone; cron only finds due work.</step>
-    <step>Reference prediction snapshot/version rather than recomputing untraceable notification dates.</step>
-    <step>Expire or supersede stale work before inbox projection/delivery.</step>
+    <step>Resolve due user-local dates from stored IANA timezone; persisted due work plus transactional generation-guarded runAt wakeups; cron reconciles bounded indexed pending work and never scans all users.</step>
+    <step>Reference the shared served prediction/snapshot contract plus G4-SOURCE-V1, independent of CycleState schema versions. Persist indexed Late day-boundary work for clock-only transitions; same-day source corrections must create distinct valid replacements.</step>
+    <step>Expire or supersede stale work before inbox projection/delivery. VEGA integrates the real purpose/reminder-time preference mutation with CHRONOS's bounded scheduler helper in N5c; enable/time edits/disable take effect without an unrelated refresh. N7b/N8 qualify that API/UI path.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/internal/notificationScheduler.test.ts</command>
@@ -134,23 +136,24 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
 </task>
 
 <task id="N6" name="Remove direct Discord health delivery">
-  <description>Stop high-pain and cycle paths from sending health-adjacent details to Discord and migrate useful historical audit metadata conservatively.</description>
+  <description>Stop direct Discord delivery, minimize compatibility reads and inventory legacy metadata. Historical migration/deletion requires D-012 approval; no migration is part of safe default-off implementation.</description>
   <files>
     <modify>convex/mutations/painLog.ts</modify>
     <modify>convex/actions/discord.ts</modify>
-    <create>convex/migrations/notificationLog.ts</create>
-    <create>convex/migrations/notificationLog.test.ts</create>
+    <modify>convex/actions/notifications.ts</modify>
+    <modify>convex/queries/users.ts</modify>
+    <modify>convex/queries/users.test.ts</modify>
     <modify>issues.md</modify>
   </files>
   <steps>
     <step>Write a failing test proving pain/period mutations schedule no Discord action.</step>
     <step>Route approved care events into the private in-app outbox only.</step>
-    <step>Migrate only redacted delivery status/type/time metadata; do not copy arbitrary legacy payloads.</step>
+    <step>Stop new legacy writes and redact compatibility queries; do not backfill arbitrary payloads. Any metadata migration is a separate D-012-approved task.</step>
     <step>Disable/remove webhook secrets after verifying no operational dependency remains.</step>
   </steps>
   <verification>
-    <command>npx vitest run convex/migrations/notificationLog.test.ts convex/mutations/periods.test.ts</command>
-    <expected>No health mutation calls Discord and migration output excludes legacy sensitive payload.</expected>
+    <command>npx vitest run convex/actions/notifications.test.ts convex/mutations/painLog.test.ts convex/queries/users.test.ts</command>
+    <expected>No caller can dispatch Discord, even with a stale secret, and compatibility output excludes legacy sensitive payload/error.</expected>
   </verification>
 </task>
 
@@ -183,15 +186,15 @@ Gate 4 ships **in-app only**. It makes channels extensible but does not silently
 - Optional health/cycle destination enabled without express consent: 0.
 - Generic external preview containing date, phase, pain score/tag/note or condition inference: 0.
 - User-local scheduled events outside the configured local-day/quiet-time policy: 0 in timezone fixtures.
-- Corrected, deleted, paused, expired or revoked event delivered afterward: 0.
+- In-app projection/display after correction, pause, expiry or revocation: 0. Later external adapters must revalidate before dispatch and document the unavoidable already-in-flight/recall boundary.
 - Event-created, inbox-projected, attempted and delivered/provider states conflated as `sent`: 0.
 - In-app critical event projection success: proposed 99.9% monthly after instrumentation baseline; duplicate rate remains exactly 0.
 - Inbox queries are indexed/bounded and meet the Gate 0 approved latency SLO.
 
 ## Rollout and rollback
 
-Dark-create events first and compare aggregate counts/reasons without user content. Enable inbox for staff/test users, then bounded pilot; channel adapters remain disabled. Stop on duplicate, privacy mismatch, unexpected volume, stale delivery or error-budget burn. Roll back inbox/event-generation flags; retain immutable redacted attempts for audit and do not reactivate Discord health delivery.
+Dark-create events first and compare aggregate counts/reasons without user content. Enable inbox for staff/test users, then bounded pilot; external channel adapters remain disabled. Stop on duplicate, privacy mismatch, unexpected volume, stale delivery or error-budget burn. Roll back scheduling/event/projection/delivery flags while preserving currently authorized inbox reads (except an explicit privacy read kill); retain rows without claiming final retention and do not reactivate Discord health delivery.
 
 ## Exit evidence
 
-Store approved event catalog/templates, retry/concurrency report, timezone scheduler matrix, legacy migration report, authenticated inbox E2E, privacy review, latency/volume baseline and pilot metrics under `docs/evidence/notification-gate-4/`.
+Store approved event catalog/templates, retry/concurrency report, timezone scheduler matrix, legacy shutdown/minimization report (migration only if separately approved), authenticated inbox E2E, privacy review, latency/volume baseline and pilot metrics under `docs/evidence/notification-gate-4/`.
