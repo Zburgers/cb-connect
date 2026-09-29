@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { pairingCodePatternForLength } from "./support/pairingCode";
 
 const fixturePair = {
   runId: "run-global-setup-partial-failure",
@@ -110,6 +111,18 @@ describe("authenticated fixture global setup", () => {
   afterEach(() => {
     vi.clearAllMocks();
     navigationEvents.length = 0;
+  });
+
+  test("accepts the generated 12-character Crockford pairing code", () => {
+    const pattern = pairingCodePatternForLength("12");
+    expect(pattern.test("01ABCDEFGHJK")).toBe(true);
+    expect(pattern.test("123456789012")).toBe(true);
+    expect(pattern.test("01ABCDEFGHIL")).toBe(false);
+    expect(pattern.test("01ABCDEFGHJU")).toBe(false);
+    expect(pattern.test("12345")).toBe(false);
+    expect(pairingCodePatternForLength("6").test("123456")).toBe(true);
+    expect(pairingCodePatternForLength().test("123456")).toBe(true);
+    expect(pairingCodePatternForLength().test("01ABCDEFGHJK")).toBe(true);
   });
 
   test("creates the durable run before dashboard work and cleans it when partner sign-in fails", async () => {
