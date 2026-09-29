@@ -4,7 +4,7 @@
 
 **Goal:** Add an explicitly consented, privacy-safe mobile push channel and qualify CB Connect for staged App Store and Play Store release.
 
-**Architecture:** Mobile registers per-installation tokens after contextual permission. Convex resolves current preference/sharing, creates idempotent push attempts, sends generic previews, records Expo tickets, checks receipts and disables invalid tokens. Deep links open authenticated in-app destinations without carrying health data. Store builds are immutable and progressively released with server-side channel kill switches.
+**Architecture:** Mobile registers per-installation tokens after contextual permission. The Gate 4 core owns events, policy, logical deliveries, immutable rendering, claims/retries and reconciliation. The Expo adapter resolves active installation versions, rechecks current eligibility immediately before dispatch, sends generic previews, normalizes tickets/receipts and invalidates tokens. It does not create a second notification lifecycle or retry queue. Deep links open authenticated in-app destinations without carrying health data. Store builds are immutable and progressively released with server-side channel kill switches.
 
 **Tech Stack:** Expo Notifications, EAS Build/Submit/Update, Convex actions/crons, Expo Router links, App Store Connect, Google Play Console, Maestro.
 
@@ -12,7 +12,7 @@
 
 **Depends on:** [Mobile internal beta](2026-08-01-06-mobile-internal-beta.md)
 
-**Notification contract:** [Notification platform](2026-08-01-05-notification-platform.md)
+**Notification contract:** [Notification platform](2026-08-01-05-notification-platform.md) and proposed [G4-DELIVERY-V1](2026-09-27-gate-4-event-privacy-retention-execution.md#n1n2-delivery-contract-freeze-g4-delivery-v1). Inherit the approved Gate 4 contract when writing this gate's dated execution plan; these provider work packages do not authorize push now.
 
 **Research:** [Expo delivery limitations](../research/2026-08-01-major-release-cycle-trust-research.md#51-cross-client-and-notification-architecture-research)
 
@@ -51,27 +51,27 @@
 </task>
 
 <task id="PUSH2" name="Add idempotent Expo push adapter">
-  <description>Consume approved notification attempts, batch/send safely and record provider ticket IDs without marking device delivery.</description>
+  <description>Consume claimed Gate 4 logical deliveries; create a separate attempt per dispatch, batch/send safely and normalize provider ticket IDs without marking device delivery.</description>
   <files>
     <create>convex/actions/push.ts</create>
     <create>convex/actions/push.test.ts</create>
-    <modify>convex/internal/notificationScheduler.ts</modify>
+    <modify>convex/internal/notificationDelivery.ts</modify>
     <modify>convex/schema.ts</modify>
   </files>
   <steps>
     <step>Write retry, timeout, partial-batch, duplicate and invalid-token tests.</step>
     <step>Recheck current preference, membership, sharing, event expiry and installation status immediately before send.</step>
     <step>Send only approved generic external preview plus opaque notification/destination IDs.</step>
-    <step>Persist ticket/provider-accepted state separately from receipt/device/open states.</step>
+    <step>Persist ticket acceptance separately from provider-defined receipt/device/open states. Use Gate 4 stable delivery/provider keys and immutable payload; map ambiguous acceptance to unknown and never blindly retry. Declare the actual provider idempotency/receipt capabilities before claiming safe recovery.</step>
   </steps>
   <verification>
     <command>npx vitest run convex/actions/push.test.ts</command>
-    <expected>Retries produce one provider attempt per idempotency key and partial failures remain independently recoverable.</expected>
+    <expected>Retries reuse one logical delivery key with distinct attempts; no unsupported physical exactly-once claim. Partial failures recover independently and ambiguous/accepted results are not blindly resent.</expected>
   </verification>
 </task>
 
 <task id="PUSH3" name="Process push receipts and invalid tokens">
-  <description>Fetch Expo receipts after the recommended delay, retain provider outcomes and deactivate DeviceNotRegistered tokens.</description>
+  <description>Use the Gate 4 receipt reducer/correlation and indexed reconciliation to fetch Expo receipts after the recommended delay, retain provider-defined outcomes and deactivate DeviceNotRegistered tokens; an Expo receipt is not proof of device display ([provider delivery semantics](https://docs.expo.dev/push-notifications/sending-notifications/#delivery-guarantees)).</description>
   <files>
     <create>convex/actions/pushReceipts.ts</create>
     <create>convex/actions/pushReceipts.test.ts</create>
@@ -85,7 +85,7 @@
   </steps>
   <verification>
     <command>npx vitest run convex/actions/pushReceipts.test.ts</command>
-    <expected>Every ticket reaches a terminal/pending-expired state and invalid tokens stop receiving attempts.</expected>
+    <expected>Duplicate/out-of-order receipts do not regress outcomes or restore cancelled eligibility; missing receipts remain explicitly unresolved/expired and invalid tokens stop receiving attempts.</expected>
   </verification>
 </task>
 
