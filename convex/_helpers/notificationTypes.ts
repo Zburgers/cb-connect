@@ -172,7 +172,7 @@ export const notificationEventDefinitions = {
   }
 >;
 
-const eventTypeValidator = v.union(
+export const notificationEventTypeValidator = v.union(
   v.literal("assisted_period_start.v1"),
   v.literal("assisted_period_end.v1"),
   v.literal("period_window_approaching.v1"),
@@ -243,7 +243,7 @@ const validityRuleValidator = v.union(
  * Recipient identity is a CB Connect user; destination resolution belongs to a delivery.
  */
 export const notificationEventEnvelopeValidator = v.object({
-  eventType: eventTypeValidator,
+  eventType: notificationEventTypeValidator,
   eventVersion: v.literal(1),
   purpose: purposeValidator,
   producerKind: producerKindValidator,
