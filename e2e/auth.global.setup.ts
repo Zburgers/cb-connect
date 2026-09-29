@@ -20,6 +20,7 @@ import {
   type FixtureServices,
   type ProvisionedFixturePair,
 } from "./support/authEnvironment";
+import { pairingCodePatternForLength } from "./support/pairingCode";
 
 type FixtureManifest = {
   runId: string;
@@ -27,12 +28,9 @@ type FixtureManifest = {
   partner: { role: "partner"; clerkId: string };
 };
 
-const pairingCodePattern =
-  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "6"
-    ? /^\d{6}$/
-    : process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "12"
-      ? /^\d{12}$/
-      : /^(?:\d{6}|\d{12})$/;
+const pairingCodePattern = pairingCodePatternForLength(
+  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH,
+);
 
 function syntheticPastDate(): string {
   const date = new Date();

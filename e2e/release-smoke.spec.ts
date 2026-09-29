@@ -1,13 +1,11 @@
 import { devices, type Locator, type Page } from "@playwright/test";
 import { expect, getApprovedReleaseFixture, test } from "./fixtures";
+import { pairingCodePatternForLength } from "./support/pairingCode";
 
 const RELEASE_MESSAGE = "E3 release smoke: private chat works.";
-const pairingCodePattern =
-  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "6"
-    ? /^\d{6}$/
-    : process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH === "12"
-      ? /^\d{12}$/
-      : /^(?:\d{6}|\d{12})$/;
+const pairingCodePattern = pairingCodePatternForLength(
+  process.env.CB_CONNECT_EXPECT_PAIRING_CODE_LENGTH,
+);
 
 async function isVisible(locator: Locator) {
   return locator.isVisible().catch(() => false);
