@@ -1961,6 +1961,167 @@ describe("derived period endings", () => {
 });
 
 describe("served Late-state period invalidation", () => {
+  test(
+    "keeps daily Late history bounded and allows a later pause to invalidate the current intent",
+    async () => {
+      vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+      vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+      const t = convexTest(schema, modules);
+      const { asPrimary, primaryId } = await seedActiveCouple(t);
+      const { internal } = await import("../_generated/api");
+      const { makeDeliveryIdempotencyKey } = await import(
+        "../_helpers/notificationDelivery"
+      );
+      const { ensureCurrentLateStatusEvent } = await import(
+        "../_helpers/notificationOutbox"
+      );
+      const { addCalendarDays } = await import("../_helpers/cycleCalculations");
+      const linkEvent = async (eventId: Id<"notificationEvents">) =>
+        await t.run(async (ctx) => {
+          const event = await ctx.db.get(eventId);
+          if (!event) throw new Error("Expected a retained Late event");
+          const deliveryId = await ctx.db.insert("notificationDeliveries", {
+            eventId,
+            recipientUserId: primaryId,
+            channel: "in_app",
+            stableDestinationId: String(primaryId),
+            logicalKey: makeDeliveryIdempotencyKey(
+              String(eventId),
+              "in_app",
+              String(primaryId),
+            ),
+            notBefore: Date.now(),
+            state: "pending",
+            eligibility: "eligible",
+            providerOutcome: "none",
+            attemptCount: 0,
+            claimGeneration: 1,
+            renderIdentity: {
+              templateVersion: "g4-static-v1",
+              locale: "en",
+              variableSchemaVersion: "g4-v1",
+              payloadHash: "safe-static-test-payload-v1",
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+            eventId,
+            recipientUserId: primaryId,
+            idempotencyKey: `inbox:${eventId}`,
+            templateVersion: "g4-static-v1",
+            route: "periods",
+            state: "current",
+            createdAt: Date.now(),
+          });
+          return { deliveryId, inboxItemId };
+        });
+
+      await t.run(async (ctx) => {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          createdByUserId: primaryId,
+          updatedByUserId: primaryId,
+          source: "self",
+          confirmationStatus: "confirmed",
+          startDate: "2026-03-01",
+          startCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+          updatedAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        });
+        await ctx.db.insert("cyclePredictionSegments", {
+          userId: primaryId,
+          startDate: "2026-03-01",
+          status: "active",
+          createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        });
+        await ctx.db.insert("notificationScheduleState", {
+          userId: primaryId,
+          sourceRevision: 10,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose: "late_status",
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 4,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const snapshotId = await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        { userId: primaryId },
+      );
+      if (snapshotId === null) throw new Error("Expected a served V2 snapshot");
+      const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+      if (!snapshot) throw new Error("Expected a served V2 snapshot");
+
+      const firstLocalDay = addCalendarDays(snapshot.latestDate, 1);
+      let currentEventId: Id<"notificationEvents"> | null = null;
+      let firstLink: Awaited<ReturnType<typeof linkEvent>> | null = null;
+      const retainedDays = 258;
+      for (let offset = 0; offset < retainedDays; offset += 1) {
+        const localDay = addCalendarDays(firstLocalDay, offset);
+        const now = Date.parse(`${localDay}T20:00:00.000Z`);
+        vi.setSystemTime(now);
+        currentEventId = await t.run((ctx) =>
+          ensureCurrentLateStatusEvent(ctx, primaryId, now),
+        );
+        if (currentEventId === null) {
+          throw new Error(`Expected a current Late event for ${localDay}`);
+        }
+        if (offset === 0) firstLink = await linkEvent(currentEventId);
+      }
+
+      const currentLink = await linkEvent(currentEventId!);
+      if (!firstLink) throw new Error("Expected the first daily Late intent link");
+
+      await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        predictionPaused: true,
+      });
+
+      await t.run(async (ctx) => {
+        const events = await ctx.db.query("notificationEvents").take(retainedDays + 1);
+        expect(events).toHaveLength(retainedDays);
+        expect(new Set(events.map((event) => event.sourceReference)).size).toBe(
+          retainedDays,
+        );
+        expect(await ctx.db.get(currentLink.deliveryId)).toMatchObject({
+          state: "cancelled",
+          eligibility: "cancelled",
+          cancellationReason: "source_changed",
+        });
+        expect(await ctx.db.get(currentLink.inboxItemId)).toMatchObject({
+          state: "hidden",
+        });
+        expect(await ctx.db.get(firstLink!.deliveryId)).toMatchObject({
+          state: "cancelled",
+          eligibility: "cancelled",
+          cancellationReason: "source_changed",
+        });
+        expect(await ctx.db.get(firstLink!.inboxItemId)).toMatchObject({
+          state: "hidden",
+        });
+        expect(
+          await ctx.db
+            .query("notificationScheduleState")
+            .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+            .unique(),
+        ).toMatchObject({ sourceRevision: 11 });
+      });
+    },
+    30_000,
+  );
+
   test("same-day correction and tombstone supersede the Late key and invalidate its projection", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");

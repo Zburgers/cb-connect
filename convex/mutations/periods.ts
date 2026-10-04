@@ -23,9 +23,9 @@ import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
 import {
+  cancelCurrentLateStatusSource,
   cancelSource,
   ensureAssistedPeriodEvent,
-  lateStatusSourceReference,
 } from "../_helpers/notificationOutbox";
 import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
@@ -36,12 +36,7 @@ async function advanceAndInvalidateLateStatus(
   primaryId: Id<"users">,
   now?: number,
 ) {
-  await cancelSource(
-    ctx,
-    lateStatusSourceReference(primaryId),
-    "source_changed",
-    now,
-  );
+  await cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", now);
   return advanceNotificationSourceAuthority(ctx, primaryId, now);
 }
 
@@ -336,8 +331,8 @@ export const logPeriodStart = mutation({
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
-      await ctx.db.patch(user._id, { timeZone });
       await advanceAndInvalidateLateStatus(ctx, user._id);
+      await ctx.db.patch(user._id, { timeZone });
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
@@ -411,8 +406,8 @@ export const logPeriodEnd = mutation({
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
-      await ctx.db.patch(user._id, { timeZone });
       await advanceAndInvalidateLateStatus(ctx, user._id);
+      await ctx.db.patch(user._id, { timeZone });
     }
     requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
 
@@ -782,8 +777,8 @@ export const updatePeriodEvent = mutation({
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
-      await ctx.db.patch(user._id, { timeZone });
       await advanceAndInvalidateLateStatus(ctx, user._id);
+      await ctx.db.patch(user._id, { timeZone });
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
