@@ -96,6 +96,23 @@ describe("notification persistence", () => {
       ]);
       expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
     });
+
+    await t.run(async (ctx) => {
+      const delivery = await ctx.db.query("notificationDeliveries").first();
+      if (!delivery) throw new Error("Expected the private in-app delivery");
+
+      await ctx.db.patch(delivery._id, {
+        state: "retry_wait",
+        nextAttemptAt: 1_800_000_000_100,
+        updatedAt: 1_800_000_000_100,
+      });
+      await ctx.db.patch(delivery._id, {
+        state: "failed_permanent",
+        errorCode: "attempts_exhausted",
+        nextAttemptAt: undefined,
+        updatedAt: 1_800_000_000_200,
+      });
+    });
   });
 
   test("does not create new storage while the absent outbox flag is off", async () => {
