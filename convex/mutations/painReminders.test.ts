@@ -2,8 +2,9 @@ import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { api, internal } from "../_generated/api";
+import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import {
   addCalendarDays,
@@ -17,11 +18,7 @@ type SetPainReminderArgs = {
   painLogId: Id<"painLogs">;
   selectedLocalDay: string;
 };
-type SetPainReminderResult = {
-  requestId: Id<"painReminderRequests">;
-  requestVersion: number;
-  eventId: Id<"notificationEvents"> | null;
-};
+type SetPainReminderResult = "saved";
 
 const setMyPainReminder = makeFunctionReference<
   "mutation",
@@ -30,17 +27,16 @@ const setMyPainReminder = makeFunctionReference<
 >("mutations/painReminders:setMyPainReminder");
 const cancelMyPainReminder = makeFunctionReference<
   "mutation",
-  { requestId: Id<"painReminderRequests"> },
+  { painLogId: Id<"painLogs"> },
   null
 >("mutations/painReminders:cancelMyPainReminder");
 const revokeMyPainReminder = makeFunctionReference<
   "mutation",
-  { requestId: Id<"painReminderRequests"> },
+  { painLogId: Id<"painLogs"> },
   null
 >("mutations/painReminders:revokeMyPainReminder");
 
 const OUTBOX_FLAG = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
-const PROJECTION_FLAG = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 type TestBackend = ReturnType<typeof import("convex-test")["convexTest"]>;
 
 afterEach(() => vi.unstubAllEnvs());
@@ -69,6 +65,27 @@ async function seedPainLog(
       updatedAt: Date.now(),
     }),
   );
+}
+
+async function latestRequest(ctx: QueryCtx, painLogId: Id<"painLogs">) {
+  return await ctx.db
+    .query("painReminderRequests")
+    .withIndex("by_pain_log_and_version", (q) => q.eq("painLogId", painLogId))
+    .order("desc")
+    .first();
+}
+
+async function eventForRequest(
+  ctx: QueryCtx,
+  requestId: Id<"painReminderRequests">,
+) {
+  return await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_source_reference_and_authority", (q) =>
+      q.eq("sourceReference", String(requestId)),
+    )
+    .order("desc")
+    .first();
 }
 
 describe("user-requested pain reminders", () => {
@@ -100,11 +117,22 @@ describe("user-requested pain reminders", () => {
       selectedLocalDay,
     });
 
-    expect(retry).toEqual(first);
-    expect(first.eventId).not.toBeNull();
+    expect(first).toEqual("saved");
+    expect(retry).toEqual("saved");
     await t.run(async (ctx) => {
-      const request = await ctx.db.get(first.requestId);
-      const event = await ctx.db.get(first.eventId!);
+      const request = await ctx.db
+        .query("painReminderRequests")
+        .withIndex("by_pain_log_and_version", (q) => q.eq("painLogId", painLogId))
+        .order("desc")
+        .first();
+      if (!request) throw new Error("Expected the pain reminder request");
+      const event = await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q.eq("sourceReference", String(request._id)),
+        )
+        .first();
+      if (!event) throw new Error("Expected the pain reminder event");
       expect(request).toMatchObject({
         ownerUserId: primaryId,
         painLogId,
@@ -117,7 +145,7 @@ describe("user-requested pain reminders", () => {
         eventVersion: 1,
         purpose: "pain_check_in",
         producerKind: "explicit_primary_request",
-        sourceReference: String(first.requestId),
+        sourceReference: String(request._id),
         sourceAuthorityVersion: "pain-reminder-request:v1",
         ownerUserId: primaryId,
         recipientUserId: primaryId,
@@ -125,7 +153,7 @@ describe("user-requested pain reminders", () => {
         privacyClass: "primary_private_health",
         validityRule: "selected_local_day_while_request_is_active",
         idempotencyKey: makeEventIdempotencyKey("pain_check_in.v1", {
-          requestId: String(first.requestId),
+          requestId: String(request._id),
           requestVersion: "1",
           primaryId: String(primaryId),
         }),
@@ -196,128 +224,28 @@ describe("user-requested pain reminders", () => {
     });
   });
 
-  test("edits advance the request key and cancel the superseded projection without deletion", async () => {
+  test("edits advance the request key and cancel existing source work without deletion", async () => {
     enableOutbox();
-    vi.stubEnv(PROJECTION_FLAG, "true");
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
     const painLogId = await seedPainLog(t, primaryId);
     const firstDay = addCalendarDays(todayUtc(), 2);
-    const first = await asPrimary.mutation(setMyPainReminder, {
+    const firstResult = await asPrimary.mutation(setMyPainReminder, {
       painLogId,
       selectedLocalDay: firstDay,
     });
-    if (!first.eventId) throw new Error("Expected the first pain reminder event");
-
-    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
-      purpose: "pain_check_in",
-      inAppEnabled: true,
-    });
-    const firstEnvelope = await t.run(async (ctx) => {
-      const event = await ctx.db.get(first.eventId!);
-      if (!event) throw new Error("Expected the first pain reminder event");
-      const { _id: _eventId, _creationTime: _creationTime, createdAt: _createdAt, ...envelope } = event;
-      return envelope;
-    });
-    const projection = await t.mutation(
-      internal.mutations.notifications.ensureInAppRecords,
-      {
-        envelope: firstEnvelope,
-        route: "pain",
-        templateVersion: "g4-static-v1",
-        renderIdentity: {
-          templateVersion: "g4-static-v1",
-          locale: "en",
-          variableSchemaVersion: "g4-v1",
-          payloadHash: "safe-static-pain-check-in-v1",
-        },
-        createdAt: Date.now(),
-        notBefore: Date.now(),
-      },
-    );
-    expect(projection.status).toBe("projected");
-
-    const dueWorkId = await t.run(async (ctx) => {
-      if (!projection.deliveryId) throw new Error("Expected the in-app delivery");
-      return await ctx.db.insert("notificationDueWork", {
-        ownerUserId: primaryId,
-        kind: "delivery",
-        state: "pending",
-        dueAt: Date.now(),
-        generation: 1,
-        deliveryId: projection.deliveryId,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-    });
-
-    const secondDay = addCalendarDays(firstDay, 1);
-    const edited = await asPrimary.mutation(setMyPainReminder, {
-      painLogId,
-      selectedLocalDay: secondDay,
-    });
-
-    expect(edited.requestId).toBe(first.requestId);
-    expect(edited.requestVersion).toBe(2);
-    expect(edited.eventId).not.toBe(first.eventId);
-    await t.run(async (ctx) => {
-      const request = await ctx.db.get(edited.requestId);
-      const events = await ctx.db.query("notificationEvents").collect();
-      const delivery = await ctx.db.get(projection.deliveryId!);
-      const inboxItem = await ctx.db.get(projection.inboxItemId!);
-      const dueWork = await ctx.db.get(dueWorkId);
-      expect(request).toMatchObject({
-        selectedLocalDay: secondDay,
-        requestVersion: 2,
-        state: "active",
-      });
-      expect(events.map((event) => event.idempotencyKey)).toContain(
-        makeEventIdempotencyKey("pain_check_in.v1", {
-          requestId: String(first.requestId),
-          requestVersion: "1",
-          primaryId: String(primaryId),
-        }),
-      );
-      expect(events.map((event) => event.idempotencyKey)).toContain(
-        makeEventIdempotencyKey("pain_check_in.v1", {
-          requestId: String(first.requestId),
-          requestVersion: "2",
-          primaryId: String(primaryId),
-        }),
-      );
-      expect(delivery).toMatchObject({
-        state: "cancelled",
-        eligibility: "cancelled",
-        cancellationReason: "source_changed",
-      });
-      expect(inboxItem).toMatchObject({ state: "hidden" });
-      expect(dueWork).toMatchObject({ state: "cancelled", generation: 2 });
-      expect(await ctx.db.query("painReminderRequests").collect()).toHaveLength(1);
-    });
-  });
-
-  test("cancel and revoke invalidate projections, retain rows, and allow a fresh request", async () => {
-    enableOutbox();
-    vi.stubEnv(PROJECTION_FLAG, "true");
-    const t = convexTest(schema, modules);
-    const { asPrimary, primaryId } = await seedActiveCouple(t);
-    const painLogId = await seedPainLog(t, primaryId);
-    const selectedLocalDay = addCalendarDays(todayUtc(), 2);
-    const first = await asPrimary.mutation(setMyPainReminder, {
-      painLogId,
-      selectedLocalDay,
-    });
-    if (!first.eventId) throw new Error("Expected the first pain reminder event");
-
+    expect(firstResult).toBe("saved");
+    const firstRequest = await t.run((ctx) => latestRequest(ctx, painLogId));
+    if (!firstRequest) throw new Error("Expected the first pain reminder request");
+    const firstEvent = await t.run((ctx) => eventForRequest(ctx, firstRequest._id));
+    if (!firstEvent) throw new Error("Expected the first pain reminder event");
     const oldProjection = await t.run(async (ctx) => {
-      const event = await ctx.db.get(first.eventId!);
-      if (!event) throw new Error("Expected the first pain reminder event");
       const deliveryId = await ctx.db.insert("notificationDeliveries", {
-        eventId: event._id,
+        eventId: firstEvent._id,
         recipientUserId: primaryId,
         channel: "in_app",
         stableDestinationId: String(primaryId),
-        logicalKey: `delivery:v1:${JSON.stringify([String(event._id), "in_app", String(primaryId)])}`,
+        logicalKey: `delivery:v1:${JSON.stringify([String(firstEvent._id), "in_app", String(primaryId)])}`,
         notBefore: Date.now(),
         state: "pending",
         eligibility: "eligible",
@@ -334,9 +262,112 @@ describe("user-requested pain reminders", () => {
         updatedAt: Date.now(),
       });
       const inboxItemId = await ctx.db.insert("notificationInboxItems", {
-        eventId: event._id,
+        eventId: firstEvent._id,
         recipientUserId: primaryId,
-        idempotencyKey: `inbox:v1:${JSON.stringify([String(event._id), String(primaryId)])}`,
+        idempotencyKey: `inbox:v1:${JSON.stringify([String(firstEvent._id), String(primaryId)])}`,
+        templateVersion: "g4-static-v1",
+        route: "pain",
+        state: "current",
+        createdAt: Date.now(),
+      });
+      const dueWorkId = await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "delivery",
+        state: "pending",
+        dueAt: Date.now(),
+        generation: 1,
+        deliveryId,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { deliveryId, inboxItemId, dueWorkId };
+    });
+
+    const secondDay = addCalendarDays(firstDay, 1);
+    const editedResult = await asPrimary.mutation(setMyPainReminder, {
+      painLogId,
+      selectedLocalDay: secondDay,
+    });
+
+    expect(editedResult).toBe("saved");
+    await t.run(async (ctx) => {
+      const request = await ctx.db.get(firstRequest._id);
+      const events = await ctx.db.query("notificationEvents").collect();
+      const delivery = await ctx.db.get(oldProjection.deliveryId);
+      const inboxItem = await ctx.db.get(oldProjection.inboxItemId);
+      const dueWork = await ctx.db.get(oldProjection.dueWorkId);
+      expect(request).toMatchObject({
+        selectedLocalDay: secondDay,
+        requestVersion: 2,
+        state: "active",
+      });
+      expect(events.map((event) => event.idempotencyKey)).toContain(
+        makeEventIdempotencyKey("pain_check_in.v1", {
+          requestId: String(firstRequest._id),
+          requestVersion: "1",
+          primaryId: String(primaryId),
+        }),
+      );
+      expect(events.map((event) => event.idempotencyKey)).toContain(
+        makeEventIdempotencyKey("pain_check_in.v1", {
+          requestId: String(firstRequest._id),
+          requestVersion: "2",
+          primaryId: String(primaryId),
+        }),
+      );
+      expect(delivery).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(inboxItem).toMatchObject({ state: "hidden" });
+      expect(dueWork).toMatchObject({ state: "cancelled", generation: 2 });
+      expect(await ctx.db.query("painReminderRequests").collect()).toHaveLength(1);
+    });
+  });
+
+  test("cancel and revoke invalidate existing rows, retain history, and allow a fresh request", async () => {
+    enableOutbox();
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const painLogId = await seedPainLog(t, primaryId);
+    const selectedLocalDay = addCalendarDays(todayUtc(), 2);
+    const firstResult = await asPrimary.mutation(setMyPainReminder, {
+      painLogId,
+      selectedLocalDay,
+    });
+    expect(firstResult).toBe("saved");
+    const firstRequest = await t.run((ctx) => latestRequest(ctx, painLogId));
+    if (!firstRequest) throw new Error("Expected the first pain reminder request");
+    const firstEvent = await t.run((ctx) => eventForRequest(ctx, firstRequest._id));
+    if (!firstEvent) throw new Error("Expected the first pain reminder event");
+
+    const oldProjection = await t.run(async (ctx) => {
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: firstEvent._id,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: `delivery:v1:${JSON.stringify([String(firstEvent._id), "in_app", String(primaryId)])}`,
+        notBefore: Date.now(),
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-pain-check-in-v1",
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: firstEvent._id,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:v1:${JSON.stringify([String(firstEvent._id), String(primaryId)])}`,
         templateVersion: "g4-static-v1",
         route: "pain",
         state: "current",
@@ -355,21 +386,20 @@ describe("user-requested pain reminders", () => {
       return { deliveryId, inboxItemId };
     });
 
-    await asPrimary.mutation(revokeMyPainReminder, { requestId: first.requestId });
-    await asPrimary.mutation(revokeMyPainReminder, { requestId: first.requestId });
-    const next = await asPrimary.mutation(setMyPainReminder, {
+    await asPrimary.mutation(revokeMyPainReminder, { painLogId });
+    await asPrimary.mutation(revokeMyPainReminder, { painLogId });
+    expect(await asPrimary.mutation(setMyPainReminder, {
       painLogId,
       selectedLocalDay,
-    });
-    expect(next.requestId).not.toBe(first.requestId);
-    expect(next.requestVersion).toBe(2);
-    expect(next.eventId).not.toBe(first.eventId);
+    })).toBe("saved");
+    const nextRequest = await t.run((ctx) => latestRequest(ctx, painLogId));
+    if (!nextRequest) throw new Error("Expected the replacement pain reminder request");
 
-    await asPrimary.mutation(cancelMyPainReminder, { requestId: next.requestId });
-    await asPrimary.mutation(cancelMyPainReminder, { requestId: next.requestId });
+    await asPrimary.mutation(cancelMyPainReminder, { painLogId });
+    await asPrimary.mutation(cancelMyPainReminder, { painLogId });
     await t.run(async (ctx) => {
-      expect(await ctx.db.get(first.requestId)).toMatchObject({ state: "cancelled" });
-      expect(await ctx.db.get(next.requestId)).toMatchObject({ state: "cancelled" });
+      expect(await ctx.db.get(firstRequest._id)).toMatchObject({ state: "cancelled" });
+      expect(await ctx.db.get(nextRequest._id)).toMatchObject({ state: "cancelled" });
       expect(await ctx.db.get(oldProjection.deliveryId)).toMatchObject({
         state: "cancelled",
         cancellationReason: "authority_revoked",
@@ -389,9 +419,14 @@ describe("user-requested pain reminders", () => {
       selectedLocalDay: addCalendarDays(todayUtc(), 1),
     });
 
-    expect(result.eventId).toBeNull();
+    expect(result).toBe("saved");
     await t.run(async (ctx) => {
-      expect(await ctx.db.get(result.requestId)).toMatchObject({ state: "active" });
+      const request = await ctx.db
+        .query("painReminderRequests")
+        .withIndex("by_pain_log_and_version", (q) => q.eq("painLogId", painLogId))
+        .order("desc")
+        .first();
+      expect(request).toMatchObject({ state: "active" });
       expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);

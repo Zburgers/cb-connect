@@ -20,13 +20,7 @@ const setMyPainReminderArgs = {
   selectedLocalDay: v.string(),
 };
 
-const setMyPainReminderResult = v.object({
-  requestId: v.id("painReminderRequests"),
-  requestVersion: v.number(),
-  eventId: v.union(v.id("notificationEvents"), v.null()),
-});
-
-const requestIdArgs = { requestId: v.id("painReminderRequests") };
+const painLogIdArgs = { painLogId: v.id("painLogs") };
 
 type PainReminderRequestReference = Pick<
   Doc<"painReminderRequests">,
@@ -141,7 +135,7 @@ function advanceRequestVersion(previousVersion: number | undefined): number {
 
 export const setMyPainReminder = mutation({
   args: setMyPainReminderArgs,
-  returns: setMyPainReminderResult,
+  returns: v.literal("saved"),
   handler: async (ctx, args) => {
     const user = await requirePrimary(ctx);
     const timeZone = resolveCalendarTimeZone(user.timeZone);
@@ -166,12 +160,8 @@ export const setMyPainReminder = mutation({
     if (latestRequest?.state === "active") {
       assertRequestVersion(latestRequest.requestVersion);
       if (latestRequest.selectedLocalDay === args.selectedLocalDay) {
-        const eventId = await ensurePainReminderEvent(ctx, latestRequest);
-        return {
-          requestId: latestRequest._id,
-          requestVersion: latestRequest.requestVersion,
-          eventId,
-        };
+        await ensurePainReminderEvent(ctx, latestRequest);
+        return "saved" as const;
       }
 
       const requestVersion = advanceRequestVersion(latestRequest.requestVersion);
@@ -188,12 +178,12 @@ export const setMyPainReminder = mutation({
         updatedAt: now,
       });
 
-      const eventId = await ensurePainReminderEvent(ctx, {
+      await ensurePainReminderEvent(ctx, {
         ...latestRequest,
         requestVersion,
         state: "active",
       });
-      return { requestId: latestRequest._id, requestVersion, eventId };
+      return "saved" as const;
     }
 
     const requestVersion = advanceRequestVersion(latestRequest?.requestVersion);
@@ -207,24 +197,32 @@ export const setMyPainReminder = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    const eventId = await ensurePainReminderEvent(ctx, {
+    await ensurePainReminderEvent(ctx, {
       _id: requestId,
       ownerUserId: user._id,
       requestVersion,
       state: "active",
     });
 
-    return { requestId, requestVersion, eventId };
+    return "saved" as const;
   },
 });
 
 async function deactivateMyPainReminder(
   ctx: MutationCtx,
-  requestId: Id<"painReminderRequests">,
-  reason: "preference_off" | "authority_revoked",
+  painLogId: Id<"painLogs">,
+  reason: "source_changed" | "authority_revoked",
 ): Promise<null> {
   const user = await requirePrimary(ctx);
-  const request = await ctx.db.get(requestId);
+  const painLog = await ctx.db.get(painLogId);
+  if (!painLog || painLog.userId !== user._id) {
+    throw new Error("Pain reminder request not found");
+  }
+  const request = await ctx.db
+    .query("painReminderRequests")
+    .withIndex("by_pain_log_and_version", (q) => q.eq("painLogId", painLogId))
+    .order("desc")
+    .first();
   if (!request || request.ownerUserId !== user._id) {
     throw new Error("Pain reminder request not found");
   }
@@ -237,15 +235,15 @@ async function deactivateMyPainReminder(
 }
 
 export const cancelMyPainReminder = mutation({
-  args: requestIdArgs,
+  args: painLogIdArgs,
   returns: v.null(),
   handler: async (ctx, args) =>
-    await deactivateMyPainReminder(ctx, args.requestId, "preference_off"),
+    await deactivateMyPainReminder(ctx, args.painLogId, "source_changed"),
 });
 
 export const revokeMyPainReminder = mutation({
-  args: requestIdArgs,
+  args: painLogIdArgs,
   returns: v.null(),
   handler: async (ctx, args) =>
-    await deactivateMyPainReminder(ctx, args.requestId, "authority_revoked"),
+    await deactivateMyPainReminder(ctx, args.painLogId, "authority_revoked"),
 });
