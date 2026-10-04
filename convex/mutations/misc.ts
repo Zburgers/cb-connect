@@ -41,14 +41,9 @@ export const logNotification = internalMutation({
     status: v.union(v.literal("sent"), v.literal("failed")),
     errorMessage: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await ctx.db.insert("notificationLog", {
-      userId: args.userId,
-      type: args.type,
-      payload: args.payload,
-      sentAt: Date.now(),
-      status: args.status,
-      errorMessage: args.errorMessage,
-    });
+  handler: async () => {
+    // Keep this internal function registered for compatibility, but prevent
+    // legacy callers from writing arbitrary payloads or free-text errors.
+    throw new Error("LEGACY_NOTIFICATION_LOG_DISABLED");
   },
 });

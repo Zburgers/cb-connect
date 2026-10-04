@@ -6,7 +6,7 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import GlassPanel from "@/components/common/GlassPanel";
-import { Bell, BellOff, Eye, EyeOff, HandHeart, Lock, Shield } from "lucide-react";
+import { Eye, EyeOff, HandHeart, Lock, Shield } from "lucide-react";
 import { formatPredictionCalendarDate } from "@/components/dashboard/predictionPresentation";
 
 const GENDER_OPTIONS = [
@@ -48,10 +48,6 @@ export default function SettingsPage() {
       ? {}
       : "skip"
   );
-  const notificationLog = useQuery(
-    api.queries.users.getMyNotificationLog,
-    isLoaded && isSignedIn ? { limit: 5 } : "skip"
-  );
   const updateSettings = useMutation(api.mutations.periods.updateCycleSettings);
   const updatePreferences = useMutation(api.mutations.users.updateUserPreferences);
   const createPredictionSegment = useMutation(
@@ -66,7 +62,6 @@ export default function SettingsPage() {
     useState<(typeof GENDER_OPTIONS)[number]["value"]>("prefer_not_to_say");
   const [partnerType, setPartnerType] =
     useState<(typeof PARTNER_TYPE_OPTIONS)[number]["value"]>("partner");
-  const [externalNotificationConsent, setExternalNotificationConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [selectedPredictionStartDate, setSelectedPredictionStartDate] = useState("");
@@ -87,7 +82,6 @@ export default function SettingsPage() {
       setPreferredName(me.preferredName ?? "");
       setGender(me.gender ?? "prefer_not_to_say");
       setPartnerType(me.partnerType ?? "partner");
-      setExternalNotificationConsent(me.externalNotificationConsent ?? false);
     }
   }, [me]);
 
@@ -96,8 +90,7 @@ export default function SettingsPage() {
     cycleSettings === undefined ||
     coupleStatus === undefined ||
     me === undefined ||
-    me === null ||
-    notificationLog === undefined
+    me === null
   ) {
     return <LoadingSpinner />;
   }
@@ -132,7 +125,6 @@ export default function SettingsPage() {
         preferredName,
         gender,
         partnerType,
-        externalNotificationConsent,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -470,28 +462,6 @@ export default function SettingsPage() {
           </label>
         </div>
 
-        <label className="flex items-start gap-3 rounded-2xl border border-white/50 bg-white/[0.42] p-4 dark:border-white/10 dark:bg-white/[0.07]">
-          <input
-            type="checkbox"
-            checked={externalNotificationConsent}
-            onChange={(event) => setExternalNotificationConsent(event.target.checked)}
-            className="mt-1 h-4 w-4 accent-primary"
-          />
-          <span>
-            <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              {externalNotificationConsent ? (
-                <Bell className="h-4 w-4 text-primary" />
-              ) : (
-                <BellOff className="h-4 w-4 text-muted-foreground" />
-              )}
-              Allow external notification delivery
-            </span>
-            <span className="mt-1 block text-sm leading-6 text-muted-foreground">
-              When enabled, CB Connect may send redacted care-event alerts through the configured external webhook.
-            </span>
-          </span>
-        </label>
-
         <button
           onClick={handleSave}
           disabled={isSaving}
@@ -501,47 +471,6 @@ export default function SettingsPage() {
         </button>
       </GlassPanel>
 
-      <GlassPanel variant="quiet" className="p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Notification history</h2>
-            <p className="text-sm text-muted-foreground">
-              Recent in-app and external notification activity, with sensitive payloads redacted.
-            </p>
-          </div>
-          <Bell className="h-5 w-5 text-muted-foreground" />
-        </div>
-
-        {notificationLog.length > 0 ? (
-          <div className="mt-4 space-y-3">
-            {notificationLog.map((entry) => (
-              <div
-                key={entry._id}
-                className="rounded-2xl border border-white/50 bg-white/[0.42] p-4 text-sm dark:border-white/10 dark:bg-white/[0.07]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-foreground">
-                    {entry.type.replace(/_/g, " ")}
-                  </span>
-                  <span className={entry.status === "sent" ? "text-primary" : "text-destructive"}>
-                    {entry.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {new Date(entry.sentAt).toLocaleString()}
-                </p>
-                {entry.errorMessage && (
-                  <p className="mt-2 text-xs text-destructive">{entry.errorMessage}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No notification activity yet.
-          </p>
-        )}
-      </GlassPanel>
     </div>
   );
 }
