@@ -1,11 +1,14 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("couple message state", () => {
   test("preserves exactly 80 legacy unread messages when sequencing begins", async () => {
@@ -505,5 +508,206 @@ describe("couple message state", () => {
     await asPrimary.mutation(api.mutations.messages.react, { messageId, emoji: "💗" });
     listed = await asPrimary.query(api.queries.messages.listForCouple, { limit: 10 });
     expect(listed[0].reactions).toEqual([{ emoji: "✨", count: 1, isMine: false }]);
+  });
+
+  test("creates one content-free recipient event for each accepted send", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId, partnerId } = await seedActiveCouple(t);
+    const privateBody = "private-chat-preview-must-not-enter-notification-storage";
+
+    const firstMessageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: privateBody,
+    });
+    const secondMessageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: privateBody,
+    });
+    const messages = await t.run(async (ctx) =>
+      Promise.all([ctx.db.get(firstMessageId), ctx.db.get(secondMessageId)]),
+    );
+    const events = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_recipient_and_created_at", (q) =>
+          q.eq("recipientUserId", partnerId),
+        )
+        .collect(),
+    );
+
+    expect(new Set([firstMessageId, secondMessageId]).size).toBe(2);
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.eventType)).toEqual([
+      "partner_message.v1",
+      "partner_message.v1",
+    ]);
+    expect(events.map((event) => event.sourceReference)).toEqual([
+      `message:${firstMessageId}`,
+      `message:${secondMessageId}`,
+    ]);
+    expect(events.map((event) => event.sourceAuthorityVersion)).toEqual(
+      messages.map(
+        (message) => `relationship-membership:${message!.relationshipMembershipId}`,
+      ),
+    );
+    expect(events.map((event) => event.recipientUserId)).toEqual([
+      partnerId,
+      partnerId,
+    ]);
+    expect(events.map((event) => event.recipientScope)).toEqual([
+      "other_active_member",
+      "other_active_member",
+    ]);
+    expect(events.map((event) => event.purpose)).toEqual([
+      "partner_message",
+      "partner_message",
+    ]);
+    expect(events.map((event) => event.producerKind)).toEqual([
+      "new_couple_message",
+      "new_couple_message",
+    ]);
+    expect(events.map((event) => event.privacyClass)).toEqual([
+      "relationship_private_free_text_source",
+      "relationship_private_free_text_source",
+    ]);
+    expect(events.map((event) => event.validityRule)).toEqual([
+      "while_message_and_active_link_exist",
+      "while_message_and_active_link_exist",
+    ]);
+    expect(events.map((event) => event.ownerUserId)).toEqual([
+      primaryId,
+      primaryId,
+    ]);
+    expect(events.map((event) => event.idempotencyKey)).toEqual([
+      makeEventIdempotencyKey("partner_message.v1", {
+        messageId: String(firstMessageId),
+        recipientId: String(partnerId),
+      }),
+      makeEventIdempotencyKey("partner_message.v1", {
+        messageId: String(secondMessageId),
+        recipientId: String(partnerId),
+      }),
+    ]);
+    expect(new Set(events.map((event) => event.idempotencyKey)).size).toBe(2);
+    expect(events.every((event) => event.allowedChannel === "in_app")).toBe(true);
+    expect(JSON.stringify(events)).not.toContain(privateBody);
+    const notificationLog = await t.run(async (ctx) =>
+      ctx.db.query("notificationLog").collect(),
+    );
+    const deliveries = await t.run(async (ctx) =>
+      ctx.db.query("notificationDeliveries").collect(),
+    );
+    const inboxItems = await t.run(async (ctx) =>
+      ctx.db.query("notificationInboxItems").collect(),
+    );
+    const senderEvents = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_recipient_and_created_at", (q) =>
+          q.eq("recipientUserId", primaryId),
+        )
+        .collect(),
+    );
+    expect(notificationLog).toHaveLength(0);
+    expect(deliveries).toHaveLength(0);
+    expect(inboxItems).toHaveLength(0);
+    expect(senderEvents).toHaveLength(0);
+  });
+
+  test("stores no message event when the outbox flag is off", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "");
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Dark outbox" });
+
+    const events = await t.run(async (ctx) =>
+      ctx.db.query("notificationEvents").collect(),
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  test("a revoked partner cannot create another recipient event", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, partnerId } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Before revoke" });
+    await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+
+    await expect(
+      asPartner.mutation(api.mutations.messages.send, { body: "After revoke" }),
+    ).rejects.toThrow("You are not linked to a couple");
+    const events = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_recipient_and_created_at", (q) =>
+          q.eq("recipientUserId", partnerId),
+        )
+        .collect(),
+    );
+    expect(events).toHaveLength(1);
+  });
+
+  test("chat clear hides messages without deleting their source events", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } =
+      await seedActiveCouple(t);
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "Clear preserves history",
+    });
+
+    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {});
+
+    const message = await t.run(async (ctx) => ctx.db.get(messageId));
+    const events = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_recipient_and_created_at", (q) =>
+          q.eq("recipientUserId", partnerId),
+        )
+        .collect(),
+    );
+    const couple = await t.run(async (ctx) => ctx.db.get(coupleId));
+    expect(message).not.toBeNull();
+    expect(couple?.chatClearedAt).toBeGreaterThanOrEqual(message!.createdAt);
+    await expect(
+      asPrimary.query(api.queries.messages.listForCouple, {}),
+    ).resolves.toEqual([]);
+    await expect(
+      asPartner.query(api.queries.messages.listForCouple, {}),
+    ).resolves.toEqual([]);
+    const messageEvents = events.filter(
+      (event) => event.eventType === "partner_message.v1",
+    );
+    const clearEvent = events.find(
+      (event) => event.eventType === "partner_chat_cleared.v1",
+    );
+    expect(messageEvents).toHaveLength(1);
+    expect(messageEvents[0].sourceReference).toBe(`message:${messageId}`);
+    expect(clearEvent).toMatchObject({
+      purpose: "partner_chat_cleared",
+      producerKind: "explicit_chat_clear_transition",
+      sourceReference: `couple-chat:${coupleId}`,
+      sourceAuthorityVersion: `chat-clear:${clearResult.clearedAt}`,
+      ownerUserId: primaryId,
+      recipientUserId: partnerId,
+      recipientScope: "other_active_member",
+      privacyClass: "account_relationship_sensitive",
+      validityRule: "until_newer_chat_state_or_link_revocation",
+      idempotencyKey: makeEventIdempotencyKey("partner_chat_cleared.v1", {
+        coupleId: String(coupleId),
+        clearOperationId: `chat-clear:${clearResult.clearedAt}`,
+        recipientId: String(partnerId),
+      }),
+      allowedChannel: "in_app",
+    });
+    expect(JSON.stringify(events)).not.toContain("Clear preserves history");
+    expect(JSON.stringify(events)).not.toContain("Primary Person");
+    expect(JSON.stringify(events)).not.toContain("Partner Person");
+    const notificationLog = await t.run(async (ctx) =>
+      ctx.db.query("notificationLog").collect(),
+    );
+    expect(notificationLog).toHaveLength(0);
   });
 });
