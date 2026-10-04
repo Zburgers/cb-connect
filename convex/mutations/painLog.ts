@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
-import { internal } from "../_generated/api";
 import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
@@ -54,14 +53,6 @@ export const createOrUpdatePainLog = mutation({
         updatedAt: Date.now(),
       });
 
-      if (args.painScore >= 7 && user.externalNotificationConsent) {
-        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-          userId: user._id,
-          type: "high_pain_logged",
-          message: `High pain check-in logged on ${args.date}.`,
-        });
-      }
-
       return { logId: existing._id, created: false };
     }
 
@@ -74,14 +65,6 @@ export const createOrUpdatePainLog = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-
-    if (args.painScore >= 7 && user.externalNotificationConsent) {
-      await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-        userId: user._id,
-        type: "high_pain_logged",
-        message: `High pain check-in logged on ${args.date}.`,
-      });
-    }
 
     return { logId, created: true };
   },

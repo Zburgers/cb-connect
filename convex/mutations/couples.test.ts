@@ -1,10 +1,15 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("assisted period sharing settings", () => {
   test("turning off phase visibility also disables assisted logging", async () => {
@@ -207,6 +212,77 @@ describe("assisted period sharing settings", () => {
     ).resolves.toMatchObject({ unreadCount: 1 });
     expect(newPartnerId).toBeDefined();
   });
+});
+
+test("updating connected-since date does not write sensitive legacy notification data", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  const t = convexTest(schema, modules);
+  const { asPrimary } = await seedActiveCouple(t);
+
+  await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+    connectedSinceDate: "2020-02-14",
+  });
+
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
+});
+
+test("partner linking cannot POST with a stale webhook secret", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  vi.stubGlobal("fetch", fetchStub);
+
+  const t = convexTest(schema, modules);
+  const primaryId = await seedUser(t, {
+    clerkId: "legacy-discord-link-primary",
+    name: "Primary",
+    role: "primary",
+  });
+  await seedUser(t, {
+    clerkId: "legacy-discord-link-partner",
+    name: "Partner",
+    role: "partner",
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(primaryId, { externalNotificationConsent: true });
+    const coupleId = await ctx.db.insert("couples", {
+      createdAt: Date.now(),
+      status: "pending",
+    });
+    await ctx.db.insert("coupleMembers", {
+      coupleId,
+      userId: primaryId,
+      role: "primary",
+      sharingPain: false,
+      sharingPhase: true,
+      sharingPeriodWrite: false,
+      joinedAt: Date.now(),
+    });
+    await ctx.db.insert("pairingCodes", {
+      code: "482731",
+      coupleId,
+      createdBy: primaryId,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      status: "active",
+    });
+  });
+
+  vi.useFakeTimers();
+  try {
+    await t.withIdentity({ subject: "legacy-discord-link-partner" }).mutation(
+      api.mutations.couples.linkPartnerWithCode,
+      { code: "482731" },
+    );
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+  } finally {
+    vi.useRealTimers();
+  }
+
+  expect(fetchStub).not.toHaveBeenCalled();
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
 });
 
 describe("revoke and relink lifecycle", () => {

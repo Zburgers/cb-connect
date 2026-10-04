@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import { addCalendarDays } from "../_helpers/cycleCalculations";
@@ -11,6 +11,11 @@ import { seedActiveCouple } from "../test.fixtures";
 function validPainLog() {
   return { painScore: 4, tags: ["cramps"] as ("cramps")[] };
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("pain log date boundaries", () => {
   test("accepts today and valid past dates", async () => {
@@ -59,4 +64,39 @@ describe("pain log date boundaries", () => {
       })
     ).rejects.toThrow("Pain log date cannot be in the future");
   });
+});
+
+test("high pain create and update cannot POST or write a legacy log with a stale webhook", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  vi.stubGlobal("fetch", fetchStub);
+
+  const t = convexTest(schema, modules);
+  const { asPrimary, primaryId } = await seedActiveCouple(t);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(primaryId, { externalNotificationConsent: true });
+  });
+  const date = toCalendarDateInTimeZone(new Date(), "UTC");
+
+  vi.useFakeTimers();
+  try {
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date,
+      painScore: 8,
+      tags: ["cramps"],
+    });
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date,
+      painScore: 9,
+      tags: ["headache"],
+    });
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+  } finally {
+    vi.useRealTimers();
+  }
+
+  expect(fetchStub).not.toHaveBeenCalled();
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
 });

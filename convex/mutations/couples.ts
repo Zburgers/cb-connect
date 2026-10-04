@@ -400,25 +400,6 @@ export const linkPartnerWithCode = mutation({
       success: true,
     });
 
-    // Find the primary user to notify them
-    const primaryMembership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
-      )
-      .first();
-
-    if (primaryMembership) {
-      const primaryUser = await ctx.db.get(primaryMembership.userId);
-      if (primaryUser?.externalNotificationConsent) {
-        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-          userId: primaryMembership.userId,
-          type: "partner_linked",
-          message: "Partner link completed.",
-        });
-      }
-    }
-
     return { success: true as const, coupleId: pairingCode.coupleId };
   },
 });
@@ -623,28 +604,6 @@ export const updateConnectedSinceDate = mutation({
       connectedSinceUpdatedAt: Date.now(),
       connectedSinceUpdatedBy: user._id,
     });
-
-    const partnerMembership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
-        q
-          .eq("coupleId", coupleData.membership.coupleId)
-          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
-      )
-      .first();
-
-    if (partnerMembership) {
-      await ctx.db.insert("notificationLog", {
-        userId: partnerMembership.userId,
-        type: "connected_since_updated",
-        payload: {
-          connectedSinceDate,
-          updatedBy: user.preferredName || user.name,
-        },
-        sentAt: Date.now(),
-        status: "sent",
-      });
-    }
 
     return { success: true };
   },
