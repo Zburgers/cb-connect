@@ -13,7 +13,10 @@ import {
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
-import { resolveLocalReminderInstant } from "./notificationScheduler";
+import {
+  reconcileUserSchedule,
+  resolveLocalReminderInstant,
+} from "./notificationScheduler";
 
 const reconcileDueWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:reconcileDueWork",
@@ -498,6 +501,137 @@ describe("notification schedule reconciliation", () => {
     expect(afterWake.work?.state).toBe("cancelled");
     expect(afterWake.events).toEqual([]);
     expect(afterWake.snapshots).toHaveLength(1);
+  });
+
+  test.each([
+    "served snapshot version changed",
+    "newer stale served snapshot identity",
+    "period correction",
+    "period tombstone",
+    "new period start",
+    "prediction pause",
+    "preference revoked",
+  ])("wake cancels old work when %s before projection", async (change) => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const { periodEventId } = await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const [work] = await pendingScheduleRows(t, primaryId);
+    if (!work) throw new Error("Expected prediction-window due work");
+
+    await t.run(async (ctx) => {
+      switch (change) {
+        case "served snapshot version changed":
+          await ctx.db.patch(snapshotId, { contractVersion: 3 });
+          break;
+        case "newer stale served snapshot identity": {
+          const snapshot = await ctx.db.get(snapshotId);
+          if (!snapshot) throw new Error("Expected the served V2 snapshot");
+          const { _id, _creationTime, ...snapshotFields } = snapshot;
+          await ctx.db.insert("predictionSnapshots", {
+            ...snapshotFields,
+            generatedAt: snapshot.generatedAt + 1_000,
+            contractVersion: 3,
+          });
+          break;
+        }
+        case "period correction":
+          await ctx.db.patch("periodEvents", periodEventId, {
+            startDate: "2026-03-02",
+            authorityVersion: 2,
+            updatedAt: now,
+          });
+          await advanceNotificationSourceAuthority(ctx, primaryId, now);
+          break;
+        case "period tombstone":
+          await ctx.db.patch("periodEvents", periodEventId, {
+            tombstoneAt: now,
+            tombstoneAuthorityVersion: 2,
+            updatedAt: now,
+          });
+          await advanceNotificationSourceAuthority(ctx, primaryId, now);
+          break;
+        case "new period start":
+          await ctx.db.insert("periodEvents", {
+            userId: primaryId,
+            startDate: "2026-03-15",
+            startCertainty: "exact",
+            authorityVersion: 1,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await advanceNotificationSourceAuthority(ctx, primaryId, now);
+          break;
+        case "prediction pause":
+          await ctx.db.insert("cycleSettings", {
+            userId: primaryId,
+            cycleLength: 28,
+            periodLength: 5,
+            predictionPaused: true,
+            predictionPausedAt: now,
+            lastUpdatedAt: now,
+          });
+          await advanceNotificationSourceAuthority(ctx, primaryId, now);
+          break;
+        case "preference revoked": {
+          const preference = await ctx.db
+            .query("notificationPreferences")
+            .withIndex("by_user_and_purpose", (q) =>
+              q.eq("userId", primaryId).eq("purpose", "period_window_approaching"),
+            )
+            .unique();
+          if (!preference) throw new Error("Expected prediction preference");
+          await ctx.db.patch(preference._id, { inAppEnabled: false, updatedAt: now });
+          break;
+        }
+      }
+    });
+
+    const claimedWorkId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "claimed",
+        dueAt: work.dueAt,
+        generation: work.generation,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: work._id,
+        generation: work.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+
+    const afterWake = await t.run(async (ctx) => ({
+      work: await ctx.db.get("notificationDueWork", work._id),
+      claimedWork: await ctx.db.get("notificationDueWork", claimedWorkId),
+      events: await ctx.db.query("notificationEvents").take(10),
+      deliveries: await ctx.db.query("notificationDeliveries").take(10),
+      inboxItems: await ctx.db.query("notificationInboxItems").take(10),
+    }));
+    expect(afterWake.work?.state).toBe("cancelled");
+    expect(afterWake.claimedWork?.state).toBe("cancelled");
+    expect(afterWake.events).toEqual([]);
+    expect(afterWake.deliveries).toEqual([]);
+    expect(afterWake.inboxItems).toEqual([]);
   });
 
   test("incidental refresh keeps work while an authoritative correction supersedes it", async () => {
