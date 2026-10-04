@@ -1,0 +1,242 @@
+import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
+import { makeEventIdempotencyKey } from "./notificationDelivery";
+import { notificationEventDefinitions } from "./notificationTypes";
+
+const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
+const MAX_SOURCE_EVENTS = 256;
+const MAX_DUE_WORK_PER_DELIVERY = 256;
+
+export type AssistedPeriodEventType =
+  | "assisted_period_start.v1"
+  | "assisted_period_end.v1";
+
+export type SourceCancellationReason =
+  | "source_changed"
+  | "authority_revoked"
+  | "preference_off"
+  | "expired";
+
+type EventEnvelope = {
+  eventType: AssistedPeriodEventType;
+  eventVersion: 1;
+  purpose: "assisted_period_start" | "assisted_period_end";
+  producerKind: "accepted_period_start" | "accepted_period_end";
+  sourceReference: string;
+  sourceAuthorityVersion: string;
+  ownerUserId: Id<"users">;
+  recipientUserId: Id<"users">;
+  recipientScope: "primary";
+  privacyClass: "primary_private_health";
+  validityRule: "while_authority_is_current_and_primary_has_access";
+  idempotencyKey: string;
+  allowedChannel: "in_app";
+};
+
+function assertNow(now: number): void {
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new Error("Outbox timestamp must be a non-negative safe integer");
+  }
+}
+
+function isKnownCertainty(value: string | undefined): value is "exact" | "approximate" {
+  return value === "exact" || value === "approximate";
+}
+
+function eventEnvelope(
+  eventType: AssistedPeriodEventType,
+  periodEventId: Id<"periodEvents">,
+  primaryId: Id<"users">,
+  authorityVersion: number,
+): EventEnvelope {
+  const definition = notificationEventDefinitions[eventType];
+  return {
+    eventType,
+    eventVersion: 1,
+    purpose: definition.purpose,
+    producerKind: definition.producer,
+    sourceReference: `period:${periodEventId}`,
+    sourceAuthorityVersion: `period-authority:${authorityVersion}`,
+    ownerUserId: primaryId,
+    recipientUserId: primaryId,
+    recipientScope: "primary",
+    privacyClass: "primary_private_health",
+    validityRule: "while_authority_is_current_and_primary_has_access",
+    idempotencyKey: makeEventIdempotencyKey(eventType, {
+      periodEventId: String(periodEventId),
+      authorityVersion: String(authorityVersion),
+      primaryId: String(primaryId),
+    }),
+    allowedChannel: "in_app",
+  };
+}
+
+function sameEnvelope(
+  existing: {
+    eventType: string;
+    eventVersion: number;
+    purpose: string;
+    producerKind: string;
+    sourceReference: string;
+    sourceAuthorityVersion: string;
+    ownerUserId: string;
+    recipientUserId: string;
+    recipientScope: string;
+    privacyClass: string;
+    validityRule: string;
+    idempotencyKey: string;
+    allowedChannel: string;
+  },
+  expected: EventEnvelope,
+): boolean {
+  return (
+    existing.eventType === expected.eventType &&
+    existing.eventVersion === expected.eventVersion &&
+    existing.purpose === expected.purpose &&
+    existing.producerKind === expected.producerKind &&
+    existing.sourceReference === expected.sourceReference &&
+    existing.sourceAuthorityVersion === expected.sourceAuthorityVersion &&
+    existing.ownerUserId === expected.ownerUserId &&
+    existing.recipientUserId === expected.recipientUserId &&
+    existing.recipientScope === expected.recipientScope &&
+    existing.privacyClass === expected.privacyClass &&
+    existing.validityRule === expected.validityRule &&
+    existing.idempotencyKey === expected.idempotencyKey &&
+    existing.allowedChannel === expected.allowedChannel
+  );
+}
+
+/**
+ * Writes only the immutable domain event, in the caller's transaction. Copy,
+ * delivery creation, projection and external transport belong to later lanes.
+ */
+export async function ensureAssistedPeriodEvent(
+  ctx: MutationCtx,
+  eventType: AssistedPeriodEventType,
+  periodEventId: Id<"periodEvents">,
+  now: number = Date.now(),
+): Promise<Id<"notificationEvents"> | null> {
+  assertNow(now);
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return null;
+
+  const period = await ctx.db.get(periodEventId);
+  if (
+    !period ||
+    period.source !== "partner_assist" ||
+    period.tombstoneAt !== undefined ||
+    period.confirmationStatus !== "confirmed" ||
+    !isKnownCertainty(period.startCertainty)
+  ) {
+    return null;
+  }
+  if (
+    eventType === "assisted_period_end.v1" &&
+    (period.endDate === undefined || !isKnownCertainty(period.endCertainty))
+  ) {
+    return null;
+  }
+
+  const authorityVersion = period.authorityVersion;
+  if (!Number.isSafeInteger(authorityVersion) || authorityVersion === undefined || authorityVersion < 1) {
+    return null;
+  }
+  const envelope = eventEnvelope(eventType, period._id, period.userId, authorityVersion);
+  const existing = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", envelope.idempotencyKey))
+    .unique();
+  if (existing) {
+    if (!sameEnvelope(existing, envelope)) {
+      throw new Error("Notification event key conflicts with its source authority");
+    }
+    return existing._id;
+  }
+
+  return await ctx.db.insert("notificationEvents", {
+    ...envelope,
+    createdAt: now,
+  });
+}
+
+/**
+ * Non-destructively invalidates every bounded event generation for one source.
+ * Delivered outcomes remain factual; inbox rows become hidden and old wakeups
+ * are fenced by incrementing their generation.
+ */
+export async function cancelSource(
+  ctx: MutationCtx,
+  sourceRef: string,
+  reason: SourceCancellationReason,
+  now: number = Date.now(),
+): Promise<void> {
+  assertNow(now);
+  if (sourceRef.length === 0 || sourceRef.length > 1_024) {
+    throw new Error("Notification source reference is outside its fixed bound");
+  }
+
+  const events = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_source_reference_and_authority", (q) =>
+      q.eq("sourceReference", sourceRef),
+    )
+    .take(MAX_SOURCE_EVENTS + 1);
+  if (events.length > MAX_SOURCE_EVENTS) {
+    throw new Error("Notification source has too many event generations to cancel atomically");
+  }
+
+  for (const event of events) {
+    const deliveries = await ctx.db
+      .query("notificationDeliveries")
+      .withIndex("by_event_id", (q) => q.eq("eventId", event._id))
+      .take(2);
+    if (deliveries.length > 1) {
+      throw new Error("Notification event has more than one in-app destination");
+    }
+
+    for (const delivery of deliveries) {
+      const dueWork = await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_delivery_id", (q) => q.eq("deliveryId", delivery._id))
+        .take(MAX_DUE_WORK_PER_DELIVERY + 1);
+      if (dueWork.length > MAX_DUE_WORK_PER_DELIVERY) {
+        throw new Error("Notification delivery has too many wakeups to cancel atomically");
+      }
+      for (const work of dueWork) {
+        if (work.state !== "pending" && work.state !== "claimed") continue;
+        if (!Number.isSafeInteger(work.generation) || work.generation < 1 || work.generation >= Number.MAX_SAFE_INTEGER) {
+          throw new Error("Notification wakeup generation cannot be advanced safely");
+        }
+        await ctx.db.patch(work._id, {
+          state: "cancelled",
+          generation: work.generation + 1,
+          updatedAt: now,
+        });
+      }
+
+      const active =
+        delivery.state === "pending" ||
+        delivery.state === "processing" ||
+        delivery.state === "retry_wait";
+      const terminalState = reason === "expired" ? "expired" : "cancelled";
+      await ctx.db.patch(delivery._id, {
+        state: active ? terminalState : delivery.state,
+        eligibility: reason === "expired" ? "expired" : "cancelled",
+        cancellationReason: reason,
+        updatedAt: now,
+      });
+    }
+
+    const inboxItems = await ctx.db
+      .query("notificationInboxItems")
+      .withIndex("by_event_id", (q) => q.eq("eventId", event._id))
+      .take(2);
+    if (inboxItems.length > 1) {
+      throw new Error("Notification event has more than one primary inbox item");
+    }
+    for (const item of inboxItems) {
+      if (item.state === "current") {
+        await ctx.db.patch(item._id, { state: "hidden" });
+      }
+    }
+  }
+}

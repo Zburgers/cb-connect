@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
@@ -27,6 +28,21 @@ async function setPrimaryTimeZone(t: TestBackend) {
     }
     await ctx.db.patch(primary._id, { timeZone: "UTC" });
   });
+}
+
+async function seedNotificationSourceRevision(
+  t: TestBackend,
+  primaryId: Id<"users">,
+  sourceRevision = 0,
+) {
+  await t.run((ctx) =>
+    ctx.db.insert("notificationScheduleState", {
+      userId: primaryId,
+      sourceRevision,
+      createdAt: 1,
+      updatedAt: 1,
+    }),
+  );
 }
 
 async function seedAssistedPeriodEvent(
@@ -156,17 +172,219 @@ describe("partner-assisted period logging", () => {
       authorityVersion: 1,
     });
 
-    const notification = await t.run(async (ctx) => {
-      return await ctx.db.query("notificationLog").first();
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
     });
-    expect(notification).toMatchObject({
-      userId: primaryId,
-      type: "partner_assisted_period_start",
-      payload: {
+  });
+
+  test("creates a primary-only outbox event and advances existing source authority", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const result = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-06-20", startCertainty: "exact" },
+    );
+    const event = await t.run(async (ctx) =>
+      ctx.db.query("notificationEvents").unique(),
+    );
+
+    expect(event).toMatchObject({
+      eventType: "assisted_period_start.v1",
+      eventVersion: 1,
+      purpose: "assisted_period_start",
+      producerKind: "accepted_period_start",
+      sourceReference: `period:${result.eventId}`,
+      sourceAuthorityVersion: "period-authority:1",
+      ownerUserId: primaryId,
+      recipientUserId: primaryId,
+      recipientScope: "primary",
+      privacyClass: "primary_private_health",
+      validityRule: "while_authority_is_current_and_primary_has_access",
+      idempotencyKey: makeEventIdempotencyKey("assisted_period_start.v1", {
+        periodEventId: String(result.eventId),
+        authorityVersion: "1",
+        primaryId: String(primaryId),
+      }),
+      allowedChannel: "in_app",
+    });
+    expect(event).not.toHaveProperty("startDate");
+    expect(event).not.toHaveProperty("payload");
+    expect(event?.recipientUserId).not.toBe(partnerId);
+    await t.run(async (ctx) => {
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 1 });
+      expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+    });
+  });
+
+  test("writes assisted end events at the incremented authority version", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId, 5);
+    const periodEventId = await t.run((ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
         startDate: "2026-06-20",
-        partnerName: "Partner Person",
-      },
-      status: "sent",
+        startCertainty: "exact",
+        authorityVersion: 8,
+        createdAt: 10,
+        updatedAt: 10,
+      }),
+    );
+
+    await asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+      periodEventId,
+      endDate: "2026-06-24",
+      endCertainty: "approximate",
+      expectedAuthorityVersion: 8,
+    });
+
+    await t.run(async (ctx) => {
+      const event = await ctx.db.query("notificationEvents").unique();
+      expect(event).toMatchObject({
+        eventType: "assisted_period_end.v1",
+        sourceReference: `period:${periodEventId}`,
+        sourceAuthorityVersion: "period-authority:9",
+        idempotencyKey: makeEventIdempotencyKey("assisted_period_end.v1", {
+          periodEventId: String(periodEventId),
+          authorityVersion: "9",
+          primaryId: String(primaryId),
+        }),
+        recipientUserId: primaryId,
+        allowedChannel: "in_app",
+      });
+      expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 6 });
+    });
+  });
+
+  test("advances source authority for accepted primary facts and changed settings only", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const { eventId } = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      { startDate: "2026-07-01", startCertainty: "exact", timeZone: "UTC" },
+    );
+    const readRevision = async () =>
+      await t.run(async (ctx) => {
+        const state = await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique();
+        return state?.sourceRevision;
+      });
+    expect(await readRevision()).toBe(1);
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+        periodEventId: eventId,
+        endDate: "2026-07-05",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 0,
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("STALE_AUTHORITY_VERSION");
+    expect(await readRevision()).toBe(1);
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 30,
+    });
+    expect(await readRevision()).toBe(2);
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 30,
+    });
+    expect(await readRevision()).toBe(2);
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      periodEventId: eventId,
+      endDate: "2026-07-05",
+      endCertainty: "exact",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    expect(await readRevision()).toBe(3);
+  });
+
+  test("correction and tombstone supersede assisted events without deleting them", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, asPrimary, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const { eventId } = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-06-20", startCertainty: "exact" },
+    );
+    const notificationEventId = await t.run(async (ctx) =>
+      (await ctx.db.query("notificationEvents").unique())?._id,
+    );
+    expect(notificationEventId).toBeDefined();
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(notificationEventId!)).not.toBeNull();
+      expect(await ctx.db.get(eventId)).toMatchObject({ authorityVersion: 2 });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 2 });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: eventId,
+      expectedAuthorityVersion: 2,
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(notificationEventId!)).not.toBeNull();
+      expect(await ctx.db.get(eventId)).toMatchObject({ tombstoneAuthorityVersion: 3 });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 3 });
     });
   });
 
