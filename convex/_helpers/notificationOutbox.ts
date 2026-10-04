@@ -1,6 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
+import { readCurrentNotificationCycleState } from "./notificationCycleState";
 import { notificationEventDefinitions } from "./notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
@@ -17,7 +18,7 @@ export type SourceCancellationReason =
   | "preference_off"
   | "expired";
 
-type EventEnvelope = {
+type AssistedPeriodEventEnvelope = {
   eventType: AssistedPeriodEventType;
   eventVersion: 1;
   purpose: "assisted_period_start" | "assisted_period_end";
@@ -32,6 +33,24 @@ type EventEnvelope = {
   idempotencyKey: string;
   allowedChannel: "in_app";
 };
+
+type LateStatusEventEnvelope = {
+  eventType: "late_status.v1";
+  eventVersion: 1;
+  purpose: "late_status";
+  producerKind: "approved_served_late_state";
+  sourceReference: string;
+  sourceAuthorityVersion: string;
+  ownerUserId: Id<"users">;
+  recipientUserId: Id<"users">;
+  recipientScope: "primary";
+  privacyClass: "primary_private_inferred_health";
+  validityRule: "while_current_late_state_is_valid";
+  idempotencyKey: string;
+  allowedChannel: "in_app";
+};
+
+type EventEnvelope = AssistedPeriodEventEnvelope | LateStatusEventEnvelope;
 
 function assertNow(now: number): void {
   if (!Number.isSafeInteger(now) || now < 0) {
@@ -48,7 +67,7 @@ function eventEnvelope(
   periodEventId: Id<"periodEvents">,
   primaryId: Id<"users">,
   authorityVersion: number,
-): EventEnvelope {
+): AssistedPeriodEventEnvelope {
   const definition = notificationEventDefinitions[eventType];
   return {
     eventType,
@@ -66,6 +85,39 @@ function eventEnvelope(
       periodEventId: String(periodEventId),
       authorityVersion: String(authorityVersion),
       primaryId: String(primaryId),
+    }),
+    allowedChannel: "in_app",
+  };
+}
+
+export function lateStatusSourceReference(primaryId: Id<"users">): string {
+  return `late:${primaryId}`;
+}
+
+function lateStatusEventEnvelope(
+  primaryId: Id<"users">,
+  sourceAuthorityVersion: string,
+  localDay: string,
+  reminderWindowVersion: number,
+): LateStatusEventEnvelope {
+  const eventType = "late_status.v1" as const;
+  return {
+    eventType,
+    eventVersion: 1,
+    purpose: "late_status",
+    producerKind: "approved_served_late_state",
+    sourceReference: lateStatusSourceReference(primaryId),
+    sourceAuthorityVersion,
+    ownerUserId: primaryId,
+    recipientUserId: primaryId,
+    recipientScope: "primary",
+    privacyClass: "primary_private_inferred_health",
+    validityRule: "while_current_late_state_is_valid",
+    idempotencyKey: makeEventIdempotencyKey(eventType, {
+      primaryId: String(primaryId),
+      sourceAuthorityVersion,
+      localDay,
+      reminderWindowVersion: String(reminderWindowVersion),
     }),
     allowedChannel: "in_app",
   };
@@ -152,6 +204,87 @@ export async function ensureAssistedPeriodEvent(
     return existing._id;
   }
 
+  return await ctx.db.insert("notificationEvents", {
+    ...envelope,
+    createdAt: now,
+  });
+}
+
+/**
+ * Re-reads current served cycle authority at a due boundary and records one
+ * content-free Late event. The caller owns due-work scheduling; this helper
+ * never refreshes a snapshot, computes prediction bounds, or projects copy.
+ */
+export async function ensureCurrentLateStatusEvent(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  now: number = Date.now(),
+): Promise<Id<"notificationEvents"> | null> {
+  assertNow(now);
+
+  const current = await readCurrentNotificationCycleState(ctx, primaryId, now);
+  if (
+    !current ||
+    current.state.status !== "late_or_uncertain" ||
+    current.state.reason !== "AFTER_LATEST_BOUND"
+  ) {
+    await cancelSource(
+      ctx,
+      lateStatusSourceReference(primaryId),
+      "source_changed",
+      now,
+    );
+    return null;
+  }
+
+  const preference = await ctx.db
+    .query("notificationPreferences")
+    .withIndex("by_user_and_purpose", (q) =>
+      q.eq("userId", primaryId).eq("purpose", "late_status"),
+    )
+    .unique();
+  if (!preference?.inAppEnabled) {
+    await cancelSource(
+      ctx,
+      lateStatusSourceReference(primaryId),
+      "preference_off",
+      now,
+    );
+    return null;
+  }
+  if (
+    !Number.isSafeInteger(preference.reminderWindowVersion) ||
+    preference.reminderWindowVersion < 0
+  ) {
+    throw new Error("Late-status reminder window version is invalid");
+  }
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return null;
+
+  const envelope = lateStatusEventEnvelope(
+    primaryId,
+    current.sourceAuthorityVersion,
+    current.localDay,
+    preference.reminderWindowVersion,
+  );
+  const existing = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_idempotency_key", (q) =>
+      q.eq("idempotencyKey", envelope.idempotencyKey),
+    )
+    .unique();
+  if (existing) {
+    if (!sameEnvelope(existing, envelope)) {
+      throw new Error("Late-status event key conflicts with its source authority");
+    }
+    return existing._id;
+  }
+
+  await cancelSource(
+    ctx,
+    lateStatusSourceReference(primaryId),
+    "source_changed",
+    now,
+  );
   return await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt: now,
