@@ -290,6 +290,31 @@ describe("notification persistence", () => {
     expect(rows[0].dueAt).toBe(10);
   });
 
+  test("accepts scheduled prediction and Late boundary work kinds", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const kinds = ["prediction_window", "late_boundary"] as const;
+
+    await t.run(async (ctx) => {
+      for (const kind of kinds) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind,
+          state: "pending",
+          dueAt: 10,
+          generation: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+    });
+
+    await t.run(async (ctx) => {
+      const rows = await ctx.db.query("notificationDueWork").collect();
+      expect(rows.map((row) => row.kind)).toEqual(kinds);
+    });
+  });
+
   test("keeps pain requests minimal and schedule authority unbackfilled", async () => {
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);

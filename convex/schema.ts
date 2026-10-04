@@ -63,6 +63,8 @@ export const notificationDueWorkValidator = v.object({
   ownerUserId: v.id("users"),
   kind: v.union(
     v.literal("delivery"),
+    v.literal("prediction_window"),
+    v.literal("late_boundary"),
     v.literal("source_reconcile"),
     v.literal("pain_reminder"),
   ),
