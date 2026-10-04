@@ -1959,3 +1959,349 @@ describe("derived period endings", () => {
     expect(cronsSource).toContain("autoEndPeriods");
   });
 });
+
+describe("served Late-state period invalidation", () => {
+  test("same-day correction and tombstone supersede the Late key and invalidate its projection", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { internal } = await import("../_generated/api");
+    const { makeDeliveryIdempotencyKey } = await import(
+      "../_helpers/notificationDelivery"
+    );
+    const { ensureCurrentLateStatusEvent } = await import(
+      "../_helpers/notificationOutbox"
+    );
+    const { addCalendarDays } = await import("../_helpers/cycleCalculations");
+
+    const recentEventId = await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-01-01",
+        endDate: "2026-01-05",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
+        updatedAt: Date.parse("2026-01-01T00:00:00.000Z"),
+      });
+      const recentId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-03-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        updatedAt: Date.parse("2026-03-01T00:00:00.000Z"),
+      });
+      await ctx.db.insert("cyclePredictionSegments", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        status: "active",
+        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 10,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "late_status",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 4,
+        updatedAt: Date.now(),
+      });
+      return recentId;
+    });
+
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a served V2 snapshot");
+    const originalSnapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!originalSnapshot) throw new Error("Expected a served V2 snapshot");
+    const localDay = addCalendarDays(originalSnapshot.latestDate, 1);
+    const lateInstant = Date.parse(`${localDay}T20:00:00.000Z`);
+    vi.setSystemTime(lateInstant);
+
+    const firstEventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (firstEventId === null) throw new Error("Expected the current Late event");
+    const firstLinked = await t.run(async (ctx) => {
+      const event = await ctx.db.get(firstEventId);
+      if (!event) throw new Error("Expected the current Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: firstEventId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(firstEventId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: firstEventId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${firstEventId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: recentEventId,
+      startDate: "2026-03-01",
+      endDate: "2026-03-05",
+      endCertainty: "exact",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    const correctedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (correctedSnapshotId === null) {
+      throw new Error("Expected the corrected served V2 snapshot");
+    }
+    const correctedSnapshot = await t.run((ctx) =>
+      ctx.db.get(correctedSnapshotId),
+    );
+    expect(correctedSnapshot?.latestDate).toBe(originalSnapshot.latestDate);
+    const correctedEventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (correctedEventId === null) {
+      throw new Error("Expected a Late replacement after correction");
+    }
+    expect(correctedEventId).not.toBe(firstEventId);
+
+    const correctedLink = await t.run(async (ctx) => {
+      const event = await ctx.db.get(correctedEventId);
+      if (!event) throw new Error("Expected corrected Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: correctedEventId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(correctedEventId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: correctedEventId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${correctedEventId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: recentEventId,
+      expectedAuthorityVersion: 2,
+    });
+    const tombstonedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (tombstonedSnapshotId === null) {
+      throw new Error("Expected the tombstoned served V2 snapshot");
+    }
+    const tombstonedSnapshot = await t.run((ctx) =>
+      ctx.db.get(tombstonedSnapshotId),
+    );
+    expect(tombstonedSnapshot?.latestDate).not.toBe(originalSnapshot.latestDate);
+    const tombstoneReplacementId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (tombstoneReplacementId === null) {
+      throw new Error("Expected a Late replacement after tombstone");
+    }
+    expect(tombstoneReplacementId).not.toBe(correctedEventId);
+
+    const tombstoneLink = await t.run(async (ctx) => {
+      const event = await ctx.db.get(tombstoneReplacementId);
+      if (!event) throw new Error("Expected tombstone Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: tombstoneReplacementId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(tombstoneReplacementId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: tombstoneReplacementId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${tombstoneReplacementId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: true,
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(tombstoneLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(tombstoneLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+    });
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: false,
+    });
+
+    vi.setSystemTime(lateInstant + 3_000);
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: localDay,
+      timeZone: "UTC",
+      startCertainty: "exact",
+    });
+    const afterNewStartSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (afterNewStartSnapshotId === null) {
+      throw new Error("Expected the new-start served V2 snapshot");
+    }
+    const { readCurrentNotificationCycleState } = await import(
+      "../_helpers/notificationCycleState"
+    );
+    const afterNewStartState = await t.run((ctx) =>
+      readCurrentNotificationCycleState(ctx, primaryId, Date.now()),
+    );
+    expect(afterNewStartState?.state.status).toBe("recorded_period");
+    const afterNewStartEvent = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, Date.now()),
+    );
+    expect(afterNewStartEvent).toBeNull();
+
+    await t.run(async (ctx) => {
+      const firstEvent = await ctx.db.get(firstEventId);
+      const correctedEvent = await ctx.db.get(correctedEventId);
+      const tombstoneReplacement = await ctx.db.get(tombstoneReplacementId);
+      expect(firstEvent?.idempotencyKey).not.toBe(correctedEvent?.idempotencyKey);
+      expect(correctedEvent?.idempotencyKey).not.toBe(
+        tombstoneReplacement?.idempotencyKey,
+      );
+      expect(firstEvent?.idempotencyKey).not.toBe(tombstoneReplacement?.idempotencyKey);
+      expect(firstEvent?.sourceAuthorityVersion).toContain('g4-source-v1:[10,"cycle-read-model-v1"');
+      expect(correctedEvent?.sourceAuthorityVersion).toContain('g4-source-v1:[11,"cycle-read-model-v1"');
+      expect(tombstoneReplacement?.sourceAuthorityVersion).toContain('g4-source-v1:[12,"cycle-read-model-v1"');
+      expect(await ctx.db.get(recentEventId)).toMatchObject({ tombstoneAuthorityVersion: 3 });
+      expect(await ctx.db.get(firstLinked.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(firstLinked.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.get(correctedLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(correctedLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.get(tombstoneLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(tombstoneLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.query("notificationEvents").take(10)).toHaveLength(3);
+      expect(await ctx.db.query("notificationInboxItems").take(10)).toHaveLength(3);
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 15 });
+    });
+  });
+});

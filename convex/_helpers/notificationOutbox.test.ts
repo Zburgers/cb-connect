@@ -1,7 +1,11 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { makeDeliveryIdempotencyKey } from "./notificationDelivery";
+import { addCalendarDays } from "./cycleCalculations";
+import {
+  makeDeliveryIdempotencyKey,
+  makeEventIdempotencyKey,
+} from "./notificationDelivery";
 import {
   cancelSource,
   ensureAssistedPeriodEvent,
@@ -195,6 +199,299 @@ describe("notification outbox", () => {
       ]);
       expect(await ctx.db.query("notificationDueWork").collect()).toMatchObject([
         { state: "cancelled", generation: 2 },
+      ]);
+    });
+  });
+});
+
+describe("current Late-state outbox events", () => {
+  async function seedLateContext() {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t, { fixtureRunId: "n3e-late" });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: "America/Los_Angeles" });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-03-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-03-01T08:00:00.000Z"),
+        updatedAt: Date.parse("2026-03-01T08:00:00.000Z"),
+      });
+      await ctx.db.insert("cyclePredictionSegments", {
+        userId: primaryId,
+        startDate: "2026-03-01",
+        status: "active",
+        createdAt: Date.parse("2026-03-01T08:00:00.000Z"),
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 7,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "late_status",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 3,
+        updatedAt: Date.now(),
+      });
+    });
+    const { internal } = await import("../_generated/api");
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a served V2 snapshot");
+    const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!snapshot) throw new Error("Expected a served V2 snapshot");
+    const lateInstant = Date.parse(
+      `${addCalendarDays(snapshot.latestDate, 1)}T20:00:00.000Z`,
+    );
+    vi.setSystemTime(lateInstant);
+    return { t, primaryId, snapshot, snapshotId, lateInstant };
+  }
+
+  test("creates one stable late_status.v1 event and dedupes an incidental snapshot refresh", async () => {
+    const { t, primaryId, snapshot, snapshotId, lateInstant } =
+      await seedLateContext();
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const first = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    expect(first).not.toBeNull();
+
+    await t.run(async (ctx) => {
+      const event = await ctx.db.get(first!);
+      expect(event).toMatchObject({
+        eventType: "late_status.v1",
+        eventVersion: 1,
+        purpose: "late_status",
+        producerKind: "approved_served_late_state",
+        sourceReference: `late:${primaryId}`,
+        ownerUserId: primaryId,
+        recipientUserId: primaryId,
+        recipientScope: "primary",
+        privacyClass: "primary_private_inferred_health",
+        validityRule: "while_current_late_state_is_valid",
+        allowedChannel: "in_app",
+      });
+      expect(event?.sourceAuthorityVersion).toContain('g4-source-v1:[7,"cycle-read-model-v1","prediction-serving-v2"');
+      expect(event?.idempotencyKey).toBe(
+        makeEventIdempotencyKey("late_status.v1", {
+          primaryId: String(primaryId),
+          sourceAuthorityVersion: event!.sourceAuthorityVersion,
+          localDay: addCalendarDays(snapshot.latestDate, 1),
+          reminderWindowVersion: "3",
+        }),
+      );
+      expect(event).not.toHaveProperty("payload");
+      expect(event).not.toHaveProperty("phase");
+      expect(await ctx.db.query("notificationEvents").take(5)).toHaveLength(1);
+      expect(await ctx.db.query("notificationDeliveries").take(5)).toHaveLength(0);
+      expect(await ctx.db.query("notificationInboxItems").take(5)).toHaveLength(0);
+    });
+
+    vi.setSystemTime(lateInstant + 10_000);
+    const { internal } = await import("../_generated/api");
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    const replay = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, Date.now()),
+    );
+
+    expect(replay).toBe(first);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(snapshotId)).toEqual(snapshot);
+      expect(await ctx.db.query("predictionSnapshots").take(5)).toHaveLength(2);
+      expect(await ctx.db.query("notificationEvents").take(5)).toHaveLength(1);
+    });
+  });
+
+  test("leaves current Late state dark while outbox creation is disabled", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "false");
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const result = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+
+    expect(result).toBeNull();
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").take(5)).toEqual([]);
+      expect(await ctx.db.query("notificationDeliveries").take(5)).toEqual([]);
+      expect(await ctx.db.query("notificationInboxItems").take(5)).toEqual([]);
+    });
+  });
+
+  test("requires the primary's explicit Late-purpose preference", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    await t.run(async (ctx) => {
+      const preference = await ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "late_status"),
+        )
+        .unique();
+      if (!preference) throw new Error("Expected Late-purpose preference");
+      await ctx.db.patch(preference._id, { inAppEnabled: false });
+    });
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const result = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+
+    expect(result).toBeNull();
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").take(5)).toEqual([]);
+    });
+  });
+
+  test("does not emit for an estimated cycle state", async () => {
+    const { t, primaryId } = await seedLateContext();
+    const { readCurrentNotificationCycleState } = await import(
+      "./notificationCycleState"
+    );
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const timeBeforeBound = Date.parse("2026-03-07T20:00:00.000Z");
+    const current = await t.run((ctx) =>
+      readCurrentNotificationCycleState(ctx, primaryId, timeBeforeBound),
+    );
+    expect(current?.state.status).toBe("estimated");
+    const result = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, timeBeforeBound),
+    );
+
+    expect(result).toBeNull();
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").take(5)).toEqual([]);
+    });
+  });
+
+  test.each(["insufficient", "paused"] as const)(
+    "does not emit for a %s cycle state",
+    async (nonLateState) => {
+      const { t, primaryId, lateInstant } = await seedLateContext();
+      await t.run(async (ctx) => {
+        if (nonLateState === "insufficient") {
+          await ctx.db.patch(primaryId, { timeZone: undefined });
+          return;
+        }
+        await ctx.db.insert("cycleSettings", {
+          userId: primaryId,
+          cycleLength: 28,
+          periodLength: 5,
+          predictionPaused: true,
+          predictionPausedAt: lateInstant,
+          lastUpdatedAt: lateInstant,
+        });
+      });
+      const { readCurrentNotificationCycleState } = await import(
+        "./notificationCycleState"
+      );
+      const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+      const current = await t.run((ctx) =>
+        readCurrentNotificationCycleState(ctx, primaryId, lateInstant),
+      );
+      expect(current?.state.status).toBe(
+        nonLateState === "insufficient" ? "insufficient_data" : "prediction_paused",
+      );
+      const result = await t.run((ctx) =>
+        ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+      );
+
+      expect(result).toBeNull();
+      await t.run(async (ctx) => {
+        expect(await ctx.db.query("notificationEvents").take(5)).toEqual([]);
+      });
+    },
+  );
+
+  test("uses a new source-authority key on a same-day source revision and supersedes old work", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const first = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (first === null) throw new Error("Expected initial Late event");
+    const linked = await t.run(async (ctx) => {
+      const event = await ctx.db.get(first);
+      if (!event) throw new Error("Expected initial event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: first,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(String(first), "in_app", String(primaryId)),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      await ctx.db.insert("notificationInboxItems", {
+        eventId: first,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${first}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId };
+    });
+
+    await t.run(async (ctx) => {
+      const state = await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique();
+      if (!state) throw new Error("Expected schedule authority");
+      await ctx.db.patch(state._id, { sourceRevision: state.sourceRevision + 1 });
+    });
+    const replacement = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+
+    expect(replacement).not.toBeNull();
+    expect(replacement).not.toBe(first);
+    await t.run(async (ctx) => {
+      const events = await ctx.db.query("notificationEvents").take(5);
+      expect(events).toHaveLength(2);
+      expect(events.find((event) => event._id === first)?.idempotencyKey).toBe(
+        linked.event.idempotencyKey,
+      );
+      expect(events.find((event) => event._id === replacement)?.idempotencyKey).not.toBe(
+        linked.event.idempotencyKey,
+      );
+      expect(await ctx.db.get(linked.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.query("notificationInboxItems").take(5)).toMatchObject([
+        { state: "hidden" },
       ]);
     });
   });

@@ -25,10 +25,25 @@ import { advanceNotificationSourceAuthority } from "../_helpers/notificationSour
 import {
   cancelSource,
   ensureAssistedPeriodEvent,
+  lateStatusSourceReference,
 } from "../_helpers/notificationOutbox";
 import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
 const MAX_PERIOD_OVERLAP_CANDIDATES = 256;
+
+async function advanceAndInvalidateLateStatus(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  now?: number,
+) {
+  await cancelSource(
+    ctx,
+    lateStatusSourceReference(primaryId),
+    "source_changed",
+    now,
+  );
+  return advanceNotificationSourceAuthority(ctx, primaryId, now);
+}
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
@@ -322,7 +337,7 @@ export const logPeriodStart = mutation({
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
       await ctx.db.patch(user._id, { timeZone });
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
@@ -338,7 +353,7 @@ export const logPeriodStart = mutation({
           updatedAt: Date.now(),
         });
         await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
-        await advanceNotificationSourceAuthority(ctx, user._id);
+        await advanceAndInvalidateLateStatus(ctx, user._id);
       }
 
       const eventId = await ctx.db.insert("periodEvents", {
@@ -352,7 +367,7 @@ export const logPeriodStart = mutation({
         updatedAt: Date.now(),
       });
       await schedulePredictionRefresh(ctx, user._id, eventId);
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       return { eventId };
     }
 
@@ -376,7 +391,7 @@ export const logPeriodStart = mutation({
       updatedAt: Date.now(),
     });
     await schedulePredictionRefresh(ctx, user._id, eventId);
-    await advanceNotificationSourceAuthority(ctx, user._id);
+    await advanceAndInvalidateLateStatus(ctx, user._id);
 
     return { eventId };
   },
@@ -397,7 +412,7 @@ export const logPeriodEnd = mutation({
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
       await ctx.db.patch(user._id, { timeZone });
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
     requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
 
@@ -415,7 +430,7 @@ export const logPeriodEnd = mutation({
         updatedAt: Date.now(),
       });
       await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       return { eventId: ongoingPeriod._id };
     }
 
@@ -455,7 +470,7 @@ export const logPeriodEnd = mutation({
       updatedAt: Date.now(),
     });
     await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
-    await advanceNotificationSourceAuthority(ctx, user._id);
+    await advanceAndInvalidateLateStatus(ctx, user._id);
 
     return { eventId: ongoingPeriod._id };
   },
@@ -490,7 +505,7 @@ export const assistLogPeriodStart = mutation({
           updatedAt: now,
         });
         await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
-        await advanceNotificationSourceAuthority(ctx, primaryMembership.userId, now);
+        await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
       }
       const eventId = await ctx.db.insert("periodEvents", {
         userId: primaryMembership.userId,
@@ -503,7 +518,7 @@ export const assistLogPeriodStart = mutation({
         updatedAt: now,
       });
       await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
-      await advanceNotificationSourceAuthority(ctx, primaryMembership.userId, now);
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
       await ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", eventId, now);
       return { eventId };
     }
@@ -531,7 +546,7 @@ export const assistLogPeriodStart = mutation({
       updatedAt: now,
     });
     await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
-    await advanceNotificationSourceAuthority(ctx, primaryMembership.userId, now);
+    await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
     await ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", eventId, now);
 
     return { eventId };
@@ -571,7 +586,7 @@ export const assistLogPeriodEnd = mutation({
         updatedAt: now,
       });
       await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
-      await advanceNotificationSourceAuthority(ctx, primaryMembership.userId, now);
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
       await ensureAssistedPeriodEvent(ctx, "assisted_period_end.v1", ongoingPeriod._id, now);
       return { eventId: ongoingPeriod._id };
     }
@@ -609,7 +624,7 @@ export const assistLogPeriodEnd = mutation({
       updatedAt: now,
     });
     await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
-    await advanceNotificationSourceAuthority(ctx, primaryMembership.userId, now);
+    await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
     await ensureAssistedPeriodEvent(ctx, "assisted_period_end.v1", ongoingPeriod._id, now);
 
     return { eventId: ongoingPeriod._id };
@@ -726,7 +741,7 @@ export const correctAssistedPeriodEvent = mutation({
     });
     await cancelSource(ctx, `period:${period._id}`, "source_changed");
     if (sourceChanged) {
-      await advanceNotificationSourceAuthority(ctx, primaryMembership.userId);
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId);
     }
     if (startOutcomeChanged) {
       await appendCorrectionAssessments(ctx, {
@@ -768,7 +783,7 @@ export const updatePeriodEvent = mutation({
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
     if (timeZoneChanged) {
       await ctx.db.patch(user._id, { timeZone });
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
@@ -803,7 +818,7 @@ export const updatePeriodEvent = mutation({
       });
       if (sourceChanged) {
         await cancelSource(ctx, `period:${period._id}`, "source_changed");
-        await advanceNotificationSourceAuthority(ctx, user._id);
+        await advanceAndInvalidateLateStatus(ctx, user._id);
       }
       if (startOutcomeChanged) {
         await appendCorrectionAssessments(ctx, {
@@ -876,7 +891,7 @@ export const updatePeriodEvent = mutation({
     });
     await cancelSource(ctx, `period:${period._id}`, "source_changed");
     if (sourceChanged) {
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
     if (startOutcomeChanged) {
       await appendCorrectionAssessments(ctx, {
@@ -909,7 +924,7 @@ export const deletePeriodEvent = mutation({
     if (!isCycleFactsV1Enabled()) {
       await ctx.db.delete("periodEvents", args.periodEventId);
       await cancelSource(ctx, `period:${period._id}`, "authority_revoked");
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       await appendCorrectionAssessments(ctx, {
         userId: user._id,
         periodEventId: args.periodEventId,
@@ -937,7 +952,7 @@ export const deletePeriodEvent = mutation({
       updatedAt: tombstoneAt,
     });
     await cancelSource(ctx, `period:${period._id}`, "authority_revoked", tombstoneAt);
-    await advanceNotificationSourceAuthority(ctx, user._id, tombstoneAt);
+    await advanceAndInvalidateLateStatus(ctx, user._id, tombstoneAt);
     await appendCorrectionAssessments(ctx, {
       userId: user._id,
       periodEventId: args.periodEventId,
@@ -977,7 +992,7 @@ export const autoEndPeriods = internalMutation({
           updatedAt: now,
         });
         await cancelSource(ctx, `period:${period._id}`, "source_changed", now);
-        await advanceNotificationSourceAuthority(ctx, period.userId, now);
+        await advanceAndInvalidateLateStatus(ctx, period.userId, now);
         endedCount++;
       }
     }
@@ -1081,7 +1096,7 @@ export const updateCycleSettings = mutation({
     }
 
     if (sourceChanged) {
-      await advanceNotificationSourceAuthority(ctx, user._id);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
   },
 });
