@@ -1,6 +1,11 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
-import { resolveCalendarTimeZone } from "../_helpers/calendarDates";
+import {
+  DEFAULT_TIME_ZONE,
+  resolveCalendarTimeZone,
+} from "../_helpers/calendarDates";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 
 export const updateUserRole = mutation({
   args: {
@@ -74,6 +79,10 @@ export const updateUserPreferences = mutation({
       args.timeZone === undefined
         ? undefined
         : resolveCalendarTimeZone(args.timeZone);
+    const timeZoneChanged =
+      user.role === "primary" &&
+      timeZone !== undefined &&
+      isTimeZoneChange(user.timeZone, timeZone);
 
     await ctx.db.patch(user._id, {
       ...(args.preferredName !== undefined && {
@@ -86,6 +95,11 @@ export const updateUserPreferences = mutation({
       }),
       ...(timeZone !== undefined && { timeZone }),
     });
+
+    if (timeZoneChanged) {
+      await advanceNotificationSourceAuthority(ctx, user._id);
+      await reconcileUserSchedule(ctx, user._id);
+    }
 
     return user._id;
   },
@@ -105,8 +119,16 @@ export const updateUserTimeZone = mutation({
     if (!user) throw new Error("User not found");
 
     const timeZone = resolveCalendarTimeZone(args.timeZone);
+    const timeZoneChanged =
+      user.role === "primary" &&
+      isTimeZoneChange(user.timeZone, timeZone);
     if (user.timeZone !== timeZone) {
       await ctx.db.patch(user._id, { timeZone });
+    }
+
+    if (timeZoneChanged) {
+      await advanceNotificationSourceAuthority(ctx, user._id);
+      await reconcileUserSchedule(ctx, user._id);
     }
 
     return user._id;
@@ -119,6 +141,15 @@ function sanitizePreferredName(preferredName: string) {
     throw new Error("Preferred name must be 40 characters or fewer");
   }
   return normalized || undefined;
+}
+
+function isTimeZoneChange(currentTimeZone: string | undefined, nextTimeZone: string) {
+  if (currentTimeZone === undefined) return nextTimeZone !== DEFAULT_TIME_ZONE;
+  try {
+    return resolveCalendarTimeZone(currentTimeZone) !== nextTimeZone;
+  } catch {
+    return true;
+  }
 }
 
 export const syncUser = internalMutation({

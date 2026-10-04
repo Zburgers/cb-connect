@@ -323,14 +323,17 @@ async function readClaimedScheduleWork(
     .take(OWNER_PENDING_PAGE_SIZE);
 }
 
-async function cancelPendingKind(
+async function cancelActiveKind(
   ctx: MutationCtx,
   rows: readonly Doc<"notificationDueWork">[],
   kind: ScheduleKind,
   now: number,
 ) {
   for (const row of rows) {
-    if (row.kind === kind) {
+    if (
+      row.kind === kind &&
+      (row.state === "pending" || row.state === "claimed")
+    ) {
       await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
     }
   }
@@ -354,6 +357,7 @@ async function reconcileKind(
   },
 ) {
   const pendingKind = args.pending.filter((row) => row.kind === args.kind);
+  const claimedKind = args.claimed.filter((row) => row.kind === args.kind);
   const computedDueAt =
     args.enabled &&
     args.localReminderTime &&
@@ -373,15 +377,15 @@ async function reconcileKind(
       : null;
   const supportedRunAt =
     dueAt !== null && dueAt <= args.now + MAX_RUN_AT_DELAY_MS;
-  const alreadyClaimed = args.claimed.some(
+  const currentClaimedWork = claimedKind.find(
     (row) =>
-      row.kind === args.kind &&
       supportedRunAt &&
       row.dueAt === dueAt &&
       row.generation === args.generation &&
       row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
       row.reminderWindowVersion === args.reminderWindowVersion,
   );
+  const alreadyClaimed = currentClaimedWork !== undefined;
   const reusable = alreadyClaimed
     ? undefined
     : pendingKind.find(
@@ -392,8 +396,9 @@ async function reconcileKind(
           row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
           row.reminderWindowVersion === args.reminderWindowVersion,
       );
-  for (const row of pendingKind) {
-    if (row._id !== reusable?._id) {
+  for (const row of [...pendingKind, ...claimedKind]) {
+    const currentClaim = row._id === currentClaimedWork?._id;
+    if (row._id !== reusable?._id && !currentClaim) {
       await ctx.db.patch(row._id, { state: "cancelled", updatedAt: args.now });
     }
   }
@@ -425,7 +430,7 @@ async function reconcileKind(
   });
 }
 
-async function cancelAllPendingScheduleWork(
+async function cancelAllActiveScheduleWork(
   ctx: MutationCtx,
   userId: Id<"users">,
   now: number,
@@ -434,11 +439,16 @@ async function cancelAllPendingScheduleWork(
     readPendingScheduleWork(ctx, userId),
     readClaimedScheduleWork(ctx, userId),
   ]);
-  await cancelPendingKind(ctx, pending, "prediction_window", now);
-  await cancelPendingKind(ctx, pending, "late_boundary", now);
+  const active = [...pending, ...claimed];
+  await cancelActiveKind(ctx, active, "prediction_window", now);
+  await cancelActiveKind(ctx, active, "late_boundary", now);
 }
 
-/** Reconciles only the primary's current served V2 snapshot and opted-in local purposes. */
+/**
+ * Frozen N5b/N8 same-transaction entry point for current served V2 schedule work.
+ * Domain writers advance source authority first, then call this helper with the
+ * same MutationCtx so invalidation and replacement work commit atomically.
+ */
 export async function reconcileUserSchedule(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -448,18 +458,21 @@ export async function reconcileUserSchedule(
     const current = await readCurrentServedSnapshot(ctx, userId);
     if (current.status === "indeterminate") return;
     if (current.status !== "current") {
-      await cancelAllPendingScheduleWork(ctx, userId, now);
+      await cancelAllActiveScheduleWork(ctx, userId, now);
       return;
     }
     const { predictionWindow, lateStatus } = await readSchedulePreferences(
       ctx,
       userId,
     );
-    const pending = await readPendingScheduleWork(ctx, userId);
+    const [pending, claimed] = await Promise.all([
+      readPendingScheduleWork(ctx, userId),
+      readClaimedScheduleWork(ctx, userId),
+    ]);
     const timeZone = resolveCalendarTimeZone(
       current.user.timeZone ?? DEFAULT_TIME_ZONE,
     );
-    for (const row of pending) {
+    for (const row of [...pending, ...claimed]) {
       if (row.kind !== "prediction_window" && row.kind !== "late_boundary") {
         continue;
       }
@@ -487,7 +500,7 @@ export async function reconcileUserSchedule(
   const current = await readCurrentServedSnapshot(ctx, userId);
   if (current.status === "indeterminate") return;
   if (current.status !== "current") {
-    await cancelAllPendingScheduleWork(ctx, userId, now);
+    await cancelAllActiveScheduleWork(ctx, userId, now);
     return;
   }
   const { predictionWindow, lateStatus } = await readSchedulePreferences(
