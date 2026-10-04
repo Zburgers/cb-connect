@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import { renderFrozen } from "../_helpers/notificationTemplates";
 import schema from "../schema";
 import {
   notificationControlValidator,
@@ -63,16 +64,17 @@ describe("notification persistence", () => {
       }),
       allowedChannel: "in_app" as const,
     };
+    const rendered = await renderFrozen({
+      eventType: event.eventType,
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
     const args = {
       envelope: event,
-      route: "messages" as const,
+      route: rendered.payload.route,
       templateVersion: "g4-static-v1",
-      renderIdentity: {
-        templateVersion: "g4-static-v1",
-        locale: "en",
-        variableSchemaVersion: "g4-v1",
-        payloadHash: "test-static-message-v1",
-      },
+      renderIdentity: rendered.identity,
       createdAt: 1_800_000_000_000,
       notBefore: 1_800_000_000_000,
     };
@@ -85,15 +87,16 @@ describe("notification persistence", () => {
 
     expect(new Set(results.map((result) => result.eventId)).size).toBe(1);
     expect(new Set(results.map((result) => result.deliveryId)).size).toBe(1);
-    expect(new Set(results.map((result) => result.inboxItemId)).size).toBe(1);
+    expect(results.map((result) => result.status)).toEqual(
+      Array(8).fill("delivery_ready"),
+    );
+    expect(results.every((result) => result.inboxItemId === null)).toBe(true);
     await t.run(async (ctx) => {
       expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(1);
       expect(await ctx.db.query("notificationDeliveries").collect()).toMatchObject([
         { channel: "in_app", state: "pending", providerOutcome: "none" },
       ]);
-      expect(await ctx.db.query("notificationInboxItems").collect()).toMatchObject([
-        { recipientUserId: partnerId, state: "current", route: "messages" },
-      ]);
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
     });
 
@@ -141,7 +144,7 @@ describe("notification persistence", () => {
           renderIdentity: {
             templateVersion: "g4-static-v1",
             locale: "en",
-            variableSchemaVersion: "g4-v1",
+            variableSchemaVersion: "g4-no-variables-v1",
             payloadHash: "test-static-message-v1",
           },
           createdAt: 1_800_000_000_000,
@@ -226,7 +229,7 @@ describe("notification persistence", () => {
       renderIdentity: {
         templateVersion: "g4-static-v1",
         locale: "en",
-        variableSchemaVersion: "g4-v1",
+        variableSchemaVersion: "g4-no-variables-v1",
         payloadHash: "test-static-message-v1",
       },
       createdAt: 1_800_000_000_000,

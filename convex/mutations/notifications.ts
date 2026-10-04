@@ -11,9 +11,11 @@ import {
   isValidFrozenRenderIdentity,
   makeDeliveryIdempotencyKey,
   notificationInboxRouteValidator,
+  sameFrozenRenderIdentity,
   type FrozenRenderIdentity,
   type NotificationInboxRoute,
 } from "../_helpers/notificationDelivery";
+import { renderFrozen } from "../_helpers/notificationTemplates";
 import { getCurrentUser } from "../_helpers/auth";
 import {
   notificationPurposeValidator,
@@ -44,7 +46,7 @@ const ensureInAppRecordsResultValidator = v.object({
   status: v.union(
     v.literal("disabled"),
     v.literal("event_only"),
-    v.literal("projected"),
+    v.literal("delivery_ready"),
   ),
   eventId: v.union(v.id("notificationEvents"), v.null()),
   deliveryId: v.union(v.id("notificationDeliveries"), v.null()),
@@ -250,6 +252,30 @@ export const ensureInAppRecords = internalMutation({
       return { status: "event_only" as const, eventId, deliveryId: null, inboxItemId: null };
     }
 
+    let rendered;
+    try {
+      rendered = await renderFrozen({
+        eventType: args.envelope.eventType,
+        templateVersion: args.templateVersion,
+        locale: args.renderIdentity.locale,
+        variableSchemaVersion: args.renderIdentity.variableSchemaVersion,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Notification template is gated pending D-011 approval"
+      ) {
+        return { status: "event_only" as const, eventId, deliveryId: null, inboxItemId: null };
+      }
+      throw error;
+    }
+    if (
+      args.route !== rendered.payload.route ||
+      !sameFrozenRenderIdentity(args.renderIdentity, rendered.identity)
+    ) {
+      throw new Error("Caller render identity does not match the code-owned template");
+    }
+
     const stableDestinationId = String(args.envelope.recipientUserId);
     const logicalKey = makeDeliveryIdempotencyKey(String(eventId), "in_app", stableDestinationId);
     const existingDelivery = await ctx.db
@@ -279,41 +305,11 @@ export const ensureInAppRecords = internalMutation({
           providerOutcome: "none",
           attemptCount: 0,
           claimGeneration: 0,
-          renderIdentity: args.renderIdentity,
+          renderIdentity: rendered.identity,
           createdAt: args.createdAt,
           updatedAt: args.createdAt,
         });
-
-    const inboxIdempotencyKey = `inbox:v1:${JSON.stringify([
-      String(eventId),
-      String(args.envelope.recipientUserId),
-    ])}`;
-    const existingItem = await ctx.db
-      .query("notificationInboxItems")
-      .withIndex("by_idempotency_key", (q) =>
-        q.eq("idempotencyKey", inboxIdempotencyKey),
-      )
-      .unique();
-    if (
-      existingItem &&
-      (existingItem.eventId !== eventId ||
-        existingItem.recipientUserId !== args.envelope.recipientUserId)
-    ) {
-      throw new Error("Inbox idempotency key conflicts with stored recipient authority");
-    }
-    const inboxItemId = existingItem
-      ? existingItem._id
-      : await ctx.db.insert("notificationInboxItems", {
-          eventId,
-          recipientUserId: args.envelope.recipientUserId,
-          idempotencyKey: inboxIdempotencyKey,
-          templateVersion: args.templateVersion,
-          route: args.route,
-          state: "current",
-          createdAt: args.createdAt,
-        });
-
-    return { status: "projected" as const, eventId, deliveryId, inboxItemId };
+    return { status: "delivery_ready" as const, eventId, deliveryId, inboxItemId: null };
   },
 });
 
