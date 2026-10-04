@@ -815,7 +815,6 @@ export const updateConnectedSinceDate = mutation({
       recipientUserId: otherMemberships[0].userId,
       createdAt: now,
     });
-
     return { success: true };
   },
 });
