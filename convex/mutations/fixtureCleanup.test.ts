@@ -321,11 +321,114 @@ async function seedNotificationRows(
   });
 }
 
+async function seedUnattestedPartner(
+  t: ReturnType<typeof convexTest>,
+  runId: string,
+  partnerClerkId: string,
+) {
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.insert("users", {
+      clerkId: fixtureArgs.primaryClerkId,
+      email: fixtureEmail(runId, "primary"),
+      name: "Fixture Primary",
+      role: "primary",
+      createdAt: now,
+      lastActiveAt: now,
+    });
+    const partnerId = await ctx.db.insert("users", {
+      clerkId: partnerClerkId,
+      email: "",
+      name: "Unrelated Empty Email User",
+      role: "partner",
+      createdAt: now,
+      lastActiveAt: now,
+    });
+    const preferenceId = await ctx.db.insert("notificationPreferences", {
+      userId: partnerId,
+      purpose: "pain_check_in",
+      inAppEnabled: true,
+      reminderWindowVersion: 1,
+      updatedAt: now,
+    });
+    return { partnerId, preferenceId };
+  });
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("bounded fixture cleanup", () => {
+  test("does not delete an unrelated empty-email partner or its rows", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const runId = "qa-n2b-unattested-partner-cleanup";
+    const partnerClerkId = "unrelated-empty-email-clerk";
+    const seeded = await seedUnattestedPartner(t, runId, partnerClerkId);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("fixtureRuns", {
+        runId,
+        primaryClerkId: fixtureArgs.primaryClerkId,
+        partnerClerkId,
+        createdAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t
+        .withIdentity({ subject: fixtureArgs.primaryClerkId })
+        .mutation(api.mutations.fixtureCleanup.cleanupFixture, {
+          ...fixtureArgs,
+          runId,
+          partnerClerkId,
+        }),
+    ).rejects.toThrow("fixture_cleanup_identity_mismatch");
+
+    const remaining = await t.run(async (ctx) => ({
+      partner: await ctx.db.get("users", seeded.partnerId),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        seeded.preferenceId,
+      ),
+    }));
+    expect(remaining.partner).not.toBeNull();
+    expect(remaining.preference).not.toBeNull();
+  });
+
+  test("does not let the fixture primary begin a run with an unattested partner ID", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const runId = "qa-n2b-unattested-partner-begin";
+    const partnerClerkId = "unrelated-empty-email-clerk";
+    const seeded = await seedUnattestedPartner(t, runId, partnerClerkId);
+
+    await expect(
+      t
+        .withIdentity({ subject: fixtureArgs.primaryClerkId })
+        .mutation(api.mutations.fixtureCleanup.beginFixtureRun, {
+          ...fixtureArgs,
+          runId,
+          partnerClerkId,
+        }),
+    ).rejects.toThrow("fixture_cleanup_identity_mismatch");
+
+    const remaining = await t.run(async (ctx) => ({
+      run: await ctx.db
+        .query("fixtureRuns")
+        .withIndex("by_run_id", (q) => q.eq("runId", runId))
+        .unique(),
+      partner: await ctx.db.get("users", seeded.partnerId),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        seeded.preferenceId,
+      ),
+    }));
+    expect(remaining.run).toBeNull();
+    expect(remaining.partner).not.toBeNull();
+    expect(remaining.preference).not.toBeNull();
+  });
+
   test("registers an authenticated fixture and fills a missing identity email", async () => {
     enableFixtureCleanup();
     const t = convexTest(schema, modules);

@@ -115,6 +115,24 @@ async function getFixtureRun(
   return fixtureRun;
 }
 
+function assertFixtureUserMatchesRun(
+  user: Doc<"users">,
+  runId: string,
+  role: "primary" | "partner",
+): void {
+  const expectedEmail = fixtureEmail(runId, role);
+  const hasRunMarker = user.fixtureRunId === runId;
+  const hasExpectedEmail = user.email === expectedEmail;
+
+  if (
+    (user.fixtureRunId !== undefined && !hasRunMarker) ||
+    (user.email !== "" && !hasExpectedEmail) ||
+    (role === "partner" && !hasRunMarker && !hasExpectedEmail)
+  ) {
+    throw new Error("fixture_cleanup_identity_mismatch");
+  }
+}
+
 async function assertAuthenticatedFixturePrimary(
   ctx: ReadCtx,
   args: {
@@ -376,17 +394,11 @@ async function loadFixtureRecords(
       .unique();
     if (!user) continue;
 
-    const expectedEmail = fixtureEmail(args.runId, requested.role);
     // A durable run is claimed before either account visits the dashboard.
-    // During a failed onboarding/linking interval the application user may not
-    // yet carry fixtureRunId or a role, but the exact run-owned Clerk ID and
-    // deterministic email still make it safe to recover.
-    if (
-      (user.fixtureRunId !== undefined && user.fixtureRunId !== args.runId) ||
-      (user.email !== "" && user.email !== expectedEmail)
-    ) {
-      throw new Error("fixture_cleanup_identity_mismatch");
-    }
+    // The authenticated primary may still have an empty email before its
+    // registration mutation. A partner must have either the run marker or the
+    // deterministic fixture email; the primary cannot attest an arbitrary ID.
+    assertFixtureUserMatchesRun(user, args.runId, requested.role);
     users.push(user);
   }
 
@@ -786,6 +798,14 @@ export const beginFixtureRun = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity || identity.subject !== args.primaryClerkId) {
       throw new Error("fixture_cleanup_unauthenticated");
+    }
+
+    const partner = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.partnerClerkId))
+      .unique();
+    if (partner) {
+      assertFixtureUserMatchesRun(partner, args.runId, "partner");
     }
 
     const existing = await ctx.db
