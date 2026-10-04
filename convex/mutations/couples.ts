@@ -784,6 +784,10 @@ export const updateConnectedSinceDate = mutation({
       throw new Error("Pairing state is ambiguous. Please contact support.");
     }
 
+    if (coupleData.couple.connectedSinceDate === connectedSinceDate) {
+      return { success: true };
+    }
+
     const now = Date.now();
     const previousSettingVersion = coupleData.couple.connectedSinceUpdatedAt;
     const settingVersion = Math.max(now, (previousSettingVersion ?? 0) + 1);

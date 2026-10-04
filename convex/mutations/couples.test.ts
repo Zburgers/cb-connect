@@ -929,7 +929,7 @@ describe("couple notification outbox", () => {
     });
   });
 
-  test("emits content-free partner events for each connected-since setting version", async () => {
+  test("replaying an unchanged connected-since date preserves its event and projection", async () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-04T12:00:00.000Z"));
@@ -983,9 +983,9 @@ describe("couple notification outbox", () => {
         couple: await ctx.db.get(coupleId),
         events: await ctx.db.query("notificationEvents").collect(),
       }));
-      expect(events).toHaveLength(2);
-      expect(new Set(events.map((event) => event.sourceAuthorityVersion)).size).toBe(2);
-      expect(events.map((event) => event.recipientUserId)).toEqual([partnerId, partnerId]);
+      expect(events).toHaveLength(1);
+      expect(new Set(events.map((event) => event.sourceAuthorityVersion)).size).toBe(1);
+      expect(events.map((event) => event.recipientUserId)).toEqual([partnerId]);
       for (const event of events) {
         const settingVersion = event.sourceAuthorityVersion.replace("connected-since-setting:", "");
         expect(event).toMatchObject({
@@ -1011,14 +1011,13 @@ describe("couple notification outbox", () => {
         expect(event).not.toHaveProperty("payload");
       }
       expect(couple?.connectedSinceDate).toBe("2000-02-14");
-      expect(couple?.connectedSinceUpdatedAt).toBe(Date.parse("2026-10-04T12:00:00.000Z") + 1);
+      expect(couple?.connectedSinceUpdatedAt).toBe(Date.parse("2026-10-04T12:00:00.000Z"));
       await t.run(async (ctx) => {
         expect(await ctx.db.get(firstProjection.deliveryId)).toMatchObject({
-          state: "cancelled",
-          eligibility: "cancelled",
-          cancellationReason: "source_changed",
+          state: "pending",
+          eligibility: "eligible",
         });
-        expect(await ctx.db.get(firstProjection.inboxItemId)).toMatchObject({ state: "hidden" });
+        expect(await ctx.db.get(firstProjection.inboxItemId)).toMatchObject({ state: "current" });
         expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
         expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(1);
         expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(1);
