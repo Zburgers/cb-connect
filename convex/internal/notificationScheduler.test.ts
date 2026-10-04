@@ -1,0 +1,796 @@
+import { convexTest, type TestConvex } from "convex-test";
+import { makeFunctionReference } from "convex/server";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import schema from "../schema";
+import { modules } from "../test.setup";
+import { seedActiveCouple } from "../test.fixtures";
+import { resolveLocalReminderInstant } from "./notificationScheduler";
+
+const reconcileDueWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:reconcileDueWork",
+);
+const wakeDueWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:wakeDueWork",
+);
+
+type TestBackend = TestConvex<typeof schema>;
+
+beforeEach(() => {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+async function seedScheduleInputs(
+  t: TestBackend,
+  userId: Id<"users">,
+  options: {
+    timeZone: string;
+    localReminderTime: string;
+    sourceRevision?: number;
+    includePredictionWindow?: boolean;
+    includeLateStatus?: boolean;
+  },
+) {
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.patch(userId, { timeZone: options.timeZone });
+    const periodEventId = await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-03-01",
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.UTC(2026, 2, 1),
+      updatedAt: Date.UTC(2026, 2, 1),
+    });
+    const predictionSegmentId = await ctx.db.insert(
+      "cyclePredictionSegments",
+      {
+        userId,
+        startDate: "2026-03-01",
+        status: "active",
+        createdAt: Date.UTC(2026, 2, 1),
+      },
+    );
+    await ctx.db.insert("notificationScheduleState", {
+      userId,
+      sourceRevision: options.sourceRevision ?? 7,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const purposes = [
+      ...(options.includePredictionWindow === false
+        ? []
+        : ["period_window_approaching" as const]),
+      ...(options.includeLateStatus === false ? [] : ["late_status" as const]),
+    ];
+    for (const purpose of purposes) {
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        purpose,
+        inAppEnabled: true,
+        localReminderTime: options.localReminderTime,
+        reminderWindowVersion: 3,
+        updatedAt: now,
+      });
+    }
+
+    return { periodEventId, predictionSegmentId };
+  });
+}
+
+function snapshotRefreshArgs(
+  snapshot: Doc<"predictionSnapshots">,
+  generatedAt: number,
+) {
+  return {
+    userId: snapshot.userId,
+    generatedAt,
+    inputCutoffAt: snapshot.inputCutoffAt,
+    inputCutoffDate: snapshot.inputCutoffDate,
+    status: snapshot.status,
+    estimatorId: snapshot.estimatorId,
+    estimatorVersion: snapshot.estimatorVersion,
+    intervalMethodVersion: snapshot.intervalMethodVersion,
+    calibrationVersion: snapshot.calibrationVersion,
+    pointDate: snapshot.pointDate,
+    earliestDate: snapshot.earliestDate,
+    latestDate: snapshot.latestDate,
+    probabilityLabel: snapshot.probabilityLabel,
+    quality: snapshot.quality,
+    qualityScoreV1: snapshot.qualityScoreV1 ?? null,
+    basisCount: snapshot.basisCount,
+    reasonCodes: snapshot.reasonCodes,
+    displayStatus: snapshot.displayStatus,
+    predictionSegmentId: snapshot.predictionSegmentId,
+    featureVersion: snapshot.featureVersion,
+    contractVersion: snapshot.contractVersion,
+  };
+}
+
+async function pendingScheduleRows(t: TestBackend, userId: Id<"users">) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("notificationDueWork")
+      .withIndex("by_owner_and_state_and_due_at", (q) =>
+        q.eq("ownerUserId", userId).eq("state", "pending"),
+      )
+      .take(100),
+  );
+}
+
+async function allScheduleRows(t: TestBackend, userId: Id<"users">) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("notificationDueWork")
+      .withIndex("by_owner_and_state_and_due_at", (q) =>
+        q.eq("ownerUserId", userId),
+      )
+      .take(100),
+  );
+}
+
+describe("notification schedule reconciliation", () => {
+  test("current served snapshot schedules local prediction and late boundaries with guarded wakeups", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(snapshotId).not.toBeNull();
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    expect(snapshot?.displayStatus).toBe("visible");
+    if (!snapshot) throw new Error("Expected the served V2 snapshot");
+
+    const pending = await pendingScheduleRows(t, primaryId);
+    const timeZone = "America/Los_Angeles";
+    const expected = [
+      {
+        kind: "prediction_window",
+        dueAt: resolveLocalReminderInstant(
+          addCalendarDays(snapshot.pointDate, -3),
+          "09:00",
+          timeZone,
+        ),
+      },
+      {
+        kind: "late_boundary",
+        dueAt: resolveLocalReminderInstant(
+          addCalendarDays(snapshot.latestDate, 1),
+          "09:00",
+          timeZone,
+        ),
+      },
+    ];
+    expect(
+      pending.map(({ kind, dueAt, generation }) => ({ kind, dueAt, generation })),
+    ).toEqual(
+      expected.map(({ kind, dueAt }) => ({ kind, dueAt, generation: 7 })),
+    );
+
+    const scheduled = await t.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").take(10),
+    );
+    expect(scheduled).toHaveLength(2);
+    expect(scheduled.map(({ scheduledTime }) => scheduledTime)).toEqual(
+      expect.arrayContaining(expected.map(({ dueAt }) => dueAt)),
+    );
+    expect(
+      scheduled.every(
+        ({ args }) =>
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "workId" in args[0] &&
+          "generation" in args[0],
+      ),
+    ).toBe(true);
+
+    const projected = await t.run(async (ctx) => ({
+      events: await ctx.db.query("notificationEvents").take(10),
+      deliveries: await ctx.db.query("notificationDeliveries").take(10),
+      inboxItems: await ctx.db.query("notificationInboxItems").take(10),
+    }));
+    expect(projected).toEqual({ events: [], deliveries: [], inboxItems: [] });
+  });
+
+  test("does not catch up prediction-window or Late work after its local validity day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-04-15T12:00:00.000Z"));
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!snapshot) throw new Error("Expected the served V2 snapshot");
+
+    const today = toCalendarDateInTimeZone(
+      new Date(Date.now()),
+      "America/Los_Angeles",
+    );
+    expect(addCalendarDays(snapshot.pointDate, -3) < today).toBe(true);
+    expect(addCalendarDays(snapshot.latestDate, 1) < today).toBe(true);
+    expect(await pendingScheduleRows(t, primaryId)).toEqual([]);
+    expect(
+      await t.run((ctx) => ctx.db.system.query("_scheduled_functions").take(10)),
+    ).toEqual([]);
+  });
+
+  test("delayed prediction wake is valid through its local day, then expires; Late remains denied", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const pending = await pendingScheduleRows(t, primaryId);
+    const predictionWork = pending.find((row) => row.kind === "prediction_window");
+    const lateWork = pending.find((row) => row.kind === "late_boundary");
+    if (!predictionWork || !lateWork) throw new Error("Expected both due-work kinds");
+
+    const predictionDay = toCalendarDateInTimeZone(
+      new Date(predictionWork.dueAt),
+      "America/Los_Angeles",
+    );
+    const expiredPredictionWorkId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: predictionWork.dueAt,
+        generation: predictionWork.generation,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    vi.setSystemTime(
+      resolveLocalReminderInstant(predictionDay, "22:00", "America/Los_Angeles"),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: predictionWork._id,
+        generation: predictionWork.generation,
+      }),
+    ).resolves.toEqual({ status: "ready" });
+
+    vi.setSystemTime(
+      resolveLocalReminderInstant(
+        addCalendarDays(predictionDay, 1),
+        "12:00",
+        "America/Los_Angeles",
+      ),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: expiredPredictionWorkId,
+        generation: predictionWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+
+    const lateDay = toCalendarDateInTimeZone(
+      new Date(lateWork.dueAt),
+      "America/Los_Angeles",
+    );
+    vi.setSystemTime(
+      resolveLocalReminderInstant(lateDay, "12:00", "America/Los_Angeles"),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: lateWork._id,
+        generation: lateWork.generation,
+      }),
+    ).resolves.toEqual({ status: "blocked", reason: "content_not_approved" });
+
+    vi.setSystemTime(
+      resolveLocalReminderInstant(
+        addCalendarDays(lateDay, 1),
+        "12:00",
+        "America/Los_Angeles",
+      ),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: lateWork._id,
+        generation: lateWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+
+    const finalRows = await allScheduleRows(t, primaryId);
+    expect(finalRows.find(({ _id }) => _id === predictionWork._id)?.state).toBe(
+      "claimed",
+    );
+    expect(finalRows.find(({ _id }) => _id === lateWork._id)?.state).toBe(
+      "cancelled",
+    );
+    expect(
+      finalRows.find(({ _id }) => _id === expiredPredictionWorkId)?.state,
+    ).toBe("cancelled");
+    expect(
+      await t.run((ctx) => ctx.db.query("notificationEvents").take(10)),
+    ).toEqual([]);
+  });
+
+  test.each([
+    {
+      label: "spring DST gap",
+      timeZone: "America/Los_Angeles",
+      localDay: "2026-03-08",
+      localReminderTime: "02:30",
+      expectedDueAt: "2026-03-08T10:00:00.000Z",
+    },
+    {
+      label: "fall DST repeated time",
+      timeZone: "America/Los_Angeles",
+      localDay: "2026-11-01",
+      localReminderTime: "01:30",
+      expectedDueAt: "2026-11-01T08:30:00.000Z",
+    },
+    {
+      label: "Asia/Kolkata half-hour offset",
+      timeZone: "Asia/Kolkata",
+      localDay: "2026-10-04",
+      localReminderTime: "09:00",
+      expectedDueAt: "2026-10-04T03:30:00.000Z",
+    },
+    {
+      label: "negative UTC offset",
+      timeZone: "Etc/GMT+8",
+      localDay: "2026-10-05",
+      localReminderTime: "09:00",
+      expectedDueAt: "2026-10-05T17:00:00.000Z",
+    },
+  ])("resolves the local reminder clock across $label", (testCase) => {
+    expect(
+      resolveLocalReminderInstant(
+        testCase.localDay,
+        testCase.localReminderTime,
+        testCase.timeZone,
+      ),
+    ).toBe(Date.parse(testCase.expectedDueAt));
+  });
+
+  test("clock-only late-boundary wakeup rechecks policy without projecting Late", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includePredictionWindow: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+
+    const [snapshot] = await t.run(async (ctx) => [await ctx.db.get(snapshotId)]);
+    if (!snapshot) throw new Error("Expected the served V2 snapshot");
+    const [lateWork] = await pendingScheduleRows(t, primaryId);
+    expect(lateWork?.kind).toBe("late_boundary");
+    if (!lateWork) throw new Error("Expected late-boundary due work");
+    const expectedDueAt = resolveLocalReminderInstant(
+      addCalendarDays(snapshot.latestDate, 1),
+      "09:00",
+      "America/Los_Angeles",
+    );
+    expect(lateWork.dueAt).toBe(expectedDueAt);
+
+    vi.setSystemTime(expectedDueAt);
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+    const afterWake = await t.run(async (ctx) => ({
+      work: await ctx.db.get("notificationDueWork", lateWork._id),
+      events: await ctx.db.query("notificationEvents").take(10),
+      snapshots: await ctx.db
+        .query("predictionSnapshots")
+        .withIndex("by_user_and_generated_at", (q) => q.eq("userId", primaryId))
+        .take(10),
+    }));
+    expect(afterWake.work?.state).toBe("cancelled");
+    expect(afterWake.events).toEqual([]);
+    expect(afterWake.snapshots).toHaveLength(1);
+  });
+
+  test("incidental refresh keeps work while an authoritative correction supersedes it", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const { periodEventId } = await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const originalSnapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!originalSnapshot) throw new Error("Expected the served V2 snapshot");
+    const originalPending = await pendingScheduleRows(t, primaryId);
+
+    await t.mutation(internal.internal.predictionSnapshots.createSnapshot, {
+      ...snapshotRefreshArgs(originalSnapshot, originalSnapshot.generatedAt + 1_000),
+    });
+    const afterRefresh = await pendingScheduleRows(t, primaryId);
+    expect(
+      afterRefresh.map(({ _id, generation, kind }) => ({ _id, generation, kind })),
+    ).toEqual(
+      originalPending.map(({ _id, generation, kind }) => ({ _id, generation, kind })),
+    );
+
+    vi.setSystemTime(now + 5_000);
+    await t.run(async (ctx) => {
+      await ctx.db.patch("periodEvents", periodEventId, {
+        startDate: "2026-03-02",
+        authorityVersion: 2,
+        updatedAt: now + 4_000,
+      });
+      await advanceNotificationSourceAuthority(ctx, primaryId, now + 4_000);
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+
+    const allWork = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId),
+        )
+        .take(10),
+    );
+    expect(allWork.filter((row) => row.state === "cancelled")).toHaveLength(2);
+    expect(allWork.filter((row) => row.state === "pending")).toHaveLength(2);
+    expect(allWork.filter((row) => row.state === "pending").map(({ generation }) => generation)).toEqual([8, 8]);
+  });
+
+  test("indexed cron recovery takes a bounded due-ordered pending page past terminal history", async () => {
+    const now = Date.parse("2026-10-04T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const workIds = await t.run(async (ctx) => {
+      for (let index = 0; index < 80; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "late_boundary",
+          state: index % 2 === 0 ? "cancelled" : "completed",
+          dueAt: now - 1_000 - index,
+          generation: 1,
+          createdAt: now - 10_000 - index,
+          updatedAt: now - 10_000 - index,
+        });
+      }
+      for (let index = 0; index < 60; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "delivery",
+          state: "pending",
+          dueAt: now - 1_000 + index,
+          generation: 1,
+          createdAt: now - 5_000 + index,
+          updatedAt: now - 5_000 + index,
+        });
+      }
+      const pendingIds: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 55; index += 1) {
+        pendingIds.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: index % 2 === 0 ? "prediction_window" : "late_boundary",
+            state: "pending",
+            dueAt: now - 55 + index,
+            generation: 2,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return pendingIds;
+    });
+
+    const result = await t.mutation(
+      reconcileDueWorkRef,
+      {},
+    );
+    expect(result.scheduled).toBe(50);
+    const scheduled = await t.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").take(60),
+    );
+    expect(scheduled).toHaveLength(50);
+    expect(
+      scheduled.map(({ args }) => {
+        const arg = args[0];
+        if (typeof arg !== "object" || arg === null || !("workId" in arg)) {
+          throw new Error("Expected a scheduled due-work ID");
+        }
+        return arg.workId;
+      }),
+    ).toEqual(workIds.slice(0, 50));
+  });
+
+  test("valid wakes claim each bounded page so later due work cannot starve", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const original = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!original) throw new Error("Expected prediction-window due work");
+    const dueDay = toCalendarDateInTimeZone(
+      new Date(original.dueAt),
+      "America/Los_Angeles",
+    );
+    const dueIds = await t.run(async (ctx) => {
+      const ids = [original._id];
+      for (let index = 0; index < 60; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "prediction_window",
+            state: "pending",
+            dueAt: original.dueAt,
+            generation: original.generation,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }),
+        );
+      }
+      return ids;
+    });
+
+    vi.setSystemTime(
+      resolveLocalReminderInstant(dueDay, "12:00", "America/Los_Angeles"),
+    );
+    const indexedDue = await pendingScheduleRows(t, primaryId);
+    const firstPage = indexedDue.slice(0, 50);
+    expect(indexedDue).toHaveLength(61);
+
+    expect(await t.mutation(reconcileDueWorkRef, {})).toEqual({ scheduled: 50 });
+    for (const work of firstPage) {
+      await expect(
+        t.mutation(wakeDueWorkRef, {
+          workId: work._id,
+          generation: work.generation,
+        }),
+      ).resolves.toEqual({ status: "ready" });
+    }
+    const afterFirstPage = await allScheduleRows(t, primaryId);
+    expect(
+      firstPage.map(
+        ({ _id }) => afterFirstPage.find((row) => row._id === _id)?.state,
+      ),
+    ).toEqual(Array.from({ length: 50 }, () => "claimed"));
+    expect(afterFirstPage.filter((row) => row.state === "pending")).toHaveLength(11);
+
+    expect(await t.mutation(reconcileDueWorkRef, {})).toEqual({ scheduled: 11 });
+    const secondPage = await pendingScheduleRows(t, primaryId);
+    expect(secondPage).toHaveLength(11);
+    for (const work of secondPage) {
+      await expect(
+        t.mutation(wakeDueWorkRef, {
+          workId: work._id,
+          generation: work.generation,
+        }),
+      ).resolves.toEqual({ status: "ready" });
+    }
+    const afterSecondPage = await allScheduleRows(t, primaryId);
+    expect(afterSecondPage.filter((row) => row.state === "pending")).toEqual([]);
+    expect(afterSecondPage.filter((row) => row.state === "claimed")).toHaveLength(61);
+    expect(dueIds).toHaveLength(61);
+  });
+
+  test("reconciliation does not replay a claimed generation", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    const [work] = await pendingScheduleRows(t, primaryId);
+    if (!work) throw new Error("Expected prediction-window due work");
+    const dueDay = toCalendarDateInTimeZone(
+      new Date(work.dueAt),
+      "America/Los_Angeles",
+    );
+    vi.setSystemTime(
+      resolveLocalReminderInstant(dueDay, "12:00", "America/Los_Angeles"),
+    );
+
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: work._id,
+        generation: work.generation,
+      }),
+    ).resolves.toEqual({ status: "ready" });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+
+    const rows = await allScheduleRows(t, primaryId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ _id: work._id, state: "claimed" });
+  });
+
+  test("scheduler flag stays default-off for snapshot scheduling", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "false");
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "UTC",
+      localReminderTime: "09:00",
+    });
+
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+
+    expect(await pendingScheduleRows(t, primaryId)).toEqual([]);
+    expect(
+      await t.run((ctx) => ctx.db.system.query("_scheduled_functions").take(10)),
+    ).toEqual([]);
+  });
+
+  test("scheduler-off reconciliation cancels disabled and expired work without creating wakeups", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!snapshot) throw new Error("Expected the served V2 snapshot");
+    const originalPending = await pendingScheduleRows(t, primaryId);
+    expect(originalPending).toHaveLength(2);
+    const originalWakeups = await t.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").take(10),
+    );
+    expect(originalWakeups).toHaveLength(2);
+
+    await t.run(async (ctx) => {
+      const preference = await ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "late_status"),
+        )
+        .unique();
+      if (!preference) throw new Error("Expected Late preference");
+      await ctx.db.patch(preference._id, {
+        inAppEnabled: false,
+        updatedAt: Date.now(),
+      });
+    });
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "false");
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+
+    const afterDisable = await allScheduleRows(t, primaryId);
+    expect(afterDisable.find(({ kind }) => kind === "late_boundary")?.state).toBe(
+      "cancelled",
+    );
+    expect(
+      afterDisable.find(({ kind }) => kind === "prediction_window")?.state,
+    ).toBe("pending");
+    expect(
+      await t.run(async (ctx) =>
+        ctx.db.system.query("_scheduled_functions").take(10),
+      ),
+    ).toEqual(originalWakeups);
+
+    const predictionDay = addCalendarDays(snapshot.pointDate, -3);
+    vi.setSystemTime(
+      resolveLocalReminderInstant(
+        addCalendarDays(predictionDay, 1),
+        "12:00",
+        "America/Los_Angeles",
+      ),
+    );
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    const afterExpiry = await allScheduleRows(t, primaryId);
+    expect(afterExpiry.every(({ state }) => state === "cancelled")).toBe(true);
+    expect(
+      await t.run(async (ctx) =>
+        ctx.db.system.query("_scheduled_functions").take(10),
+      ),
+    ).toEqual(originalWakeups);
+  });
+});

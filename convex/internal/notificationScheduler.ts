@@ -1,0 +1,600 @@
+import { v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
+
+import type { Doc, Id } from "../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../_generated/server";
+import {
+  DEFAULT_TIME_ZONE,
+  requireValidCalendarDate,
+  resolveCalendarTimeZone,
+  toCalendarDateInTimeZone,
+} from "../_helpers/calendarDates";
+import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
+import { deriveCycleIntervals } from "../_helpers/cycleIntervals";
+import { buildPeriodPrediction } from "../_helpers/periodPrediction";
+import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
+import { PREDICTION_CALIBRATION_VERSION } from "../_helpers/predictionIntervals";
+import {
+  currentPredictionSnapshotInput,
+  predictionSnapshotMatchesCurrent,
+} from "../_helpers/predictionSnapshotContract";
+import {
+  makeSourceAuthorityVersion,
+} from "../_helpers/notificationSourceAuthority";
+import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
+
+const SCHEDULER_FLAG = "CB_CONNECT_NOTIFICATION_SCHEDULER_V1";
+const PROJECTION_FLAG = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
+const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
+const DUE_WORK_PAGE_SIZE = 50;
+const DUE_WORK_SCAN_LIMIT = 500;
+const OWNER_PENDING_PAGE_SIZE = 100;
+const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
+const MINUTE_MS = 60 * 1_000;
+
+type ScheduleKind = "prediction_window" | "late_boundary";
+
+const wakeArgsValidator = v.object({
+  workId: v.id("notificationDueWork"),
+  generation: v.number(),
+});
+
+const wakeWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:wakeDueWork",
+);
+
+function schedulerEnabled(): boolean {
+  return process.env[SCHEDULER_FLAG] === "true";
+}
+
+function isSafeRevision(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function formatLocalMinute(instant: number, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(instant));
+  const values = Object.fromEntries(
+    parts
+      .filter((part) =>
+        ["year", "month", "day", "hour", "minute"].includes(part.type),
+      )
+      .map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}
+
+function offsetAt(instant: number, timeZone: string): number {
+  const roundedInstant = Math.floor(instant / MINUTE_MS) * MINUTE_MS;
+  const localMinute = formatLocalMinute(roundedInstant, timeZone);
+  const [date, time] = localMinute.split("T");
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+  return (localAsUtc - roundedInstant) / MINUTE_MS;
+}
+
+/** Resolves DST gaps to the first valid local minute and folds to the earlier instant. */
+export function resolveLocalReminderInstant(
+  localDay: string,
+  localReminderTime: string,
+  timeZone: string,
+): number {
+  requireValidCalendarDate(localDay, "Reminder day");
+  if (!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(localReminderTime)) {
+    throw new Error("Local reminder time must use 24-hour HH:mm format");
+  }
+  const zone = resolveCalendarTimeZone(timeZone);
+  const [year, month, day] = localDay.split("-").map(Number);
+  const [hour, minute] = localReminderTime.split(":").map(Number);
+  const requestedLocalMinute = Date.UTC(year, month - 1, day, hour, minute);
+  const offsets = new Set<number>();
+  for (let deltaHours = -36; deltaHours <= 36; deltaHours += 6) {
+    offsets.add(offsetAt(requestedLocalMinute + deltaHours * 60 * MINUTE_MS, zone));
+  }
+
+  for (let gapMinutes = 0; gapMinutes <= 180; gapMinutes += 1) {
+    const targetLocalMinute = requestedLocalMinute + gapMinutes * MINUTE_MS;
+    const matches: number[] = [];
+    for (const offsetMinutes of offsets) {
+      const candidate = targetLocalMinute - offsetMinutes * MINUTE_MS;
+      if (
+        formatLocalMinute(candidate, zone) ===
+        formatLocalMinute(targetLocalMinute, "UTC")
+      ) {
+        matches.push(candidate);
+      }
+    }
+    if (matches.length > 0) return Math.min(...matches);
+  }
+
+  throw new Error("Unable to resolve local reminder time");
+}
+
+function makeSourceVersion(
+  sourceRevision: number,
+  snapshot: Doc<"predictionSnapshots">,
+): string {
+  return makeSourceAuthorityVersion({
+    sourceRevision,
+    servedCycleContract: "cycle-read-model-v1",
+    servedPredictionContract: "prediction-serving-v2",
+    estimatorMethodVersion: `${snapshot.estimatorId}-v${snapshot.estimatorVersion}`,
+    calibrationMethodVersion: snapshot.calibrationVersion,
+  });
+}
+
+async function readCurrentServedSnapshot(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+) {
+  if (!isPeriodPredictionV2Enabled()) return null;
+  const user = await ctx.db.get(userId);
+  if (!user || user.role !== "primary") return null;
+  const [predictionData, settings, scheduleState] = await Promise.all([
+    readCyclePredictionData(ctx, userId, user),
+    ctx.db
+      .query("cycleSettings")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique(),
+    ctx.db
+      .query("notificationScheduleState")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique(),
+  ]);
+  if (!scheduleState || !isSafeRevision(scheduleState.sourceRevision)) return null;
+
+  const snapshot = await ctx.db
+    .query("predictionSnapshots")
+    .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
+    .order("desc")
+    .first();
+  if (
+    !snapshot ||
+    snapshot.displayStatus !== "visible" ||
+    snapshot.featureVersion !== "period_prediction_v2" ||
+    snapshot.intervalMethodVersion !== PREDICTION_CALIBRATION_VERSION
+  ) {
+    return null;
+  }
+  const servedIntervals = deriveCycleIntervals(predictionData.periodEvents, {
+    cutoffAt: snapshot.inputCutoffAt,
+    cutoffDate: snapshot.inputCutoffDate,
+    segments: predictionData.activeSegment
+      ? [predictionData.activeSegment]
+      : [],
+  });
+  const cycleIntervals = predictionData.historyComplete
+    ? servedIntervals
+    : {
+        ...servedIntervals,
+        reasonCodes: [...new Set([
+          ...servedIntervals.reasonCodes,
+          "LIMITED_HISTORY" as const,
+        ])].sort(),
+      };
+
+  const prediction = buildPeriodPrediction({
+    cycleIntervals,
+    historyComplete: predictionData.historyComplete,
+    configuredCycleLength: settings?.cycleLength ?? 28,
+    predictionPaused: settings?.predictionPaused ?? false,
+  });
+  if (prediction.pointDate === null) return null;
+
+  const current = currentPredictionSnapshotInput({
+    prediction,
+    inputCutoffAt: snapshot.inputCutoffAt,
+    inputCutoffDate: snapshot.inputCutoffDate,
+    periodEvents: predictionData.periodEvents,
+    settings,
+    activeSegment: predictionData.activeSegment,
+  });
+  if (!predictionSnapshotMatchesCurrent(snapshot, current)) {
+    return null;
+  }
+  return {
+    user,
+    snapshot,
+    scheduleState,
+    sourceAuthorityVersion: makeSourceVersion(
+      scheduleState.sourceRevision,
+      snapshot,
+    ),
+  };
+}
+
+function desiredDueAt(
+  kind: ScheduleKind,
+  snapshot: Doc<"predictionSnapshots">,
+  reminderTime: string,
+  timeZone: string,
+): number {
+  const localDay = designatedLocalDay(kind, snapshot);
+  return resolveLocalReminderInstant(localDay, reminderTime, timeZone);
+}
+
+function designatedLocalDay(
+  kind: ScheduleKind,
+  snapshot: Doc<"predictionSnapshots">,
+): string {
+  return kind === "prediction_window"
+    ? addCalendarDays(snapshot.pointDate, -3)
+    : addCalendarDays(snapshot.latestDate, 1);
+}
+
+function isExpiredLocalDay(
+  kind: ScheduleKind,
+  snapshot: Doc<"predictionSnapshots">,
+  timeZone: string,
+  now: number,
+): boolean {
+  const today = toCalendarDateInTimeZone(new Date(now), timeZone);
+  return designatedLocalDay(kind, snapshot) < today;
+}
+
+async function readSchedulePreferences(
+  ctx: Pick<MutationCtx, "db">,
+  userId: Id<"users">,
+) {
+  const [predictionWindow, lateStatus] = await Promise.all([
+    ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_user_and_purpose", (q) =>
+        q.eq("userId", userId).eq("purpose", "period_window_approaching"),
+      )
+      .unique(),
+    ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_user_and_purpose", (q) =>
+        q.eq("userId", userId).eq("purpose", "late_status"),
+      )
+      .unique(),
+  ]);
+  return { predictionWindow, lateStatus };
+}
+
+async function readPendingScheduleWork(
+  ctx: Pick<MutationCtx, "db">,
+  userId: Id<"users">,
+) {
+  return await ctx.db
+    .query("notificationDueWork")
+    .withIndex("by_owner_and_state_and_due_at", (q) =>
+      q.eq("ownerUserId", userId).eq("state", "pending"),
+    )
+    .take(OWNER_PENDING_PAGE_SIZE);
+}
+
+async function readClaimedScheduleWork(
+  ctx: Pick<MutationCtx, "db">,
+  userId: Id<"users">,
+) {
+  return await ctx.db
+    .query("notificationDueWork")
+    .withIndex("by_owner_and_state_and_due_at", (q) =>
+      q.eq("ownerUserId", userId).eq("state", "claimed"),
+    )
+    .take(OWNER_PENDING_PAGE_SIZE);
+}
+
+async function cancelPendingKind(
+  ctx: MutationCtx,
+  rows: readonly Doc<"notificationDueWork">[],
+  kind: ScheduleKind,
+  now: number,
+) {
+  for (const row of rows) {
+    if (row.kind === kind) {
+      await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
+    }
+  }
+}
+
+async function reconcileKind(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    kind: ScheduleKind;
+    enabled: boolean;
+    localReminderTime?: string;
+    snapshot: Doc<"predictionSnapshots">;
+    generation: number;
+    timeZone: string;
+    pending: readonly Doc<"notificationDueWork">[];
+    claimed: readonly Doc<"notificationDueWork">[];
+    now: number;
+  },
+) {
+  const pendingKind = args.pending.filter((row) => row.kind === args.kind);
+  const computedDueAt =
+    args.enabled && args.localReminderTime
+      ? desiredDueAt(
+          args.kind,
+          args.snapshot,
+          args.localReminderTime,
+          args.timeZone,
+        )
+      : null;
+  const dueAt =
+    computedDueAt !== null &&
+    !isExpiredLocalDay(args.kind, args.snapshot, args.timeZone, args.now)
+      ? computedDueAt
+      : null;
+  const supportedRunAt =
+    dueAt !== null && dueAt <= args.now + MAX_RUN_AT_DELAY_MS;
+  const alreadyClaimed = args.claimed.some(
+    (row) =>
+      row.kind === args.kind &&
+      supportedRunAt &&
+      row.dueAt === dueAt &&
+      row.generation === args.generation,
+  );
+  const reusable = alreadyClaimed
+    ? undefined
+    : pendingKind.find(
+        (row) =>
+          supportedRunAt &&
+          row.dueAt === dueAt &&
+          row.generation === args.generation,
+      );
+  for (const row of pendingKind) {
+    if (row._id !== reusable?._id) {
+      await ctx.db.patch(row._id, { state: "cancelled", updatedAt: args.now });
+    }
+  }
+  if (alreadyClaimed || reusable || !supportedRunAt || dueAt === null) return;
+
+  const workId = await ctx.db.insert("notificationDueWork", {
+    ownerUserId: args.userId,
+    kind: args.kind,
+    state: "pending",
+    dueAt,
+    generation: args.generation,
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+  await ctx.scheduler.runAt(Math.max(dueAt, args.now), wakeWorkRef, {
+    workId,
+    generation: args.generation,
+  });
+}
+
+async function cancelAllPendingScheduleWork(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  now: number,
+) {
+  const [pending, claimed] = await Promise.all([
+    readPendingScheduleWork(ctx, userId),
+    readClaimedScheduleWork(ctx, userId),
+  ]);
+  await cancelPendingKind(ctx, pending, "prediction_window", now);
+  await cancelPendingKind(ctx, pending, "late_boundary", now);
+}
+
+/** Reconciles only the primary's current served V2 snapshot and opted-in local purposes. */
+export async function reconcileUserSchedule(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<void> {
+  const now = Date.now();
+  if (!schedulerEnabled()) {
+    const current = await readCurrentServedSnapshot(ctx, userId);
+    if (!current) {
+      await cancelAllPendingScheduleWork(ctx, userId, now);
+      return;
+    }
+    const { predictionWindow, lateStatus } = await readSchedulePreferences(
+      ctx,
+      userId,
+    );
+    const pending = await readPendingScheduleWork(ctx, userId);
+    const timeZone = resolveCalendarTimeZone(
+      current.user.timeZone ?? DEFAULT_TIME_ZONE,
+    );
+    for (const row of pending) {
+      if (row.kind !== "prediction_window" && row.kind !== "late_boundary") {
+        continue;
+      }
+      const preference =
+        row.kind === "prediction_window" ? predictionWindow : lateStatus;
+      const currentDueAt =
+        preference?.inAppEnabled && preference.localReminderTime
+          ? desiredDueAt(
+              row.kind,
+              current.snapshot,
+              preference.localReminderTime,
+              timeZone,
+            )
+          : null;
+      if (
+        row.generation !== current.scheduleState.sourceRevision ||
+        currentDueAt !== row.dueAt ||
+        isExpiredLocalDay(row.kind, current.snapshot, timeZone, now)
+      ) {
+        await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
+      }
+    }
+    return;
+  }
+  const current = await readCurrentServedSnapshot(ctx, userId);
+  if (!current) {
+    await cancelAllPendingScheduleWork(ctx, userId, now);
+    return;
+  }
+  const { predictionWindow, lateStatus } = await readSchedulePreferences(
+    ctx,
+    userId,
+  );
+  const [pending, claimed] = await Promise.all([
+    readPendingScheduleWork(ctx, userId),
+    readClaimedScheduleWork(ctx, userId),
+  ]);
+  const timeZone = resolveCalendarTimeZone(
+    current.user.timeZone ?? DEFAULT_TIME_ZONE,
+  );
+  await reconcileKind(ctx, {
+    userId,
+    kind: "prediction_window",
+    enabled: predictionWindow?.inAppEnabled === true,
+    localReminderTime: predictionWindow?.localReminderTime,
+    snapshot: current.snapshot,
+    generation: current.scheduleState.sourceRevision,
+    timeZone,
+    pending,
+    claimed,
+    now,
+  });
+  await reconcileKind(ctx, {
+    userId,
+    kind: "late_boundary",
+    enabled: lateStatus?.inAppEnabled === true,
+    localReminderTime: lateStatus?.localReminderTime,
+    snapshot: current.snapshot,
+    generation: current.scheduleState.sourceRevision,
+    timeZone,
+    pending,
+    claimed,
+    now,
+  });
+}
+
+function eventForKind(kind: ScheduleKind) {
+  return kind === "prediction_window"
+    ? {
+        eventType: "period_window_approaching.v1" as const,
+        purpose: "period_window_approaching" as const,
+      }
+    : { eventType: "late_status.v1" as const, purpose: "late_status" as const };
+}
+
+export const wakeDueWork = internalMutation({
+  args: wakeArgsValidator.fields,
+  returns: v.object({
+    status: v.union(
+      v.literal("stale"),
+      v.literal("paused"),
+      v.literal("future"),
+      v.literal("blocked"),
+      v.literal("ready"),
+    ),
+    reason: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const work = await ctx.db.get(args.workId);
+    if (
+      !work ||
+      work.state !== "pending" ||
+      work.generation !== args.generation ||
+      (work.kind !== "prediction_window" && work.kind !== "late_boundary")
+    ) {
+      return { status: "stale" as const };
+    }
+    if (!schedulerEnabled()) return { status: "paused" as const };
+    const current = await readCurrentServedSnapshot(ctx, work.ownerUserId);
+    if (
+      !current ||
+      current.scheduleState.sourceRevision !== args.generation
+    ) {
+      await ctx.db.patch(work._id, { state: "cancelled", updatedAt: Date.now() });
+      return { status: "stale" as const };
+    }
+    const { predictionWindow, lateStatus } = await readSchedulePreferences(
+      ctx,
+      work.ownerUserId,
+    );
+    const preference =
+      work.kind === "prediction_window" ? predictionWindow : lateStatus;
+    const timeZone = resolveCalendarTimeZone(
+      current.user.timeZone ?? DEFAULT_TIME_ZONE,
+    );
+    const currentDueAt =
+      preference?.inAppEnabled && preference.localReminderTime
+        ? desiredDueAt(
+            work.kind,
+            current.snapshot,
+            preference.localReminderTime,
+            timeZone,
+          )
+        : null;
+    const expired = isExpiredLocalDay(
+      work.kind,
+      current.snapshot,
+      timeZone,
+      Date.now(),
+    );
+    if (currentDueAt !== work.dueAt || expired) {
+      await ctx.db.patch(work._id, { state: "cancelled", updatedAt: Date.now() });
+      return { status: "stale" as const };
+    }
+    const today = toCalendarDateInTimeZone(new Date(), timeZone);
+    if (today < designatedLocalDay(work.kind, current.snapshot)) {
+      return { status: "future" as const };
+    }
+    if (work.dueAt > Date.now()) return { status: "future" as const };
+
+    const definition = eventForKind(work.kind);
+    const authorization = authorizeNotificationProjection({
+      ...definition,
+      channel: "in_app",
+      recipientUserId: work.ownerUserId,
+      currentRecipientUserId: current.user._id,
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      currentSourceAuthorityVersion: current.sourceAuthorityVersion,
+      expectedGeneration: args.generation,
+      currentGeneration: current.scheduleState.sourceRevision,
+      purposeEnabled: preference?.inAppEnabled === true,
+      flags: {
+        projectionEnabled: process.env[PROJECTION_FLAG] === "true",
+        deliveryEnabled: process.env[DELIVERY_FLAG] === "true",
+      },
+    });
+    if (!authorization.allowed) {
+      await ctx.db.patch(work._id, { state: "cancelled", updatedAt: Date.now() });
+      return { status: "blocked" as const, reason: authorization.reason };
+    }
+    await ctx.db.patch(work._id, { state: "claimed", updatedAt: Date.now() });
+    return { status: "ready" as const };
+  },
+});
+
+export const reconcileDueWork = internalMutation({
+  args: {},
+  returns: v.object({ scheduled: v.number() }),
+  handler: async (ctx) => {
+    if (!schedulerEnabled()) return { scheduled: 0 };
+    const now = Date.now();
+    const indexedDue = await ctx.db
+      .query("notificationDueWork")
+      .withIndex("by_state_and_due_at", (q) =>
+        q.eq("state", "pending").lte("dueAt", now),
+      )
+      .take(DUE_WORK_SCAN_LIMIT);
+    // Keep other lanes' shared-queue rows out of CHRONOS's 50-row wake page.
+    // N8 must replace this bounded shared-prefix scan with kind-scoped indexed
+    // routes before unrelated due rows can exceed DUE_WORK_SCAN_LIMIT; this
+    // base has no delivery/source-reconcile/pain-reminder runtime handlers.
+    const due = indexedDue
+      .filter(
+        (work) =>
+          work.kind === "prediction_window" || work.kind === "late_boundary",
+      )
+      .slice(0, DUE_WORK_PAGE_SIZE);
+    for (const work of due) {
+      await ctx.scheduler.runAt(now, wakeWorkRef, {
+        workId: work._id,
+        generation: work.generation,
+      });
+    }
+    return { scheduled: due.length };
+  },
+});
