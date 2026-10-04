@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 
 import {
   notificationEventDefinitions,
@@ -48,6 +49,32 @@ export const deliveryErrorCodes = [
 ] as const;
 
 export type DeliveryErrorCode = (typeof deliveryErrorCodes)[number];
+export type DeliveryTerminalReason = DeliveryErrorCode | "attempts_exhausted";
+
+/** Operational settings are supplied by the owning runtime lane; this module invents no defaults. */
+export type NotificationOperationalLimits = {
+  version: "g4-limits-v1";
+  maxBatchSize: number;
+  maxConcurrent: number;
+  maxAttempts: number;
+  leaseMs: number;
+  receiptDeadlineMs: number;
+  baseBackoffMs: number;
+  maxBackoffMs: number;
+  jitterRatio: number;
+};
+
+export const notificationOperationalLimitsValidator = v.object({
+  version: v.literal("g4-limits-v1"),
+  maxBatchSize: v.number(),
+  maxConcurrent: v.number(),
+  maxAttempts: v.number(),
+  leaseMs: v.number(),
+  receiptDeadlineMs: v.number(),
+  baseBackoffMs: v.number(),
+  maxBackoffMs: v.number(),
+  jitterRatio: v.number(),
+});
 
 const channelValidator = v.union(
   v.literal("in_app"),
@@ -98,13 +125,18 @@ const errorCodeValidator = v.union(
   v.literal("internal_error"),
 );
 
+const deliveryTerminalReasonValidator = v.union(
+  errorCodeValidator,
+  v.literal("attempts_exhausted"),
+);
+
 export const notificationDeliveryStateValidator = v.object({
   channel: channelValidator,
   status: deliveryStatusValidator,
   eligibility: eligibilityValidator,
   providerOutcome: providerOutcomeValidator,
   providerMessageId: v.optional(v.string()),
-  errorCode: v.optional(errorCodeValidator),
+  errorCode: v.optional(deliveryTerminalReasonValidator),
 });
 
 export const deliveryAttemptResultValidator = v.union(
@@ -116,7 +148,6 @@ export const deliveryAttemptResultValidator = v.union(
   v.object({
     kind: v.literal("retryable_failure"),
     errorCode: errorCodeValidator,
-    definitelyNotAccepted: v.boolean(),
   }),
   v.object({ kind: v.literal("permanent_failure"), errorCode: errorCodeValidator }),
   v.object({ kind: v.literal("unknown"), errorCode: v.optional(errorCodeValidator) }),
@@ -149,7 +180,7 @@ export type DeliveryState = {
   eligibility: DeliveryEligibility;
   providerOutcome: ProviderOutcome;
   providerMessageId?: string;
-  errorCode?: DeliveryErrorCode;
+  errorCode?: DeliveryTerminalReason;
 };
 
 export type ProviderIdempotencyCapability =
@@ -229,7 +260,7 @@ export type ReconcileSourceArgs = {
 };
 
 export type ProjectInAppArgs = {
-  eventId: string;
+  eventId: Id<"notificationEvents">;
   expectedGeneration: number;
 };
 
@@ -239,7 +270,7 @@ export type CancelSourceArgs = {
 };
 
 export type ReconcileUserScheduleArgs = {
-  userId: string;
+  userId: Id<"users">;
 };
 
 export type NotificationDispatchAuthorization = {
@@ -280,7 +311,7 @@ export type NotificationDeliveryRecord = {
   nextReceiptCheckAt?: number;
   reviewAt?: number;
   cancellationReason?: CancelSourceArgs["reason"];
-  errorCode?: DeliveryErrorCode;
+  errorCode?: DeliveryTerminalReason;
   renderIdentity: FrozenRenderIdentity;
   createdAt: number;
   updatedAt: number;
@@ -428,7 +459,7 @@ export const notificationDeliveryRecordValidator = v.object({
       v.literal("expired"),
     ),
   ),
-  errorCode: v.optional(errorCodeValidator),
+  errorCode: v.optional(deliveryTerminalReasonValidator),
   renderIdentity: frozenRenderIdentityValidator,
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -463,7 +494,6 @@ export type DeliveryFact =
   | {
       kind: "retryable_failure";
       errorCode: DeliveryErrorCode;
-      definitelyNotAccepted: boolean;
     }
   | { kind: "permanent_failure"; errorCode: DeliveryErrorCode }
   | { kind: "unknown"; errorCode?: DeliveryErrorCode }
@@ -482,12 +512,41 @@ export function isValidDeliveryState(state: DeliveryState): boolean {
   const inAppOnlyStatuses: DeliveryStatus[] = [
     "pending",
     "processing",
+    "retry_wait",
+    "failed_permanent",
     "delivered",
     "expired",
     "suppressed",
     "cancelled",
   ];
   if (state.channel === "in_app") {
+    if (
+      state.status === "failed_permanent" &&
+      (state.eligibility !== "eligible" ||
+        state.providerOutcome !== "none" ||
+        state.errorCode !== "attempts_exhausted")
+    ) {
+      return false;
+    }
+    if (
+      (state.status === "expired" || state.status === "suppressed" || state.status === "cancelled") &&
+      state.eligibility !== state.status
+    ) {
+      return false;
+    }
+    if (
+      state.eligibility !== "eligible" &&
+      state.status !== state.eligibility &&
+      state.status !== "delivered"
+    ) {
+      return false;
+    }
+    if (
+      state.eligibility === "eligible" &&
+      (state.status === "expired" || state.status === "suppressed" || state.status === "cancelled")
+    ) {
+      return false;
+    }
     return (
       inAppOnlyStatuses.includes(state.status) &&
       state.providerOutcome === "none" &&
@@ -514,11 +573,18 @@ export function isValidDeliveryState(state: DeliveryState): boolean {
     accepted: "accepted",
     delivered: "delivered",
     retry_wait: "retryable_failure",
-    failed_permanent: "permanent_failure",
     unknown: "unknown",
   };
   const requiredOutcome = requiredOutcomeByStatus[state.status];
   if (requiredOutcome && state.providerOutcome !== requiredOutcome) return false;
+  if (
+    state.status === "failed_permanent" &&
+    state.providerOutcome !== "permanent_failure" &&
+    (state.errorCode !== "attempts_exhausted" ||
+      (state.providerOutcome !== "none" && state.providerOutcome !== "retryable_failure"))
+  ) {
+    return false;
+  }
   if (
     (state.status === "pending" || state.status === "processing") &&
     state.providerOutcome !== "none" &&
@@ -747,8 +813,8 @@ function transitionProcessingFact(current: DeliveryState, fact: DeliveryFact): D
     return {
       state: {
         ...current,
-        status: fact.definitelyNotAccepted ? "retry_wait" : "unknown",
-        providerOutcome: fact.definitelyNotAccepted ? "retryable_failure" : "unknown",
+        status: "retry_wait",
+        providerOutcome: "retryable_failure",
         errorCode: fact.errorCode,
       },
       anomaly: null,
@@ -777,6 +843,499 @@ function transitionProcessingFact(current: DeliveryState, fact: DeliveryFact): D
     };
   }
   return unchanged(current);
+}
+
+export function isValidNotificationOperationalLimits(
+  value: unknown,
+): value is NotificationOperationalLimits {
+  if (!value || typeof value !== "object") return false;
+  const expectedKeys = [
+    "version",
+    "maxBatchSize",
+    "maxConcurrent",
+    "maxAttempts",
+    "leaseMs",
+    "receiptDeadlineMs",
+    "baseBackoffMs",
+    "maxBackoffMs",
+    "jitterRatio",
+  ];
+  const actualKeys = Object.keys(value);
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key) => !expectedKeys.includes(key))
+  ) {
+    return false;
+  }
+  const limits = value as Partial<NotificationOperationalLimits>;
+  if (
+    limits.version !== "g4-limits-v1" ||
+    typeof limits.maxBatchSize !== "number" ||
+    typeof limits.maxConcurrent !== "number" ||
+    typeof limits.maxAttempts !== "number" ||
+    typeof limits.leaseMs !== "number" ||
+    typeof limits.receiptDeadlineMs !== "number" ||
+    typeof limits.baseBackoffMs !== "number" ||
+    typeof limits.maxBackoffMs !== "number" ||
+    typeof limits.jitterRatio !== "number"
+  ) {
+    return false;
+  }
+  const positiveSafeIntegers = [
+    limits.maxBatchSize,
+    limits.maxConcurrent,
+    limits.maxAttempts,
+    limits.leaseMs,
+    limits.receiptDeadlineMs,
+    limits.baseBackoffMs,
+    limits.maxBackoffMs,
+  ];
+  return (
+    positiveSafeIntegers.every((part) => Number.isSafeInteger(part) && part > 0) &&
+    limits.maxConcurrent <= limits.maxBatchSize &&
+    limits.maxBackoffMs >= limits.baseBackoffMs &&
+    Number.isFinite(limits.jitterRatio) &&
+    limits.jitterRatio >= 0 &&
+    limits.jitterRatio <= 1
+  );
+}
+
+const isNonNegativeSafeInteger = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && typeof value === "number" && value >= 0;
+
+/**
+ * Convex `v.number()` also accepts NaN and infinities. Check every delivery
+ * timestamp and counter with this contract before inserting or patching a row.
+ */
+export function isValidNotificationDeliveryRecord(
+  value: unknown,
+): value is NotificationDeliveryRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<NotificationDeliveryRecord>;
+  const requiredTimestamps = [record.notBefore, record.createdAt, record.updatedAt];
+  const optionalTimestamps = [
+    record.expiresAt,
+    record.nextAttemptAt,
+    record.leaseUntil,
+    record.dispatchStartedAt,
+    record.nextReceiptCheckAt,
+    record.reviewAt,
+  ];
+  if (
+    !requiredTimestamps.every(isNonNegativeSafeInteger) ||
+    optionalTimestamps.some(
+      (timestamp) => timestamp !== undefined && !isNonNegativeSafeInteger(timestamp),
+    ) ||
+    !isNonNegativeSafeInteger(record.attemptCount) ||
+    !isNonNegativeSafeInteger(record.claimGeneration) ||
+    typeof record.eventId !== "string" ||
+    record.eventId.length === 0 ||
+    typeof record.recipientUserId !== "string" ||
+    record.recipientUserId.length === 0 ||
+    typeof record.stableDestinationId !== "string" ||
+    record.stableDestinationId.length === 0 ||
+    typeof record.logicalKey !== "string" ||
+    record.logicalKey.length === 0 ||
+    !record.renderIdentity ||
+    typeof record.renderIdentity !== "object" ||
+    !isValidFrozenRenderIdentity(record.renderIdentity)
+  ) {
+    return false;
+  }
+  return isValidDeliveryState({
+    channel: record.channel as NotificationDeliveryChannel,
+    status: record.state as DeliveryStatus,
+    eligibility: record.eligibility as DeliveryEligibility,
+    providerOutcome: record.providerOutcome as ProviderOutcome,
+    providerMessageId: record.providerMessageId,
+    errorCode: record.errorCode,
+  });
+}
+
+/** Checked boundary for writes to `notificationDeliveries`. */
+export function assertValidNotificationDeliveryRecord(
+  record: NotificationDeliveryRecord,
+): NotificationDeliveryRecord {
+  if (!isValidNotificationDeliveryRecord(record)) {
+    throw new Error("Notification delivery record has invalid fields or numeric bounds");
+  }
+  return record;
+}
+
+/** Checked numeric boundary before inserting a delivery-attempt row. */
+export function assertValidNotificationDeliveryAttemptNumbers(
+  attempt: NotificationDeliveryAttemptRecord,
+): void {
+  if (
+    !Number.isSafeInteger(attempt.attemptOrdinal) ||
+    attempt.attemptOrdinal <= 0 ||
+    !Number.isSafeInteger(attempt.claimGeneration) ||
+    attempt.claimGeneration <= 0 ||
+    !isNonNegativeSafeInteger(attempt.startedAt) ||
+    (attempt.completedAt !== undefined &&
+      (!isNonNegativeSafeInteger(attempt.completedAt) ||
+        attempt.completedAt < attempt.startedAt))
+  ) {
+    throw new Error("Notification delivery attempt has invalid numeric bounds");
+  }
+}
+
+export type RetryDeadline =
+  | { kind: "retry"; dueAt: number }
+  | { kind: "expired" }
+  | { kind: "exhausted" }
+  | { kind: "invalid" };
+
+export function calculateRetryDeadline(args: {
+  now: number;
+  attemptCount: number;
+  jitterFactor: number;
+  retryAfterMs?: number;
+  expiresAt?: number;
+  limits: NotificationOperationalLimits;
+}): RetryDeadline {
+  const { now, attemptCount, jitterFactor, retryAfterMs, expiresAt, limits } = args;
+  if (
+    !isValidNotificationOperationalLimits(limits) ||
+    !Number.isSafeInteger(now) ||
+    now < 0 ||
+    !Number.isSafeInteger(attemptCount) ||
+    attemptCount < 1 ||
+    !Number.isFinite(jitterFactor) ||
+    jitterFactor < 0 ||
+    jitterFactor > 1 ||
+    (retryAfterMs !== undefined &&
+      (!Number.isSafeInteger(retryAfterMs) || retryAfterMs < 0)) ||
+    (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt) || expiresAt < 0))
+  ) {
+    return { kind: "invalid" };
+  }
+  if (expiresAt !== undefined && expiresAt <= now) return { kind: "expired" };
+  if (attemptCount >= limits.maxAttempts) return { kind: "exhausted" };
+
+  const exponential = Math.min(
+    limits.maxBackoffMs,
+    limits.baseBackoffMs * 2 ** Math.min(attemptCount - 1, 52),
+  );
+  const jitterMultiplier = 1 + (2 * jitterFactor - 1) * limits.jitterRatio;
+  const jittered = Math.min(limits.maxBackoffMs, Math.floor(exponential * jitterMultiplier));
+  const delay = Math.max(jittered, retryAfterMs ?? 0);
+  const dueAt = now + delay;
+  if (!Number.isSafeInteger(dueAt)) return { kind: "invalid" };
+  if (expiresAt !== undefined && dueAt >= expiresAt) return { kind: "expired" };
+  return { kind: "retry", dueAt };
+}
+
+export function normalizeNotificationAdapterResult(
+  result: NotificationAdapterResult,
+): NotificationAdapterResult {
+  if (
+    result.kind === "retryable_failure" &&
+    result.retryAfterMs !== undefined &&
+    (!Number.isSafeInteger(result.retryAfterMs) || result.retryAfterMs < 0)
+  ) {
+    return { kind: "unknown", errorCode: result.errorCode };
+  }
+  if (result.kind === "accepted" && result.providerMessageId === "") {
+    return { kind: "unknown" };
+  }
+  return result;
+}
+
+export type FencedDeliveryTransition = DeliveryTransition & { applied: boolean };
+
+export function transitionDeliveryStateFenced(
+  current: DeliveryState,
+  args: {
+    expectedGeneration: number;
+    currentGeneration: number;
+    fact: DeliveryFact;
+  },
+): FencedDeliveryTransition {
+  if (
+    !Number.isSafeInteger(args.expectedGeneration) ||
+    args.expectedGeneration < 0 ||
+    !Number.isSafeInteger(args.currentGeneration) ||
+    args.currentGeneration < 0 ||
+    args.expectedGeneration !== args.currentGeneration
+  ) {
+    return { applied: false, state: current, anomaly: null };
+  }
+  const transition = transitionDeliveryState(current, args.fact);
+  return {
+    ...transition,
+    applied: transition.state !== current || transition.anomaly !== null,
+  };
+}
+
+export type ClaimInAppResult =
+  | { kind: "claimed"; record: NotificationDeliveryRecord }
+  | { kind: "stale_generation" }
+  | { kind: "external_channel_denied" }
+  | { kind: "invalid_limits" }
+  | { kind: "invalid_time" }
+  | { kind: "not_claimable" }
+  | { kind: "not_due" }
+  | { kind: "expired"; record: NotificationDeliveryRecord }
+  | { kind: "attempts_exhausted"; record: NotificationDeliveryRecord };
+
+export function claimInAppDelivery(
+  record: NotificationDeliveryRecord,
+  args: {
+    expectedGeneration: number;
+    now: number;
+    limits: NotificationOperationalLimits;
+  },
+): ClaimInAppResult {
+  if (record.channel !== "in_app") return { kind: "external_channel_denied" };
+  if (!isValidNotificationOperationalLimits(args.limits)) return { kind: "invalid_limits" };
+  if (
+    !Number.isSafeInteger(args.now) ||
+    args.now < 0 ||
+    !Number.isSafeInteger(args.expectedGeneration) ||
+    args.expectedGeneration < 0 ||
+    !Number.isSafeInteger(record.claimGeneration) ||
+    record.claimGeneration < 0 ||
+    !Number.isSafeInteger(record.attemptCount) ||
+    record.attemptCount < 0 ||
+    !Number.isSafeInteger(record.notBefore) ||
+    record.notBefore < 0 ||
+    (record.expiresAt !== undefined &&
+      (!Number.isSafeInteger(record.expiresAt) || record.expiresAt < 0)) ||
+    (record.nextAttemptAt !== undefined &&
+      (!Number.isSafeInteger(record.nextAttemptAt) || record.nextAttemptAt < 0))
+  ) {
+    return { kind: "invalid_time" };
+  }
+  if (record.claimGeneration !== args.expectedGeneration) return { kind: "stale_generation" };
+  if (
+    record.eligibility !== "eligible" ||
+    (record.state !== "pending" && record.state !== "retry_wait")
+  ) {
+    return { kind: "not_claimable" };
+  }
+  if (record.expiresAt !== undefined && record.expiresAt <= args.now) {
+    return {
+      kind: "expired",
+      record: {
+        ...record,
+        state: "expired",
+        eligibility: "expired",
+        updatedAt: args.now,
+        leaseUntil: undefined,
+      },
+    };
+  }
+  const dueAt = Math.max(record.notBefore, record.nextAttemptAt ?? record.notBefore);
+  if (!Number.isSafeInteger(dueAt) || args.now < dueAt) return { kind: "not_due" };
+  if (record.attemptCount >= args.limits.maxAttempts) {
+    return {
+      kind: "attempts_exhausted",
+      record: {
+        ...record,
+        state: "failed_permanent",
+        errorCode: "attempts_exhausted",
+        nextAttemptAt: undefined,
+        leaseUntil: undefined,
+        updatedAt: args.now,
+      },
+    };
+  }
+  if (record.claimGeneration >= Number.MAX_SAFE_INTEGER || args.now + args.limits.leaseMs > Number.MAX_SAFE_INTEGER) {
+    return { kind: "invalid_time" };
+  }
+  const { nextAttemptAt: _nextAttemptAt, ...claimable } = record;
+  return {
+    kind: "claimed",
+    record: {
+      ...claimable,
+      state: "processing",
+      providerOutcome: record.providerOutcome,
+      attemptCount: record.attemptCount + 1,
+      claimGeneration: record.claimGeneration + 1,
+      leaseUntil: args.now + args.limits.leaseMs,
+      dispatchStartedAt: undefined,
+      updatedAt: args.now,
+    },
+  };
+}
+
+export type DispatchMarkerResult =
+  | { kind: "marked"; record: NotificationDeliveryRecord }
+  | { kind: "stale_generation" }
+  | { kind: "not_dispatchable" }
+  | { kind: "already_marked" }
+  | { kind: "invalid_time" };
+
+/**
+ * Future-adapter contract only: persist this marker before any external side effect.
+ * Gate 4 currently has no external adapter or caller for this pure transition.
+ */
+export function markDeliveryDispatchStarted(
+  record: NotificationDeliveryRecord,
+  args: { expectedGeneration: number; now: number },
+): DispatchMarkerResult {
+  if (
+    !Number.isSafeInteger(args.expectedGeneration) ||
+    args.expectedGeneration < 0 ||
+    !Number.isSafeInteger(args.now) ||
+    args.now < 0 ||
+    !Number.isSafeInteger(record.claimGeneration) ||
+    record.claimGeneration < 0 ||
+    (record.dispatchStartedAt !== undefined &&
+      (!Number.isSafeInteger(record.dispatchStartedAt) ||
+        record.dispatchStartedAt < 0 ||
+        record.dispatchStartedAt > args.now)) ||
+    (record.expiresAt !== undefined &&
+      (!Number.isSafeInteger(record.expiresAt) || record.expiresAt < 0))
+  ) {
+    return { kind: "invalid_time" };
+  }
+  if (record.claimGeneration !== args.expectedGeneration) return { kind: "stale_generation" };
+  if (record.dispatchStartedAt !== undefined) return { kind: "already_marked" };
+  if (
+    record.channel === "in_app" ||
+    record.state !== "processing" ||
+    record.eligibility !== "eligible" ||
+    record.leaseUntil === undefined ||
+    !Number.isSafeInteger(record.leaseUntil) ||
+    record.leaseUntil <= args.now ||
+    (record.expiresAt !== undefined && record.expiresAt <= args.now)
+  ) {
+    return { kind: "not_dispatchable" };
+  }
+  return {
+    kind: "marked",
+    record: { ...record, dispatchStartedAt: args.now, updatedAt: args.now },
+  };
+}
+
+export type ExpiredClaimRecovery =
+  | { kind: "retry"; record: NotificationDeliveryRecord }
+  | { kind: "unknown"; record: NotificationDeliveryRecord }
+  | { kind: "expired"; record: NotificationDeliveryRecord }
+  | { kind: "exhausted"; record: NotificationDeliveryRecord }
+  | { kind: "stale_generation" }
+  | { kind: "not_expired" }
+  | { kind: "invalid_limits" }
+  | { kind: "invalid_time" };
+
+export function recoverExpiredDeliveryClaim(
+  record: NotificationDeliveryRecord,
+  args: {
+    expectedGeneration: number;
+    now: number;
+    jitterFactor: number;
+    limits: NotificationOperationalLimits;
+  },
+): ExpiredClaimRecovery {
+  if (!isValidNotificationOperationalLimits(args.limits)) return { kind: "invalid_limits" };
+  if (
+    !Number.isSafeInteger(args.expectedGeneration) ||
+    args.expectedGeneration < 0 ||
+    !Number.isSafeInteger(args.now) ||
+    args.now < 0 ||
+    !Number.isFinite(args.jitterFactor) ||
+    args.jitterFactor < 0 ||
+    args.jitterFactor > 1 ||
+    !Number.isSafeInteger(record.claimGeneration) ||
+    record.claimGeneration < 0 ||
+    !Number.isSafeInteger(record.attemptCount) ||
+    record.attemptCount < 0 ||
+    (record.expiresAt !== undefined &&
+      (!Number.isSafeInteger(record.expiresAt) || record.expiresAt < 0)) ||
+    (record.dispatchStartedAt !== undefined &&
+      (!Number.isSafeInteger(record.dispatchStartedAt) || record.dispatchStartedAt < 0))
+  ) {
+    return { kind: "invalid_time" };
+  }
+  if (record.claimGeneration !== args.expectedGeneration) return { kind: "stale_generation" };
+  if (
+    record.state !== "processing" ||
+    record.eligibility !== "eligible" ||
+    record.leaseUntil === undefined ||
+    record.leaseUntil > args.now
+  ) {
+    return { kind: "not_expired" };
+  }
+  if (!Number.isSafeInteger(record.leaseUntil) || record.leaseUntil < 0) {
+    return { kind: "invalid_time" };
+  }
+  if (record.dispatchStartedAt !== undefined) {
+    if (args.now + args.limits.receiptDeadlineMs > Number.MAX_SAFE_INTEGER) {
+      return { kind: "invalid_time" };
+    }
+    const pastValidity = record.expiresAt !== undefined && record.expiresAt <= args.now;
+    return {
+      kind: pastValidity ? "expired" : "unknown",
+      record: {
+        ...record,
+        state: pastValidity ? "expired" : "unknown",
+        eligibility: pastValidity ? "expired" : record.eligibility,
+        providerOutcome: "unknown",
+        nextAttemptAt: undefined,
+        leaseUntil: undefined,
+        reviewAt: args.now + args.limits.receiptDeadlineMs,
+        updatedAt: args.now,
+      },
+    };
+  }
+  if (record.expiresAt !== undefined && record.expiresAt <= args.now) {
+    return {
+      kind: "expired",
+      record: {
+        ...record,
+        state: "expired",
+        eligibility: "expired",
+        leaseUntil: undefined,
+        updatedAt: args.now,
+      },
+    };
+  }
+  const deadline = calculateRetryDeadline({
+    now: args.now,
+    attemptCount: record.attemptCount,
+    jitterFactor: args.jitterFactor,
+    expiresAt: record.expiresAt,
+    limits: args.limits,
+  });
+  if (deadline.kind === "invalid") return { kind: "invalid_time" };
+  if (deadline.kind === "expired") {
+    return {
+      kind: "expired",
+      record: {
+        ...record,
+        state: "expired",
+        eligibility: "expired",
+        leaseUntil: undefined,
+        updatedAt: args.now,
+      },
+    };
+  }
+  if (deadline.kind === "exhausted") {
+    return {
+      kind: "exhausted",
+      record: {
+        ...record,
+        state: "failed_permanent",
+        errorCode: "attempts_exhausted",
+        nextAttemptAt: undefined,
+        leaseUntil: undefined,
+        updatedAt: args.now,
+      },
+    };
+  }
+  return {
+    kind: "retry",
+    record: {
+      ...record,
+      state: "retry_wait",
+      nextAttemptAt: deadline.dueAt,
+      dispatchStartedAt: undefined,
+      leaseUntil: undefined,
+      updatedAt: args.now,
+    },
+  };
 }
 
 /** Applies one durable work or provider fact without allowing outcome regression or resurrection. */

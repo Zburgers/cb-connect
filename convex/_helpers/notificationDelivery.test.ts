@@ -2,17 +2,25 @@ import { describe, expect, test } from "vitest";
 
 import { notificationEventDefinitions } from "./notificationTypes";
 import {
+  assertValidNotificationDeliveryAttemptNumbers,
   canRebindDestinationVersion,
   createProviderIdempotencyKey,
   isEventChannelAllowed,
   isValidDeliveryState,
+  isValidNotificationDeliveryRecord,
   isValidFrozenNotificationPayload,
   isValidFrozenRenderIdentity,
   isValidProviderIdempotencyCapability,
   isValidResolvedDestination,
   makeDeliveryIdempotencyKey,
   makeEventIdempotencyKey,
+  calculateRetryDeadline,
+  claimInAppDelivery,
+  isValidNotificationOperationalLimits,
+  markDeliveryDispatchStarted,
+  normalizeNotificationAdapterResult,
   notificationAdapterResultValidator,
+  recoverExpiredDeliveryClaim,
   frozenNotificationPayloadValidator,
   notificationDispatchAuthorizationValidator,
   notificationDeliveryAttemptRecordValidator,
@@ -21,7 +29,10 @@ import {
   renderFrozenArgsValidator,
   sameFrozenRenderIdentity,
   transitionDeliveryState,
+  transitionDeliveryStateFenced,
   type DeliveryState,
+  type NotificationDeliveryRecord,
+  type NotificationOperationalLimits,
 } from "./notificationDelivery";
 
 const componentSamples: Record<string, string> = {
@@ -52,6 +63,45 @@ const processingExternalDelivery = (): DeliveryState => ({
   eligibility: "eligible",
   providerOutcome: "none",
 });
+
+const testLimits: NotificationOperationalLimits = {
+  version: "g4-limits-v1",
+  maxBatchSize: 10,
+  maxConcurrent: 2,
+  maxAttempts: 4,
+  leaseMs: 500,
+  receiptDeadlineMs: 2_000,
+  baseBackoffMs: 50,
+  maxBackoffMs: 1_000,
+  jitterRatio: 0.25,
+};
+
+function inAppDeliveryRecord(
+  overrides: Partial<NotificationDeliveryRecord> = {},
+): NotificationDeliveryRecord {
+  return {
+    eventId: "notificationEvents:1",
+    recipientUserId: "users:1",
+    channel: "in_app",
+    stableDestinationId: "users:1",
+    logicalKey: "delivery:v1:test",
+    notBefore: 0,
+    state: "pending",
+    eligibility: "eligible",
+    providerOutcome: "none",
+    attemptCount: 0,
+    claimGeneration: 0,
+    renderIdentity: {
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-v1",
+      payloadHash: "static-payload-v1",
+    },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
 
 describe("G4-DELIVERY-V1 keys", () => {
   test("event keys use exactly the catalog components in catalog order", () => {
@@ -226,17 +276,8 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
       transitionDeliveryState(processingExternalDelivery(), {
         kind: "retryable_failure",
         errorCode: "rate_limited",
-        definitelyNotAccepted: true,
       }).state.status,
     ).toBe("retry_wait");
-
-    expect(
-      transitionDeliveryState(processingExternalDelivery(), {
-        kind: "retryable_failure",
-        errorCode: "transport_unavailable",
-        definitelyNotAccepted: false,
-      }).state.status,
-    ).toBe("unknown");
   });
 
   test("acceptance, delivery, and permanent failure remain distinct outcomes", () => {
@@ -396,6 +437,308 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
         providerMessageId: "provider-id",
       }),
     ).toBe(true);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "cancelled",
+        eligibility: "eligible",
+        providerOutcome: "none",
+      }),
+    ).toBe(false);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "expired",
+        eligibility: "eligible",
+        providerOutcome: "none",
+      }),
+    ).toBe(false);
+  });
+
+  test("versioned operational limits reject non-finite and inconsistent values", () => {
+    expect(isValidNotificationOperationalLimits(testLimits)).toBe(true);
+    expect(
+      isValidNotificationOperationalLimits({ ...testLimits, maxConcurrent: 11 }),
+    ).toBe(false);
+    expect(
+      isValidNotificationOperationalLimits({ ...testLimits, leaseMs: Number.POSITIVE_INFINITY }),
+    ).toBe(false);
+    expect(
+      isValidNotificationOperationalLimits({ ...testLimits, maxBackoffMs: Number.NaN }),
+    ).toBe(false);
+    expect(
+      isValidNotificationOperationalLimits({ ...testLimits, version: "latest" }),
+    ).toBe(false);
+    expect(
+      isValidNotificationOperationalLimits({ ...testLimits, unexpected: 1 }),
+    ).toBe(false);
+  });
+
+  test("retry deadlines inject clock and jitter and honor Retry-After as a minimum", () => {
+    expect(
+      calculateRetryDeadline({
+        now: 1_000,
+        attemptCount: 1,
+        jitterFactor: 1,
+        retryAfterMs: 200,
+        expiresAt: 2_000,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "retry", dueAt: 1_200 });
+    expect(
+      calculateRetryDeadline({
+        now: 1_000,
+        attemptCount: 1,
+        jitterFactor: 1,
+        expiresAt: 2_000,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "retry", dueAt: 1_062 });
+    expect(
+      calculateRetryDeadline({
+        now: 1_000,
+        attemptCount: 1,
+        jitterFactor: 0,
+        retryAfterMs: 1_000,
+        expiresAt: 1_900,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "expired" });
+    expect(
+      calculateRetryDeadline({
+        now: 1_000,
+        attemptCount: 4,
+        jitterFactor: 0,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "exhausted" });
+    expect(
+      calculateRetryDeadline({
+        now: 1_000,
+        attemptCount: 3,
+        jitterFactor: 0.5,
+        limits: { ...testLimits, maxBackoffMs: 150 },
+      }),
+    ).toEqual({ kind: "retry", dueAt: 1_150 });
+  });
+
+  test("malformed retry hints normalize to unknown instead of an early retry", () => {
+    expect(
+      normalizeNotificationAdapterResult({
+        kind: "retryable_failure",
+        errorCode: "rate_limited",
+        retryAfterMs: Number.NaN,
+      } as never),
+    ).toEqual({ kind: "unknown", errorCode: "rate_limited" });
+    expect(
+      normalizeNotificationAdapterResult({
+        kind: "retryable_failure",
+        errorCode: "rate_limited",
+        retryAfterMs: -1,
+      } as never),
+    ).toEqual({ kind: "unknown", errorCode: "rate_limited" });
+  });
+
+  test("in-app claims are generation fenced and external claims are unavailable", () => {
+    const firstClaimResult = claimInAppDelivery(inAppDeliveryRecord(), {
+      expectedGeneration: 0,
+      now: 100,
+      limits: testLimits,
+    });
+    expect(firstClaimResult.kind).toBe("claimed");
+    if (firstClaimResult.kind !== "claimed") throw new Error("Expected an in-app claim");
+    const firstClaim = firstClaimResult.record;
+    expect(firstClaim).toMatchObject({
+      state: "processing",
+      claimGeneration: 1,
+      attemptCount: 1,
+      leaseUntil: 600,
+    });
+    expect(
+      claimInAppDelivery(firstClaim, {
+        expectedGeneration: 0,
+        now: 101,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "stale_generation" });
+    expect(
+      claimInAppDelivery(
+        inAppDeliveryRecord({ state: "unknown", providerOutcome: "unknown" }),
+        { expectedGeneration: 0, now: 100, limits: testLimits },
+      ),
+    ).toEqual({ kind: "not_claimable" });
+    expect(
+      claimInAppDelivery(
+        inAppDeliveryRecord({ channel: "discord", stableDestinationId: "webhook:1" }),
+        { expectedGeneration: 0, now: 100, limits: testLimits },
+      ),
+    ).toEqual({ kind: "external_channel_denied" });
+  });
+
+  test("an in-app claim at its attempt limit returns terminal state instead of stranding due work", () => {
+    const exhausted = claimInAppDelivery(
+      inAppDeliveryRecord({
+        state: "retry_wait",
+        attemptCount: testLimits.maxAttempts,
+        nextAttemptAt: 100,
+      }),
+      { expectedGeneration: 0, now: 100, limits: testLimits },
+    );
+
+    expect(exhausted).toMatchObject({
+      kind: "attempts_exhausted",
+      record: {
+        state: "failed_permanent",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        errorCode: "attempts_exhausted",
+        updatedAt: 100,
+      },
+    });
+    if (exhausted.kind !== "attempts_exhausted") {
+      throw new Error("Expected an exhausted claim");
+    }
+    expect(exhausted.record.leaseUntil).toBeUndefined();
+    expect(
+      isValidDeliveryState({
+        channel: exhausted.record.channel,
+        status: exhausted.record.state,
+        eligibility: exhausted.record.eligibility,
+        providerOutcome: exhausted.record.providerOutcome,
+        errorCode: exhausted.record.errorCode,
+      }),
+    ).toBe(true);
+  });
+
+  test("expired undispatched claims retry safely while marked dispatches become unknown", () => {
+    const undispatched = inAppDeliveryRecord({
+      channel: "push",
+      state: "processing",
+      attemptCount: 1,
+      claimGeneration: 2,
+      leaseUntil: 500,
+    });
+    expect(
+      recoverExpiredDeliveryClaim(undispatched, {
+        expectedGeneration: 2,
+        now: 600,
+        jitterFactor: 0.5,
+        limits: testLimits,
+      }),
+    ).toMatchObject({
+      kind: "retry",
+      record: { state: "retry_wait", providerOutcome: "none", nextAttemptAt: 650 },
+    });
+    expect(
+      recoverExpiredDeliveryClaim(
+        { ...undispatched, providerOutcome: "retryable_failure" },
+        { expectedGeneration: 2, now: 600, jitterFactor: 0.5, limits: testLimits },
+      ),
+    ).toMatchObject({
+      kind: "retry",
+      record: { state: "retry_wait", providerOutcome: "retryable_failure", nextAttemptAt: 650 },
+    });
+
+    const dispatchMarker = markDeliveryDispatchStarted(
+      { ...undispatched, leaseUntil: 700 },
+      { expectedGeneration: 2, now: 450 },
+    );
+    expect(dispatchMarker.kind).toBe("marked");
+    if (dispatchMarker.kind !== "marked") throw new Error("Expected a dispatch marker");
+    expect(
+      recoverExpiredDeliveryClaim(
+        dispatchMarker.record,
+        { expectedGeneration: 2, now: 800, jitterFactor: 0, limits: testLimits },
+      ),
+    ).toMatchObject({
+      kind: "unknown",
+      record: { state: "unknown", providerOutcome: "unknown" },
+    });
+    expect(
+      recoverExpiredDeliveryClaim(
+        { ...dispatchMarker.record, expiresAt: 750 },
+        { expectedGeneration: 2, now: 800, jitterFactor: 0, limits: testLimits },
+      ),
+    ).toMatchObject({
+      kind: "expired",
+      record: { state: "expired", eligibility: "expired", providerOutcome: "unknown" },
+    });
+    expect(
+      recoverExpiredDeliveryClaim(undispatched, {
+        expectedGeneration: 1,
+        now: 600,
+        jitterFactor: 0,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "stale_generation" });
+  });
+
+  test("an undispatched claim at its attempt limit becomes terminal and preserves provider facts", () => {
+    const exhaustedClaim = {
+      ...inAppDeliveryRecord({
+        channel: "push",
+        state: "processing",
+        attemptCount: testLimits.maxAttempts,
+        claimGeneration: 2,
+        leaseUntil: 500,
+        providerOutcome: "retryable_failure" as const,
+      }),
+    };
+
+    const recovered = recoverExpiredDeliveryClaim(exhaustedClaim, {
+      expectedGeneration: 2,
+      now: 600,
+      jitterFactor: 0,
+      limits: testLimits,
+    });
+
+    expect(recovered).toMatchObject({
+      kind: "exhausted",
+      record: {
+        state: "failed_permanent",
+        eligibility: "eligible",
+        providerOutcome: "retryable_failure",
+        errorCode: "attempts_exhausted",
+        updatedAt: 600,
+      },
+    });
+    if (recovered.kind !== "exhausted") throw new Error("Expected an exhausted claim");
+    expect(recovered.record.leaseUntil).toBeUndefined();
+    expect(
+      recoverExpiredDeliveryClaim(recovered.record, {
+        expectedGeneration: recovered.record.claimGeneration,
+        now: 700,
+        jitterFactor: 0,
+        limits: testLimits,
+      }),
+    ).toEqual({ kind: "not_expired" });
+    expect(
+      isValidDeliveryState({
+        channel: recovered.record.channel,
+        status: recovered.record.state,
+        eligibility: recovered.record.eligibility,
+        providerOutcome: recovered.record.providerOutcome,
+        errorCode: recovered.record.errorCode,
+      }),
+    ).toBe(true);
+  });
+
+  test("a stale worker fact cannot overwrite a newer generation", () => {
+    const current = processingExternalDelivery();
+    expect(
+      transitionDeliveryStateFenced(current, {
+        expectedGeneration: 3,
+        currentGeneration: 4,
+        fact: { kind: "accepted", providerMessageId: "late-provider-id" },
+      }),
+    ).toEqual({ applied: false, state: current, anomaly: null });
+    expect(
+      transitionDeliveryStateFenced(current, {
+        expectedGeneration: 4,
+        currentGeneration: 4,
+        fact: { kind: "unknown", errorCode: "timeout" },
+      }).state.status,
+    ).toBe("unknown");
   });
 
   test("destination and render identities reject empty identity parts", () => {
@@ -513,5 +856,82 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
     expect(notificationDeliveryRecordValidator.fields).not.toHaveProperty("payload");
     expect(notificationDeliveryAttemptRecordValidator.fields).not.toHaveProperty("response");
     expect(notificationInboxItemRecordValidator.fields).not.toHaveProperty("message");
+  });
+
+  test("checked delivery writes reject non-finite timestamps and unsafe counters", () => {
+    const timestampFields = [
+      "notBefore",
+      "expiresAt",
+      "nextAttemptAt",
+      "leaseUntil",
+      "dispatchStartedAt",
+      "nextReceiptCheckAt",
+      "reviewAt",
+      "createdAt",
+      "updatedAt",
+    ] as const;
+    for (const field of timestampFields) {
+      for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+        expect(
+          isValidNotificationDeliveryRecord({
+            ...inAppDeliveryRecord(),
+            [field]: invalid,
+          } as never),
+        ).toBe(false);
+      }
+    }
+
+    for (const field of ["attemptCount", "claimGeneration"] as const) {
+      for (const invalid of [
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        -1,
+        1.5,
+        Number.MAX_SAFE_INTEGER + 1,
+      ]) {
+        expect(
+          isValidNotificationDeliveryRecord({
+            ...inAppDeliveryRecord(),
+            [field]: invalid,
+          } as never),
+        ).toBe(false);
+      }
+    }
+    expect(isValidNotificationDeliveryRecord(inAppDeliveryRecord())).toBe(true);
+  });
+
+  test("checks attempt numeric bounds before persistence", () => {
+    const validAttempt = {
+      deliveryId: "notificationDeliveries:1",
+      attemptOrdinal: 1,
+      claimGeneration: 1,
+      startedAt: 10,
+      completedAt: 12,
+      result: { kind: "in_app_persisted" as const },
+    };
+    expect(() => assertValidNotificationDeliveryAttemptNumbers(validAttempt)).not.toThrow();
+
+    for (const field of ["attemptOrdinal", "claimGeneration", "startedAt", "completedAt"]) {
+      for (const invalid of [
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        -1,
+        1.5,
+        Number.MAX_SAFE_INTEGER + 1,
+      ]) {
+        expect(() =>
+          assertValidNotificationDeliveryAttemptNumbers({ ...validAttempt, [field]: invalid }),
+        ).toThrow();
+      }
+    }
+    expect(() =>
+      assertValidNotificationDeliveryAttemptNumbers({ ...validAttempt, attemptOrdinal: 0 }),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationDeliveryAttemptNumbers({ ...validAttempt, claimGeneration: 0 }),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationDeliveryAttemptNumbers({ ...validAttempt, completedAt: 9 }),
+    ).toThrow();
   });
 });
