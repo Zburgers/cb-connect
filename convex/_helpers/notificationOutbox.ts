@@ -1,5 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { toCalendarDateInTimeZone } from "./calendarDates";
+import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
 import { readCurrentNotificationCycleState } from "./notificationCycleState";
 import { notificationEventDefinitions } from "./notificationTypes";
@@ -90,23 +92,53 @@ function eventEnvelope(
   };
 }
 
-export function lateStatusSourceReference(primaryId: Id<"users">): string {
-  return `late:${primaryId}`;
-}
-
-function lateStatusEventEnvelope(
+export async function lateStatusSourceReference(
   primaryId: Id<"users">,
-  sourceAuthorityVersion: string,
+  sourceRevision: number,
   localDay: string,
   reminderWindowVersion: number,
-): LateStatusEventEnvelope {
+): Promise<string> {
+  if (
+    !Number.isSafeInteger(sourceRevision) ||
+    sourceRevision < 0 ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(localDay) ||
+    !Number.isSafeInteger(reminderWindowVersion) ||
+    reminderWindowVersion < 0
+  ) {
+    throw new Error("Late-status source generation is invalid");
+  }
+  const source = new TextEncoder().encode(
+    `cb-connect:late-source-reference:v1:${JSON.stringify([
+      String(primaryId),
+      sourceRevision,
+      localDay,
+      reminderWindowVersion,
+    ])}`,
+  );
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", source));
+  const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `late:v1:${hex}`;
+}
+
+async function lateStatusEventEnvelope(
+  primaryId: Id<"users">,
+  sourceAuthorityVersion: string,
+  sourceRevision: number,
+  localDay: string,
+  reminderWindowVersion: number,
+): Promise<LateStatusEventEnvelope> {
   const eventType = "late_status.v1" as const;
   return {
     eventType,
     eventVersion: 1,
     purpose: "late_status",
     producerKind: "approved_served_late_state",
-    sourceReference: lateStatusSourceReference(primaryId),
+    sourceReference: await lateStatusSourceReference(
+      primaryId,
+      sourceRevision,
+      localDay,
+      reminderWindowVersion,
+    ),
     sourceAuthorityVersion,
     ownerUserId: primaryId,
     recipientUserId: primaryId,
@@ -121,6 +153,85 @@ function lateStatusEventEnvelope(
     }),
     allowedChannel: "in_app",
   };
+}
+
+async function cancelLateStatusGeneration(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  sourceRevision: number,
+  localDay: string,
+  reminderWindowVersion: number,
+  reason: SourceCancellationReason,
+  now: number,
+): Promise<void> {
+  await cancelSource(
+    ctx,
+    await lateStatusSourceReference(
+      primaryId,
+      sourceRevision,
+      localDay,
+      reminderWindowVersion,
+    ),
+    reason,
+    now,
+  );
+}
+
+/**
+ * Cancels only the current and immediately previous Late intent generations.
+ * Their opaque references include the local day and reminder-window revision,
+ * so retained older events do not enlarge these bounded source prefixes.
+ */
+export async function cancelCurrentLateStatusSource(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  reason: SourceCancellationReason,
+  now: number = Date.now(),
+): Promise<void> {
+  assertNow(now);
+  const [user, scheduleState, preference] = await Promise.all([
+    ctx.db.get(primaryId),
+    ctx.db
+      .query("notificationScheduleState")
+      .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+      .unique(),
+    ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_user_and_purpose", (q) =>
+        q.eq("userId", primaryId).eq("purpose", "late_status"),
+      )
+      .unique(),
+  ]);
+  if (!user || user.role !== "primary" || !scheduleState) return;
+  if (!Number.isSafeInteger(scheduleState.sourceRevision) || scheduleState.sourceRevision < 0) {
+    throw new Error("Stored notification source revision is invalid");
+  }
+  const reminderWindowVersion = preference?.reminderWindowVersion ?? 0;
+  if (!Number.isSafeInteger(reminderWindowVersion) || reminderWindowVersion < 0) {
+    throw new Error("Late-status reminder window version is invalid");
+  }
+  const localDay = toCalendarDateInTimeZone(
+    new Date(now),
+    user.timeZone ?? "UTC",
+  );
+  const localDaysToCancel = [localDay, addCalendarDays(localDay, -1)];
+  const versionsToCancel =
+    reminderWindowVersion === 0
+      ? [reminderWindowVersion]
+      : [reminderWindowVersion, reminderWindowVersion - 1];
+  for (const day of localDaysToCancel) {
+    for (const version of versionsToCancel) {
+      await cancelLateStatusGeneration(
+        ctx,
+        primaryId,
+        scheduleState.sourceRevision,
+        day,
+        version,
+        reason,
+        now,
+      );
+    }
+  }
 }
 
 function sameEnvelope(
@@ -228,12 +339,7 @@ export async function ensureCurrentLateStatusEvent(
     current.state.status !== "late_or_uncertain" ||
     current.state.reason !== "AFTER_LATEST_BOUND"
   ) {
-    await cancelSource(
-      ctx,
-      lateStatusSourceReference(primaryId),
-      "source_changed",
-      now,
-    );
+    await cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", now);
     return null;
   }
 
@@ -244,12 +350,7 @@ export async function ensureCurrentLateStatusEvent(
     )
     .unique();
   if (!preference?.inAppEnabled) {
-    await cancelSource(
-      ctx,
-      lateStatusSourceReference(primaryId),
-      "preference_off",
-      now,
-    );
+    await cancelCurrentLateStatusSource(ctx, primaryId, "preference_off", now);
     return null;
   }
   if (
@@ -260,9 +361,10 @@ export async function ensureCurrentLateStatusEvent(
   }
   if (process.env[OUTBOX_ENABLED_ENV] !== "true") return null;
 
-  const envelope = lateStatusEventEnvelope(
+  const envelope = await lateStatusEventEnvelope(
     primaryId,
     current.sourceAuthorityVersion,
+    current.sourceRevision,
     current.localDay,
     preference.reminderWindowVersion,
   );
@@ -279,12 +381,31 @@ export async function ensureCurrentLateStatusEvent(
     return existing._id;
   }
 
-  await cancelSource(
-    ctx,
-    lateStatusSourceReference(primaryId),
-    "source_changed",
-    now,
-  );
+  const daysToSupersede = [current.localDay, addCalendarDays(current.localDay, -1)];
+  const versionsToSupersede =
+    preference.reminderWindowVersion === 0
+      ? [preference.reminderWindowVersion]
+      : [preference.reminderWindowVersion, preference.reminderWindowVersion - 1];
+  for (const day of daysToSupersede) {
+    for (const version of versionsToSupersede) {
+      if (
+        day === current.localDay &&
+        version === preference.reminderWindowVersion
+      ) {
+        await cancelSource(ctx, envelope.sourceReference, "source_changed", now);
+      } else {
+        await cancelLateStatusGeneration(
+          ctx,
+          primaryId,
+          current.sourceRevision,
+          day,
+          version,
+          "source_changed",
+          now,
+        );
+      }
+    }
+  }
   return await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt: now,

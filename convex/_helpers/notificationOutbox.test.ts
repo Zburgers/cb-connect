@@ -7,8 +7,10 @@ import {
   makeEventIdempotencyKey,
 } from "./notificationDelivery";
 import {
+  cancelCurrentLateStatusSource,
   cancelSource,
   ensureAssistedPeriodEvent,
+  lateStatusSourceReference,
 } from "./notificationOutbox";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -270,6 +272,16 @@ describe("current Late-state outbox events", () => {
       ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
     );
     expect(first).not.toBeNull();
+    const localDay = addCalendarDays(snapshot.latestDate, 1);
+    const expectedSourceReference = await lateStatusSourceReference(
+      primaryId,
+      7,
+      localDay,
+      3,
+    );
+    expect(
+      await lateStatusSourceReference(primaryId, 7, localDay, 4),
+    ).not.toBe(expectedSourceReference);
 
     await t.run(async (ctx) => {
       const event = await ctx.db.get(first!);
@@ -278,7 +290,7 @@ describe("current Late-state outbox events", () => {
         eventVersion: 1,
         purpose: "late_status",
         producerKind: "approved_served_late_state",
-        sourceReference: `late:${primaryId}`,
+        sourceReference: expectedSourceReference,
         ownerUserId: primaryId,
         recipientUserId: primaryId,
         recipientScope: "primary",
@@ -291,7 +303,7 @@ describe("current Late-state outbox events", () => {
         makeEventIdempotencyKey("late_status.v1", {
           primaryId: String(primaryId),
           sourceAuthorityVersion: event!.sourceAuthorityVersion,
-          localDay: addCalendarDays(snapshot.latestDate, 1),
+          localDay,
           reminderWindowVersion: "3",
         }),
       );
@@ -317,6 +329,48 @@ describe("current Late-state outbox events", () => {
       expect(await ctx.db.get(snapshotId)).toEqual(snapshot);
       expect(await ctx.db.query("predictionSnapshots").take(5)).toHaveLength(2);
       expect(await ctx.db.query("notificationEvents").take(5)).toHaveLength(1);
+    });
+  });
+
+  test("bounds retained same-day Late history by the reminder-window generation", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const retainedWindowVersions = 258;
+    let latestEventId = null as Awaited<
+      ReturnType<typeof ensureCurrentLateStatusEvent>
+    >;
+
+    for (let offset = 0; offset < retainedWindowVersions; offset += 1) {
+      const reminderWindowVersion = 3 + offset;
+      if (offset > 0) {
+        await t.run(async (ctx) => {
+          const preference = await ctx.db
+            .query("notificationPreferences")
+            .withIndex("by_user_and_purpose", (q) =>
+              q.eq("userId", primaryId).eq("purpose", "late_status"),
+            )
+            .unique();
+          if (!preference) throw new Error("Expected the Late preference");
+          await ctx.db.patch(preference._id, { reminderWindowVersion });
+        });
+      }
+      latestEventId = await t.run((ctx) =>
+        ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+      );
+      if (latestEventId === null) {
+        throw new Error(`Expected Late event for window version ${reminderWindowVersion}`);
+      }
+    }
+
+    await t.run(async (ctx) => {
+      const events = await ctx.db.query("notificationEvents").take(retainedWindowVersions + 1);
+      expect(events).toHaveLength(retainedWindowVersions);
+      expect(new Set(events.map((event) => event.sourceReference)).size).toBe(
+        retainedWindowVersions,
+      );
+      expect((await ctx.db.get(latestEventId!))?.idempotencyKey).toContain(
+        `,"${retainedWindowVersions + 2}"]`,
+      );
     });
   });
 
@@ -468,6 +522,12 @@ describe("current Late-state outbox events", () => {
         .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
         .unique();
       if (!state) throw new Error("Expected schedule authority");
+      await cancelCurrentLateStatusSource(
+        ctx,
+        primaryId,
+        "source_changed",
+        lateInstant,
+      );
       await ctx.db.patch(state._id, { sourceRevision: state.sourceRevision + 1 });
     });
     const replacement = await t.run((ctx) =>
