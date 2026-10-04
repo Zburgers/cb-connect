@@ -21,6 +21,8 @@ import {
   notificationPurposeValidator,
   notificationPurposeValues,
 } from "../schema";
+import { initializeNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 
 const MAX_KEY_LENGTH = 1_024;
 const INBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_INBOX_V1";
@@ -177,6 +179,22 @@ function assertPurposeAndLocalTime(
   }
 }
 
+function isPrimaryOnlyPurpose(purpose: string): boolean {
+  return (
+    purpose === "assisted_period_start" ||
+    purpose === "assisted_period_end" ||
+    purpose === "period_window_approaching" ||
+    purpose === "late_status" ||
+    purpose === "pain_check_in"
+  );
+}
+
+function isScheduledPurpose(
+  purpose: string,
+): purpose is "period_window_approaching" | "late_status" {
+  return purpose === "period_window_approaching" || purpose === "late_status";
+}
+
 /**
  * Internal transactional storage primitive for the later producer/projector lanes.
  * It cannot accept a channel, and the table validator independently restricts all
@@ -323,6 +341,9 @@ export const setMyPreference = mutation({
   handler: async (ctx, args) => {
     assertPurposeAndLocalTime(args.purpose, args.localReminderTime);
     const user = await getCurrentUser(ctx);
+    if (isPrimaryOnlyPurpose(args.purpose) && user.role !== "primary") {
+      throw new Error("This notification purpose is available only to the primary user");
+    }
     const existing = await ctx.db
       .query("notificationPreferences")
       .withIndex("by_user_and_purpose", (q) =>
@@ -346,6 +367,20 @@ export const setMyPreference = mutation({
     if (!Number.isSafeInteger(reminderWindowVersion)) {
       throw new Error("Reminder schedule version exhausted its safe integer range");
     }
+    if (!changed && existing) {
+      if (isScheduledPurpose(args.purpose)) {
+        await initializeNotificationSourceAuthority(ctx, user._id);
+        await reconcileUserSchedule(ctx, user._id);
+      }
+      return {
+        purpose: args.purpose,
+        inAppEnabled: existing.inAppEnabled,
+        ...(existing.localReminderTime === undefined
+          ? {}
+          : { localReminderTime: existing.localReminderTime }),
+      };
+    }
+
     const updatedAt = Date.now();
     const baseValues = {
       userId: user._id,
@@ -368,6 +403,11 @@ export const setMyPreference = mutation({
         ...baseValues,
         ...(localReminderTime === undefined ? {} : { localReminderTime }),
       });
+    }
+
+    if (isScheduledPurpose(args.purpose)) {
+      await initializeNotificationSourceAuthority(ctx, user._id, updatedAt);
+      await reconcileUserSchedule(ctx, user._id);
     }
 
     return {

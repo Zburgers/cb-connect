@@ -1,9 +1,13 @@
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
+import { makeFunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import { renderFrozen } from "../_helpers/notificationTemplates";
+import { resolveLocalReminderInstant } from "../internal/notificationScheduler";
 import schema from "../schema";
 import {
   notificationControlValidator,
@@ -15,6 +19,12 @@ import {
 } from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+
+const wakeDueWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:wakeDueWork",
+);
+
+type TestBackend = TestConvex<typeof schema>;
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -28,6 +38,79 @@ function indexDefinitions(table: unknown) {
   return (table as unknown as {
     indexes: Array<{ indexDescriptor: string; fields: string[] }>;
   }).indexes;
+}
+
+function enableScheduleInputs() {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+}
+
+async function seedCurrentPrediction(
+  t: TestBackend,
+  userId: Id<"users">,
+  sourceRevision = 7,
+) {
+  await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.patch(userId, { timeZone: "UTC" });
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-03-01",
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.UTC(2026, 2, 1),
+      updatedAt: Date.UTC(2026, 2, 1),
+    });
+    await ctx.db.insert("cyclePredictionSegments", {
+      userId,
+      startDate: "2026-03-01",
+      status: "active",
+      createdAt: Date.UTC(2026, 2, 1),
+    });
+    await ctx.db.insert("notificationScheduleState", {
+      userId,
+      sourceRevision,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  const snapshotId = await t.mutation(
+    internal.internal.predictionSnapshots.ensureCurrentForUser,
+    { userId },
+  );
+  if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+  const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+  if (!snapshot) throw new Error("Expected a stored V2 snapshot");
+  return snapshot;
+}
+
+async function readPreferenceScheduleState(t: TestBackend, userId: Id<"users">) {
+  return await t.run(async (ctx) => ({
+    preference: await ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_user_and_purpose", (q) =>
+        q.eq("userId", userId).eq("purpose", "period_window_approaching"),
+      )
+      .unique(),
+    source: await ctx.db
+      .query("notificationScheduleState")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique(),
+    snapshots: await ctx.db
+      .query("predictionSnapshots")
+      .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
+      .take(10),
+    work: await ctx.db
+      .query("notificationDueWork")
+      .withIndex("by_owner_and_state_and_due_at", (q) =>
+        q.eq("ownerUserId", userId),
+      )
+      .take(100),
+    scheduled: await ctx.db.system.query("_scheduled_functions").take(50),
+    events: await ctx.db.query("notificationEvents").take(50),
+  }));
 }
 
 describe("notification persistence", () => {
@@ -264,6 +347,221 @@ describe("notification persistence", () => {
         .unique();
       expect(unrelated).toBeNull();
     });
+  });
+
+  test("preference API enables, moves, and disables work without refreshing its source snapshot", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const snapshot = await seedCurrentPrediction(t, primaryId);
+    const before = await readPreferenceScheduleState(t, primaryId);
+
+    expect(before.source?.sourceRevision).toBe(7);
+    expect(before.snapshots.map(({ _id }) => _id)).toEqual([snapshot._id]);
+    expect(before.work).toHaveLength(0);
+    expect(before.scheduled).toHaveLength(0);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const enabled = await readPreferenceScheduleState(t, primaryId);
+    const firstWork = enabled.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(enabled.preference?.reminderWindowVersion).toBe(1);
+    expect(firstWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(snapshot.pointDate, -3),
+        "09:00",
+        "UTC",
+      ),
+    );
+    expect(enabled.scheduled.map(({ scheduledTime }) => scheduledTime)).toContain(
+      firstWork?.dueAt,
+    );
+    expect(enabled.source?._id).toBe(before.source?._id);
+    expect(enabled.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(enabled.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    if (!firstWork) throw new Error("Expected enabled prediction-window work");
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "11:30",
+    });
+    const edited = await readPreferenceScheduleState(t, primaryId);
+    const editedWork = edited.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(edited.preference?.reminderWindowVersion).toBe(2);
+    expect(edited.work.find(({ _id }) => _id === firstWork._id)?.state).toBe("cancelled");
+    expect(editedWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(snapshot.pointDate, -3),
+        "11:30",
+        "UTC",
+      ),
+    );
+    expect(edited.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(edited.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: firstWork._id,
+        generation: firstWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+    if (!editedWork) throw new Error("Expected moved prediction-window work");
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: false,
+      localReminderTime: "11:30",
+    });
+    const disabled = await readPreferenceScheduleState(t, primaryId);
+    expect(disabled.preference?.inAppEnabled).toBe(false);
+    expect(disabled.preference?.reminderWindowVersion).toBe(3);
+    expect(disabled.work.find(({ _id }) => _id === editedWork._id)?.state).toBe(
+      "cancelled",
+    );
+    expect(disabled.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(disabled.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    expect(disabled.events).toEqual([]);
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: editedWork._id,
+        generation: editedWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+  });
+
+  test("identical scheduling preference writes dedupe revisions and wakeups", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await seedCurrentPrediction(t, primaryId);
+    const write = () =>
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+      });
+
+    await write();
+    const first = await readPreferenceScheduleState(t, primaryId);
+    vi.setSystemTime(now + 60_000);
+    await write();
+    const repeated = await readPreferenceScheduleState(t, primaryId);
+
+    expect(repeated.preference?.reminderWindowVersion).toBe(
+      first.preference?.reminderWindowVersion,
+    );
+    expect(repeated.preference?.updatedAt).toBe(first.preference?.updatedAt);
+    expect(repeated.work.map(({ _id, state, dueAt }) => ({ _id, state, dueAt }))).toEqual(
+      first.work.map(({ _id, state, dueAt }) => ({ _id, state, dueAt })),
+    );
+    expect(repeated.scheduled.map(({ _id, scheduledTime }) => ({ _id, scheduledTime }))).toEqual(
+      first.scheduled.map(({ _id, scheduledTime }) => ({ _id, scheduledTime })),
+    );
+  });
+
+  test("invalid-time and wrong-recipient preference writes leave no records or work", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "24:00",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPartner.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPartner.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "partner_message",
+        inAppEnabled: true,
+        userId: primaryId,
+      } as never),
+    ).rejects.toThrow();
+
+    const after = await t.run(async (ctx) => ({
+      preferences: await ctx.db.query("notificationPreferences").take(10),
+      source: await ctx.db.query("notificationScheduleState").take(10),
+      work: await ctx.db.query("notificationDueWork").take(10),
+      scheduled: await ctx.db.system.query("_scheduled_functions").take(10),
+      primary: await ctx.db.get(primaryId),
+      partner: await ctx.db.get(partnerId),
+    }));
+    expect(after.preferences).toEqual([]);
+    expect(after.source).toEqual([]);
+    expect(after.work).toEqual([]);
+    expect(after.scheduled).toEqual([]);
+    expect(after.primary?.externalNotificationConsent).toBeUndefined();
+    expect(after.partner?.externalNotificationConsent).toBeUndefined();
+  });
+
+  test("absent scheduler flag stores consent without source rows, due work, or wakeups", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+
+    const after = await readPreferenceScheduleState(t, primaryId);
+    expect(after.preference).toMatchObject({
+      inAppEnabled: true,
+      reminderWindowVersion: 1,
+      localReminderTime: "09:00",
+    });
+    expect(after.source).toBeNull();
+    expect(after.work).toEqual([]);
+    expect(after.scheduled).toEqual([]);
+  });
+
+  test("does not catch up an enabled reminder after its local validity day", async () => {
+    enableScheduleInputs();
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-04-15T12:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const snapshot = await seedCurrentPrediction(t, primaryId);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+
+    const after = await readPreferenceScheduleState(t, primaryId);
+    expect(snapshot.pointDate < "2026-04-15").toBe(true);
+    expect(after.preference?.inAppEnabled).toBe(true);
+    expect(after.source?.sourceRevision).toBe(7);
+    expect(after.snapshots.map(({ _id }) => _id)).toEqual([snapshot._id]);
+    expect(after.work).toEqual([]);
+    expect(after.scheduled).toEqual([]);
   });
 
   test("rejects external-channel fields on new preference and persistence paths", async () => {
