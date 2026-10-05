@@ -6,7 +6,10 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { addCalendarDays } from "../_helpers/cycleCalculations";
 import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
-import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import {
+  advanceNotificationSourceAuthority,
+  makeSourceAuthorityVersion,
+} from "../_helpers/notificationSourceAuthority";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -632,13 +635,39 @@ describe("notification schedule reconciliation", () => {
     })));
   });
 
-  test("indexed cron recovery takes a bounded due-ordered pending page past terminal history", async () => {
+  test("kind-scoped cron recovery reaches pending work past terminal and other-kind history", async () => {
     const now = Date.parse("2026-10-04T12:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
+    const sourceAuthorityVersion = makeSourceAuthorityVersion({
+      sourceRevision: 7,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v1",
+      calibrationMethodVersion: "calibrate-v1",
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 7,
+        sourceAuthorityVersion,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const purpose of ["period_window_approaching", "late_status"] as const) {
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose,
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 3,
+          updatedAt: now,
+        });
+      }
+    });
     const workIds = await t.run(async (ctx) => {
       for (let index = 0; index < 80; index += 1) {
         await ctx.db.insert("notificationDueWork", {
@@ -671,6 +700,8 @@ describe("notification schedule reconciliation", () => {
             state: "pending",
             dueAt: now - 55 + index,
             generation: 2,
+            sourceAuthorityVersion,
+            reminderWindowVersion: 3,
             createdAt: now,
             updatedAt: now,
           }),
@@ -683,20 +714,139 @@ describe("notification schedule reconciliation", () => {
       reconcileDueWorkRef,
       {},
     );
-    expect(result.scheduled).toBe(50);
+    expect(result.scheduled).toBe(55);
     const scheduled = await t.run(async (ctx) =>
       ctx.db.system.query("_scheduled_functions").take(60),
     );
-    expect(scheduled).toHaveLength(50);
-    expect(
-      scheduled.map(({ args }) => {
+    expect(scheduled).toHaveLength(55);
+    const scheduledWorkIds = scheduled.map(({ args }) => {
         const arg = args[0];
         if (typeof arg !== "object" || arg === null || !("workId" in arg)) {
           throw new Error("Expected a scheduled due-work ID");
         }
         return arg.workId;
+      });
+    expect(scheduledWorkIds.sort()).toEqual([...workIds].sort());
+  });
+
+  test("cron continues after a filtered-empty kind page and avoids other-kind starvation", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    const work = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!work) throw new Error("Expected prediction-window due work");
+    const now = work.dueAt + 60 * 60 * 1_000;
+    vi.setSystemTime(now);
+
+    await t.run(async (ctx) => {
+      const wakeups = await ctx.db.system.query("_scheduled_functions").take(10);
+      for (const wakeup of wakeups) {
+        const arg = wakeup.args[0];
+        if (
+          wakeup.name === "internal/notificationScheduler:wakeDueWork" &&
+          typeof arg === "object" &&
+          arg !== null &&
+          "workId" in arg &&
+          arg.workId === work._id
+        ) {
+          await ctx.scheduler.cancel(wakeup._id);
+        }
+      }
+      for (let index = 0; index < 501; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "delivery",
+          state: "pending",
+          dueAt: work.dueAt - 120_000 + index,
+          generation: 1,
+          createdAt: start,
+          updatedAt: start,
+        });
+      }
+      for (let index = 0; index < 50; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "prediction_window",
+          state: "pending",
+          dueAt: work.dueAt - 60_000 + index,
+          generation: work.generation,
+          createdAt: start,
+          updatedAt: start,
+        });
+      }
+    });
+
+    const staleFirstPage = await t.query(
+      internal.queries.notifications.getDueWorkByKind,
+      { kind: "prediction_window", now, limit: 50, cursor: null },
+    );
+    expect(staleFirstPage.page).toEqual([]);
+    expect(staleFirstPage.isDone).toBe(false);
+    expect(staleFirstPage.continueCursor).not.toBeNull();
+
+    expect(await t.mutation(reconcileDueWorkRef, {})).toEqual({ scheduled: 0 });
+    const continuation = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
+        (scheduled) =>
+          scheduled.name === "internal/notificationScheduler:reconcileDueWork",
+      ),
+    );
+    expect(continuation).toBeDefined();
+    if (!continuation) throw new Error("Expected a due-work continuation");
+    const continuationArgs = continuation?.args[0];
+    expect(continuationArgs).toMatchObject({ kind: "prediction_window" });
+    if (
+      typeof continuationArgs !== "object" ||
+      continuationArgs === null ||
+      !("cursor" in continuationArgs)
+    ) {
+      throw new Error("Expected a due-work continuation cursor");
+    }
+    expect(continuationArgs.cursor).toBe(staleFirstPage.continueCursor);
+
+    await t.run((ctx) => ctx.scheduler.cancel(continuation._id));
+    await t.mutation(reconcileDueWorkRef, {
+      kind: "prediction_window",
+      cursor: staleFirstPage.continueCursor,
+    });
+    const recoveredWake = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
+        (scheduled) => {
+          const arg = scheduled.args[0];
+          return (
+            scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+            typeof arg === "object" &&
+            arg !== null &&
+            "workId" in arg &&
+            arg.workId === work._id
+          );
+        },
+      ),
+    );
+    expect(recoveredWake).toBeDefined();
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: work._id,
+        generation: work.generation,
       }),
-    ).toEqual(workIds.slice(0, 50));
+    ).resolves.toEqual({ status: "ready" });
+    expect((await t.run((ctx) => ctx.db.get(work._id)))?.state).toBe("claimed");
   });
 
   test("valid wakes claim each bounded page so later due work cannot starve", async () => {
