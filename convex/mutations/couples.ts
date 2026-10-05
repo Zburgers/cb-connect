@@ -22,9 +22,10 @@ function linkSourceReference(coupleId: Id<"couples">, linkGeneration: string) {
 
 function connectedSinceSourceReference(
   coupleId: Id<"couples">,
+  linkGeneration: Id<"coupleMembers">,
   settingVersion: number,
 ) {
-  return `couple:${coupleId}:connected-since:${settingVersion}`;
+  return `couple:${coupleId}:connected-since:${linkGeneration}:${settingVersion}`;
 }
 
 async function insertRelationshipEvent(
@@ -118,6 +119,7 @@ async function ensureConnectedSinceEvent(
   ctx: MutationCtx,
   args: {
     coupleId: Id<"couples">;
+    linkGeneration: Id<"coupleMembers">;
     settingVersion: number;
     ownerUserId: Id<"users">;
     recipientUserId: Id<"users">;
@@ -127,7 +129,7 @@ async function ensureConnectedSinceEvent(
   if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
 
   const definition = notificationEventDefinitions["connected_since_updated.v1"];
-  const settingVersion = String(args.settingVersion);
+  const settingVersion = `${args.linkGeneration}:${args.settingVersion}`;
   await insertRelationshipEvent(
     ctx,
     {
@@ -135,7 +137,11 @@ async function ensureConnectedSinceEvent(
       eventVersion: definition.version,
       purpose: definition.purpose,
       producerKind: definition.producer,
-      sourceReference: connectedSinceSourceReference(args.coupleId, args.settingVersion),
+      sourceReference: connectedSinceSourceReference(
+        args.coupleId,
+        args.linkGeneration,
+        args.settingVersion,
+      ),
       sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
       ownerUserId: args.ownerUserId,
       recipientUserId: args.recipientUserId,
@@ -603,12 +609,18 @@ export const revokePartnerAccess = mutation({
       );
     }
     if (couple.connectedSinceUpdatedAt !== undefined) {
-      await cancelSource(
-        ctx,
-        connectedSinceSourceReference(couple._id, couple.connectedSinceUpdatedAt),
-        "authority_revoked",
-        revokedAt,
-      );
+      for (const partnerMembership of activePartners) {
+        await cancelSource(
+          ctx,
+          connectedSinceSourceReference(
+            couple._id,
+            partnerMembership._id,
+            couple.connectedSinceUpdatedAt,
+          ),
+          "authority_revoked",
+          revokedAt,
+        );
+      }
     }
 
     await ctx.db.patch(memberships[0].coupleId, {
@@ -784,6 +796,11 @@ export const updateConnectedSinceDate = mutation({
       throw new Error("Pairing state is ambiguous. Please contact support.");
     }
 
+    const partnerMembershipId =
+      coupleData.membership.role === "partner"
+        ? coupleData.membership._id
+        : otherMemberships[0]._id;
+
     if (coupleData.couple.connectedSinceDate === connectedSinceDate) {
       return { success: true };
     }
@@ -797,7 +814,11 @@ export const updateConnectedSinceDate = mutation({
     if (previousSettingVersion !== undefined) {
       await cancelSource(
         ctx,
-        connectedSinceSourceReference(coupleData.couple._id, previousSettingVersion),
+        connectedSinceSourceReference(
+          coupleData.couple._id,
+          partnerMembershipId,
+          previousSettingVersion,
+        ),
         "source_changed",
         now,
       );
@@ -810,6 +831,7 @@ export const updateConnectedSinceDate = mutation({
     });
     await ensureConnectedSinceEvent(ctx, {
       coupleId: coupleData.couple._id,
+      linkGeneration: partnerMembershipId,
       settingVersion,
       ownerUserId: user._id,
       recipientUserId: otherMemberships[0].userId,
