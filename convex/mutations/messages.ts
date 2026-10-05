@@ -15,7 +15,7 @@ type NotificationEventEnvelope = Omit<
 const MAX_MESSAGE_LENGTH = 500;
 const ALLOWED_REACTIONS = new Set(["💗", "✨", "🫶", "😂", "🥺", "🌙"]);
 
-async function ensurePartnerMessageEvent(
+export async function ensurePartnerMessageEvent(
   ctx: MutationCtx,
   args: {
     messageId: Id<"coupleMessages">;
