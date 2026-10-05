@@ -822,12 +822,26 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
     };
     expect(isValidProjectInAppArgs(base)).toBe(true);
     expect(
+      isValidProjectInAppArgs(base, { requireScheduleFences: true }),
+    ).toBe(false);
+    expect(
       isValidProjectInAppArgs({
         ...base,
         expectedSourceAuthorityVersion:
           'g4-source-v1:[1,"cycle-read-model-v1",null,null,null]',
         expectedReminderWindowVersion: 2,
       }),
+    ).toBe(true);
+    expect(
+      isValidProjectInAppArgs(
+        {
+          ...base,
+          expectedSourceAuthorityVersion:
+            'g4-source-v1:[1,"cycle-read-model-v1",null,null,null]',
+          expectedReminderWindowVersion: 2,
+        },
+        { requireScheduleFences: true },
+      ),
     ).toBe(true);
     expect(
       isValidProjectInAppArgs({

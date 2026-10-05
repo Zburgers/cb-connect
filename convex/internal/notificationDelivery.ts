@@ -7,6 +7,7 @@ import {
   assertValidNotificationDeliveryAttemptNumbers,
   assertValidNotificationDeliveryRecord,
   claimInAppDelivery,
+  isValidProjectInAppArgs,
   isValidNotificationDeliveryRecord,
   makeDeliveryIdempotencyKey,
   projectInAppArgsValidator,
@@ -379,7 +380,12 @@ export const projectInApp = internalMutation({
 
     const event = await ctx.db.get(eventId);
     if (!event) return { status: "denied" as const, ...emptyResult };
-
+    const requiresScheduleFences =
+      event.eventType === "period_window_approaching.v1" ||
+      event.eventType === "late_status.v1";
+    if (!isValidProjectInAppArgs(args, { requireScheduleFences: requiresScheduleFences })) {
+      return { status: "denied" as const, ...emptyResult };
+    }
     const deliveryRows = await ctx.db
       .query("notificationDeliveries")
       .withIndex("by_event_id", (q) => q.eq("eventId", eventId))

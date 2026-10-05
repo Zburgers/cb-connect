@@ -401,7 +401,10 @@ export const projectInAppArgsValidator = v.object({
 });
 
 /** Semantic checks paired with the structurally compatible projector argument validator. */
-export function isValidProjectInAppArgs(value: unknown): value is ProjectInAppArgs {
+export function isValidProjectInAppArgs(
+  value: unknown,
+  options: { requireScheduleFences?: boolean } = {},
+): value is ProjectInAppArgs {
   if (typeof value !== "object" || value === null) return false;
   const args = value as Record<string, unknown>;
   if (
@@ -415,7 +418,9 @@ export function isValidProjectInAppArgs(value: unknown): value is ProjectInAppAr
   }
   const hasSourceFence = args.expectedSourceAuthorityVersion !== undefined;
   const hasPreferenceFence = args.expectedReminderWindowVersion !== undefined;
-  if (!hasSourceFence && !hasPreferenceFence) return true;
+  if (!hasSourceFence && !hasPreferenceFence) {
+    return options.requireScheduleFences !== true;
+  }
   return (
     hasSourceFence &&
     typeof args.expectedSourceAuthorityVersion === "string" &&

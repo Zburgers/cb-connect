@@ -53,7 +53,7 @@ These argument/result shapes are owned here. Implementations belong to their ass
 | Entry point | Frozen input | Owner |
 |---|---|---|
 | `reconcileSource(ctx, sourceRef, authorityVersion)` | `{ sourceRef, authorityVersion }` | CHRONOS scheduler; consumes VEGA source-authority metadata |
-| `projectInApp(ctx, eventId, expectedGeneration)` | `{ eventId, expectedGeneration }` | VEGA projector, after current recipient/source/purpose checks |
+| `projectInApp(ctx, args)` | `{ eventId, expectedGeneration, expectedSourceAuthorityVersion?, expectedReminderWindowVersion? }`; the source and reminder-window fences are paired and required for `period_window_approaching.v1` and `late_status.v1` | VEGA projector; scheduled types remain denied until N8 integrates fresh source and preference checks |
 | `cancelSource(ctx, sourceRef, reason)` | `{ sourceRef, reason }`, where reason is an allowlisted cancellation code | VEGA outbox helpers |
 | `reconcileUserSchedule(ctx, userId)` | `{ userId }` | CHRONOS scheduler; VEGA preference mutation invokes it transactionally after handoff |
 | `renderFrozen(args)` | `{ eventType, templateVersion, locale, variableSchemaVersion }` | MUSE templates; returns identity and fixed payload keys/route |

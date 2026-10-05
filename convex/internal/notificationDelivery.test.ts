@@ -4,13 +4,16 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  makeEventIdempotencyKey,
+  type ProjectInAppArgs,
+} from "../_helpers/notificationDelivery";
 import { renderFrozen } from "../_helpers/notificationTemplates";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
 
-type ProjectArgs = { eventId: Id<"notificationEvents">; expectedGeneration: number };
+type ProjectArgs = ProjectInAppArgs;
 type ProjectResult = {
   status: "projected" | "replayed" | "denied" | "stale" | "disabled" | "expired";
   eventId: Id<"notificationEvents">;
@@ -108,6 +111,27 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
 }
 
 describe("N2d transactional in-app delivery", () => {
+  test("does not mutate a scheduled delivery when its semantic fences are missing", async () => {
+    const { t, ready } = await seedMessageDelivery();
+    await t.run(async (ctx) => {
+      const event = await ctx.db.get(ready.eventId!);
+      if (!event) throw new Error("Expected scheduled source event");
+      await ctx.db.patch(event._id, { eventType: "period_window_approaching.v1" });
+    });
+    const before = await t.run((ctx) => ctx.db.get(ready.deliveryId!));
+
+    const result = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: 0,
+    });
+
+    expect(result.status).toBe("denied");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(ready.deliveryId!)).toEqual(before);
+      expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
+    });
+  });
+
   test("duplicate wakeups and replays persist one attempt and one recipient inbox item", async () => {
     const { t, partnerId, ready, messageId, coupleId } = await seedMessageDelivery();
     await t.run(async (ctx) => {
