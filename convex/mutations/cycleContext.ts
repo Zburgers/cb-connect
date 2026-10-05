@@ -65,6 +65,9 @@ export const createPredictionSegment = mutation({
         q.eq("userId", user._id).eq("status", "active"),
       )
       .unique();
+    if (active?.startDate === args.startDate) {
+      return { segmentId: active._id };
+    }
     if (active) {
       await ctx.db.patch(active._id, {
         status: "superseded",

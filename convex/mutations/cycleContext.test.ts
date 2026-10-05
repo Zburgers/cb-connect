@@ -207,6 +207,104 @@ describe("prediction segment mutation", () => {
     expect(superseded[0].supersededAt).toEqual(expect.any(Number));
   });
 
+  test("repeating the active start date leaves the segment and scheduled work unchanged", async () => {
+    const now = Date.parse("2026-09-24T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: "UTC" });
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        startDate: "2026-09-20",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-09-20T12:00:00.000Z"),
+        updatedAt: Date.parse("2026-09-20T12:00:00.000Z"),
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 7,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const purpose of ["period_window_approaching", "late_status"] as const) {
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose,
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 3,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const first = await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: "2026-09-20" },
+    );
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(snapshotId).not.toBeNull();
+
+    const before = await t.run(async (ctx) => ({
+      segments: await ctx.db
+        .query("cyclePredictionSegments")
+        .withIndex("by_user_and_status", (q) => q.eq("userId", primaryId))
+        .take(10),
+      scheduleState: await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+      work: await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId),
+        )
+        .take(10),
+    }));
+    expect(before.segments).toHaveLength(1);
+    expect(before.segments[0]).toMatchObject({
+      _id: first.segmentId,
+      startDate: "2026-09-20",
+      status: "active",
+    });
+    expect(before.scheduleState?.sourceRevision).toBe(8);
+    expect(before.work).toHaveLength(2);
+    expect(before.work.every(({ state }) => state === "pending")).toBe(true);
+
+    const repeated = await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: "2026-09-20" },
+    );
+    const after = await t.run(async (ctx) => ({
+      segments: await ctx.db
+        .query("cyclePredictionSegments")
+        .withIndex("by_user_and_status", (q) => q.eq("userId", primaryId))
+        .take(10),
+      scheduleState: await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+      work: await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId),
+        )
+        .take(10),
+    }));
+
+    expect(repeated.segmentId).toBe(first.segmentId);
+    expect(after.segments).toEqual(before.segments);
+    expect(after.scheduleState).toEqual(before.scheduleState);
+    expect(after.work).toEqual(before.work);
+  });
+
   test("defers replacement schedule work until a current V2 snapshot is refreshed", async () => {
     const now = Date.parse("2026-09-24T12:00:00.000Z");
     vi.useFakeTimers();
