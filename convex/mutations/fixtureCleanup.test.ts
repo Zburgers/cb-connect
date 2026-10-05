@@ -360,6 +360,43 @@ afterEach(() => {
 });
 
 describe("bounded fixture cleanup", () => {
+  test("rejects a same-subject identity from a different issuer", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    await seedFixture(t);
+    const foreignIssuer = "https://other.clerk.example";
+
+    await expect(
+      t
+        .withIdentity({
+          subject: fixtureArgs.primaryClerkId,
+          issuer: foreignIssuer,
+        })
+        .mutation(api.mutations.fixtureCleanup.cleanupFixture, fixtureArgs),
+    ).rejects.toThrow("fixture_cleanup_unauthenticated");
+    await expect(
+      t
+        .withIdentity({
+          subject: fixtureArgs.primaryClerkId,
+          issuer: foreignIssuer,
+        })
+        .mutation(api.mutations.fixtureCleanup.beginFixtureRun, {
+          ...fixtureArgs,
+          runId: "qa-n2b-foreign-issuer",
+        }),
+    ).rejects.toThrow("fixture_cleanup_unauthenticated");
+
+    const remaining = await t.run(async (ctx) => ({
+      users: await ctx.db.query("users").collect(),
+      run: await ctx.db
+        .query("fixtureRuns")
+        .withIndex("by_run_id", (q) => q.eq("runId", "qa-n2b-foreign-issuer"))
+        .unique(),
+    }));
+    expect(remaining.users).toHaveLength(2);
+    expect(remaining.run).toBeNull();
+  });
+
   test("does not delete an unrelated empty-email partner or its rows", async () => {
     enableFixtureCleanup();
     const t = convexTest(schema, modules);

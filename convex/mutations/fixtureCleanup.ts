@@ -7,6 +7,7 @@ import {
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { fixtureEmail } from "../../lib/fixtureEmail";
+import { getLegacyClerkSubject } from "../_helpers/auth";
 
 const APPROVED_DEV_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 const MAX_RECORDS_PER_SCOPE = 500;
@@ -142,7 +143,7 @@ async function assertAuthenticatedFixturePrimary(
   },
 ): Promise<void> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity || identity.subject !== args.primaryClerkId) {
+  if (getLegacyClerkSubject(identity) !== args.primaryClerkId) {
     throw new Error("fixture_cleanup_unauthenticated");
   }
   await getFixtureRun(ctx, args);
@@ -796,7 +797,7 @@ export const beginFixtureRun = mutation({
     assertFixtureScopeAllowed();
     assertFixtureArgs(args);
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || identity.subject !== args.primaryClerkId) {
+    if (getLegacyClerkSubject(identity) !== args.primaryClerkId) {
       throw new Error("fixture_cleanup_unauthenticated");
     }
 
@@ -860,7 +861,7 @@ export const registerFixtureUser = mutation({
       .unique();
 
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || identity.subject !== args.clerkId) {
+    if (getLegacyClerkSubject(identity) !== args.clerkId) {
       throw new Error(
         user
           ? "fixture_cleanup_authenticated_subject_mismatch_target_present"
