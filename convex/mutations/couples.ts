@@ -28,6 +28,13 @@ function connectedSinceSourceReference(
   return `couple:${coupleId}:connected-since:${linkGeneration}:${settingVersion}`;
 }
 
+function legacyConnectedSinceSourceReference(
+  coupleId: Id<"couples">,
+  settingVersion: number,
+) {
+  return `couple:${coupleId}:connected-since:${settingVersion}`;
+}
+
 async function insertRelationshipEvent(
   ctx: MutationCtx,
   envelope: {
@@ -621,6 +628,15 @@ export const revokePartnerAccess = mutation({
           revokedAt,
         );
       }
+      await cancelSource(
+        ctx,
+        legacyConnectedSinceSourceReference(
+          couple._id,
+          couple.connectedSinceUpdatedAt,
+        ),
+        "authority_revoked",
+        revokedAt,
+      );
     }
 
     await ctx.db.patch(memberships[0].coupleId, {
@@ -817,6 +833,15 @@ export const updateConnectedSinceDate = mutation({
         connectedSinceSourceReference(
           coupleData.couple._id,
           partnerMembershipId,
+          previousSettingVersion,
+        ),
+        "source_changed",
+        now,
+      );
+      await cancelSource(
+        ctx,
+        legacyConnectedSinceSourceReference(
+          coupleData.couple._id,
           previousSettingVersion,
         ),
         "source_changed",
