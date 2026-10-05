@@ -83,7 +83,7 @@ const allowedArgumentKeys = [
   "variableSchemaVersion",
 ] as const;
 
-const supportedLocale = /^[a-z]{2}(?:-[A-Z]{2})?$/;
+const supportedLocales: ReadonlySet<string> = new Set(["en"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -154,7 +154,7 @@ export async function renderFrozen(args: RenderFrozenArgs): Promise<RenderFrozen
   if (!isTemplateVersion(args.templateVersion)) {
     throw new Error("Unsupported notification template version");
   }
-  if (typeof args.locale !== "string" || !supportedLocale.test(args.locale)) {
+  if (typeof args.locale !== "string" || !supportedLocales.has(args.locale)) {
     throw new Error("Unsupported notification locale");
   }
   if (!isVariableSchemaVersion(args.variableSchemaVersion)) {

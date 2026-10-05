@@ -61,19 +61,20 @@ describe("G4 frozen notification templates", () => {
     expect(sameFrozenRenderIdentity(original.identity, newer.identity)).toBe(false);
   });
 
-  test("freezes locale and variable schema in identity while hashing only the canonical payload", async () => {
+  test("accepts only the reviewed English locale and freezes schema in render identity", async () => {
     const original = await renderFrozen(baseArgs);
-    const changedLocale = await renderFrozen({ ...baseArgs, locale: "en-GB" });
     const changedSchema = await renderFrozen({
       ...baseArgs,
       variableSchemaVersion: "g4-no-variables-v2",
     });
     const changedPayload = await renderFrozen({ ...baseArgs, eventType: "partner_nudge.v1" });
 
-    expect(changedLocale.identity.locale).toBe("en-GB");
-    expect(sameFrozenRenderIdentity(original.identity, changedLocale.identity)).toBe(false);
-    expect(changedLocale.identity.payloadHash).toBe(original.identity.payloadHash);
-    expect(changedLocale.payload).toEqual(original.payload);
+    expect(original.identity.locale).toBe("en");
+    for (const locale of ["en-GB", "fr", "zz-ZZ"]) {
+      await expect(renderFrozen({ ...baseArgs, locale })).rejects.toThrow(
+        /unsupported notification locale/i,
+      );
+    }
 
     expect(changedSchema.identity.variableSchemaVersion).toBe("g4-no-variables-v2");
     expect(sameFrozenRenderIdentity(original.identity, changedSchema.identity)).toBe(false);
