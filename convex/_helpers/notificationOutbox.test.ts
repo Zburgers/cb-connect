@@ -6,6 +6,7 @@ import {
   makeDeliveryIdempotencyKey,
   makeEventIdempotencyKey,
 } from "./notificationDelivery";
+import { makeSourceAuthorityVersion } from "./notificationSourceAuthority";
 import {
   cancelCurrentLateStatusSource,
   cancelSource,
@@ -264,6 +265,167 @@ describe("current Late-state outbox events", () => {
     return { t, primaryId, snapshot, snapshotId, lateInstant };
   }
 
+  test("uses the complete source authority for opaque Late references and bounded cancellation", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t, {
+      fixtureRunId: "n3e-late-authority-reference",
+    });
+    const localDay = "2026-03-08";
+    const sourceRevision = 7;
+    const reminderWindowVersion = 3;
+    const firstAuthority = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-a-v1",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    const secondAuthority = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-b-v1",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    const [firstReference, secondReference] = await Promise.all([
+      lateStatusSourceReference(
+        primaryId,
+        firstAuthority,
+        sourceRevision,
+        localDay,
+        reminderWindowVersion,
+      ),
+      lateStatusSourceReference(
+        primaryId,
+        secondAuthority,
+        sourceRevision,
+        localDay,
+        reminderWindowVersion,
+      ),
+    ]);
+
+    expect(firstReference).not.toBe(secondReference);
+    for (const reference of [firstReference, secondReference]) {
+      expect(reference).toMatch(/^late:v1:[a-f0-9]{64}$/);
+      expect(reference).toHaveLength("late:v1:".length + 64);
+      expect(reference).not.toContain(String(primaryId));
+      expect(reference).not.toContain(localDay);
+    }
+    await expect(
+      lateStatusSourceReference(
+        primaryId,
+        firstAuthority,
+        sourceRevision + 1,
+        localDay,
+        reminderWindowVersion,
+      ),
+    ).rejects.toThrow("Late-status source authority version is invalid");
+    await expect(
+      lateStatusSourceReference(
+        primaryId,
+        `${firstAuthority} `,
+        sourceRevision,
+        localDay,
+        reminderWindowVersion,
+      ),
+    ).rejects.toThrow("Late-status source authority version is invalid");
+
+    const [firstEventId, secondEventId] = await t.run(async (ctx) => {
+      const insertLateEvent = async (
+        sourceAuthorityVersion: string,
+        sourceReference: string,
+      ) => {
+        const eventId = await ctx.db.insert("notificationEvents", {
+          eventType: "late_status.v1",
+          eventVersion: 1,
+          purpose: "late_status",
+          producerKind: "approved_served_late_state",
+          sourceReference,
+          sourceAuthorityVersion,
+          ownerUserId: primaryId,
+          recipientUserId: primaryId,
+          recipientScope: "primary",
+          privacyClass: "primary_private_inferred_health",
+          validityRule: "while_current_late_state_is_valid",
+          idempotencyKey: makeEventIdempotencyKey("late_status.v1", {
+            primaryId: String(primaryId),
+            sourceAuthorityVersion,
+            localDay,
+            reminderWindowVersion: String(reminderWindowVersion),
+          }),
+          allowedChannel: "in_app",
+          createdAt: 100,
+        });
+        await ctx.db.insert("notificationDeliveries", {
+          eventId,
+          recipientUserId: primaryId,
+          channel: "in_app",
+          stableDestinationId: String(primaryId),
+          logicalKey: makeDeliveryIdempotencyKey(
+            String(eventId),
+            "in_app",
+            String(primaryId),
+          ),
+          notBefore: 100,
+          state: "pending",
+          eligibility: "eligible",
+          providerOutcome: "none",
+          attemptCount: 0,
+          claimGeneration: 1,
+          renderIdentity: {
+            templateVersion: "g4-static-v1",
+            locale: "en",
+            variableSchemaVersion: "g4-v1",
+            payloadHash: "safe-static-test-payload-v1",
+          },
+          createdAt: 100,
+          updatedAt: 100,
+        });
+        return eventId;
+      };
+
+      const firstEventId = await insertLateEvent(firstAuthority, firstReference);
+      const secondEventId = await insertLateEvent(secondAuthority, secondReference);
+      return [firstEventId, secondEventId] as const;
+    });
+
+    await t.run((ctx) =>
+      cancelSource(ctx, firstReference, "source_changed", 200),
+    );
+    await t.run(async (ctx) => {
+      const first = await ctx.db
+        .query("notificationDeliveries")
+        .withIndex("by_event_id", (q) => q.eq("eventId", firstEventId))
+        .unique();
+      const second = await ctx.db
+        .query("notificationDeliveries")
+        .withIndex("by_event_id", (q) => q.eq("eventId", secondEventId))
+        .unique();
+      expect(first).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+      });
+      expect(second).toMatchObject({
+        state: "pending",
+        eligibility: "eligible",
+      });
+    });
+
+    await t.run((ctx) =>
+      cancelSource(ctx, secondReference, "source_changed", 300),
+    );
+    await t.run(async (ctx) => {
+      const second = await ctx.db
+        .query("notificationDeliveries")
+        .withIndex("by_event_id", (q) => q.eq("eventId", secondEventId))
+        .unique();
+      expect(second).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+      });
+    });
+  });
+
   test("creates one stable late_status.v1 event and dedupes an incidental snapshot refresh", async () => {
     const { t, primaryId, snapshot, snapshotId, lateInstant } =
       await seedLateContext();
@@ -273,14 +435,28 @@ describe("current Late-state outbox events", () => {
     );
     expect(first).not.toBeNull();
     const localDay = addCalendarDays(snapshot.latestDate, 1);
+    const { readCurrentNotificationCycleState } = await import(
+      "./notificationCycleState"
+    );
+    const current = await t.run((ctx) =>
+      readCurrentNotificationCycleState(ctx, primaryId, lateInstant),
+    );
+    expect(current).not.toBeNull();
     const expectedSourceReference = await lateStatusSourceReference(
       primaryId,
+      current!.sourceAuthorityVersion,
       7,
       localDay,
       3,
     );
     expect(
-      await lateStatusSourceReference(primaryId, 7, localDay, 4),
+      await lateStatusSourceReference(
+        primaryId,
+        current!.sourceAuthorityVersion,
+        7,
+        localDay,
+        4,
+      ),
     ).not.toBe(expectedSourceReference);
 
     await t.run(async (ctx) => {
