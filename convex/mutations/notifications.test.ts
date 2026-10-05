@@ -26,7 +26,10 @@ const wakeDueWorkRef = makeFunctionReference<"mutation">(
 
 type TestBackend = TestConvex<typeof schema>;
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 function enableOutboxProjection() {
   vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
