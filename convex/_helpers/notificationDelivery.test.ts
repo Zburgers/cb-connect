@@ -32,6 +32,7 @@ import {
   sameFrozenRenderIdentity,
   transitionDeliveryState,
   transitionDeliveryStateFenced,
+  transitionProviderReceiptFactual,
   type DeliveryState,
   type NotificationDeliveryRecord,
   type NotificationOperationalLimits,
@@ -317,6 +318,27 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
     expect(received.state.status).toBe("cancelled");
     expect(received.state.eligibility).toBe("cancelled");
     expect(received.state.providerOutcome).toBe("delivered");
+  });
+
+  test("factual receipts bypass worker generations and preserve terminal eligibility", () => {
+    const cancelled = transitionDeliveryState(processingExternalDelivery(), {
+      kind: "cancelled",
+    }).state;
+
+    expect(
+      transitionProviderReceiptFactual(cancelled, {
+        kind: "provider_receipt",
+        outcome: "delivered",
+        providerMessageId: "late-provider-id",
+      }),
+    ).toEqual({
+      state: {
+        ...cancelled,
+        providerOutcome: "delivered",
+        providerMessageId: "late-provider-id",
+      },
+      anomaly: null,
+    });
   });
 
   test("duplicate receipts are idempotent and conflicting terminal receipts are anomalies", () => {

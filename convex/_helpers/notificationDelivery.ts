@@ -534,6 +534,11 @@ export type DeliveryFact =
   | { kind: "suppressed" }
   | { kind: "cancelled" };
 
+export type FencedWorkerDeliveryFact = Exclude<
+  DeliveryFact,
+  { kind: "provider_receipt" }
+>;
+
 export type DeliveryTransition = {
   state: DeliveryState;
   anomaly: "conflicting_terminal_provider_outcome" | null;
@@ -828,6 +833,18 @@ function transitionProviderReceipt(
   };
 }
 
+/**
+ * Applies a correlated provider receipt as a monotonic fact. Receipts are
+ * correlated to a delivery independently of the worker claim generation, so
+ * a late receipt may update provider outcome without reviving eligibility.
+ */
+export function transitionProviderReceiptFactual(
+  current: DeliveryState,
+  fact: Extract<DeliveryFact, { kind: "provider_receipt" }>,
+): DeliveryTransition {
+  return transitionProviderReceipt(current, fact);
+}
+
 function transitionProcessingFact(current: DeliveryState, fact: DeliveryFact): DeliveryTransition {
   if (current.eligibility !== "eligible") return unchanged(current);
   if (fact.kind === "accepted") {
@@ -1081,7 +1098,7 @@ export function transitionDeliveryStateFenced(
   args: {
     expectedGeneration: number;
     currentGeneration: number;
-    fact: DeliveryFact;
+    fact: FencedWorkerDeliveryFact;
   },
 ): FencedDeliveryTransition {
   if (
@@ -1392,7 +1409,9 @@ export function transitionDeliveryState(
   if (fact.kind === "expired" || fact.kind === "suppressed" || fact.kind === "cancelled") {
     return transitionEligibility(current, fact);
   }
-  if (fact.kind === "provider_receipt") return transitionProviderReceipt(current, fact);
+  if (fact.kind === "provider_receipt") {
+    return transitionProviderReceiptFactual(current, fact);
+  }
   if (current.channel === "in_app" || current.status !== "processing") return unchanged(current);
   return transitionProcessingFact(current, fact);
 }
