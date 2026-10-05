@@ -32,7 +32,6 @@ const SCHEDULER_FLAG = "CB_CONNECT_NOTIFICATION_SCHEDULER_V1";
 const PROJECTION_FLAG = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const DUE_WORK_PAGE_SIZE = 50;
-const DUE_WORK_SCAN_LIMIT = 500;
 const OWNER_PENDING_PAGE_SIZE = 100;
 const SERVED_SNAPSHOT_LOOKBACK = 100;
 const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
@@ -56,6 +55,9 @@ const wakeArgsValidator = v.object({
 
 const wakeWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:wakeDueWork",
+);
+const reconcileWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:reconcileDueWork",
 );
 
 function schedulerEnabled(): boolean {
@@ -633,33 +635,48 @@ export const wakeDueWork = internalMutation({
 });
 
 export const reconcileDueWork = internalMutation({
-  args: {},
+  args: {
+    kind: v.optional(
+      v.union(v.literal("prediction_window"), v.literal("late_boundary")),
+    ),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
   returns: v.object({ scheduled: v.number() }),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     if (!schedulerEnabled()) return { scheduled: 0 };
     const now = Date.now();
-    const indexedDue = await ctx.db
-      .query("notificationDueWork")
-      .withIndex("by_state_and_due_at", (q) =>
-        q.eq("state", "pending").lte("dueAt", now),
-      )
-      .take(DUE_WORK_SCAN_LIMIT);
-    // Keep other lanes' shared-queue rows out of CHRONOS's 50-row wake page.
-    // N8 must replace this bounded shared-prefix scan with kind-scoped indexed
-    // routes before unrelated due rows can exceed DUE_WORK_SCAN_LIMIT; this
-    // base has no delivery/source-reconcile/pain-reminder runtime handlers.
-    const due = indexedDue
-      .filter(
-        (work) =>
-          work.kind === "prediction_window" || work.kind === "late_boundary",
-      )
-      .slice(0, DUE_WORK_PAGE_SIZE);
-    for (const work of due) {
-      await ctx.scheduler.runAt(now, wakeWorkRef, {
-        workId: work._id,
-        generation: work.generation,
-      });
+    let scheduled = 0;
+    const kinds: ScheduleKind[] = args.kind
+      ? [args.kind]
+      : ["prediction_window", "late_boundary"];
+    for (const kind of kinds) {
+      const page = await ctx.runQuery(
+        internal.queries.notifications.getDueWorkByKind,
+        {
+          kind,
+          now,
+          limit: DUE_WORK_PAGE_SIZE,
+          cursor: args.kind === kind ? (args.cursor ?? null) : null,
+        },
+      );
+      for (const work of page.page) {
+        await ctx.scheduler.runAt(now, wakeWorkRef, {
+          workId: work._id,
+          generation: work.generation,
+        });
+      }
+      scheduled += page.page.length;
+      if (!page.isDone) {
+        if (page.continueCursor === null) {
+          throw new Error("Due-work page must provide a continuation cursor");
+        }
+        await ctx.scheduler.runAfter(
+          0,
+          reconcileWorkRef,
+          { kind, cursor: page.continueCursor },
+        );
+      }
     }
-    return { scheduled: due.length };
+    return { scheduled };
   },
 });
