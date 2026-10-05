@@ -1048,6 +1048,136 @@ describe("couple notification outbox", () => {
     }
   });
 
+  test("relinking the same partner under a fixed clock creates a new connected-since event generation", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-04T12:00:00.000Z"));
+    try {
+      const t = convexTest(schema, modules);
+      const { asPrimary, asPartner, coupleId, partnerId } = await seedActiveCouple(t);
+
+      await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+        connectedSinceDate: "2000-02-14",
+      });
+      const first = await t.run(async (ctx) => {
+        const event = (await ctx.db.query("notificationEvents").collect()).find(
+          (candidate) => candidate.eventType === "connected_since_updated.v1",
+        );
+        if (!event) throw new Error("Expected the first connected-since event");
+        const partnerMembership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+            q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+          )
+          .unique();
+        if (!partnerMembership) throw new Error("Expected the active partner membership");
+        const now = Date.now();
+        const deliveryId = await ctx.db.insert("notificationDeliveries", {
+          eventId: event._id,
+          recipientUserId: partnerId,
+          channel: "in_app",
+          stableDestinationId: String(partnerId),
+          logicalKey: `relink-test:${event._id}`,
+          notBefore: now,
+          state: "pending",
+          eligibility: "eligible",
+          providerOutcome: "none",
+          attemptCount: 0,
+          claimGeneration: 0,
+          renderIdentity: {
+            templateVersion: "g4-static-v1",
+            locale: "en",
+            variableSchemaVersion: "g4-v1",
+            payloadHash: "static-connected-since-v1",
+          },
+          createdAt: now,
+          updatedAt: now,
+        });
+        const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+          eventId: event._id,
+          recipientUserId: partnerId,
+          idempotencyKey: `relink-inbox:${event._id}`,
+          templateVersion: "g4-static-v1",
+          route: "settings",
+          state: "current",
+          createdAt: now,
+        });
+        return { event, partnerMembershipId: partnerMembership._id, deliveryId, inboxItemId };
+      });
+
+      await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+      const revoked = await t.run(async (ctx) => ({
+        couple: await ctx.db.get(coupleId),
+        delivery: await ctx.db.get(first.deliveryId),
+        inboxItem: await ctx.db.get(first.inboxItemId),
+      }));
+      expect(revoked.couple?.connectedSinceDate).toBeUndefined();
+      expect(revoked.couple?.connectedSinceUpdatedAt).toBeUndefined();
+      expect(revoked.delivery).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "authority_revoked",
+      });
+      expect(revoked.inboxItem).toMatchObject({ state: "hidden" });
+
+      const pairing = await asPrimary.action(api.mutations.couples.generatePairingCode, {});
+      await asPartner.mutation(api.mutations.couples.linkPartnerWithCode, { code: pairing.code });
+      const secondPartnerMembershipId = await t.run(async (ctx) => {
+        const membership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+            q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+          )
+          .unique();
+        return membership?._id;
+      });
+      expect(secondPartnerMembershipId).toBeDefined();
+      expect(secondPartnerMembershipId).not.toBe(first.partnerMembershipId);
+
+      await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+        connectedSinceDate: "2000-02-14",
+      });
+
+      const connectedSinceEvents = await t.run(async (ctx) =>
+        (await ctx.db.query("notificationEvents").collect()).filter(
+          (event) => event.eventType === "connected_since_updated.v1",
+        ),
+      );
+      expect(connectedSinceEvents).toHaveLength(2);
+      const [firstEvent, secondEvent] = connectedSinceEvents;
+      expect(secondEvent._id).not.toBe(firstEvent._id);
+      expect(secondEvent.sourceReference).not.toBe(firstEvent.sourceReference);
+      expect(secondEvent.idempotencyKey).not.toBe(firstEvent.idempotencyKey);
+      expect(secondEvent.sourceAuthorityVersion).not.toBe(firstEvent.sourceAuthorityVersion);
+      for (const event of connectedSinceEvents) {
+        const settingVersion = event.sourceAuthorityVersion.replace(
+          "connected-since-setting:",
+          "",
+        );
+        expect(event.idempotencyKey).toBe(
+          makeEventIdempotencyKey("connected_since_updated.v1", {
+            coupleId: String(coupleId),
+            settingVersion,
+            recipientId: String(partnerId),
+          }),
+        );
+        expect(event).not.toHaveProperty("connectedSinceDate");
+        expect(event).not.toHaveProperty("name");
+      }
+      const couple = await t.run(async (ctx) => ctx.db.get(coupleId));
+      expect(couple?.connectedSinceDate).toBe("2000-02-14");
+      expect(couple?.connectedSinceUpdatedAt).toBe(Date.now());
+      const oldProjection = await t.run(async (ctx) => ({
+        delivery: await ctx.db.get(first.deliveryId),
+        inboxItem: await ctx.db.get(first.inboxItemId),
+      }));
+      expect(oldProjection.delivery).toMatchObject({ state: "cancelled", eligibility: "cancelled" });
+      expect(oldProjection.inboxItem).toMatchObject({ state: "hidden" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("keeps link events dark unless the exact outbox flag is true", async () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "false");
     const t = convexTest(schema, modules);
