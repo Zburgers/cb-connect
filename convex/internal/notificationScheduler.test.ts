@@ -143,6 +143,45 @@ async function allScheduleRows(t: TestBackend, userId: Id<"users">) {
 }
 
 describe("notification schedule reconciliation", () => {
+  test.each([
+    {
+      label: "DST spring gap",
+      localDay: "2026-03-08",
+      localReminderTime: "02:30",
+      timeZone: "America/New_York",
+      expected: "2026-03-08T07:00:00.000Z",
+    },
+    {
+      label: "DST fall fold",
+      localDay: "2026-11-01",
+      localReminderTime: "01:30",
+      timeZone: "America/New_York",
+      expected: "2026-11-01T05:30:00.000Z",
+    },
+    {
+      label: "Asia/Kolkata half-hour offset",
+      localDay: "2026-10-04",
+      localReminderTime: "09:00",
+      timeZone: "Asia/Kolkata",
+      expected: "2026-10-04T03:30:00.000Z",
+    },
+    {
+      label: "negative UTC offset",
+      localDay: "2026-10-05",
+      localReminderTime: "09:00",
+      timeZone: "Etc/GMT+8",
+      expected: "2026-10-05T17:00:00.000Z",
+    },
+  ])("resolves the local reminder clock across $label", (fixture) => {
+    expect(
+      resolveLocalReminderInstant(
+        fixture.localDay,
+        fixture.localReminderTime,
+        fixture.timeZone,
+      ),
+    ).toBe(Date.parse(fixture.expected));
+  });
+
   test("current served snapshot schedules local prediction and late boundaries with guarded wakeups", async () => {
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();
@@ -166,6 +205,24 @@ describe("notification schedule reconciliation", () => {
     if (!snapshot) throw new Error("Expected the served V2 snapshot");
 
     const pending = await pendingScheduleRows(t, primaryId);
+    const scheduleState = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    expect(scheduleState?.sourceAuthorityVersion).toMatch(/^g4-source-v1:/);
+    expect(
+      pending.map(({ sourceAuthorityVersion, reminderWindowVersion }) => ({
+        sourceAuthorityVersion,
+        reminderWindowVersion,
+      })),
+    ).toEqual(
+      pending.map(() => ({
+        sourceAuthorityVersion: scheduleState?.sourceAuthorityVersion,
+        reminderWindowVersion: 3,
+      })),
+    );
     const timeZone = "America/Los_Angeles";
     const expected = [
       {
@@ -459,6 +516,13 @@ describe("notification schedule reconciliation", () => {
     const originalSnapshot = await t.run((ctx) => ctx.db.get(snapshotId));
     if (!originalSnapshot) throw new Error("Expected the served V2 snapshot");
     const originalPending = await pendingScheduleRows(t, primaryId);
+    const originalFences = originalPending.map(
+      ({ kind, sourceAuthorityVersion, reminderWindowVersion }) => ({
+        kind,
+        sourceAuthorityVersion,
+        reminderWindowVersion,
+      }),
+    );
 
     await t.mutation(internal.internal.predictionSnapshots.createSnapshot, {
       ...snapshotRefreshArgs(originalSnapshot, originalSnapshot.generatedAt + 1_000),
@@ -469,6 +533,13 @@ describe("notification schedule reconciliation", () => {
     ).toEqual(
       originalPending.map(({ _id, generation, kind }) => ({ _id, generation, kind })),
     );
+    expect(
+      afterRefresh.map(({ kind, sourceAuthorityVersion, reminderWindowVersion }) => ({
+        kind,
+        sourceAuthorityVersion,
+        reminderWindowVersion,
+      })),
+    ).toEqual(originalFences);
 
     vi.setSystemTime(now + 5_000);
     await t.run(async (ctx) => {
@@ -495,6 +566,70 @@ describe("notification schedule reconciliation", () => {
     expect(allWork.filter((row) => row.state === "cancelled")).toHaveLength(2);
     expect(allWork.filter((row) => row.state === "pending")).toHaveLength(2);
     expect(allWork.filter((row) => row.state === "pending").map(({ generation }) => generation)).toEqual([8, 8]);
+    expect(
+      allWork
+        .filter((row) => row.state === "pending")
+        .every((row) => row.sourceAuthorityVersion !== originalFences[0]?.sourceAuthorityVersion),
+    ).toBe(true);
+    expect(
+      allWork
+        .filter((row) => row.state === "pending")
+        .map(({ reminderWindowVersion }) => reminderWindowVersion),
+    ).toEqual([3, 3]);
+  });
+
+  test("shadow snapshot history cannot replace work for the still-served snapshot", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+    if (!servedSnapshot) throw new Error("Expected the served V2 snapshot");
+    const originalWork = await pendingScheduleRows(t, primaryId);
+
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        const { qualityScoreV1, ...shadow } = snapshotRefreshArgs(
+          servedSnapshot,
+          servedSnapshot.generatedAt + 1_000 + index,
+        );
+        await ctx.db.insert("predictionSnapshots", {
+          ...shadow,
+          displayStatus: "shadow",
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+      }
+    });
+    await t.mutation(internal.internal.predictionSnapshots.createSnapshot, {
+      ...snapshotRefreshArgs(servedSnapshot, servedSnapshot.generatedAt + 2_000),
+      displayStatus: "shadow",
+    });
+
+    const afterShadowPage = await allScheduleRows(t, primaryId);
+    expect(afterShadowPage.map(({ _id, state, kind, dueAt, generation }) => ({
+      _id,
+      state,
+      kind,
+      dueAt,
+      generation,
+    }))).toEqual(originalWork.map(({ _id, state, kind, dueAt, generation }) => ({
+      _id,
+      state,
+      kind,
+      dueAt,
+      generation,
+    })));
   });
 
   test("indexed cron recovery takes a bounded due-ordered pending page past terminal history", async () => {
@@ -601,6 +736,8 @@ describe("notification schedule reconciliation", () => {
             state: "pending",
             dueAt: original.dueAt,
             generation: original.generation,
+            sourceAuthorityVersion: original.sourceAuthorityVersion,
+            reminderWindowVersion: original.reminderWindowVersion,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }),

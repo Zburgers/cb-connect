@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import {
@@ -20,7 +21,10 @@ import {
   predictionSnapshotMatchesCurrent,
 } from "../_helpers/predictionSnapshotContract";
 import {
+  createNotificationDueWork,
   makeSourceAuthorityVersion,
+  isCurrentNotificationScheduleFence,
+  persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
 
@@ -30,10 +34,20 @@ const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const DUE_WORK_PAGE_SIZE = 50;
 const DUE_WORK_SCAN_LIMIT = 500;
 const OWNER_PENDING_PAGE_SIZE = 100;
+const SERVED_SNAPSHOT_LOOKBACK = 100;
 const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
 const MINUTE_MS = 60 * 1_000;
 
 type ScheduleKind = "prediction_window" | "late_boundary";
+type ServedSnapshotResult =
+  | {
+      status: "current";
+      user: Doc<"users">;
+      snapshot: Doc<"predictionSnapshots">;
+      scheduleState: Doc<"notificationScheduleState">;
+      sourceAuthorityVersion: string;
+    }
+  | { status: "unavailable" | "indeterminate" };
 
 const wakeArgsValidator = v.object({
   workId: v.id("notificationDueWork"),
@@ -50,6 +64,10 @@ function schedulerEnabled(): boolean {
 
 function isSafeRevision(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
+}
+
+function workGeneration(sourceRevision: number): number {
+  return Math.max(1, Math.min(sourceRevision, Number.MAX_SAFE_INTEGER - 1));
 }
 
 function formatLocalMinute(instant: number, timeZone: string): string {
@@ -135,10 +153,10 @@ function makeSourceVersion(
 async function readCurrentServedSnapshot(
   ctx: MutationCtx,
   userId: Id<"users">,
-) {
-  if (!isPeriodPredictionV2Enabled()) return null;
+): Promise<ServedSnapshotResult> {
+  if (!isPeriodPredictionV2Enabled()) return { status: "unavailable" };
   const user = await ctx.db.get(userId);
-  if (!user || user.role !== "primary") return null;
+  if (!user || user.role !== "primary") return { status: "unavailable" };
   const [predictionData, settings, scheduleState] = await Promise.all([
     readCyclePredictionData(ctx, userId, user),
     ctx.db
@@ -150,20 +168,28 @@ async function readCurrentServedSnapshot(
       .withIndex("by_user_id", (q) => q.eq("userId", userId))
       .unique(),
   ]);
-  if (!scheduleState || !isSafeRevision(scheduleState.sourceRevision)) return null;
+  if (!scheduleState || !isSafeRevision(scheduleState.sourceRevision)) {
+    return { status: "unavailable" };
+  }
 
-  const snapshot = await ctx.db
+  const snapshots = await ctx.db
     .query("predictionSnapshots")
     .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
     .order("desc")
-    .first();
-  if (
-    !snapshot ||
-    snapshot.displayStatus !== "visible" ||
-    snapshot.featureVersion !== "period_prediction_v2" ||
-    snapshot.intervalMethodVersion !== PREDICTION_CALIBRATION_VERSION
-  ) {
-    return null;
+    .take(SERVED_SNAPSHOT_LOOKBACK);
+  const snapshot = snapshots.find(
+    (candidate) =>
+      candidate.displayStatus === "visible" &&
+      candidate.featureVersion === "period_prediction_v2" &&
+      candidate.intervalMethodVersion === PREDICTION_CALIBRATION_VERSION,
+  );
+  if (!snapshot) {
+    return {
+      status:
+        snapshots.length === SERVED_SNAPSHOT_LOOKBACK
+          ? ("indeterminate" as const)
+          : ("unavailable" as const),
+    };
   }
   const servedIntervals = deriveCycleIntervals(predictionData.periodEvents, {
     cutoffAt: snapshot.inputCutoffAt,
@@ -188,7 +214,7 @@ async function readCurrentServedSnapshot(
     configuredCycleLength: settings?.cycleLength ?? 28,
     predictionPaused: settings?.predictionPaused ?? false,
   });
-  if (prediction.pointDate === null) return null;
+  if (prediction.pointDate === null) return { status: "unavailable" };
 
   const current = currentPredictionSnapshotInput({
     prediction,
@@ -199,16 +225,24 @@ async function readCurrentServedSnapshot(
     activeSegment: predictionData.activeSegment,
   });
   if (!predictionSnapshotMatchesCurrent(snapshot, current)) {
-    return null;
+    return { status: "unavailable" };
   }
+  const sourceAuthorityVersion = makeSourceVersion(
+    scheduleState.sourceRevision,
+    snapshot,
+  );
+  const persistedScheduleState = await persistNotificationSourceAuthorityVersion(
+    ctx,
+    userId,
+    sourceAuthorityVersion,
+  );
+  if (!persistedScheduleState) return { status: "unavailable" };
   return {
+    status: "current",
     user,
     snapshot,
-    scheduleState,
-    sourceAuthorityVersion: makeSourceVersion(
-      scheduleState.sourceRevision,
-      snapshot,
-    ),
+    scheduleState: persistedScheduleState,
+    sourceAuthorityVersion,
   };
 }
 
@@ -306,8 +340,10 @@ async function reconcileKind(
     kind: ScheduleKind;
     enabled: boolean;
     localReminderTime?: string;
+    reminderWindowVersion?: number;
     snapshot: Doc<"predictionSnapshots">;
     generation: number;
+    sourceAuthorityVersion: string;
     timeZone: string;
     pending: readonly Doc<"notificationDueWork">[];
     claimed: readonly Doc<"notificationDueWork">[];
@@ -316,7 +352,10 @@ async function reconcileKind(
 ) {
   const pendingKind = args.pending.filter((row) => row.kind === args.kind);
   const computedDueAt =
-    args.enabled && args.localReminderTime
+    args.enabled &&
+    args.localReminderTime &&
+    Number.isSafeInteger(args.reminderWindowVersion) &&
+    (args.reminderWindowVersion ?? 0) > 0
       ? desiredDueAt(
           args.kind,
           args.snapshot,
@@ -336,7 +375,9 @@ async function reconcileKind(
       row.kind === args.kind &&
       supportedRunAt &&
       row.dueAt === dueAt &&
-      row.generation === args.generation,
+      row.generation === args.generation &&
+      row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
+      row.reminderWindowVersion === args.reminderWindowVersion,
   );
   const reusable = alreadyClaimed
     ? undefined
@@ -344,7 +385,9 @@ async function reconcileKind(
         (row) =>
           supportedRunAt &&
           row.dueAt === dueAt &&
-          row.generation === args.generation,
+          row.generation === args.generation &&
+          row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
+          row.reminderWindowVersion === args.reminderWindowVersion,
       );
   for (const row of pendingKind) {
     if (row._id !== reusable?._id) {
@@ -353,12 +396,14 @@ async function reconcileKind(
   }
   if (alreadyClaimed || reusable || !supportedRunAt || dueAt === null) return;
 
-  const workId = await ctx.db.insert("notificationDueWork", {
+  const workId = await createNotificationDueWork(ctx, {
     ownerUserId: args.userId,
     kind: args.kind,
     state: "pending",
     dueAt,
     generation: args.generation,
+    sourceAuthorityVersion: args.sourceAuthorityVersion,
+    reminderWindowVersion: args.reminderWindowVersion!,
     createdAt: args.now,
     updatedAt: args.now,
   });
@@ -389,7 +434,8 @@ export async function reconcileUserSchedule(
   const now = Date.now();
   if (!schedulerEnabled()) {
     const current = await readCurrentServedSnapshot(ctx, userId);
-    if (!current) {
+    if (current.status === "indeterminate") return;
+    if (current.status !== "current") {
       await cancelAllPendingScheduleWork(ctx, userId, now);
       return;
     }
@@ -427,7 +473,8 @@ export async function reconcileUserSchedule(
     return;
   }
   const current = await readCurrentServedSnapshot(ctx, userId);
-  if (!current) {
+  if (current.status === "indeterminate") return;
+  if (current.status !== "current") {
     await cancelAllPendingScheduleWork(ctx, userId, now);
     return;
   }
@@ -442,13 +489,16 @@ export async function reconcileUserSchedule(
   const timeZone = resolveCalendarTimeZone(
     current.user.timeZone ?? DEFAULT_TIME_ZONE,
   );
+  const generation = workGeneration(current.scheduleState.sourceRevision);
   await reconcileKind(ctx, {
     userId,
     kind: "prediction_window",
     enabled: predictionWindow?.inAppEnabled === true,
     localReminderTime: predictionWindow?.localReminderTime,
+    reminderWindowVersion: predictionWindow?.reminderWindowVersion,
     snapshot: current.snapshot,
-    generation: current.scheduleState.sourceRevision,
+    generation,
+    sourceAuthorityVersion: current.sourceAuthorityVersion,
     timeZone,
     pending,
     claimed,
@@ -459,8 +509,10 @@ export async function reconcileUserSchedule(
     kind: "late_boundary",
     enabled: lateStatus?.inAppEnabled === true,
     localReminderTime: lateStatus?.localReminderTime,
+    reminderWindowVersion: lateStatus?.reminderWindowVersion,
     snapshot: current.snapshot,
-    generation: current.scheduleState.sourceRevision,
+    generation,
+    sourceAuthorityVersion: current.sourceAuthorityVersion,
     timeZone,
     pending,
     claimed,
@@ -501,9 +553,12 @@ export const wakeDueWork = internalMutation({
     }
     if (!schedulerEnabled()) return { status: "paused" as const };
     const current = await readCurrentServedSnapshot(ctx, work.ownerUserId);
+    if (current.status === "indeterminate") {
+      return { status: "blocked" as const, reason: "served_snapshot_indeterminate" };
+    }
     if (
-      !current ||
-      current.scheduleState.sourceRevision !== args.generation
+      current.status !== "current" ||
+      workGeneration(current.scheduleState.sourceRevision) !== args.generation
     ) {
       await ctx.db.patch(work._id, { state: "cancelled", updatedAt: Date.now() });
       return { status: "stale" as const };
@@ -514,6 +569,16 @@ export const wakeDueWork = internalMutation({
     );
     const preference =
       work.kind === "prediction_window" ? predictionWindow : lateStatus;
+    if (
+      !isCurrentNotificationScheduleFence(
+        work,
+        current.scheduleState,
+        preference,
+      )
+    ) {
+      await ctx.db.patch(work._id, { state: "cancelled", updatedAt: Date.now() });
+      return { status: "stale" as const };
+    }
     const timeZone = resolveCalendarTimeZone(
       current.user.timeZone ?? DEFAULT_TIME_ZONE,
     );
@@ -548,10 +613,10 @@ export const wakeDueWork = internalMutation({
       channel: "in_app",
       recipientUserId: work.ownerUserId,
       currentRecipientUserId: current.user._id,
-      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      sourceAuthorityVersion: work.sourceAuthorityVersion ?? "",
       currentSourceAuthorityVersion: current.sourceAuthorityVersion,
       expectedGeneration: args.generation,
-      currentGeneration: current.scheduleState.sourceRevision,
+      currentGeneration: workGeneration(current.scheduleState.sourceRevision),
       purposeEnabled: preference?.inAppEnabled === true,
       flags: {
         projectionEnabled: process.env[PROJECTION_FLAG] === "true",
