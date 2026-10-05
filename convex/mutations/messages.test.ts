@@ -7,6 +7,7 @@ import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
+import { ensurePartnerMessageEvent } from "./messages";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -611,6 +612,47 @@ describe("couple message state", () => {
     expect(deliveries).toHaveLength(0);
     expect(inboxItems).toHaveLength(0);
     expect(senderEvents).toHaveLength(0);
+  });
+
+  test("replaying a message event returns the existing event without duplicating it", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId, partnerId } = await seedActiveCouple(t);
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "Replay the accepted message event",
+    });
+    const message = await t.run(async (ctx) => ctx.db.get(messageId));
+    expect(message?.relationshipMembershipId).toBeDefined();
+
+    const idempotencyKey = makeEventIdempotencyKey("partner_message.v1", {
+      messageId: String(messageId),
+      recipientId: String(partnerId),
+    });
+    const originalEvent = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", idempotencyKey))
+        .unique(),
+    );
+    expect(originalEvent).not.toBeNull();
+
+    const replay = await t.run(async (ctx) => {
+      const eventId = await ensurePartnerMessageEvent(ctx, {
+        messageId,
+        senderId: primaryId,
+        recipientId: partnerId,
+        relationshipMembershipId: message!.relationshipMembershipId!,
+        createdAt: message!.createdAt,
+      });
+      const events = await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", idempotencyKey))
+        .collect();
+      return { eventId, events };
+    });
+
+    expect(replay.eventId).toBe(originalEvent!._id);
+    expect(replay.events).toEqual([originalEvent]);
   });
 
   test("stores no message event when the outbox flag is off", async () => {
