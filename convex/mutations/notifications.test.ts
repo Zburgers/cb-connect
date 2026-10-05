@@ -23,6 +23,9 @@ import { seedActiveCouple } from "../test.fixtures";
 const wakeDueWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:wakeDueWork",
 );
+const resumePreferenceReconciliationRef = makeFunctionReference<"mutation">(
+  "mutations/notifications:resumePreferenceReconciliation",
+);
 
 type TestBackend = TestConvex<typeof schema>;
 
@@ -49,7 +52,7 @@ function enableScheduleInputs() {
   vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
 }
 
-async function seedCurrentPrediction(
+async function seedPredictionInputs(
   t: TestBackend,
   userId: Id<"users">,
   sourceRevision = 7,
@@ -78,7 +81,14 @@ async function seedCurrentPrediction(
       updatedAt: now,
     });
   });
+}
 
+async function seedCurrentPrediction(
+  t: TestBackend,
+  userId: Id<"users">,
+  sourceRevision = 7,
+) {
+  await seedPredictionInputs(t, userId, sourceRevision);
   const snapshotId = await t.mutation(
     internal.internal.predictionSnapshots.ensureCurrentForUser,
     { userId },
@@ -448,6 +458,225 @@ describe("notification persistence", () => {
     ).resolves.toEqual({ status: "stale" });
   });
 
+  test("refreshes a stale served snapshot through a generation-bound preference continuation", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const oldSnapshot = await seedCurrentPrediction(t, primaryId);
+    const oldWorkId = await t.run(async (ctx) => {
+      const workId = await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now + 60_000,
+        generation: 7,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.scheduler.runAt(now + 300_000, wakeDueWorkRef, {
+        workId,
+        generation: 7,
+      });
+      return workId;
+    });
+
+    vi.setSystemTime(now + 60_000);
+    await t.run(async (ctx) => {
+      const event = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .first();
+      const scheduleState = await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique();
+      if (!event || !scheduleState) throw new Error("Expected seeded schedule inputs");
+      await ctx.db.patch(event._id, {
+        startDate: "2026-03-02",
+        authorityVersion: 2,
+        updatedAt: now + 60_000,
+      });
+      await ctx.db.patch(scheduleState._id, {
+        sourceRevision: 8,
+        updatedAt: now + 60_000,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const firstWrite = await readPreferenceScheduleState(t, primaryId);
+    const firstContinuation = firstWrite.scheduled.find(
+      ({ name }) =>
+        name === "mutations/notifications:resumePreferenceReconciliation",
+    );
+    expect(firstContinuation).toBeDefined();
+    const firstArgs = firstContinuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    expect(firstArgs).toMatchObject({
+      userId: primaryId,
+      purpose: "period_window_approaching",
+      reminderWindowVersion: 1,
+      sourceRevision: 8,
+    });
+    expect(firstWrite.preference?.inAppEnabled).toBe(true);
+    expect(firstWrite.snapshots.map(({ _id }) => _id)).toEqual([oldSnapshot._id]);
+    expect(firstWrite.work.find(({ _id }) => _id === oldWorkId)?.state).toBe(
+      "cancelled",
+    );
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "11:30",
+    });
+    const latestWrite = await readPreferenceScheduleState(t, primaryId);
+    const latestContinuation = latestWrite.scheduled.find(
+      ({ name, args }) =>
+        name === "mutations/notifications:resumePreferenceReconciliation" &&
+        (args?.[0] as { reminderWindowVersion?: number } | undefined)
+          ?.reminderWindowVersion === 2,
+    );
+    expect(latestContinuation).toBeDefined();
+    const latestArgs = latestContinuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    if (!firstArgs || !latestArgs) {
+      throw new Error("Expected generation-bound preference continuations");
+    }
+
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, firstArgs),
+    ).resolves.toBe("stale");
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: oldWorkId, generation: 7 }),
+    ).resolves.toEqual({ status: "stale" });
+    expect((await readPreferenceScheduleState(t, primaryId)).snapshots).toHaveLength(
+      1,
+    );
+
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, latestArgs),
+    ).resolves.toBe("refreshed");
+    const refreshed = await readPreferenceScheduleState(t, primaryId);
+    const freshSnapshot = refreshed.snapshots.find(
+      ({ _id }) => _id !== oldSnapshot._id,
+    );
+    const freshWork = refreshed.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(freshSnapshot).toBeDefined();
+    expect(freshWork?.generation).toBe(8);
+    expect(freshWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(freshSnapshot!.pointDate, -3),
+        "11:30",
+        "UTC",
+      ),
+    );
+    expect(refreshed.preference?.reminderWindowVersion).toBe(2);
+    expect(refreshed.work.find(({ _id }) => _id === oldWorkId)?.state).toBe(
+      "cancelled",
+    );
+    expect(refreshed.events).toEqual([]);
+    const periodEvents = await t.run((ctx) =>
+      ctx.db
+        .query("periodEvents")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .take(10),
+    );
+    expect(periodEvents).toHaveLength(1);
+    expect(periodEvents[0]).toMatchObject({
+      startDate: "2026-03-02",
+      authorityVersion: 2,
+    });
+  });
+
+  test("an unavailable snapshot continuation waits for the next fresh-snapshot event without polling", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await seedPredictionInputs(t, primaryId);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const waiting = await readPreferenceScheduleState(t, primaryId);
+    const continuation = waiting.scheduled.find(
+      ({ name }) => name === "mutations/notifications:resumePreferenceReconciliation",
+    );
+    const continuationArgs = continuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    expect(waiting.snapshots).toEqual([]);
+    expect(waiting.work).toEqual([]);
+    expect(continuationArgs).toMatchObject({
+      userId: primaryId,
+      purpose: "period_window_approaching",
+      reminderWindowVersion: 1,
+      sourceRevision: 7,
+    });
+    if (!continuationArgs) throw new Error("Expected a preference continuation");
+
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, continuationArgs),
+    ).resolves.toBe("unavailable");
+    const unavailable = await readPreferenceScheduleState(t, primaryId);
+    expect(unavailable.snapshots).toEqual([]);
+    expect(unavailable.work).toEqual([]);
+    expect(
+      unavailable.scheduled.filter(
+        ({ name }) => name === "mutations/notifications:resumePreferenceReconciliation",
+      ),
+    ).toHaveLength(1);
+
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(snapshotId).not.toBeNull();
+    const refreshed = await readPreferenceScheduleState(t, primaryId);
+    expect(refreshed.snapshots.map(({ _id }) => _id)).toContain(snapshotId);
+    expect(
+      refreshed.work.some(
+        ({ kind, state, generation }) =>
+          kind === "prediction_window" && state === "pending" && generation === 7,
+      ),
+    ).toBe(true);
+    expect(refreshed.events).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("periodEvents").take(10))).toHaveLength(
+      1,
+    );
+  });
+
   test("identical scheduling preference writes dedupe revisions and wakeups", async () => {
     enableScheduleInputs();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
@@ -564,7 +793,9 @@ describe("notification persistence", () => {
     expect(after.source?.sourceRevision).toBe(7);
     expect(after.snapshots.map(({ _id }) => _id)).toEqual([snapshot._id]);
     expect(after.work).toEqual([]);
-    expect(after.scheduled).toEqual([]);
+    expect(after.scheduled.map(({ name }) => name)).toEqual([
+      "mutations/notifications:resumePreferenceReconciliation",
+    ]);
   });
 
   test("rejects external-channel fields on new preference and persistence paths", async () => {

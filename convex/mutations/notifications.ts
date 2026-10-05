@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
 
 import { internalMutation, mutation } from "../_generated/server";
 import {
@@ -23,16 +24,33 @@ import {
 } from "../schema";
 import { initializeNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
 import { reconcileUserSchedule } from "../internal/notificationScheduler";
+import { ensureCurrentSnapshot } from "../internal/predictionSnapshots";
 
 const MAX_KEY_LENGTH = 1_024;
 const INBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_INBOX_V1";
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const PROJECTION_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
+const SCHEDULER_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_SCHEDULER_V1";
 
 type NotificationFlagName =
   | typeof INBOX_ENABLED_ENV
   | typeof OUTBOX_ENABLED_ENV
-  | typeof PROJECTION_ENABLED_ENV;
+  | typeof PROJECTION_ENABLED_ENV
+  | typeof SCHEDULER_ENABLED_ENV;
+
+const preferenceReconciliationContinuationArgsValidator = v.object({
+  userId: v.id("users"),
+  purpose: v.union(
+    v.literal("period_window_approaching"),
+    v.literal("late_status"),
+  ),
+  reminderWindowVersion: v.number(),
+  sourceRevision: v.number(),
+});
+
+const preferenceReconciliationContinuationRef = makeFunctionReference<"mutation">(
+  "mutations/notifications:resumePreferenceReconciliation",
+);
 
 const ensureInAppRecordsArgsValidator = v.object({
   envelope: notificationEventEnvelopeValidator,
@@ -69,8 +87,56 @@ function isEnabled(name: NotificationFlagName): boolean {
       return process.env.CB_CONNECT_NOTIFICATION_OUTBOX_V1 === "true";
     case PROJECTION_ENABLED_ENV:
       return process.env.CB_CONNECT_NOTIFICATION_PROJECTION_V1 === "true";
+    case SCHEDULER_ENABLED_ENV:
+      return process.env.CB_CONNECT_NOTIFICATION_SCHEDULER_V1 === "true";
   }
 }
+
+export const resumePreferenceReconciliation = internalMutation({
+  args: preferenceReconciliationContinuationArgsValidator.fields,
+  returns: v.union(
+    v.literal("stale"),
+    v.literal("unavailable"),
+    v.literal("refreshed"),
+  ),
+  handler: async (ctx, args) => {
+    if (
+      !isEnabled(SCHEDULER_ENABLED_ENV) ||
+      !Number.isSafeInteger(args.reminderWindowVersion) ||
+      args.reminderWindowVersion < 0 ||
+      !Number.isSafeInteger(args.sourceRevision) ||
+      args.sourceRevision < 0
+    ) {
+      return "stale" as const;
+    }
+
+    const [preference, scheduleState] = await Promise.all([
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", args.userId).eq("purpose", args.purpose),
+        )
+        .unique(),
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+        .unique(),
+    ]);
+    if (
+      !preference ||
+      !preference.inAppEnabled ||
+      !preference.localReminderTime ||
+      preference.reminderWindowVersion !== args.reminderWindowVersion ||
+      !scheduleState ||
+      scheduleState.sourceRevision !== args.sourceRevision
+    ) {
+      return "stale" as const;
+    }
+
+    const snapshotId = await ensureCurrentSnapshot(ctx, args.userId);
+    return snapshotId === null ? "unavailable" as const : "refreshed" as const;
+  },
+});
 
 function assertFiniteTimestamp(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -406,8 +472,31 @@ export const setMyPreference = mutation({
     }
 
     if (isScheduledPurpose(args.purpose)) {
-      await initializeNotificationSourceAuthority(ctx, user._id, updatedAt);
+      const scheduleState = await initializeNotificationSourceAuthority(
+        ctx,
+        user._id,
+        updatedAt,
+      );
       await reconcileUserSchedule(ctx, user._id);
+      if (
+        isEnabled(SCHEDULER_ENABLED_ENV) &&
+        args.inAppEnabled &&
+        localReminderTime !== undefined &&
+        scheduleState &&
+        Number.isSafeInteger(scheduleState.sourceRevision) &&
+        scheduleState.sourceRevision >= 0
+      ) {
+        await ctx.scheduler.runAfter(
+          0,
+          preferenceReconciliationContinuationRef,
+          {
+            userId: user._id,
+            purpose: args.purpose,
+            reminderWindowVersion,
+            sourceRevision: scheduleState.sourceRevision,
+          },
+        );
+      }
     }
 
     return {
