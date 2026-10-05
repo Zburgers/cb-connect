@@ -6,6 +6,9 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   makeEventIdempotencyKey,
+  transitionDeliveryState,
+  transitionDeliveryStateFenced,
+  transitionProviderReceiptFactual,
   type ProjectInAppArgs,
 } from "../_helpers/notificationDelivery";
 import { renderFrozen } from "../_helpers/notificationTemplates";
@@ -489,6 +492,82 @@ describe("N2d transactional in-app delivery", () => {
     await t.run(async (ctx) => {
       expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+    });
+  });
+
+  test("cannot terminalize an exhausted generation or leave MAX_SAFE_INTEGER current", async () => {
+    const { t, ready } = await seedMessageDelivery();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ready.deliveryId!, {
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        expiresAt: Date.now(),
+      });
+    });
+
+    const result = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: Number.MAX_SAFE_INTEGER,
+    });
+
+    expect(result.status).toBe("stale");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(ready.deliveryId!)).toMatchObject({
+        state: "pending",
+        eligibility: "eligible",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+      });
+    });
+  });
+
+  test("attempt exhaustion at MAX_SAFE_INTEGER is a no-op, while late receipts remain factual", async () => {
+    const { t, ready } = await seedMessageDelivery();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ready.deliveryId!, {
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        attemptCount: 4,
+      });
+    });
+
+    const result = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: Number.MAX_SAFE_INTEGER,
+    });
+
+    expect(result.status).toBe("stale");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(ready.deliveryId!)).toMatchObject({
+        state: "pending",
+        eligibility: "eligible",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+      });
+    });
+
+    const cancelled = transitionDeliveryState(
+      {
+        channel: "push",
+        status: "processing",
+        eligibility: "eligible",
+        providerOutcome: "none",
+      },
+      { kind: "cancelled" },
+    ).state;
+    expect(
+      transitionDeliveryStateFenced(cancelled, {
+        expectedGeneration: Number.MAX_SAFE_INTEGER,
+        currentGeneration: Number.MAX_SAFE_INTEGER,
+        fact: { kind: "unknown", errorCode: "timeout" },
+      }).applied,
+    ).toBe(false);
+    expect(
+      transitionProviderReceiptFactual(cancelled, {
+        kind: "provider_receipt",
+        outcome: "delivered",
+        providerMessageId: "synthetic-late-fact",
+      }).state,
+    ).toMatchObject({
+      status: "cancelled",
+      eligibility: "cancelled",
+      providerOutcome: "delivered",
     });
   });
 });
