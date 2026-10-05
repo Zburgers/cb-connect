@@ -929,7 +929,7 @@ describe("couple notification outbox", () => {
     });
   });
 
-  test("replaying an unchanged connected-since date preserves its event and projection", async () => {
+  test("same-date connected-since retry is a no-op and a changed date supersedes the prior event", async () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-04T12:00:00.000Z"));
@@ -939,6 +939,10 @@ describe("couple notification outbox", () => {
       await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
         connectedSinceDate: "2000-02-14",
       });
+      const firstSettingVersion = await t.run(async (ctx) => {
+        return (await ctx.db.get(coupleId))?.connectedSinceUpdatedAt;
+      });
+      expect(firstSettingVersion).toBeDefined();
       const firstProjection = await t.run(async (ctx) => {
         const event = await ctx.db.query("notificationEvents").unique();
         if (!event) throw new Error("Expected the first setting-version event");
@@ -979,13 +983,29 @@ describe("couple notification outbox", () => {
         connectedSinceDate: "2000-02-14",
       });
 
+      const replayState = await t.run(async (ctx) => ({
+        couple: await ctx.db.get(coupleId),
+        events: await ctx.db.query("notificationEvents").collect(),
+        delivery: await ctx.db.get(firstProjection.deliveryId),
+        inboxItem: await ctx.db.get(firstProjection.inboxItemId),
+      }));
+      expect(replayState.couple?.connectedSinceDate).toBe("2000-02-14");
+      expect(replayState.couple?.connectedSinceUpdatedAt).toBe(firstSettingVersion);
+      expect(replayState.events).toHaveLength(1);
+      expect(replayState.delivery).toMatchObject({ state: "pending", eligibility: "eligible" });
+      expect(replayState.inboxItem).toMatchObject({ state: "current" });
+
+      await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+        connectedSinceDate: "2000-02-15",
+      });
+
       const { couple, events } = await t.run(async (ctx) => ({
         couple: await ctx.db.get(coupleId),
         events: await ctx.db.query("notificationEvents").collect(),
       }));
-      expect(events).toHaveLength(1);
-      expect(new Set(events.map((event) => event.sourceAuthorityVersion)).size).toBe(1);
-      expect(events.map((event) => event.recipientUserId)).toEqual([partnerId]);
+      expect(events).toHaveLength(2);
+      expect(new Set(events.map((event) => event.sourceAuthorityVersion)).size).toBe(2);
+      expect(events.map((event) => event.recipientUserId)).toEqual([partnerId, partnerId]);
       for (const event of events) {
         const settingVersion = event.sourceAuthorityVersion.replace("connected-since-setting:", "");
         expect(event).toMatchObject({
@@ -1010,14 +1030,15 @@ describe("couple notification outbox", () => {
         expect(event).not.toHaveProperty("name");
         expect(event).not.toHaveProperty("payload");
       }
-      expect(couple?.connectedSinceDate).toBe("2000-02-14");
-      expect(couple?.connectedSinceUpdatedAt).toBe(Date.parse("2026-10-04T12:00:00.000Z"));
+      expect(couple?.connectedSinceDate).toBe("2000-02-15");
+      expect(couple?.connectedSinceUpdatedAt).toBe(firstSettingVersion! + 1);
       await t.run(async (ctx) => {
         expect(await ctx.db.get(firstProjection.deliveryId)).toMatchObject({
-          state: "pending",
-          eligibility: "eligible",
+          state: "cancelled",
+          eligibility: "cancelled",
+          cancellationReason: "source_changed",
         });
-        expect(await ctx.db.get(firstProjection.inboxItemId)).toMatchObject({ state: "current" });
+        expect(await ctx.db.get(firstProjection.inboxItemId)).toMatchObject({ state: "hidden" });
         expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
         expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(1);
         expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(1);
