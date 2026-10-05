@@ -830,3 +830,75 @@ describe("N2d transactional in-app delivery", () => {
     });
   });
 });
+
+describe("N2e worker and receipt reducer boundary", () => {
+  test("late receipt records outcome after cancellation while stale worker results stay fenced", async () => {
+    const { t, coupleId, ready, now } = await seedMessageDelivery();
+    await t.run(async (ctx) => {
+      const couple = await ctx.db.get(coupleId);
+      if (!couple) throw new Error("Expected the current message authority");
+      await ctx.db.patch(couple._id, { chatClearedAt: now + 1 });
+    });
+    const cancellation = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: 0,
+    });
+    const cancelledDelivery = await t.run((ctx) => ctx.db.get(ready.deliveryId!));
+    if (!cancelledDelivery) throw new Error("Expected the cancelled delivery record");
+    const previousGeneration = 0;
+    const terminalGeneration = cancelledDelivery.claimGeneration;
+    const workerSnapshot = {
+      channel: "email" as const,
+      status: "processing" as const,
+      eligibility: "eligible" as const,
+      providerOutcome: "none" as const,
+    };
+    const cancelled = transitionDeliveryState(workerSnapshot, { kind: "cancelled" }).state;
+
+    // Worker results use the generation fence. Correlated receipts are facts,
+    // so they pass through the monotonic reducer even after eligibility ends.
+    const lateWorkerResult = transitionDeliveryStateFenced(workerSnapshot, {
+      expectedGeneration: previousGeneration,
+      currentGeneration: terminalGeneration,
+      fact: {
+        kind: "accepted",
+        providerMessageId: "opaque-provider-message-id",
+      },
+    });
+    const lateRetryResult = transitionDeliveryStateFenced(workerSnapshot, {
+      expectedGeneration: previousGeneration,
+      currentGeneration: terminalGeneration,
+      fact: {
+        kind: "retryable_failure",
+        errorCode: "timeout",
+      },
+    });
+
+    const lateReceipt = transitionProviderReceiptFactual(cancelled, {
+      kind: "provider_receipt",
+      outcome: "delivered",
+      providerMessageId: "opaque-provider-message-id",
+    });
+    const olderReceipt = transitionProviderReceiptFactual(lateReceipt.state, {
+      kind: "provider_receipt",
+      outcome: "accepted",
+      providerMessageId: "opaque-provider-message-id",
+    });
+
+    expect(cancellation.status).toBe("denied");
+    expect(cancelledDelivery).toMatchObject({
+      state: "cancelled",
+      eligibility: "cancelled",
+      claimGeneration: previousGeneration + 1,
+    });
+    expect(lateWorkerResult).toMatchObject({ applied: false, state: workerSnapshot });
+    expect(lateRetryResult).toMatchObject({ applied: false, state: workerSnapshot });
+    expect(lateReceipt.state).toMatchObject({
+      status: "cancelled",
+      eligibility: "cancelled",
+      providerOutcome: "delivered",
+      providerMessageId: "opaque-provider-message-id",
+    });
+    expect(olderReceipt.state).toEqual(lateReceipt.state);
+  });
+});
