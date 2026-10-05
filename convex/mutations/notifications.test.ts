@@ -7,9 +7,11 @@ import { renderFrozen } from "../_helpers/notificationTemplates";
 import schema from "../schema";
 import {
   notificationControlValidator,
+  notificationDueWorkValidator,
   notificationInAppAttemptValidator,
   notificationInAppDeliveryValidator,
   painReminderRequestValidator,
+  notificationScheduleStateValidator,
 } from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -115,6 +117,65 @@ describe("notification persistence", () => {
         nextAttemptAt: undefined,
         updatedAt: 1_800_000_000_200,
       });
+    });
+  });
+
+  test("rejects fractional and unsafe event timestamps before persistence", async () => {
+    enableOutboxProjection();
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t);
+    await asPartner.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "partner_message",
+      inAppEnabled: true,
+    });
+    const rendered = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const args = {
+      envelope: {
+        eventType: "partner_message.v1" as const,
+        eventVersion: 1 as const,
+        purpose: "partner_message" as const,
+        producerKind: "new_couple_message" as const,
+        sourceReference: "message:opaque",
+        sourceAuthorityVersion: "link-generation:1",
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        recipientScope: "other_active_member" as const,
+        privacyClass: "relationship_private_free_text_source" as const,
+        validityRule: "while_message_and_active_link_exist" as const,
+        idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+          messageId: "coupleMessages:opaque",
+          recipientId: String(partnerId),
+        }),
+        allowedChannel: "in_app" as const,
+      },
+      route: "messages" as const,
+      templateVersion: "g4-static-v1",
+      renderIdentity: rendered.identity,
+      createdAt: 100,
+      notBefore: 100,
+    };
+
+    for (const createdAt of [
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      await expect(
+        t.mutation(internal.mutations.notifications.ensureInAppRecords, {
+          ...args,
+          createdAt,
+        }),
+      ).rejects.toThrow(/timestamp|createdAt/i);
+    }
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
     });
   });
 
@@ -353,6 +414,20 @@ describe("notification persistence", () => {
       indexDescriptor: "by_state_and_due_at",
       fields: ["state", "dueAt"],
     });
+    expect(indexDefinitions(schema.tables.notificationDueWork)).toContainEqual({
+      indexDescriptor: "by_kind_and_state_and_due_at",
+      fields: ["kind", "state", "dueAt"],
+    });
+    expect(Object.keys(notificationScheduleStateValidator.fields).sort()).toEqual([
+      "createdAt",
+      "sourceAuthorityVersion",
+      "sourceRevision",
+      "updatedAt",
+      "userId",
+    ]);
+    expect(Object.keys(notificationDueWorkValidator.fields)).toEqual(
+      expect.arrayContaining(["sourceAuthorityVersion", "reminderWindowVersion"]),
+    );
     expect(indexDefinitions(schema.tables.notificationScheduleState)).toContainEqual({
       indexDescriptor: "by_user_id",
       fields: ["userId"],
@@ -360,6 +435,14 @@ describe("notification persistence", () => {
     expect(indexDefinitions(schema.tables.notificationDeliveries)).toContainEqual({
       indexDescriptor: "by_state_and_expires_at",
       fields: ["state", "expiresAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDeliveries)).toContainEqual({
+      indexDescriptor: "by_state_and_next_receipt_check_at",
+      fields: ["state", "nextReceiptCheckAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDeliveries)).not.toContainEqual({
+      indexDescriptor: "by_state_and_receipt_check_at",
+      fields: ["state", "nextReceiptCheckAt"],
     });
   });
 });

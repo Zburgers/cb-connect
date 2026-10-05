@@ -47,6 +47,7 @@ export const notificationPreferenceValidator = v.object({
 export const notificationScheduleStateValidator = v.object({
   userId: v.id("users"),
   sourceRevision: v.number(),
+  sourceAuthorityVersion: v.optional(v.string()),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -76,6 +77,8 @@ export const notificationDueWorkValidator = v.object({
   ),
   dueAt: v.number(),
   generation: v.number(),
+  sourceAuthorityVersion: v.optional(v.string()),
+  reminderWindowVersion: v.optional(v.number()),
   eventId: v.optional(v.id("notificationEvents")),
   deliveryId: v.optional(v.id("notificationDeliveries")),
   painReminderRequestId: v.optional(v.id("painReminderRequests")),
@@ -625,7 +628,7 @@ export default defineSchema({
     .index("by_state_and_expires_at", ["state", "expiresAt"])
     .index("by_state_and_next_attempt_at", ["state", "nextAttemptAt"])
     .index("by_state_and_lease_until", ["state", "leaseUntil"])
-    .index("by_state_and_receipt_check_at", ["state", "nextReceiptCheckAt"])
+    .index("by_state_and_next_receipt_check_at", ["state", "nextReceiptCheckAt"])
     .index("by_state_and_review_at", ["state", "reviewAt"]),
 
   notificationDeliveryAttempts: defineTable(notificationInAppAttemptValidator)
@@ -634,6 +637,7 @@ export default defineSchema({
 
   notificationDueWork: defineTable(notificationDueWorkValidator)
     .index("by_state_and_due_at", ["state", "dueAt"])
+    .index("by_kind_and_state_and_due_at", ["kind", "state", "dueAt"])
     .index("by_owner_and_state_and_due_at", ["ownerUserId", "state", "dueAt"])
     .index("by_delivery_id", ["deliveryId"])
     .index("by_request_id", ["painReminderRequestId"]),

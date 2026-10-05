@@ -26,6 +26,8 @@ import {
   notificationDeliveryAttemptRecordValidator,
   notificationDeliveryRecordValidator,
   notificationInboxItemRecordValidator,
+  isValidProjectInAppArgs,
+  projectInAppArgsValidator,
   renderFrozenArgsValidator,
   sameFrozenRenderIdentity,
   transitionDeliveryState,
@@ -741,6 +743,17 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
     ).toBe("unknown");
   });
 
+  test("rejects an exhausted safe-integer worker generation even when it matches", () => {
+    const current = processingExternalDelivery();
+    expect(
+      transitionDeliveryStateFenced(current, {
+        expectedGeneration: Number.MAX_SAFE_INTEGER,
+        currentGeneration: Number.MAX_SAFE_INTEGER,
+        fact: { kind: "accepted", providerMessageId: "late-provider-id" },
+      }),
+    ).toEqual({ applied: false, state: current, anomaly: null });
+  });
+
   test("destination and render identities reject empty identity parts", () => {
     expect(isValidResolvedDestination({ stableDestinationId: "installations:1", version: "2" })).toBe(true);
     expect(isValidResolvedDestination({ stableDestinationId: "", version: "2" })).toBe(false);
@@ -778,6 +791,50 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
       ].sort(),
     );
     expect(notificationAdapterResultValidator).toBeDefined();
+  });
+
+  test("projector requests can carry only a complete semantic source and preference fence", () => {
+    const base = {
+      eventId: "notificationEvents:1",
+      expectedGeneration: 1,
+    };
+    expect(isValidProjectInAppArgs(base)).toBe(true);
+    expect(
+      isValidProjectInAppArgs({
+        ...base,
+        expectedSourceAuthorityVersion:
+          'g4-source-v1:[1,"cycle-read-model-v1",null,null,null]',
+        expectedReminderWindowVersion: 2,
+      }),
+    ).toBe(true);
+    expect(
+      isValidProjectInAppArgs({
+        ...base,
+        expectedSourceAuthorityVersion:
+          'g4-source-v1:[1,"cycle-read-model-v1",null,null,null]',
+      }),
+    ).toBe(false);
+    expect(
+      isValidProjectInAppArgs({
+        ...base,
+        expectedSourceAuthorityVersion: "",
+        expectedReminderWindowVersion: 2,
+      }),
+    ).toBe(false);
+    expect(
+      isValidProjectInAppArgs({
+        ...base,
+        expectedSourceAuthorityVersion:
+          'g4-source-v1:[1,"cycle-read-model-v1",null,null,null]',
+        expectedReminderWindowVersion: Number.MAX_SAFE_INTEGER + 1,
+      }),
+    ).toBe(false);
+    expect(Object.keys(projectInAppArgsValidator.fields).sort()).toEqual([
+      "eventId",
+      "expectedGeneration",
+      "expectedReminderWindowVersion",
+      "expectedSourceAuthorityVersion",
+    ]);
   });
 
   test("render payload only accepts finite code-owned copy keys and routes", () => {

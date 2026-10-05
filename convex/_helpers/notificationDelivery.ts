@@ -262,6 +262,8 @@ export type ReconcileSourceArgs = {
 export type ProjectInAppArgs = {
   eventId: Id<"notificationEvents">;
   expectedGeneration: number;
+  expectedSourceAuthorityVersion?: string;
+  expectedReminderWindowVersion?: number;
 };
 
 export type CancelSourceArgs = {
@@ -394,7 +396,37 @@ export const reconcileSourceArgsValidator = v.object({
 export const projectInAppArgsValidator = v.object({
   eventId: v.id("notificationEvents"),
   expectedGeneration: v.number(),
+  expectedSourceAuthorityVersion: v.optional(v.string()),
+  expectedReminderWindowVersion: v.optional(v.number()),
 });
+
+/** Semantic checks paired with the structurally compatible projector argument validator. */
+export function isValidProjectInAppArgs(value: unknown): value is ProjectInAppArgs {
+  if (typeof value !== "object" || value === null) return false;
+  const args = value as Record<string, unknown>;
+  if (
+    typeof args.eventId !== "string" ||
+    args.eventId.length === 0 ||
+    typeof args.expectedGeneration !== "number" ||
+    !Number.isSafeInteger(args.expectedGeneration) ||
+    args.expectedGeneration < 0
+  ) {
+    return false;
+  }
+  const hasSourceFence = args.expectedSourceAuthorityVersion !== undefined;
+  const hasPreferenceFence = args.expectedReminderWindowVersion !== undefined;
+  if (!hasSourceFence && !hasPreferenceFence) return true;
+  return (
+    hasSourceFence &&
+    typeof args.expectedSourceAuthorityVersion === "string" &&
+    args.expectedSourceAuthorityVersion.startsWith("g4-source-v1:") &&
+    args.expectedSourceAuthorityVersion.length <= 1_024 &&
+    hasPreferenceFence &&
+    typeof args.expectedReminderWindowVersion === "number" &&
+    Number.isSafeInteger(args.expectedReminderWindowVersion) &&
+    args.expectedReminderWindowVersion > 0
+  );
+}
 
 export const cancelSourceArgsValidator = v.object({
   sourceRef: v.string(),
@@ -1057,6 +1089,7 @@ export function transitionDeliveryStateFenced(
     args.expectedGeneration < 0 ||
     !Number.isSafeInteger(args.currentGeneration) ||
     args.currentGeneration < 0 ||
+    args.currentGeneration >= Number.MAX_SAFE_INTEGER ||
     args.expectedGeneration !== args.currentGeneration
   ) {
     return { applied: false, state: current, anomaly: null };

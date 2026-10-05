@@ -71,8 +71,8 @@ function isEnabled(name: NotificationFlagName): boolean {
 }
 
 function assertFiniteTimestamp(value: number, label: string): void {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${label} must be a finite non-negative timestamp`);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a finite non-negative integer timestamp`);
   }
 }
 

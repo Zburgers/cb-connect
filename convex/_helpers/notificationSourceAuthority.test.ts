@@ -3,8 +3,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   advanceNotificationSourceAuthority,
+  createNotificationDueWork,
+  isCurrentNotificationScheduleFence,
   initializeNotificationSourceAuthority,
   makeSourceAuthorityVersion,
+  parseSourceAuthorityVersion,
+  persistNotificationSourceAuthorityVersion,
 } from "./notificationSourceAuthority";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -85,6 +89,39 @@ describe("G4-SOURCE-V1 canonical authority", () => {
         calibrationMethodVersion: "calibrate-v3",
       }),
     ).not.toBe(first);
+  });
+
+  test("exports one canonical full-tuple parser for source-key consumers", () => {
+    const version = makeSourceAuthorityVersion({
+      sourceRevision: 5,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v3",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+
+    expect(parseSourceAuthorityVersion(version)).toEqual({
+      sourceRevision: 5,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v3",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    expect(parseSourceAuthorityVersion(`${version} `)).toBeNull();
+    expect(
+      parseSourceAuthorityVersion(
+        'g4-source-v1:[5.5,"cycle-read-model-v1","prediction-serving-v2","estimate-v3","calibrate-v2"]',
+      ),
+    ).toBeNull();
+    expect(() =>
+      makeSourceAuthorityVersion({
+        sourceRevision: 5,
+        servedCycleContract: '"'.repeat(128),
+        servedPredictionContract: '"'.repeat(128),
+        estimatorMethodVersion: '"'.repeat(128),
+        calibrationMethodVersion: '"'.repeat(128),
+      }),
+    ).toThrow(/bound|length|limit/i);
   });
 
   test("rejects malformed revisions and contract versions", () => {
@@ -230,5 +267,135 @@ describe("transactional notification source revision", () => {
     await expect(
       t.run((ctx) => initializeNotificationSourceAuthority(ctx, partnerId, 1)),
     ).rejects.toThrow(/primary/i);
+  });
+
+  test("persists the served tuple and creates due work only under current source and purpose fences", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run((ctx) =>
+      ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "late_status",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 4,
+        updatedAt: 100,
+      }),
+    );
+    await t.run((ctx) => initializeNotificationSourceAuthority(ctx, primaryId, 100));
+
+    const sourceAuthorityVersion = makeSourceAuthorityVersion({
+      sourceRevision: 0,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v3",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    await t.run((ctx) =>
+      persistNotificationSourceAuthorityVersion(ctx, primaryId, sourceAuthorityVersion, 200),
+    );
+    const dueWorkId = await t.run((ctx) =>
+      createNotificationDueWork(ctx, {
+        ownerUserId: primaryId,
+        kind: "late_boundary",
+        state: "pending",
+        dueAt: 900,
+        generation: 1,
+        sourceAuthorityVersion,
+        reminderWindowVersion: 4,
+        createdAt: 200,
+        updatedAt: 200,
+      }),
+    );
+    expect(dueWorkId).toBeTruthy();
+
+    const currentState = await t.run((ctx) =>
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    const currentPreference = await t.run((ctx) =>
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "late_status"),
+        )
+        .unique(),
+    );
+    expect(
+      isCurrentNotificationScheduleFence(
+        { sourceAuthorityVersion, reminderWindowVersion: 4 },
+        currentState,
+        currentPreference,
+      ),
+    ).toBe(true);
+    expect(
+      isCurrentNotificationScheduleFence(
+        { sourceAuthorityVersion, reminderWindowVersion: 3 },
+        currentState,
+        currentPreference,
+      ),
+    ).toBe(false);
+
+    await t.run((ctx) => advanceNotificationSourceAuthority(ctx, primaryId, 300));
+    const advancedState = await t.run((ctx) =>
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    expect(
+      isCurrentNotificationScheduleFence(
+        { sourceAuthorityVersion, reminderWindowVersion: 4 },
+        advancedState,
+        currentPreference,
+      ),
+    ).toBe(false);
+    await expect(
+      t.run((ctx) =>
+        createNotificationDueWork(ctx, {
+          ownerUserId: primaryId,
+          kind: "late_boundary",
+          state: "pending",
+          dueAt: 1_000,
+          generation: 2,
+          sourceAuthorityVersion,
+          reminderWindowVersion: 4,
+          createdAt: 300,
+          updatedAt: 300,
+        }),
+      ),
+    ).rejects.toThrow(/current|fence|authority/i);
+  });
+
+  test("rejects unsafe due-work numbers and kind-specific missing references", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const base = {
+      ownerUserId: primaryId,
+      kind: "delivery" as const,
+      state: "pending" as const,
+      dueAt: 10,
+      generation: 1,
+      deliveryId: "notificationDeliveries:1" as never,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    for (const generation of [1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(
+        t.run((ctx) => createNotificationDueWork(ctx, { ...base, generation } as never)),
+      ).rejects.toThrow(/generation|integer|safe/i);
+    }
+    for (const dueAt of [1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(
+        t.run((ctx) => createNotificationDueWork(ctx, { ...base, dueAt } as never)),
+      ).rejects.toThrow(/timestamp|due/i);
+    }
+    await expect(
+      t.run((ctx) => createNotificationDueWork(ctx, { ...base, deliveryId: undefined } as never)),
+    ).rejects.toThrow(/delivery/i);
   });
 });

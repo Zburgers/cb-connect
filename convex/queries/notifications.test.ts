@@ -1,17 +1,37 @@
 import { convexTest } from "convex-test";
+import { makeFunctionReference, type FunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import { renderFrozen } from "../_helpers/notificationTemplates";
+import {
+  initializeNotificationSourceAuthority,
+  makeSourceAuthorityVersion,
+  persistNotificationSourceAuthorityVersion,
+} from "../_helpers/notificationSourceAuthority";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
 
 afterEach(() => vi.unstubAllEnvs());
 
+type ProjectArgs = { eventId: Id<"notificationEvents">; expectedGeneration: number };
+type ProjectResult = {
+  status: "projected" | "replayed" | "denied" | "stale" | "disabled" | "expired";
+  eventId: Id<"notificationEvents">;
+  deliveryId: Id<"notificationDeliveries"> | null;
+  inboxItemId: Id<"notificationInboxItems"> | null;
+};
+const projectInAppReference = makeFunctionReference<"mutation", ProjectArgs, ProjectResult>(
+  "internal/notificationDelivery:projectInApp",
+) as unknown as FunctionReference<"mutation", "internal", ProjectArgs, ProjectResult>;
+
 function enableInAppInbox() {
   vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
   vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
   vi.stubEnv("CB_CONNECT_NOTIFICATION_INBOX_V1", "true");
 }
 
@@ -40,15 +60,29 @@ describe("notification recipient queries", () => {
       purpose: "partner_message",
       inAppEnabled: true,
     });
-    const messageId = await t.run((ctx) =>
-      ctx.db.insert("coupleMessages", {
+    const messageId = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected a current partner membership");
+      return await ctx.db.insert("coupleMessages", {
         coupleId,
+        relationshipMembershipId: partnerMembership._id,
         senderId: primaryId,
         body: "body is not notification data",
         createdAt: 100,
-      }),
-    );
-    const projected = await t.mutation(
+      });
+    });
+    const rendered = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const prepared = await t.mutation(
       internal.mutations.notifications.ensureInAppRecords,
       {
       envelope: {
@@ -71,15 +105,14 @@ describe("notification recipient queries", () => {
       },
       route: "messages",
       templateVersion: "g4-static-v1",
-      renderIdentity: {
-        templateVersion: "g4-static-v1",
-        locale: "en",
-        variableSchemaVersion: "g4-v1",
-        payloadHash: "test-static-message-v1",
-      },
+      renderIdentity: rendered.identity,
       createdAt: 100,
       notBefore: 100,
       },
+    );
+    const projected = await t.mutation(
+      projectInAppReference,
+      { eventId: prepared.eventId!, expectedGeneration: 0 },
     );
 
     const [partnerInbox, primaryInbox] = await Promise.all([
@@ -170,5 +203,108 @@ describe("notification recipient queries", () => {
         limit: 101,
       }),
     ).rejects.toThrow(/bound|maximum|limit/i);
+  });
+
+  test("kind-scoped due pages bypass other kinds and continue past stale rows", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 4,
+        updatedAt: 1,
+      });
+      await initializeNotificationSourceAuthority(ctx, primaryId, 1);
+    });
+    const sourceAuthorityVersion = makeSourceAuthorityVersion({
+      sourceRevision: 0,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v3",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    await t.run((ctx) =>
+      persistNotificationSourceAuthorityVersion(ctx, primaryId, sourceAuthorityVersion, 2),
+    );
+    await t.run(async (ctx) => {
+      for (const dueAt of [1, 2]) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "source_reconcile",
+          state: "pending",
+          dueAt,
+          generation: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+      await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: 3,
+        generation: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: 4,
+        generation: 1,
+        sourceAuthorityVersion,
+        reminderWindowVersion: 4,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const genericPrefix = await t.query(internal.queries.notifications.getDueWork, {
+      now: 10,
+      limit: 1,
+    });
+    expect(genericPrefix[0]?.kind).toBe("source_reconcile");
+
+    const stalePage = await t.query(internal.queries.notifications.getDueWorkByKind, {
+      kind: "prediction_window",
+      now: 10,
+      limit: 1,
+      cursor: null,
+    });
+    expect(stalePage.page).toEqual([]);
+    expect(stalePage.isDone).toBe(false);
+
+    const nextPage = await t.query(internal.queries.notifications.getDueWorkByKind, {
+      kind: "prediction_window",
+      now: 10,
+      limit: 1,
+      cursor: stalePage.continueCursor,
+    });
+    expect(nextPage.page).toHaveLength(1);
+    expect(nextPage.page[0]).toMatchObject({
+      kind: "prediction_window",
+      sourceAuthorityVersion,
+      reminderWindowVersion: 4,
+      dueAt: 4,
+    });
+  });
+
+  test("rejects fractional and unsafe due-work query timestamps", async () => {
+    const t = convexTest(schema, modules);
+    for (const now of [
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      await expect(
+        t.query(internal.queries.notifications.getDueWork, { now, limit: 10 }),
+      ).rejects.toThrow(/time|timestamp|integer|safe/i);
+    }
   });
 });
