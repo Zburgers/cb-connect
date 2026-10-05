@@ -4,11 +4,17 @@ import { toCalendarDateInTimeZone } from "./calendarDates";
 import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
 import { readCurrentNotificationCycleState } from "./notificationCycleState";
+import {
+  makeSourceAuthorityVersion,
+  type SourceAuthorityVersionInput,
+} from "./notificationSourceAuthority";
 import { notificationEventDefinitions } from "./notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const MAX_SOURCE_EVENTS = 256;
 const MAX_DUE_WORK_PER_DELIVERY = 256;
+const SOURCE_AUTHORITY_VERSION_PREFIX = "g4-source-v1:";
+const MAX_SOURCE_AUTHORITY_VERSION_LENGTH = 3_200;
 
 export type AssistedPeriodEventType =
   | "assisted_period_start.v1"
@@ -94,6 +100,7 @@ function eventEnvelope(
 
 export async function lateStatusSourceReference(
   primaryId: Id<"users">,
+  sourceAuthorityVersion: string,
   sourceRevision: number,
   localDay: string,
   reminderWindowVersion: number,
@@ -107,10 +114,11 @@ export async function lateStatusSourceReference(
   ) {
     throw new Error("Late-status source generation is invalid");
   }
+  assertCanonicalSourceAuthorityVersion(sourceAuthorityVersion, sourceRevision);
   const source = new TextEncoder().encode(
     `cb-connect:late-source-reference:v1:${JSON.stringify([
       String(primaryId),
-      sourceRevision,
+      sourceAuthorityVersion,
       localDay,
       reminderWindowVersion,
     ])}`,
@@ -118,6 +126,68 @@ export async function lateStatusSourceReference(
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", source));
   const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `late:v1:${hex}`;
+}
+
+function assertCanonicalSourceAuthorityVersion(
+  sourceAuthorityVersion: string,
+  expectedSourceRevision: number,
+): void {
+  if (
+    typeof sourceAuthorityVersion !== "string" ||
+    !sourceAuthorityVersion.startsWith(SOURCE_AUTHORITY_VERSION_PREFIX) ||
+    sourceAuthorityVersion.length > MAX_SOURCE_AUTHORITY_VERSION_LENGTH
+  ) {
+    throw new Error("Late-status source authority version is invalid");
+  }
+
+  let tuple: unknown;
+  try {
+    tuple = JSON.parse(
+      sourceAuthorityVersion.slice(SOURCE_AUTHORITY_VERSION_PREFIX.length),
+    );
+  } catch {
+    throw new Error("Late-status source authority version is invalid");
+  }
+  if (!Array.isArray(tuple) || tuple.length !== 5) {
+    throw new Error("Late-status source authority version is invalid");
+  }
+
+  const [
+    sourceRevision,
+    servedCycleContract,
+    servedPredictionContract,
+    estimatorMethodVersion,
+    calibrationMethodVersion,
+  ] = tuple as unknown[];
+  if (
+    !Number.isSafeInteger(sourceRevision) ||
+    sourceRevision !== expectedSourceRevision ||
+    typeof servedCycleContract !== "string" ||
+    (servedPredictionContract !== null &&
+      typeof servedPredictionContract !== "string") ||
+    (estimatorMethodVersion !== null &&
+      typeof estimatorMethodVersion !== "string") ||
+    (calibrationMethodVersion !== null &&
+      typeof calibrationMethodVersion !== "string")
+  ) {
+    throw new Error("Late-status source authority version is invalid");
+  }
+
+  let canonical: string;
+  try {
+    canonical = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract,
+      servedPredictionContract,
+      estimatorMethodVersion,
+      calibrationMethodVersion,
+    } as SourceAuthorityVersionInput);
+  } catch {
+    throw new Error("Late-status source authority version is invalid");
+  }
+  if (canonical !== sourceAuthorityVersion) {
+    throw new Error("Late-status source authority version is invalid");
+  }
 }
 
 async function lateStatusEventEnvelope(
@@ -135,6 +205,7 @@ async function lateStatusEventEnvelope(
     producerKind: "approved_served_late_state",
     sourceReference: await lateStatusSourceReference(
       primaryId,
+      sourceAuthorityVersion,
       sourceRevision,
       localDay,
       reminderWindowVersion,
@@ -158,6 +229,7 @@ async function lateStatusEventEnvelope(
 async function cancelLateStatusGeneration(
   ctx: MutationCtx,
   primaryId: Id<"users">,
+  sourceAuthorityVersion: string,
   sourceRevision: number,
   localDay: string,
   reminderWindowVersion: number,
@@ -168,6 +240,7 @@ async function cancelLateStatusGeneration(
     ctx,
     await lateStatusSourceReference(
       primaryId,
+      sourceAuthorityVersion,
       sourceRevision,
       localDay,
       reminderWindowVersion,
@@ -187,8 +260,20 @@ export async function cancelCurrentLateStatusSource(
   primaryId: Id<"users">,
   reason: SourceCancellationReason,
   now: number = Date.now(),
+  currentAuthority?: {
+    sourceRevision: number;
+    sourceAuthorityVersion: string;
+  },
 ): Promise<void> {
   assertNow(now);
+  const authority =
+    currentAuthority ??
+    (await readCurrentNotificationCycleState(ctx, primaryId, now));
+  if (!authority) return;
+  assertCanonicalSourceAuthorityVersion(
+    authority.sourceAuthorityVersion,
+    authority.sourceRevision,
+  );
   const [user, scheduleState, preference] = await Promise.all([
     ctx.db.get(primaryId),
     ctx.db
@@ -205,6 +290,9 @@ export async function cancelCurrentLateStatusSource(
   if (!user || user.role !== "primary" || !scheduleState) return;
   if (!Number.isSafeInteger(scheduleState.sourceRevision) || scheduleState.sourceRevision < 0) {
     throw new Error("Stored notification source revision is invalid");
+  }
+  if (scheduleState.sourceRevision !== authority.sourceRevision) {
+    throw new Error("Late-status source authority no longer matches its revision");
   }
   const reminderWindowVersion = preference?.reminderWindowVersion ?? 0;
   if (!Number.isSafeInteger(reminderWindowVersion) || reminderWindowVersion < 0) {
@@ -224,6 +312,7 @@ export async function cancelCurrentLateStatusSource(
       await cancelLateStatusGeneration(
         ctx,
         primaryId,
+        authority.sourceAuthorityVersion,
         scheduleState.sourceRevision,
         day,
         version,
@@ -339,7 +428,13 @@ export async function ensureCurrentLateStatusEvent(
     current.state.status !== "late_or_uncertain" ||
     current.state.reason !== "AFTER_LATEST_BOUND"
   ) {
-    await cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", now);
+    await cancelCurrentLateStatusSource(
+      ctx,
+      primaryId,
+      "source_changed",
+      now,
+      current ?? undefined,
+    );
     return null;
   }
 
@@ -350,7 +445,13 @@ export async function ensureCurrentLateStatusEvent(
     )
     .unique();
   if (!preference?.inAppEnabled) {
-    await cancelCurrentLateStatusSource(ctx, primaryId, "preference_off", now);
+    await cancelCurrentLateStatusSource(
+      ctx,
+      primaryId,
+      "preference_off",
+      now,
+      current,
+    );
     return null;
   }
   if (
@@ -397,6 +498,7 @@ export async function ensureCurrentLateStatusEvent(
         await cancelLateStatusGeneration(
           ctx,
           primaryId,
+          current.sourceAuthorityVersion,
           current.sourceRevision,
           day,
           version,
