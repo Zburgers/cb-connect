@@ -5,8 +5,10 @@ import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+import * as notificationScheduler from "../internal/notificationScheduler";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -410,6 +412,149 @@ describe("prediction segment mutation", () => {
       "late_boundary",
       "prediction_window",
     ]);
+  });
+
+  test("rolls back segment, source revision, and reconciled work when reconciliation fails", async () => {
+    const now = Date.parse("2026-09-24T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: "UTC" });
+      for (const startDate of ["2026-08-20", "2026-09-20"]) {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          startDate,
+          startCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: Date.parse(startDate + "T12:00:00.000Z"),
+          updatedAt: Date.parse(startDate + "T12:00:00.000Z"),
+        });
+      }
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 7,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const purpose of ["period_window_approaching", "late_status"] as const) {
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose,
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 3,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const original = await asPrimary.mutation(
+      api.mutations.cycleContext.createPredictionSegment,
+      { startDate: "2026-09-20" },
+    );
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(snapshotId).not.toBeNull();
+
+    const claimedWorkId = await t.run(async (ctx) => {
+      const pending = await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId).eq("state", "pending"),
+        )
+        .take(10);
+      expect(pending).toHaveLength(2);
+      const lateBoundary = pending.find(({ kind }) => kind === "late_boundary");
+      if (!lateBoundary) throw new Error("Expected pending late-boundary work");
+      await ctx.db.patch(lateBoundary._id, { state: "claimed", updatedAt: now });
+      return lateBoundary._id;
+    });
+
+    const before = await t.run(async (ctx) => ({
+      segments: await ctx.db
+        .query("cyclePredictionSegments")
+        .withIndex("by_user_and_status", (q) => q.eq("userId", primaryId))
+        .take(10),
+      scheduleState: await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+      work: await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId),
+        )
+        .take(10),
+    }));
+    expect(before.segments).toHaveLength(1);
+    expect(before.segments[0]).toMatchObject({
+      _id: original.segmentId,
+      startDate: "2026-09-20",
+      status: "active",
+    });
+    expect(before.scheduleState?.sourceRevision).toBe(8);
+    expect(before.work).toHaveLength(2);
+    expect(before.work.find(({ _id }) => _id === claimedWorkId)?.state).toBe(
+      "claimed",
+    );
+    expect(before.work.filter(({ state }) => state === "pending")).toHaveLength(1);
+
+    const realReconcileUserSchedule =
+      notificationScheduler.reconcileUserSchedule;
+    let statesAfterRealReconciliation: string[] | undefined;
+    const reconcileSpy = vi
+      .spyOn(notificationScheduler, "reconcileUserSchedule")
+      .mockImplementation(async (ctx, userId) => {
+        await realReconcileUserSchedule(ctx, userId);
+        const reconciledWork = await ctx.db
+          .query("notificationDueWork")
+          .withIndex("by_owner_and_state_and_due_at", (q) =>
+            q.eq("ownerUserId", userId),
+          )
+          .take(10);
+        statesAfterRealReconciliation = reconciledWork.map(({ state }) => state);
+        throw new Error("N5D_FORCED_FAILURE_AFTER_REAL_RECONCILIATION");
+      });
+
+    await expect(
+      asPrimary.mutation(api.mutations.cycleContext.createPredictionSegment, {
+        startDate: "2026-08-20",
+      }),
+    ).rejects.toThrow("N5D_FORCED_FAILURE_AFTER_REAL_RECONCILIATION");
+
+    expect(reconcileSpy).toHaveBeenCalledTimes(1);
+    expect(statesAfterRealReconciliation).toEqual(["cancelled", "cancelled"]);
+
+    const after = await t.run(async (ctx) => ({
+      segments: await ctx.db
+        .query("cyclePredictionSegments")
+        .withIndex("by_user_and_status", (q) => q.eq("userId", primaryId))
+        .take(10),
+      scheduleState: await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+      work: await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId),
+        )
+        .take(10),
+    }));
+
+    expect(after.segments).toEqual(before.segments);
+    expect(after.scheduleState).toEqual(before.scheduleState);
+    expect(after.scheduleState?.sourceRevision).toBe(8);
+    expect(after.work).toEqual(before.work);
+    expect(after.work.find(({ _id }) => _id === claimedWorkId)?.state).toBe(
+      "claimed",
+    );
+    expect(after.work.filter(({ state }) => state === "pending")).toHaveLength(1);
   });
 
   test("partners cannot mutate prediction segments", async () => {
