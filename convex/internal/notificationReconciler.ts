@@ -139,6 +139,19 @@ async function recoverLease(
   if (claimGeneration === null) return "skipped";
   if (recovered.kind === "retry") {
     const dueAt = recovered.record.nextAttemptAt!;
+    if (!(await scheduleWake(ctx, delivery, dueAt, now, claimGeneration))) {
+      await ctx.db.patch(delivery._id, {
+        state: "failed_permanent",
+        eligibility: "eligible",
+        claimGeneration,
+        providerOutcome: delivery.providerOutcome,
+        errorCode: "attempts_exhausted",
+        nextAttemptAt: undefined,
+        leaseUntil: undefined,
+        updatedAt: now,
+      });
+      return "exhausted";
+    }
     await ctx.db.patch(delivery._id, {
       state: "retry_wait",
       eligibility: "eligible",
@@ -150,7 +163,6 @@ async function recoverLease(
       dispatchStartedAt: undefined,
       updatedAt: now,
     });
-    await scheduleWake(ctx, delivery, dueAt, now, claimGeneration);
     return "retried";
   }
   if (recovered.kind === "expired") {
