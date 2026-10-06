@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { makeFunctionReference } from "convex/server";
+import { makeFunctionReference, paginationOptsValidator } from "convex/server";
 
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -61,6 +61,10 @@ const wakeArgsValidator = v.object({
 const wakeWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:wakeDueWork",
 );
+const continueIndeterminateClaimCancellationRef =
+  makeFunctionReference<"mutation">(
+    "internal/notificationScheduler:continueIndeterminateClaimCancellation",
+  );
 const reconcileWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:reconcileDueWork",
 );
@@ -449,13 +453,47 @@ async function cancelClaimedScheduleWork(
   ctx: MutationCtx,
   userId: Id<"users">,
   now: number,
+  cursor: string | null = null,
 ) {
-  const claimed = await readClaimedScheduleWork(ctx, userId);
-  for (const row of claimed) {
-    if (row.kind !== "prediction_window" && row.kind !== "late_boundary") continue;
+  const current = await readCurrentServedSnapshot(ctx, userId);
+  if (current.status === "current") return;
+
+  const page = await ctx.db
+    .query("notificationDueWork")
+    .withIndex("by_owner_and_state_and_due_at", (q) =>
+      q.eq("ownerUserId", userId).eq("state", "claimed"),
+    )
+    .paginate({ numItems: OWNER_PENDING_PAGE_SIZE, cursor });
+  for (const row of page.page) {
+    if (row.kind !== "prediction_window" && row.kind !== "late_boundary") {
+      continue;
+    }
     await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
   }
+  if (!page.isDone) {
+    if (page.continueCursor === null) {
+      throw new Error(
+        "Claimed schedule work page must provide a continuation cursor",
+      );
+    }
+    await ctx.scheduler.runAfter(0, continueIndeterminateClaimCancellationRef, {
+      userId,
+      cursor: page.continueCursor,
+    });
+  }
 }
+
+export const continueIndeterminateClaimCancellation = internalMutation({
+  args: {
+    userId: v.id("users"),
+    cursor: paginationOptsValidator.fields.cursor,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await cancelClaimedScheduleWork(ctx, args.userId, Date.now(), args.cursor);
+    return null;
+  },
+});
 
 /**
  * Frozen N5b/N8 same-transaction entry point for current served V2 schedule work.

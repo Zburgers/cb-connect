@@ -24,6 +24,9 @@ const reconcileDueWorkRef = makeFunctionReference<"mutation">(
 const wakeDueWorkRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:wakeDueWork",
 );
+const continueClaimedScheduleCancellationRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:continueIndeterminateClaimCancellation",
+);
 
 type TestBackend = TestConvex<typeof schema>;
 
@@ -1339,6 +1342,116 @@ describe("notification schedule reconciliation", () => {
       after.filter(({ state }) => state === "pending").map(({ _id }) => _id),
     ).toEqual(pendingBefore.map(({ _id }) => _id));
   });
+
+  test("indeterminate cleanup pages past unrelated claimed work", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      sourceRevision: 0,
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) {
+      throw new Error("Expected a current V2 snapshot");
+    }
+    const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+    if (!servedSnapshot) throw new Error("Expected the served V2 snapshot");
+    const pending = await pendingScheduleRows(t, primaryId);
+    const prediction = pending.find((row) => row.kind === "prediction_window");
+    if (!prediction) throw new Error("Expected prediction-window work");
+
+    const unrelatedIds = await t.run(async (ctx) => {
+      const ids: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "pain_reminder",
+            state: "claimed",
+            dueAt: prediction.dueAt - 1_000 + index,
+            generation: 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return ids;
+    });
+    const targetClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: prediction.kind,
+        state: "claimed",
+        dueAt: prediction.dueAt,
+        generation: prediction.generation,
+        sourceAuthorityVersion: prediction.sourceAuthorityVersion,
+        reminderWindowVersion: prediction.reminderWindowVersion,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        const { qualityScoreV1, ...shadow } = snapshotRefreshArgs(
+          servedSnapshot,
+          servedSnapshot.generatedAt + 1_000 + index,
+        );
+        await ctx.db.insert("predictionSnapshots", {
+          ...shadow,
+          displayStatus: "shadow",
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+      }
+    });
+
+    const firstPage = await t.run((ctx) =>
+      ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId).eq("state", "claimed"),
+        )
+        .paginate({ numItems: 100, cursor: null }),
+    );
+    expect(firstPage.page).toHaveLength(100);
+    expect(firstPage.isDone).toBe(false);
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const continuationQueued = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(20)).some(
+        ({ args }) =>
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "cursor" in args[0],
+      ),
+    );
+    expect(continuationQueued).toBe(true);
+    await t.mutation(continueClaimedScheduleCancellationRef, {
+      userId: primaryId,
+      cursor: firstPage.continueCursor,
+    });
+
+    const states = await t.run(async (ctx) => ({
+      target: (await ctx.db.get(targetClaimId))?.state,
+      unrelated: await Promise.all(
+        unrelatedIds.map(async (id) => (await ctx.db.get(id))?.state),
+      ),
+    }));
+    expect(states.target).toBe("cancelled");
+    expect(states.unrelated).toEqual(
+      Array.from({ length: 100 }, () => "claimed"),
+    );
+  });
+
   test("scheduler-off reconciliation cancels disabled and expired work without creating wakeups", async () => {
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();
