@@ -1,7 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
-  notificationEventEnvelopeValidator,
+  notificationEventPersistedEnvelopeValidator,
 } from "./_helpers/notificationTypes";
 import {
   notificationDeliveryAttemptRecordValidator,
@@ -275,6 +275,7 @@ export default defineSchema({
   couples: defineTable({
     createdAt: v.number(),
     chatClearedAt: v.optional(v.number()),
+    chatClearedBy: v.optional(v.id("users")),
     linkedAt: v.optional(v.number()),
     connectedSinceDate: v.optional(v.string()),
     connectedSinceUpdatedAt: v.optional(v.number()),
@@ -600,7 +601,7 @@ export default defineSchema({
 
   notificationEvents: defineTable(
     v.object({
-      ...notificationEventEnvelopeValidator.fields,
+      ...notificationEventPersistedEnvelopeValidator.fields,
       createdAt: v.number(),
     }),
   )

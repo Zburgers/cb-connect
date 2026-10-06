@@ -1,10 +1,22 @@
 import { describe, expect, test } from "vitest";
+import { defineSchema, defineTable } from "convex/server";
+import { convexTest } from "convex-test";
 
 import {
+  assertValidNotificationEventWrite,
   notificationEventEnvelopeValidator,
+  notificationEventPersistedEnvelopeValidator,
   notificationEventDefinitions,
   notificationEventTypes,
+  notificationEventWriteValidator,
+  notificationSourceIdentityValidator,
+  type NotificationEventType,
+  type NotificationEventWrite,
+  type NotificationSourceIdentity,
 } from "./notificationTypes";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
+import { makeSourceAuthorityVersion } from "./notificationSourceAuthority";
 
 const expectedEvents = [
   {
@@ -166,6 +178,346 @@ describe("G4-EVENT-V1 event catalog", () => {
         "sourceReference",
         "validityRule",
       ].sort(),
+    );
+  });
+});
+
+const primaryId = "1users" as Id<"users">;
+const ownerId = "2users" as Id<"users">;
+const recipientId = "3users" as Id<"users">;
+const coupleId = "1couples" as Id<"couples">;
+const relationshipMembershipId = "1coupleMembers" as Id<"coupleMembers">;
+const sourceAuthorityVersion = makeSourceAuthorityVersion({
+  sourceRevision: 1,
+  servedCycleContract: "cycle-state-v1",
+  servedPredictionContract: "prediction-v2",
+  estimatorMethodVersion: "estimator-v1",
+  calibrationMethodVersion: null,
+});
+
+const sourceIdentities: Record<NotificationEventType, NotificationSourceIdentity> = {
+  "assisted_period_start.v1": {
+    eventType: "assisted_period_start.v1",
+    sourceId: "1periodEvents" as Id<"periodEvents">,
+    authorityVersion: 1,
+    primaryId,
+  },
+  "assisted_period_end.v1": {
+    eventType: "assisted_period_end.v1",
+    sourceId: "2periodEvents" as Id<"periodEvents">,
+    authorityVersion: 1,
+    primaryId,
+  },
+  "period_window_approaching.v1": {
+    eventType: "period_window_approaching.v1",
+    primaryId,
+    latestEligibleStartEventId: "3periodEvents" as Id<"periodEvents">,
+    sourceAuthorityVersion,
+    reminderWindowVersion: 1,
+    dueLocalDay: "2026-10-06",
+  },
+  "late_status.v1": {
+    eventType: "late_status.v1",
+    primaryId,
+    latestEligibleStartEventId: "3periodEvents" as Id<"periodEvents">,
+    sourceAuthorityVersion,
+    reminderWindowVersion: 1,
+    localDay: "2026-10-06",
+  },
+  "pain_check_in.v1": {
+    eventType: "pain_check_in.v1",
+    requestId: "1painReminderRequests" as Id<"painReminderRequests">,
+    painLogId: "1painLogs" as Id<"painLogs">,
+    requestVersion: 1,
+    primaryId,
+    selectedLocalDay: "2026-10-06",
+  },
+  "partner_linked.v1": {
+    eventType: "partner_linked.v1",
+    sourceId: relationshipMembershipId,
+    coupleId,
+    relationshipMembershipId,
+    ownerUserId: ownerId,
+    recipientUserId: recipientId,
+  },
+  "partner_message.v1": {
+    eventType: "partner_message.v1",
+    sourceId: "1coupleMessages" as Id<"coupleMessages">,
+    coupleId,
+    relationshipMembershipId,
+    ownerUserId: ownerId,
+    recipientUserId: recipientId,
+  },
+  "partner_nudge.v1": {
+    eventType: "partner_nudge.v1",
+    sourceId: "1nudges" as Id<"nudges">,
+    coupleId,
+    relationshipMembershipId,
+    ownerUserId: ownerId,
+    recipientUserId: recipientId,
+  },
+  "partner_chat_cleared.v1": {
+    eventType: "partner_chat_cleared.v1",
+    sourceId: coupleId,
+    coupleId,
+    relationshipMembershipId,
+    ownerUserId: ownerId,
+    recipientUserId: recipientId,
+    clearOperationVersion: 1,
+  },
+  "connected_since_updated.v1": {
+    eventType: "connected_since_updated.v1",
+    sourceId: coupleId,
+    coupleId,
+    relationshipMembershipId,
+    ownerUserId: ownerId,
+    recipientUserId: recipientId,
+    settingVersion: 1,
+  },
+};
+
+function expectedSourceAuthorityVersion(identity: NotificationSourceIdentity): string {
+  switch (identity.eventType) {
+    case "assisted_period_start.v1":
+    case "assisted_period_end.v1":
+      return `period-authority:${identity.authorityVersion}`;
+    case "period_window_approaching.v1":
+    case "late_status.v1":
+      return identity.sourceAuthorityVersion;
+    case "pain_check_in.v1":
+      return `pain-reminder-request:v${identity.requestVersion}`;
+    case "partner_linked.v1":
+    case "partner_message.v1":
+    case "partner_nudge.v1":
+      return `relationship-membership:${identity.relationshipMembershipId}`;
+    case "partner_chat_cleared.v1":
+      return `chat-clear:${identity.clearOperationVersion}`;
+    case "connected_since_updated.v1":
+      return `connected-since-setting:${identity.settingVersion}`;
+  }
+}
+
+function makeEventWrite(
+  identity: NotificationSourceIdentity,
+  overrides: Record<string, unknown> = {},
+): NotificationEventWrite {
+  const eventType = overrides.eventType ?? identity.eventType;
+  const definition =
+    notificationEventDefinitions[eventType as NotificationEventType];
+  const ownerUserId = "primaryId" in identity ? identity.primaryId : identity.ownerUserId;
+  const recipientUserId =
+    "primaryId" in identity ? identity.primaryId : identity.recipientUserId;
+
+  return {
+    eventType,
+    eventVersion: 1,
+    purpose: definition.purpose,
+    producerKind: definition.producer,
+    sourceReference: `source:${identity.eventType}`,
+    sourceAuthorityVersion: expectedSourceAuthorityVersion(identity),
+    ownerUserId,
+    recipientUserId,
+    recipientScope: definition.recipient,
+    privacyClass: definition.privacyClass,
+    validityRule: definition.validity,
+    idempotencyKey: `event:v1:${identity.eventType}`,
+    allowedChannel: "in_app",
+    sourceIdentity: identity,
+    ...overrides,
+  } as NotificationEventWrite;
+}
+
+const newEventSchema = defineSchema({
+  eventWrites: defineTable(notificationEventWriteValidator),
+});
+
+const modules = import.meta.glob("../**/*.ts");
+
+async function insertNewWrite(write: NotificationEventWrite) {
+  return convexTest(newEventSchema, modules).run((ctx) =>
+    ctx.db.insert("eventWrites", write),
+  );
+}
+
+describe("typed event source identity contract", () => {
+  test("accepts a matching typed identity for every catalog event on new writes", async () => {
+    for (const eventType of notificationEventTypes) {
+      const identity = sourceIdentities[eventType];
+      const write = makeEventWrite(identity);
+
+      await expect(insertNewWrite(write)).resolves.toBeDefined();
+      expect(() => assertValidNotificationEventWrite(write)).not.toThrow();
+    }
+    expect(notificationEventWriteValidator.fields.sourceIdentity.isOptional).toBe("required");
+    expect(notificationSourceIdentityValidator.kind).toBe("union");
+  });
+
+  test("rejects malformed, wrong-kind, wrong-source, wrong-owner and wrong-recipient identities", async () => {
+    const valid = makeEventWrite(sourceIdentities["partner_message.v1"]);
+
+    const missingIdentity = { ...valid, sourceIdentity: undefined } as unknown as NotificationEventWrite;
+    await expect(insertNewWrite(missingIdentity)).rejects.toThrow();
+    expect(() => assertValidNotificationEventWrite(missingIdentity)).toThrow();
+    const malformedIdentity = {
+      ...valid,
+      sourceIdentity: { ...valid.sourceIdentity, unexpected: true },
+    } as unknown as NotificationEventWrite;
+    await expect(insertNewWrite(malformedIdentity)).rejects.toThrow();
+    const wrongSourceTable = {
+      ...valid,
+      sourceIdentity: {
+        ...sourceIdentities["partner_message.v1"],
+        sourceId: "1nudges",
+      },
+    } as unknown as NotificationEventWrite;
+    await expect(insertNewWrite(wrongSourceTable)).rejects.toThrow();
+
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(sourceIdentities["partner_message.v1"], {
+          sourceIdentity: sourceIdentities["partner_nudge.v1"],
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(sourceIdentities["partner_message.v1"], {
+          purpose: "pain_check_in",
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(sourceIdentities["partner_message.v1"], { ownerUserId: recipientId }),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(
+          {
+            ...sourceIdentities["partner_linked.v1"],
+            sourceId: "2coupleMembers" as Id<"coupleMembers">,
+          } as Extract<NotificationSourceIdentity, { eventType: "partner_linked.v1" }>,
+        ),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(
+          {
+            ...sourceIdentities["partner_chat_cleared.v1"],
+            sourceId: "2couples" as Id<"couples">,
+          } as Extract<
+            NotificationSourceIdentity,
+            { eventType: "partner_chat_cleared.v1" }
+          >,
+        ),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(sourceIdentities["partner_message.v1"], { recipientUserId: ownerId }),
+      ),
+    ).toThrow();
+    const selfDirectedMessage = {
+      ...sourceIdentities["partner_message.v1"],
+      recipientUserId: ownerId,
+    } as Extract<NotificationSourceIdentity, { eventType: "partner_message.v1" }>;
+    expect(() =>
+      assertValidNotificationEventWrite(makeEventWrite(selfDirectedMessage)),
+    ).toThrow();
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(sourceIdentities["partner_message.v1"], {
+          sourceAuthorityVersion: "relationship-membership:coupleMembers:other",
+        }),
+      ),
+    ).toThrow();
+    const scheduledIdentity = sourceIdentities["period_window_approaching.v1"];
+    const malformedScheduledIdentity = {
+      ...scheduledIdentity,
+      sourceAuthorityVersion: "g4-source-v1:not-a-canonical-tuple",
+    };
+    expect(() =>
+      assertValidNotificationEventWrite(
+        makeEventWrite(malformedScheduledIdentity),
+      ),
+    ).toThrow();
+  });
+
+  test("requires every identity version to be a positive safe integer", () => {
+    const numericVersions = [
+      { eventType: "assisted_period_start.v1", field: "authorityVersion" },
+      { eventType: "period_window_approaching.v1", field: "reminderWindowVersion" },
+      { eventType: "pain_check_in.v1", field: "requestVersion" },
+      { eventType: "partner_chat_cleared.v1", field: "clearOperationVersion" },
+      { eventType: "connected_since_updated.v1", field: "settingVersion" },
+    ] as const;
+    const invalidVersions = [
+      0,
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ];
+
+    for (const { eventType, field } of numericVersions) {
+      for (const version of invalidVersions) {
+        const identity = { ...sourceIdentities[eventType] } as Record<string, unknown>;
+        identity[field] = version;
+        expect(() =>
+          assertValidNotificationEventWrite(
+            makeEventWrite(identity as unknown as NotificationSourceIdentity),
+          ),
+        ).toThrow();
+      }
+      const identity = { ...sourceIdentities[eventType] } as Record<string, unknown>;
+      identity[field] = Number.MAX_SAFE_INTEGER;
+      expect(() =>
+        assertValidNotificationEventWrite(
+          makeEventWrite(identity as unknown as NotificationSourceIdentity),
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  test("keeps persisted pre-amendment envelopes readable without backfilling identity", async () => {
+    const identity = sourceIdentities["partner_message.v1"];
+    const { sourceIdentity: _sourceIdentity, ...legacyEnvelope } = makeEventWrite(identity);
+    const t = convexTest(schema, modules);
+
+    const id = await t.run((ctx) =>
+      ctx.db.insert("notificationEvents", { ...legacyEnvelope, createdAt: 1 }),
+    );
+    const persisted = await t.run((ctx) => ctx.db.get(id));
+    expect(persisted).not.toHaveProperty("sourceIdentity");
+    expect(notificationEventPersistedEnvelopeValidator.fields.sourceIdentity.isOptional).toBe("optional");
+    expect(notificationEventEnvelopeValidator.fields).not.toHaveProperty("sourceIdentity");
+    expect(notificationEventWriteValidator.fields.sourceIdentity.isOptional).toBe("required");
+
+    const legacyClearId = await t.run((ctx) =>
+      ctx.db.insert("couples", {
+        createdAt: 1,
+        chatClearedAt: 2,
+        status: "active",
+      }),
+    );
+    const legacyClear = await t.run((ctx) => ctx.db.get(legacyClearId));
+    expect(legacyClear).not.toHaveProperty("chatClearedBy");
+
+    const attributedClearId = await t.run((ctx) =>
+      ctx.db.insert("couples", {
+        createdAt: 1,
+        chatClearedAt: 2,
+        chatClearedBy: primaryId,
+        status: "active",
+      }),
+    );
+    expect(await t.run((ctx) => ctx.db.get(attributedClearId))).toHaveProperty(
+      "chatClearedBy",
+      primaryId,
     );
   });
 });
