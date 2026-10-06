@@ -24,7 +24,6 @@ import {
   createNotificationDueWork,
   makeSourceAuthorityVersion,
   isCurrentNotificationScheduleFence,
-  parseSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
@@ -449,16 +448,20 @@ async function cancelAllActiveScheduleWork(
 async function cancelStaleClaimedScheduleWork(
   ctx: MutationCtx,
   userId: Id<"users">,
-  sourceRevision: number,
+  scheduleState: Doc<"notificationScheduleState">,
   now: number,
 ) {
-  const claimed = await readClaimedScheduleWork(ctx, userId);
+  const [claimed, { predictionWindow, lateStatus }] = await Promise.all([
+    readClaimedScheduleWork(ctx, userId),
+    readSchedulePreferences(ctx, userId),
+  ]);
   for (const row of claimed) {
-    const rowSourceRevision =
-      parseSourceAuthorityVersion(row.sourceAuthorityVersion)?.sourceRevision;
+    if (row.kind !== "prediction_window" && row.kind !== "late_boundary") continue;
+    const preference =
+      row.kind === "prediction_window" ? predictionWindow : lateStatus;
     if (
-      row.generation !== workGeneration(sourceRevision) ||
-      rowSourceRevision !== sourceRevision
+      row.generation !== workGeneration(scheduleState.sourceRevision) ||
+      !isCurrentNotificationScheduleFence(row, scheduleState, preference)
     ) {
       await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
     }
@@ -481,7 +484,7 @@ export async function reconcileUserSchedule(
       await cancelStaleClaimedScheduleWork(
         ctx,
         userId,
-        current.scheduleState.sourceRevision,
+        current.scheduleState,
         now,
       );
       return;
@@ -534,7 +537,7 @@ export async function reconcileUserSchedule(
     await cancelStaleClaimedScheduleWork(
       ctx,
       userId,
-      current.scheduleState.sourceRevision,
+      current.scheduleState,
       now,
     );
     return;

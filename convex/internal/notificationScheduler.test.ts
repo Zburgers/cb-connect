@@ -1239,7 +1239,7 @@ describe("notification schedule reconciliation", () => {
     ).toEqual([]);
   });
 
-  test("indeterminate history cancels stale claims but preserves deferred pending work", async () => {
+  test("indeterminate history cancels stale tuple and window claims without source revision change", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.setSystemTime(now);
@@ -1264,6 +1264,13 @@ describe("notification schedule reconciliation", () => {
       (row) => row.kind === "prediction_window",
     );
     if (!pendingPrediction) throw new Error("Expected prediction-window work");
+    const staleSourceAuthorityVersion = makeSourceAuthorityVersion({
+      sourceRevision: 0,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "different-estimator-v1",
+      calibrationMethodVersion: "different-calibration-v1",
+    });
     const claimedId = await t.run((ctx) =>
       ctx.db.insert("notificationDueWork", {
         ownerUserId: primaryId,
@@ -1272,6 +1279,19 @@ describe("notification schedule reconciliation", () => {
         dueAt: pendingPrediction.dueAt,
         generation: pendingPrediction.generation,
         sourceAuthorityVersion: pendingPrediction.sourceAuthorityVersion,
+        reminderWindowVersion: (pendingPrediction.reminderWindowVersion ?? 0) - 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    const staleTupleClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: pendingPrediction.kind,
+        state: "claimed",
+        dueAt: pendingPrediction.dueAt,
+        generation: pendingPrediction.generation,
+        sourceAuthorityVersion: staleSourceAuthorityVersion,
         reminderWindowVersion: pendingPrediction.reminderWindowVersion,
         createdAt: now,
         updatedAt: now,
@@ -1290,13 +1310,15 @@ describe("notification schedule reconciliation", () => {
           ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
         });
       }
-      await advanceNotificationSourceAuthority(ctx, primaryId, now + 1);
     });
 
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
 
     const after = await allScheduleRows(t, primaryId);
     expect(after.find(({ _id }) => _id === claimedId)?.state).toBe("cancelled");
+    expect(after.find(({ _id }) => _id === staleTupleClaimId)?.state).toBe(
+      "cancelled",
+    );
     expect(
       after.filter(({ state }) => state === "pending").map(({ _id }) => _id),
     ).toEqual(pendingBefore.map(({ _id }) => _id));
