@@ -352,6 +352,41 @@ describe("typed event source identity contract", () => {
     expect(notificationSourceIdentityValidator.kind).toBe("union");
   });
 
+  test("rejects a numeric partner message source ID at the write guard", async () => {
+    const identity = sourceIdentities["partner_message.v1"];
+    const malformed = makeEventWrite(identity, {
+      sourceIdentity: { ...identity, sourceId: 123 },
+    });
+
+    await expect(insertNewWrite(malformed)).rejects.toThrow();
+    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+      "Notification event does not match frozen write shape",
+    );
+  });
+
+  test("rejects a null partner message couple ID at the write guard", async () => {
+    const identity = sourceIdentities["partner_message.v1"];
+    const malformed = makeEventWrite(identity, {
+      sourceIdentity: { ...identity, coupleId: null },
+    });
+
+    await expect(insertNewWrite(malformed)).rejects.toThrow();
+    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+      "Notification event does not match frozen write shape",
+    );
+  });
+
+  test("rejects missing required envelope fields at the write guard", async () => {
+    const malformed = makeEventWrite(sourceIdentities["partner_message.v1"], {
+      sourceReference: undefined,
+    });
+
+    await expect(insertNewWrite(malformed)).rejects.toThrow();
+    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+      "Notification event does not match frozen write shape",
+    );
+  });
+
   test("rejects malformed, wrong-kind, wrong-source, wrong-owner and wrong-recipient identities", async () => {
     const valid = makeEventWrite(sourceIdentities["partner_message.v1"]);
 
