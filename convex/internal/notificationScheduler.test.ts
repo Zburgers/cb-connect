@@ -635,6 +635,108 @@ describe("notification schedule reconciliation", () => {
     })));
   });
 
+  test("indeterminate snapshot history backs off due-work recovery without losing it", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+    if (!servedSnapshot) throw new Error("Expected the served V2 snapshot");
+    const work = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!work) throw new Error("Expected prediction-window due work");
+
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        const { qualityScoreV1, ...shadow } = snapshotRefreshArgs(
+          servedSnapshot,
+          servedSnapshot.generatedAt + 1_000 + index,
+        );
+        await ctx.db.insert("predictionSnapshots", {
+          ...shadow,
+          displayStatus: "shadow",
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+      }
+    });
+
+    const firstAttemptAt = work.dueAt + 1;
+    vi.setSystemTime(firstAttemptAt);
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
+    ).resolves.toMatchObject({ status: "blocked", reason: "served_snapshot_indeterminate" });
+    const deferred = await t.run((ctx) => ctx.db.get(work._id));
+    expect(deferred?.state).toBe("pending");
+    expect(deferred?.updatedAt).toBe(firstAttemptAt);
+
+    const retryAt = firstAttemptAt + 5 * 60 * 1_000;
+    const scheduledRetry = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
+        (scheduled) => {
+          const args = scheduled.args[0];
+          return (
+            scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+            scheduled.scheduledTime === retryAt &&
+            typeof args === "object" &&
+            args !== null &&
+            "workId" in args &&
+            args.workId === work._id
+          );
+        },
+      ),
+    );
+    expect(scheduledRetry).toBeDefined();
+    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
+      scheduled: 0,
+    });
+
+    const refreshedAt = Math.max(
+      firstAttemptAt + 60 * 1_000,
+      servedSnapshot.generatedAt + 2_000,
+    );
+    vi.setSystemTime(refreshedAt);
+    const refreshedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(refreshedSnapshotId).not.toBeNull();
+    const refreshedWake = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
+        (scheduled) => {
+          const args = scheduled.args[0];
+          return (
+            scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+            scheduled.scheduledTime === refreshedAt &&
+            typeof args === "object" &&
+            args !== null &&
+            "workId" in args &&
+            args.workId === work._id
+          );
+        },
+      ),
+    );
+    expect(refreshedWake).toBeDefined();
+
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
+    ).resolves.toEqual({ status: "ready" });
+    expect((await t.run((ctx) => ctx.db.get(work._id)))?.state).toBe("claimed");
+  });
+
   test("kind-scoped cron recovery reaches pending work past terminal and other-kind history", async () => {
     const now = Date.parse("2026-10-04T12:00:00.000Z");
     vi.useFakeTimers();

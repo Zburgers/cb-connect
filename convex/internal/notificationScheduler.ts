@@ -34,6 +34,7 @@ const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const DUE_WORK_PAGE_SIZE = 50;
 const OWNER_PENDING_PAGE_SIZE = 100;
 const SERVED_SNAPSHOT_LOOKBACK = 100;
+const INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS = 5 * 60 * 1_000;
 const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
 const MINUTE_MS = 60 * 1_000;
 
@@ -396,7 +397,16 @@ async function reconcileKind(
       await ctx.db.patch(row._id, { state: "cancelled", updatedAt: args.now });
     }
   }
-  if (alreadyClaimed || reusable || !supportedRunAt || dueAt === null) return;
+  if (alreadyClaimed || !supportedRunAt || dueAt === null) return;
+  if (reusable) {
+    if (isIndeterminateSnapshotRetryDeferred(reusable, args.now)) {
+      await ctx.scheduler.runAt(Math.max(dueAt, args.now), wakeWorkRef, {
+        workId: reusable._id,
+        generation: reusable.generation,
+      });
+    }
+    return;
+  }
 
   const workId = await createNotificationDueWork(ctx, {
     ownerUserId: args.userId,
@@ -531,6 +541,16 @@ function eventForKind(kind: ScheduleKind) {
     : { eventType: "late_status.v1" as const, purpose: "late_status" as const };
 }
 
+function isIndeterminateSnapshotRetryDeferred(
+  work: Doc<"notificationDueWork">,
+  now: number,
+): boolean {
+  return (
+    work.updatedAt > work.createdAt &&
+    now - work.updatedAt < INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS
+  );
+}
+
 export const wakeDueWork = internalMutation({
   args: wakeArgsValidator.fields,
   returns: v.object({
@@ -556,6 +576,16 @@ export const wakeDueWork = internalMutation({
     if (!schedulerEnabled()) return { status: "paused" as const };
     const current = await readCurrentServedSnapshot(ctx, work.ownerUserId);
     if (current.status === "indeterminate") {
+      if (isIndeterminateSnapshotRetryDeferred(work, Date.now())) {
+        return { status: "blocked" as const, reason: "served_snapshot_indeterminate" };
+      }
+      const now = Date.now();
+      await ctx.db.patch(work._id, { updatedAt: now });
+      await ctx.scheduler.runAfter(
+        INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS,
+        wakeWorkRef,
+        { workId: work._id, generation: args.generation },
+      );
       return { status: "blocked" as const, reason: "served_snapshot_indeterminate" };
     }
     if (
@@ -660,12 +690,13 @@ export const reconcileDueWork = internalMutation({
         },
       );
       for (const work of page.page) {
+        if (isIndeterminateSnapshotRetryDeferred(work, now)) continue;
         await ctx.scheduler.runAt(now, wakeWorkRef, {
           workId: work._id,
           generation: work.generation,
         });
+        scheduled += 1;
       }
-      scheduled += page.page.length;
       if (!page.isDone) {
         if (page.continueCursor === null) {
           throw new Error("Due-work page must provide a continuation cursor");
