@@ -27,6 +27,13 @@ const wakeDueWorkRef = makeFunctionReference<"mutation">(
 const continueClaimedScheduleCancellationRef = makeFunctionReference<"mutation">(
   "internal/notificationScheduler:continueIndeterminateClaimCancellation",
 );
+const continueScheduleReconciliationRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:continueScheduleReconciliation",
+);
+const continueUnavailableScheduleCancellationRef =
+  makeFunctionReference<"mutation">(
+    "internal/notificationScheduler:continueUnavailableScheduleCancellation",
+  );
 
 type TestBackend = TestConvex<typeof schema>;
 
@@ -1449,6 +1456,267 @@ describe("notification schedule reconciliation", () => {
     expect(states.target).toBe("cancelled");
     expect(states.unrelated).toEqual(
       Array.from({ length: 100 }, () => "claimed"),
+    );
+  });
+
+  test("current reconciliation pages past unrelated claimed work", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) {
+      throw new Error("Expected a current V2 snapshot");
+    }
+    const prediction = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!prediction) throw new Error("Expected prediction-window work");
+
+    const unrelatedIds = await t.run(async (ctx) => {
+      const ids: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "pain_reminder",
+            state: "claimed",
+            dueAt: prediction.dueAt - 100 + index,
+            generation: 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return ids;
+    });
+    const staleClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "claimed",
+        dueAt: prediction.dueAt,
+        generation: prediction.generation,
+        sourceAuthorityVersion: prediction.sourceAuthorityVersion,
+        reminderWindowVersion: (prediction.reminderWindowVersion ?? 0) - 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const continuation = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(200)).find(
+        ({ args }) =>
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "phase" in args[0] &&
+          args[0].phase === "current",
+      ),
+    );
+    if (continuation) {
+      await t.mutation(
+        continueScheduleReconciliationRef,
+        continuation.args[0] as never,
+      );
+    }
+
+    const after = await t.run(async (ctx) => ({
+      stale: (await ctx.db.get(staleClaimId))?.state,
+      unrelated: await Promise.all(
+        unrelatedIds.map(async (id) => (await ctx.db.get(id))?.state),
+      ),
+    }));
+    expect(after.stale).toBe("cancelled");
+    expect(after.unrelated).toEqual(
+      Array.from({ length: 100 }, () => "claimed"),
+    );
+  });
+
+  test("claimed cleanup continues when the first page is cancelled", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) {
+      throw new Error("Expected a current V2 snapshot");
+    }
+    const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+    const prediction = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!servedSnapshot || !prediction) {
+      throw new Error("Expected a served snapshot and prediction work");
+    }
+    const firstPageClaimIds = await t.run(async (ctx) => {
+      const ids: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "prediction_window",
+            state: "claimed",
+            dueAt: prediction.dueAt - 100 + index,
+            generation: prediction.generation,
+            sourceAuthorityVersion: prediction.sourceAuthorityVersion,
+            reminderWindowVersion: (prediction.reminderWindowVersion ?? 0) - 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return ids;
+    });
+    const targetClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "claimed",
+        dueAt: prediction.dueAt,
+        generation: prediction.generation,
+        sourceAuthorityVersion: prediction.sourceAuthorityVersion,
+        reminderWindowVersion: (prediction.reminderWindowVersion ?? 0) - 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        const { qualityScoreV1, ...shadow } = snapshotRefreshArgs(
+          servedSnapshot,
+          servedSnapshot.generatedAt + 1_000 + index,
+        );
+        await ctx.db.insert("predictionSnapshots", {
+          ...shadow,
+          displayStatus: "shadow",
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+      }
+    });
+    const firstPage = await t.run((ctx) =>
+      ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId).eq("state", "claimed"),
+        )
+        .paginate({ numItems: 100, cursor: null }),
+    );
+    expect(firstPage.page.map(({ _id }) => _id)).toEqual(firstPageClaimIds);
+    expect(firstPage.isDone).toBe(false);
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    await t.mutation(continueClaimedScheduleCancellationRef, {
+      userId: primaryId,
+      cursor: firstPage.continueCursor,
+    });
+
+    const after = await t.run(async (ctx) => ({
+      firstPage: await Promise.all(
+        firstPageClaimIds.map(async (id) => (await ctx.db.get(id))?.state),
+      ),
+      target: (await ctx.db.get(targetClaimId))?.state,
+    }));
+    expect(after.firstPage).toEqual(
+      Array.from({ length: 100 }, () => "cancelled"),
+    );
+    expect(after.target).toBe("cancelled");
+  });
+
+  test("unavailable cleanup pages past unrelated pending work", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    const unrelatedIds = await t.run(async (ctx) => {
+      const ids: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "pain_reminder",
+            state: "pending",
+            dueAt: now + index,
+            generation: 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return ids;
+    });
+    const stalePendingId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now + 1_000,
+        generation: 7,
+        sourceAuthorityVersion: makeSourceAuthorityVersion({
+          sourceRevision: 7,
+          servedCycleContract: "cycle-read-model-v1",
+          servedPredictionContract: "prediction-serving-v2",
+          estimatorMethodVersion: "period-estimator-v1",
+          calibrationMethodVersion: "prediction-calibration-v1",
+        }),
+        reminderWindowVersion: 3,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const continuation = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(200)).find(
+        ({ args }) =>
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "phase" in args[0] &&
+          args[0].phase === "unavailable",
+      ),
+    );
+    if (continuation) {
+      await t.mutation(
+        continueUnavailableScheduleCancellationRef,
+        continuation.args[0] as never,
+      );
+    }
+
+    const after = await t.run(async (ctx) => ({
+      stale: (await ctx.db.get(stalePendingId))?.state,
+      unrelated: await Promise.all(
+        unrelatedIds.map(async (id) => (await ctx.db.get(id))?.state),
+      ),
+    }));
+    expect(after.stale).toBe("cancelled");
+    expect(after.unrelated).toEqual(
+      Array.from({ length: 100 }, () => "pending"),
     );
   });
 
