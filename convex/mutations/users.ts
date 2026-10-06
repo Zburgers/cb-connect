@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
-import { getCurrentUser } from "../_helpers/auth";
+import { getCurrentUser, getLegacyClerkSubject } from "../_helpers/auth";
 import {
   DEFAULT_TIME_ZONE,
   resolveCalendarTimeZone,
@@ -172,10 +172,12 @@ export const ensureUser = mutation({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
+    const clerkSubject = getLegacyClerkSubject(identity);
+    if (!clerkSubject) throw new Error("User not found in database");
 
     const existing = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkSubject))
       .unique();
 
     if (existing) {
@@ -192,7 +194,7 @@ export const ensureUser = mutation({
       "User";
 
     return await ctx.db.insert("users", {
-      clerkId: identity.subject,
+      clerkId: clerkSubject,
       email: identity.email ?? "",
       name,
       ...(identity.pictureUrl !== undefined && { imageUrl: identity.pictureUrl }),
