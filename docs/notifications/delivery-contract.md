@@ -57,5 +57,104 @@ These argument/result shapes are owned here. Implementations belong to their ass
 | `cancelSource(ctx, sourceRef, reason)` | `{ sourceRef, reason }`, where reason is an allowlisted cancellation code | VEGA outbox helpers |
 | `reconcileUserSchedule(ctx, userId)` | `{ userId }` | CHRONOS scheduler; VEGA preference mutation invokes it transactionally after handoff |
 | `renderFrozen(args)` | `{ eventType, templateVersion, locale, variableSchemaVersion }` | MUSE templates; returns identity and fixed payload keys/route |
+| `isNotificationSourceCurrent(ctx, event)` | Read-only; accepts `QueryCtx` or `MutationCtx`, returns `true` only for a present, matching, currently authorized source identity | VEGA N8; shared by inbox reads and the in-app projector |
+
+## Typed event source identity (contract amendment, 2026-10-06)
+
+Every newly written event carries one immutable, discriminated `sourceIdentity`. It is restricted server-side metadata, not client input or rendered content. Keep the persisted field optional so pre-amendment rows remain schema-readable; do not backfill them. New-write validators require the identity and validate its event type and envelope recipient. An absent, malformed, mismatched, or stale identity fails closed. Existing `sourceReference` remains for indexes and cancellation compatibility; it is never source authority.
+
+```ts
+type RelationshipSourceIdentity = {
+  coupleId: Id<"couples">;
+  relationshipMembershipId: Id<"coupleMembers">;
+  ownerUserId: Id<"users">;
+  recipientUserId: Id<"users">;
+};
+
+type NotificationSourceIdentity =
+  | {
+      eventType: "assisted_period_start.v1" | "assisted_period_end.v1";
+      sourceId: Id<"periodEvents">;
+      authorityVersion: number;
+      primaryId: Id<"users">;
+    }
+  | {
+      eventType: "period_window_approaching.v1";
+      primaryId: Id<"users">;
+      latestEligibleStartEventId: Id<"periodEvents">;
+      sourceAuthorityVersion: string;
+      reminderWindowVersion: number;
+      dueLocalDay: string;
+    }
+  | {
+      eventType: "late_status.v1";
+      primaryId: Id<"users">;
+      latestEligibleStartEventId: Id<"periodEvents">;
+      sourceAuthorityVersion: string;
+      reminderWindowVersion: number;
+      localDay: string;
+    }
+  | {
+      eventType: "pain_check_in.v1";
+      requestId: Id<"painReminderRequests">;
+      painLogId: Id<"painLogs">;
+      requestVersion: number;
+      primaryId: Id<"users">;
+      selectedLocalDay: string;
+    }
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_linked.v1";
+      sourceId: Id<"coupleMembers">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_message.v1";
+      sourceId: Id<"coupleMessages">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_nudge.v1";
+      sourceId: Id<"nudges">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_chat_cleared.v1";
+      sourceId: Id<"couples">;
+      clearOperationVersion: number;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "connected_since_updated.v1";
+      sourceId: Id<"couples">;
+      settingVersion: number;
+    });
+```
+
+Every numeric identity version (`authorityVersion`, `reminderWindowVersion`, `requestVersion`, `clearOperationVersion`, and `settingVersion`) is a positive safe integer. Both new-write validators and the source reader enforce `Number.isSafeInteger(value) && value > 0`; `v.number()` alone is insufficient because Convex accepts non-finite numbers.
+
+`sourceIdentity` is authoritative for domain-source identity. The existing event envelope's `sourceAuthorityVersion` is a compatibility projection only; new writes and the reader must require it to equal this mapping:
+
+| Identity kind | Required envelope `sourceAuthorityVersion` |
+|---|---|
+| Assisted period start/end | `period-authority:${authorityVersion}` |
+| Prediction window / Late status | Exactly `sourceIdentity.sourceAuthorityVersion`, parsed as the canonical G4-SOURCE-V1 tuple |
+| Pain check-in | `pain-reminder-request:v${requestVersion}` |
+| Partner linked, message, or nudge | `relationship-membership:${relationshipMembershipId}` |
+| Partner chat cleared | `chat-clear:${clearOperationVersion}` |
+| Connected-since updated | `connected-since-setting:${settingVersion}` |
+
+The reader compares every identity field with both the event envelope and the current domain source; matching the envelope projection alone never grants authority. For relationship identities, `relationshipMembershipId` is the active partner membership row that anchors the link generation; it is not necessarily the recipient's membership row. `ownerUserId` and `recipientUserId` must exactly equal the corresponding event-envelope fields. The owner and source-row bindings are frozen per kind:
+
+| Event kind | Owner source binding | Recipient source binding |
+|---|---|---|
+| `partner_linked.v1` | `sourceId === relationshipMembershipId`; owner is the user on that newly active partner membership who completed linking. | Either active member, with one separately keyed event per member. The linker's self-notice has `ownerUserId === recipientUserId`; the other member's notice has distinct IDs. |
+| `partner_message.v1` | `coupleMessages.senderId` | `coupleMessages.recipientId` |
+| `partner_nudge.v1` | `nudges.senderId` | `nudges.receiverId` |
+| `partner_chat_cleared.v1` | `couples.chatClearedBy`, written atomically with the current `chatClearedAt` by the authenticated clearer | The other active member in that couple |
+| `connected_since_updated.v1` | `couples.connectedSinceUpdatedBy` for the current setting version | The other active member in that couple |
+
+The reader verifies an active couple with exactly one primary and partner membership, the current partner-row generation ID, identity/event/envelope agreement, and the exact source row. For chat-clear source authority, the couple's current `chatClearedAt` and `chatClearedBy` must match the identity's clear version and owner. Legacy clears without `chatClearedBy` fail closed; no actor is inferred or backfilled. Message and nudge checks use the partner generation row for either sender direction; they never alter chat acknowledgement or nudge-seen state. Other relationship kinds require distinct active owner and recipient members. Missing generation IDs on legacy source rows deny.
+
+Scheduled identities are checked against `parseSourceAuthorityVersion`, the current served V2 read model, current source revision, and the recipient's current purpose preference/window revision. A shadow, stale, absent, paused, or unavailable served snapshot cannot authorize prediction work. Pain identities bind an active request/version to its existing pain log and primary owner. Assisted-period identities bind the exact period event, primary, and accepted authority version. No sharing flag grants another user access to health sources.
+
+The reader is read-only and returns false for unknown types or any failed check. `getMyInbox` omits items whose event is not current; `projectInApp` suppresses/cancels disallowed work. Both call this same reader. It compares the typed identity with the stored event and current source, rather than inferring authority from event type, route, inbox state, timestamps, or parsed `sourceReference` text. No event without `sourceIdentity` can be projected or returned as current.
+
+Idempotent replay compares the complete source identity as well as the existing envelope fields. Add `relationshipMembershipId` to the idempotency components for `partner_chat_cleared.v1` and `connected_since_updated.v1`, because their timestamp-based operation/setting versions can repeat after relinking. `partner_linked.v1` already includes its link-generation membership ID. This prevents equal timestamps across relinks from colliding or reviving prior rows.
 
 The future-only adapter boundary receives a current dispatch authorization containing a non-in-app channel, independently resolved destination identity/version, stable logical key, optional provider idempotency key, expiry, frozen render identity, and the static payload. Its normalized result is exactly one of `accepted(providerMessageId?)`, `retryable_failure(errorCode, retryAfterMs?)`, `permanent_failure(errorCode)`, or `unknown(errorCode?)`. A retryable result means non-acceptance is known; ambiguity is `unknown`. This boundary is contract-only in Gate 4 and has no runtime caller.
