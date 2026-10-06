@@ -140,6 +140,11 @@ describe("user role onboarding", () => {
 describe("authenticated user mutation issuer scoping", () => {
   test.each([
     {
+      label: "ensureUser",
+      update: (asUser: ReturnType<TestBackend["withIdentity"]>) =>
+        asUser.mutation(api.mutations.users.ensureUser, {}),
+    },
+    {
       label: "updateUserRole",
       update: (asUser: ReturnType<TestBackend["withIdentity"]>) =>
         asUser.mutation(api.mutations.users.updateUserRole, { role: "partner" }),
@@ -180,6 +185,27 @@ describe("authenticated user mutation issuer scoping", () => {
       preferredName: "Original",
       timeZone: "UTC",
     });
+  });
+
+  test("ensureUser does not create a row for an unapproved issuer", async () => {
+    const t = convexTest(schema, modules);
+    const clerkId = "new-foreign-issuer-subject";
+    const foreignIssuer = t.withIdentity({
+      subject: clerkId,
+      issuer: "https://other.clerk.example",
+    });
+
+    await expect(
+      foreignIssuer.mutation(api.mutations.users.ensureUser, {}),
+    ).rejects.toThrow("User not found in database");
+    await expect(
+      t.run((ctx) =>
+        ctx.db
+          .query("users")
+          .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
+          .unique(),
+      ),
+    ).resolves.toBeNull();
   });
 });
 
