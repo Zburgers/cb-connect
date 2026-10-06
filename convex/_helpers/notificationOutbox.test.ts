@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import type { Id } from "../_generated/dataModel";
 import { addCalendarDays } from "./cycleCalculations";
 import {
   makeDeliveryIdempotencyKey,
@@ -265,7 +266,7 @@ describe("current Late-state outbox events", () => {
     return { t, primaryId, snapshot, snapshotId, lateInstant };
   }
 
-  test("uses the complete source authority for opaque Late references and bounded cancellation", async () => {
+  test("uses the full canonical authority in bounded Late references", async () => {
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t, {
       fixtureRunId: "n3e-late-authority-reference",
@@ -305,12 +306,47 @@ describe("current Late-state outbox events", () => {
     ]);
 
     expect(firstReference).not.toBe(secondReference);
-    for (const reference of [firstReference, secondReference]) {
-      expect(reference).toMatch(/^late:v1:[a-f0-9]{64}$/);
-      expect(reference).toHaveLength("late:v1:".length + 64);
-      expect(reference).not.toContain(String(primaryId));
-      expect(reference).not.toContain(localDay);
-    }
+    expect(firstReference).toBe(
+      `late:v1:${String(primaryId)}:${firstAuthority}:${localDay}:${reminderWindowVersion}`,
+    );
+    expect(secondReference).toBe(
+      `late:v1:${String(primaryId)}:${secondAuthority}:${localDay}:${reminderWindowVersion}`,
+    );
+    expect(firstReference).toContain(String(primaryId));
+    expect(firstReference).toContain(firstAuthority);
+    expect(firstReference.length).toBeLessThanOrEqual(1_024);
+
+    const firstEventKey = makeEventIdempotencyKey("late_status.v1", {
+      primaryId: String(primaryId),
+      sourceAuthorityVersion: firstAuthority,
+      localDay,
+      reminderWindowVersion: String(reminderWindowVersion),
+    });
+    expect(
+      makeEventIdempotencyKey("late_status.v1", {
+        primaryId: String(primaryId),
+        sourceAuthorityVersion: firstAuthority,
+        localDay: "2026-03-09",
+        reminderWindowVersion: String(reminderWindowVersion),
+      }),
+    ).not.toBe(firstEventKey);
+    expect(
+      makeEventIdempotencyKey("late_status.v1", {
+        primaryId: String(primaryId),
+        sourceAuthorityVersion: secondAuthority,
+        localDay,
+        reminderWindowVersion: String(reminderWindowVersion),
+      }),
+    ).not.toBe(firstEventKey);
+    expect(
+      makeEventIdempotencyKey("late_status.v1", {
+        primaryId: String(primaryId),
+        sourceAuthorityVersion: firstAuthority,
+        localDay,
+        reminderWindowVersion: String(reminderWindowVersion + 1),
+      }),
+    ).not.toBe(firstEventKey);
+
     await expect(
       lateStatusSourceReference(
         primaryId,
@@ -730,5 +766,63 @@ describe("current Late-state outbox events", () => {
         { state: "hidden" },
       ]);
     });
+  });
+
+  test("rejects composed Late source references over 1,024 characters", async () => {
+    const sourceRevision = 7;
+    const authority = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-v1",
+      calibrationMethodVersion: "calibrate-v1",
+    });
+    const oversizedPrimaryId = "u".repeat(1_024) as Id<"users">;
+
+    await expect(
+      lateStatusSourceReference(
+        oversizedPrimaryId,
+        authority,
+        sourceRevision,
+        "2026-03-08",
+        3,
+      ),
+    ).rejects.toThrow("Late-status source reference is outside its fixed bound");
+  });
+
+  test("keeps local day, reminder window, and method version in Late event keys", () => {
+    const primaryId = "primary-test-id";
+    const localDay = "2026-03-08";
+    const sourceRevision = 7;
+    const firstAuthority = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-a-v1",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    const secondAuthority = makeSourceAuthorityVersion({
+      sourceRevision,
+      servedCycleContract: "cycle-read-model-v1",
+      servedPredictionContract: "prediction-serving-v2",
+      estimatorMethodVersion: "estimate-b-v1",
+      calibrationMethodVersion: "calibrate-v2",
+    });
+    const eventKey = (
+      sourceAuthorityVersion: string,
+      day: string,
+      reminderWindowVersion: number,
+    ) =>
+      makeEventIdempotencyKey("late_status.v1", {
+        primaryId,
+        sourceAuthorityVersion,
+        localDay: day,
+        reminderWindowVersion: String(reminderWindowVersion),
+      });
+    const firstKey = eventKey(firstAuthority, localDay, 3);
+
+    expect(eventKey(firstAuthority, "2026-03-09", 3)).not.toBe(firstKey);
+    expect(eventKey(firstAuthority, localDay, 4)).not.toBe(firstKey);
+    expect(eventKey(secondAuthority, localDay, 3)).not.toBe(firstKey);
   });
 });

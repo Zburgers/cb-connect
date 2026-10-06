@@ -4,17 +4,13 @@ import { toCalendarDateInTimeZone } from "./calendarDates";
 import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
 import { readCurrentNotificationCycleState } from "./notificationCycleState";
-import {
-  makeSourceAuthorityVersion,
-  type SourceAuthorityVersionInput,
-} from "./notificationSourceAuthority";
+import { parseSourceAuthorityVersion } from "./notificationSourceAuthority";
 import { notificationEventDefinitions } from "./notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const MAX_SOURCE_EVENTS = 256;
 const MAX_DUE_WORK_PER_DELIVERY = 256;
-const SOURCE_AUTHORITY_VERSION_PREFIX = "g4-source-v1:";
-const MAX_SOURCE_AUTHORITY_VERSION_LENGTH = 3_200;
+const MAX_SOURCE_REFERENCE_LENGTH = 1_024;
 
 export type AssistedPeriodEventType =
   | "assisted_period_start.v1"
@@ -110,82 +106,24 @@ export async function lateStatusSourceReference(
     sourceRevision < 0 ||
     !/^\d{4}-\d{2}-\d{2}$/.test(localDay) ||
     !Number.isSafeInteger(reminderWindowVersion) ||
-    reminderWindowVersion < 0
+    reminderWindowVersion <= 0
   ) {
     throw new Error("Late-status source generation is invalid");
   }
   assertCanonicalSourceAuthorityVersion(sourceAuthorityVersion, sourceRevision);
-  const source = new TextEncoder().encode(
-    `cb-connect:late-source-reference:v1:${JSON.stringify([
-      String(primaryId),
-      sourceAuthorityVersion,
-      localDay,
-      reminderWindowVersion,
-    ])}`,
-  );
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", source));
-  const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `late:v1:${hex}`;
+  const sourceReference = `late:v1:${String(primaryId)}:${sourceAuthorityVersion}:${localDay}:${reminderWindowVersion}`;
+  if (sourceReference.length > MAX_SOURCE_REFERENCE_LENGTH) {
+    throw new Error("Late-status source reference is outside its fixed bound");
+  }
+  return sourceReference;
 }
 
 function assertCanonicalSourceAuthorityVersion(
   sourceAuthorityVersion: string,
   expectedSourceRevision: number,
 ): void {
-  if (
-    typeof sourceAuthorityVersion !== "string" ||
-    !sourceAuthorityVersion.startsWith(SOURCE_AUTHORITY_VERSION_PREFIX) ||
-    sourceAuthorityVersion.length > MAX_SOURCE_AUTHORITY_VERSION_LENGTH
-  ) {
-    throw new Error("Late-status source authority version is invalid");
-  }
-
-  let tuple: unknown;
-  try {
-    tuple = JSON.parse(
-      sourceAuthorityVersion.slice(SOURCE_AUTHORITY_VERSION_PREFIX.length),
-    );
-  } catch {
-    throw new Error("Late-status source authority version is invalid");
-  }
-  if (!Array.isArray(tuple) || tuple.length !== 5) {
-    throw new Error("Late-status source authority version is invalid");
-  }
-
-  const [
-    sourceRevision,
-    servedCycleContract,
-    servedPredictionContract,
-    estimatorMethodVersion,
-    calibrationMethodVersion,
-  ] = tuple as unknown[];
-  if (
-    !Number.isSafeInteger(sourceRevision) ||
-    sourceRevision !== expectedSourceRevision ||
-    typeof servedCycleContract !== "string" ||
-    (servedPredictionContract !== null &&
-      typeof servedPredictionContract !== "string") ||
-    (estimatorMethodVersion !== null &&
-      typeof estimatorMethodVersion !== "string") ||
-    (calibrationMethodVersion !== null &&
-      typeof calibrationMethodVersion !== "string")
-  ) {
-    throw new Error("Late-status source authority version is invalid");
-  }
-
-  let canonical: string;
-  try {
-    canonical = makeSourceAuthorityVersion({
-      sourceRevision,
-      servedCycleContract,
-      servedPredictionContract,
-      estimatorMethodVersion,
-      calibrationMethodVersion,
-    } as SourceAuthorityVersionInput);
-  } catch {
-    throw new Error("Late-status source authority version is invalid");
-  }
-  if (canonical !== sourceAuthorityVersion) {
+  const parsed = parseSourceAuthorityVersion(sourceAuthorityVersion);
+  if (parsed === null || parsed.sourceRevision !== expectedSourceRevision) {
     throw new Error("Late-status source authority version is invalid");
   }
 }
