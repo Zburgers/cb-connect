@@ -24,6 +24,7 @@ import {
   createNotificationDueWork,
   makeSourceAuthorityVersion,
   isCurrentNotificationScheduleFence,
+  parseSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
@@ -47,7 +48,11 @@ type ServedSnapshotResult =
       scheduleState: Doc<"notificationScheduleState">;
       sourceAuthorityVersion: string;
     }
-  | { status: "unavailable" | "indeterminate" };
+  | {
+      status: "indeterminate";
+      scheduleState: Doc<"notificationScheduleState">;
+    }
+  | { status: "unavailable" };
 
 const wakeArgsValidator = v.object({
   workId: v.id("notificationDueWork"),
@@ -187,12 +192,9 @@ async function readCurrentServedSnapshot(
       candidate.intervalMethodVersion === PREDICTION_CALIBRATION_VERSION,
   );
   if (!snapshot) {
-    return {
-      status:
-        snapshots.length === SERVED_SNAPSHOT_LOOKBACK
-          ? ("indeterminate" as const)
-          : ("unavailable" as const),
-    };
+    return snapshots.length === SERVED_SNAPSHOT_LOOKBACK
+      ? { status: "indeterminate" as const, scheduleState }
+      : { status: "unavailable" as const };
   }
   const servedIntervals = deriveCycleIntervals(predictionData.periodEvents, {
     cutoffAt: snapshot.inputCutoffAt,
@@ -444,6 +446,25 @@ async function cancelAllActiveScheduleWork(
   await cancelActiveKind(ctx, active, "late_boundary", now);
 }
 
+async function cancelStaleClaimedScheduleWork(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  sourceRevision: number,
+  now: number,
+) {
+  const claimed = await readClaimedScheduleWork(ctx, userId);
+  for (const row of claimed) {
+    const rowSourceRevision =
+      parseSourceAuthorityVersion(row.sourceAuthorityVersion)?.sourceRevision;
+    if (
+      row.generation !== workGeneration(sourceRevision) ||
+      rowSourceRevision !== sourceRevision
+    ) {
+      await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
+    }
+  }
+}
+
 /**
  * Frozen N5b/N8 same-transaction entry point for current served V2 schedule work.
  * Domain writers advance source authority first, then call this helper with the
@@ -456,7 +477,15 @@ export async function reconcileUserSchedule(
   const now = Date.now();
   if (!schedulerEnabled()) {
     const current = await readCurrentServedSnapshot(ctx, userId);
-    if (current.status === "indeterminate") return;
+    if (current.status === "indeterminate") {
+      await cancelStaleClaimedScheduleWork(
+        ctx,
+        userId,
+        current.scheduleState.sourceRevision,
+        now,
+      );
+      return;
+    }
     if (current.status !== "current") {
       await cancelAllActiveScheduleWork(ctx, userId, now);
       return;
@@ -472,6 +501,7 @@ export async function reconcileUserSchedule(
     const timeZone = resolveCalendarTimeZone(
       current.user.timeZone ?? DEFAULT_TIME_ZONE,
     );
+    const generation = workGeneration(current.scheduleState.sourceRevision);
     for (const row of [...pending, ...claimed]) {
       if (row.kind !== "prediction_window" && row.kind !== "late_boundary") {
         continue;
@@ -488,7 +518,9 @@ export async function reconcileUserSchedule(
             )
           : null;
       if (
-        row.generation !== current.scheduleState.sourceRevision ||
+        row.generation !== generation ||
+        row.sourceAuthorityVersion !== current.sourceAuthorityVersion ||
+        row.reminderWindowVersion !== preference?.reminderWindowVersion ||
         currentDueAt !== row.dueAt ||
         isExpiredLocalDay(row.kind, current.snapshot, timeZone, now)
       ) {
@@ -498,7 +530,15 @@ export async function reconcileUserSchedule(
     return;
   }
   const current = await readCurrentServedSnapshot(ctx, userId);
-  if (current.status === "indeterminate") return;
+  if (current.status === "indeterminate") {
+    await cancelStaleClaimedScheduleWork(
+      ctx,
+      userId,
+      current.scheduleState.sourceRevision,
+      now,
+    );
+    return;
+  }
   if (current.status !== "current") {
     await cancelAllActiveScheduleWork(ctx, userId, now);
     return;
