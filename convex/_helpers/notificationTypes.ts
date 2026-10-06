@@ -1,4 +1,4 @@
-import { v, type Infer } from "convex/values";
+import { v, type GenericValidator, type Infer } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import { parseSourceAuthorityVersion } from "./notificationSourceAuthority";
 
@@ -403,14 +403,43 @@ export const notificationEventWriteValidator = v.object({
 export type NotificationEventWrite = Infer<typeof notificationEventWriteValidator>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  );
 }
 
-function isNotificationEventType(value: unknown): value is NotificationEventType {
-  return (
-    typeof value === "string" &&
-    notificationEventTypes.includes(value as NotificationEventType)
-  );
+// ponytail: match only kinds used by these validators; add cases when they gain kinds.
+function matchesValidator(validator: GenericValidator, value: unknown): boolean {
+  switch (validator.kind) {
+    case "union":
+      return validator.members.some((member) => matchesValidator(member, value));
+    case "object":
+      if (
+        !isRecord(value) ||
+        Object.keys(value).some((field) => !(field in validator.fields))
+      ) {
+        return false;
+      }
+      return Object.entries(validator.fields).every(([field, fieldValidator]) => {
+        if (!(field in value) || value[field] === undefined) {
+          return fieldValidator.isOptional === "optional";
+        }
+        return matchesValidator(fieldValidator, value[field]);
+      });
+    case "id":
+    case "string":
+      return typeof value === "string";
+    case "float64":
+      return typeof value === "number";
+    case "literal":
+      return value === validator.value;
+    default:
+      return false;
+  }
 }
 
 function positiveSafeIdentityVersion(version: number): number {
@@ -451,11 +480,10 @@ export function assertValidNotificationEventWrite(
 ): asserts value is NotificationEventWrite {
   if (
     !isRecord(value) ||
-    !isNotificationEventType(value.eventType) ||
-    !isRecord(value.sourceIdentity) ||
-    !isNotificationEventType(value.sourceIdentity.eventType)
+    !matchesValidator(notificationSourceIdentityValidator, value.sourceIdentity) ||
+    !matchesValidator(notificationEventWriteValidator, value)
   ) {
-    throw new Error("Notification event source identity is required");
+    throw new Error("Notification event does not match frozen write shape");
   }
 
   const event = value as unknown as NotificationEventWrite;
