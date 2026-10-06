@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
+import { getCurrentUser } from "../_helpers/auth";
 import {
   DEFAULT_TIME_ZONE,
   resolveCalendarTimeZone,
@@ -12,15 +13,7 @@ export const updateUserRole = mutation({
     role: v.union(v.literal("primary"), v.literal("partner")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     if (user.role !== undefined && user.role !== args.role) {
       throw new Error("Role can only be selected during onboarding");
@@ -65,15 +58,7 @@ export const updateUserPreferences = mutation({
     timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     const timeZone =
       args.timeZone === undefined
@@ -108,15 +93,7 @@ export const updateUserPreferences = mutation({
 export const updateUserTimeZone = mutation({
   args: { timeZone: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     const timeZone = resolveCalendarTimeZone(args.timeZone);
     const timeZoneChanged =

@@ -133,6 +133,52 @@ describe("user role onboarding", () => {
   });
 });
 
+describe("authenticated user mutation issuer scoping", () => {
+  test.each([
+    {
+      label: "updateUserRole",
+      update: (asUser: ReturnType<TestBackend["withIdentity"]>) =>
+        asUser.mutation(api.mutations.users.updateUserRole, { role: "partner" }),
+    },
+    {
+      label: "updateUserPreferences",
+      update: (asUser: ReturnType<TestBackend["withIdentity"]>) =>
+        asUser.mutation(api.mutations.users.updateUserPreferences, {
+          preferredName: "Wrong Issuer",
+          timeZone: "Asia/Kolkata",
+        }),
+    },
+    {
+      label: "updateUserTimeZone",
+      update: (asUser: ReturnType<TestBackend["withIdentity"]>) =>
+        asUser.mutation(api.mutations.users.updateUserTimeZone, {
+          timeZone: "Asia/Kolkata",
+        }),
+    },
+  ])("$label rejects a foreign issuer reusing a legacy subject", async ({ update }) => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, {
+      clerkId: "shared-legacy-subject",
+      name: "Original User",
+      role: "primary",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(userId, { preferredName: "Original", timeZone: "UTC" }),
+    );
+    const foreignIssuer = t.withIdentity({
+      subject: "shared-legacy-subject",
+      issuer: "https://other.clerk.example",
+    });
+
+    await expect(update(foreignIssuer)).rejects.toThrow("User not found in database");
+    await expect(t.run((ctx) => ctx.db.get(userId))).resolves.toMatchObject({
+      role: "primary",
+      preferredName: "Original",
+      timeZone: "UTC",
+    });
+  });
+});
+
 describe("user timezone notification reconciliation", () => {
   test.each([
     {
