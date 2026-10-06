@@ -354,6 +354,53 @@ describe("N2e durable delivery reconciliation", () => {
     });
   });
 
+  test("reserves the maximum generation for terminal recovery when no wake can be created", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const row = await t.run((ctx) =>
+      insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "processing",
+        attemptCount: 1,
+        claimGeneration: Number.MAX_SAFE_INTEGER - 1,
+        leaseUntil: now - 1,
+      }),
+    );
+
+    const result = await t.mutation(reconcileRef, {
+      state: "processing",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+
+    expect(result).toMatchObject({ retried: 0, scheduled: 0, exhausted: 1, skipped: 0 });
+    const recovered = await t.run((ctx) => ctx.db.get(row.deliveryId));
+    expect(recovered).toMatchObject({
+      state: "failed_permanent",
+      claimGeneration: Number.MAX_SAFE_INTEGER,
+      errorCode: "attempts_exhausted",
+    });
+    expect(recovered?.nextAttemptAt).toBeUndefined();
+    expect(recovered?.leaseUntil).toBeUndefined();
+    const scheduled = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").take(20),
+    );
+    expect(
+      scheduled.some(({ args }) => {
+        const arg = args[0];
+        return (
+          typeof arg === "object" &&
+          arg !== null &&
+          "eventId" in arg &&
+          arg.eventId === row.eventId
+        );
+      }),
+    ).toBe(false);
+  });
+
   test("limits recovery bursts to one bounded page and preserves the continuation cursor", async () => {
     enableDelivery();
     const now = Date.parse("2026-10-05T00:00:00.000Z");
