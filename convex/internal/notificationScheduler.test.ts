@@ -1239,6 +1239,68 @@ describe("notification schedule reconciliation", () => {
     ).toEqual([]);
   });
 
+  test("indeterminate history cancels stale claims but preserves deferred pending work", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      sourceRevision: 0,
+    });
+    const servedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (servedSnapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+    if (!servedSnapshot) throw new Error("Expected the served V2 snapshot");
+    const pendingBefore = await pendingScheduleRows(t, primaryId);
+    expect(pendingBefore).toHaveLength(2);
+    const pendingPrediction = pendingBefore.find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!pendingPrediction) throw new Error("Expected prediction-window work");
+    const claimedId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: pendingPrediction.kind,
+        state: "claimed",
+        dueAt: pendingPrediction.dueAt,
+        generation: pendingPrediction.generation,
+        sourceAuthorityVersion: pendingPrediction.sourceAuthorityVersion,
+        reminderWindowVersion: pendingPrediction.reminderWindowVersion,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        const { qualityScoreV1, ...shadow } = snapshotRefreshArgs(
+          servedSnapshot,
+          servedSnapshot.generatedAt + 1_000 + index,
+        );
+        await ctx.db.insert("predictionSnapshots", {
+          ...shadow,
+          displayStatus: "shadow",
+          ...(qualityScoreV1 === null ? {} : { qualityScoreV1 }),
+        });
+      }
+      await advanceNotificationSourceAuthority(ctx, primaryId, now + 1);
+    });
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+
+    const after = await allScheduleRows(t, primaryId);
+    expect(after.find(({ _id }) => _id === claimedId)?.state).toBe("cancelled");
+    expect(
+      after.filter(({ state }) => state === "pending").map(({ _id }) => _id),
+    ).toEqual(pendingBefore.map(({ _id }) => _id));
+  });
   test("scheduler-off reconciliation cancels disabled and expired work without creating wakeups", async () => {
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();

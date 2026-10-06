@@ -22,7 +22,11 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-async function seedScheduledUser(t: TestBackend, userId: Id<"users">) {
+async function seedScheduledUser(
+  t: TestBackend,
+  userId: Id<"users">,
+  sourceRevision = 4,
+) {
   await t.run(async (ctx) => {
     await ctx.db.patch(userId, { timeZone: "UTC" });
     await ctx.db.insert("periodEvents", {
@@ -41,7 +45,7 @@ async function seedScheduledUser(t: TestBackend, userId: Id<"users">) {
     });
     await ctx.db.insert("notificationScheduleState", {
       userId,
-      sourceRevision: 4,
+      sourceRevision,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -319,6 +323,33 @@ describe("user timezone notification reconciliation", () => {
     expect(scheduledAfter.map(({ _id }) => _id)).toEqual(
       scheduledBefore.map(({ _id }) => _id),
     );
+  });
+
+  test("scheduler-off timezone aliases cancel work from the prior source revision", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await seedScheduledUser(t, primaryId, 0);
+    const beforeWork = await pendingScheduleRows(t, primaryId);
+    expect(beforeWork).toHaveLength(2);
+    expect(beforeWork.every((row) => row.generation === 1)).toBe(true);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "false");
+
+    await asPrimary.mutation(api.mutations.users.updateUserTimeZone, {
+      timeZone: "Etc/GMT",
+    });
+
+    const afterWork = await allScheduleRows(t, primaryId);
+    const source = await t.run((ctx) =>
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    expect(source?.sourceRevision).toBe(1);
+    expect(afterWork.map(({ dueAt }) => dueAt)).toEqual(
+      beforeWork.map(({ dueAt }) => dueAt),
+    );
+    expect(afterWork.every((row) => row.state === "cancelled")).toBe(true);
   });
 
   test("timezone update rolls back when source revision cannot advance", async () => {
