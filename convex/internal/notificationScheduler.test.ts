@@ -1543,6 +1543,86 @@ describe("notification schedule reconciliation", () => {
     );
   });
 
+  test("current reconciliation rechecks candidates claimed between pages", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const original = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!original) throw new Error("Expected prediction-window work");
+
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 100; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "pain_reminder",
+          state: "pending",
+          dueAt: original.dueAt + index + 1,
+          generation: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const continuation = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(200)).find(
+        ({ name, args }) =>
+          name === "internal/notificationScheduler:continueScheduleReconciliation" &&
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "phase" in args[0] &&
+          args[0].phase === "current",
+      ),
+    );
+    expect(continuation).toBeDefined();
+    if (!continuation) throw new Error("Expected a schedule continuation");
+    const continuationArgs = continuation.args[0];
+    if (
+      typeof continuationArgs !== "object" ||
+      continuationArgs === null ||
+      !("candidates" in continuationArgs)
+    ) {
+      throw new Error("Expected carried schedule candidates");
+    }
+    expect(continuationArgs.candidates).toMatchObject({
+      pendingPredictionId: original._id,
+      claimedPredictionId: null,
+    });
+    expect(continuationArgs.claimedDone).toBe(true);
+
+    await t.run((ctx) => ctx.db.patch(original._id, { state: "claimed" }));
+    await t.mutation(
+      continueScheduleReconciliationRef,
+      continuationArgs as never,
+    );
+
+    const activePredictionWork = (await allScheduleRows(t, primaryId)).filter(
+      (row) =>
+        row.kind === "prediction_window" &&
+        (row.state === "pending" || row.state === "claimed"),
+    );
+    expect(activePredictionWork).toEqual([
+      expect.objectContaining({ _id: original._id, state: "claimed" }),
+    ]);
+  });
+
   test("claimed cleanup continues when the first page is cancelled", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");

@@ -664,14 +664,20 @@ async function inspectSchedulePage(
   }
 }
 
-async function activeCandidate(
+async function activeCandidates(
   ctx: MutationCtx,
-  id: Id<"notificationDueWork"> | null,
-  state: "pending" | "claimed",
+  ...ids: Array<Id<"notificationDueWork"> | null>
 ) {
-  if (id === null) return null;
-  const row = await ctx.db.get(id);
-  return row?.state === state ? row : null;
+  const uniqueIds = [...new Set(ids.filter((id) => id !== null))];
+  const rows = await Promise.all(uniqueIds.map((id) => ctx.db.get(id)));
+  return {
+    pending: rows.filter(
+      (row): row is Doc<"notificationDueWork"> => row?.state === "pending",
+    ),
+    claimed: rows.filter(
+      (row): row is Doc<"notificationDueWork"> => row?.state === "claimed",
+    ),
+  };
 }
 
 async function reconcileCurrentSchedulePage(
@@ -811,15 +817,10 @@ async function reconcileCurrentSchedulePage(
   }
 
   if (!schedulerEnabled()) return;
-  const pendingPrediction = await activeCandidate(
+  const predictionCandidates = await activeCandidates(
     ctx,
     args.candidates.pendingPredictionId,
-    "pending",
-  );
-  const claimedPrediction = await activeCandidate(
-    ctx,
     args.candidates.claimedPredictionId,
-    "claimed",
   );
   await reconcileKind(ctx, {
     userId: args.userId,
@@ -831,19 +832,14 @@ async function reconcileCurrentSchedulePage(
     generation,
     sourceAuthorityVersion: current.sourceAuthorityVersion,
     timeZone,
-    pending: pendingPrediction ? [pendingPrediction] : [],
-    claimed: claimedPrediction ? [claimedPrediction] : [],
+    pending: predictionCandidates.pending,
+    claimed: predictionCandidates.claimed,
     now,
   });
-  const pendingLate = await activeCandidate(
+  const lateCandidates = await activeCandidates(
     ctx,
     args.candidates.pendingLateId,
-    "pending",
-  );
-  const claimedLate = await activeCandidate(
-    ctx,
     args.candidates.claimedLateId,
-    "claimed",
   );
   await reconcileKind(ctx, {
     userId: args.userId,
@@ -855,8 +851,8 @@ async function reconcileCurrentSchedulePage(
     generation,
     sourceAuthorityVersion: current.sourceAuthorityVersion,
     timeZone,
-    pending: pendingLate ? [pendingLate] : [],
-    claimed: claimedLate ? [claimedLate] : [],
+    pending: lateCandidates.pending,
+    claimed: lateCandidates.claimed,
     now,
   });
 }
