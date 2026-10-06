@@ -445,26 +445,15 @@ async function cancelAllActiveScheduleWork(
   await cancelActiveKind(ctx, active, "late_boundary", now);
 }
 
-async function cancelStaleClaimedScheduleWork(
+async function cancelClaimedScheduleWork(
   ctx: MutationCtx,
   userId: Id<"users">,
-  scheduleState: Doc<"notificationScheduleState">,
   now: number,
 ) {
-  const [claimed, { predictionWindow, lateStatus }] = await Promise.all([
-    readClaimedScheduleWork(ctx, userId),
-    readSchedulePreferences(ctx, userId),
-  ]);
+  const claimed = await readClaimedScheduleWork(ctx, userId);
   for (const row of claimed) {
     if (row.kind !== "prediction_window" && row.kind !== "late_boundary") continue;
-    const preference =
-      row.kind === "prediction_window" ? predictionWindow : lateStatus;
-    if (
-      row.generation !== workGeneration(scheduleState.sourceRevision) ||
-      !isCurrentNotificationScheduleFence(row, scheduleState, preference)
-    ) {
-      await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
-    }
+    await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
   }
 }
 
@@ -481,12 +470,7 @@ export async function reconcileUserSchedule(
   if (!schedulerEnabled()) {
     const current = await readCurrentServedSnapshot(ctx, userId);
     if (current.status === "indeterminate") {
-      await cancelStaleClaimedScheduleWork(
-        ctx,
-        userId,
-        current.scheduleState,
-        now,
-      );
+      await cancelClaimedScheduleWork(ctx, userId, now);
       return;
     }
     if (current.status !== "current") {
@@ -534,12 +518,7 @@ export async function reconcileUserSchedule(
   }
   const current = await readCurrentServedSnapshot(ctx, userId);
   if (current.status === "indeterminate") {
-    await cancelStaleClaimedScheduleWork(
-      ctx,
-      userId,
-      current.scheduleState,
-      now,
-    );
+    await cancelClaimedScheduleWork(ctx, userId, now);
     return;
   }
   if (current.status !== "current") {

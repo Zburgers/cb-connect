@@ -1239,7 +1239,7 @@ describe("notification schedule reconciliation", () => {
     ).toEqual([]);
   });
 
-  test("indeterminate history cancels stale tuple and window claims without source revision change", async () => {
+  test("indeterminate history cancels all schedule claims and preserves pending work", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.setSystemTime(now);
@@ -1297,6 +1297,19 @@ describe("notification schedule reconciliation", () => {
         updatedAt: now,
       }),
     );
+    const matchingFenceClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: pendingPrediction.kind,
+        state: "claimed",
+        dueAt: pendingPrediction.dueAt,
+        generation: pendingPrediction.generation,
+        sourceAuthorityVersion: pendingPrediction.sourceAuthorityVersion,
+        reminderWindowVersion: pendingPrediction.reminderWindowVersion,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
 
     await t.run(async (ctx) => {
       for (let index = 0; index < 100; index += 1) {
@@ -1317,6 +1330,9 @@ describe("notification schedule reconciliation", () => {
     const after = await allScheduleRows(t, primaryId);
     expect(after.find(({ _id }) => _id === claimedId)?.state).toBe("cancelled");
     expect(after.find(({ _id }) => _id === staleTupleClaimId)?.state).toBe(
+      "cancelled",
+    );
+    expect(after.find(({ _id }) => _id === matchingFenceClaimId)?.state).toBe(
       "cancelled",
     );
     expect(
