@@ -1,4 +1,6 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
+import type { Id } from "../_generated/dataModel";
+import { parseSourceAuthorityVersion } from "./notificationSourceAuthority";
 
 export const notificationEventTypes = [
   "assisted_period_start.v1",
@@ -14,6 +16,67 @@ export const notificationEventTypes = [
 ] as const;
 
 export type NotificationEventType = (typeof notificationEventTypes)[number];
+
+type RelationshipSourceIdentity = {
+  coupleId: Id<"couples">;
+  relationshipMembershipId: Id<"coupleMembers">;
+  ownerUserId: Id<"users">;
+  recipientUserId: Id<"users">;
+};
+
+export type NotificationSourceIdentity =
+  | {
+      eventType: "assisted_period_start.v1" | "assisted_period_end.v1";
+      sourceId: Id<"periodEvents">;
+      authorityVersion: number;
+      primaryId: Id<"users">;
+    }
+  | {
+      eventType: "period_window_approaching.v1";
+      primaryId: Id<"users">;
+      latestEligibleStartEventId: Id<"periodEvents">;
+      sourceAuthorityVersion: string;
+      reminderWindowVersion: number;
+      dueLocalDay: string;
+    }
+  | {
+      eventType: "late_status.v1";
+      primaryId: Id<"users">;
+      latestEligibleStartEventId: Id<"periodEvents">;
+      sourceAuthorityVersion: string;
+      reminderWindowVersion: number;
+      localDay: string;
+    }
+  | {
+      eventType: "pain_check_in.v1";
+      requestId: Id<"painReminderRequests">;
+      painLogId: Id<"painLogs">;
+      requestVersion: number;
+      primaryId: Id<"users">;
+      selectedLocalDay: string;
+    }
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_linked.v1";
+      sourceId: Id<"coupleMembers">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_message.v1";
+      sourceId: Id<"coupleMessages">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_nudge.v1";
+      sourceId: Id<"nudges">;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "partner_chat_cleared.v1";
+      sourceId: Id<"couples">;
+      clearOperationVersion: number;
+    })
+  | (RelationshipSourceIdentity & {
+      eventType: "connected_since_updated.v1";
+      sourceId: Id<"couples">;
+      settingVersion: number;
+    });
 
 export const notificationEventDefinitions = {
   "assisted_period_start.v1": {
@@ -238,10 +301,77 @@ const validityRuleValidator = v.union(
   v.literal("until_setting_version_changes_or_link_revocation"),
 );
 
-/**
- * Strict, content-free event envelope shared by the outbox schema and writers.
- * Recipient identity is a CB Connect user; destination resolution belongs to a delivery.
- */
+const relationshipSourceIdentityFields = {
+  coupleId: v.id("couples"),
+  relationshipMembershipId: v.id("coupleMembers"),
+  ownerUserId: v.id("users"),
+  recipientUserId: v.id("users"),
+};
+
+export const notificationSourceIdentityValidator = v.union(
+  v.object({
+    eventType: v.union(
+      v.literal("assisted_period_start.v1"),
+      v.literal("assisted_period_end.v1"),
+    ),
+    sourceId: v.id("periodEvents"),
+    authorityVersion: v.number(),
+    primaryId: v.id("users"),
+  }),
+  v.object({
+    eventType: v.literal("period_window_approaching.v1"),
+    primaryId: v.id("users"),
+    latestEligibleStartEventId: v.id("periodEvents"),
+    sourceAuthorityVersion: v.string(),
+    reminderWindowVersion: v.number(),
+    dueLocalDay: v.string(),
+  }),
+  v.object({
+    eventType: v.literal("late_status.v1"),
+    primaryId: v.id("users"),
+    latestEligibleStartEventId: v.id("periodEvents"),
+    sourceAuthorityVersion: v.string(),
+    reminderWindowVersion: v.number(),
+    localDay: v.string(),
+  }),
+  v.object({
+    eventType: v.literal("pain_check_in.v1"),
+    requestId: v.id("painReminderRequests"),
+    painLogId: v.id("painLogs"),
+    requestVersion: v.number(),
+    primaryId: v.id("users"),
+    selectedLocalDay: v.string(),
+  }),
+  v.object({
+    ...relationshipSourceIdentityFields,
+    eventType: v.literal("partner_linked.v1"),
+    sourceId: v.id("coupleMembers"),
+  }),
+  v.object({
+    ...relationshipSourceIdentityFields,
+    eventType: v.literal("partner_message.v1"),
+    sourceId: v.id("coupleMessages"),
+  }),
+  v.object({
+    ...relationshipSourceIdentityFields,
+    eventType: v.literal("partner_nudge.v1"),
+    sourceId: v.id("nudges"),
+  }),
+  v.object({
+    ...relationshipSourceIdentityFields,
+    eventType: v.literal("partner_chat_cleared.v1"),
+    sourceId: v.id("couples"),
+    clearOperationVersion: v.number(),
+  }),
+  v.object({
+    ...relationshipSourceIdentityFields,
+    eventType: v.literal("connected_since_updated.v1"),
+    sourceId: v.id("couples"),
+    settingVersion: v.number(),
+  }),
+);
+
+/** Base content-free event fields; persisted and new-write validators add identity policy. */
 export const notificationEventEnvelopeValidator = v.object({
   eventType: notificationEventTypeValidator,
   eventVersion: v.literal(1),
@@ -257,3 +387,119 @@ export const notificationEventEnvelopeValidator = v.object({
   idempotencyKey: v.string(),
   allowedChannel: v.literal("in_app"),
 });
+
+/** Stored events may predate typed identity; new-write callers use the required validator below. */
+export const notificationEventPersistedEnvelopeValidator = v.object({
+  ...notificationEventEnvelopeValidator.fields,
+  sourceIdentity: v.optional(notificationSourceIdentityValidator),
+});
+
+/** Required source identity shape for every newly written event. */
+export const notificationEventWriteValidator = v.object({
+  ...notificationEventEnvelopeValidator.fields,
+  sourceIdentity: notificationSourceIdentityValidator,
+});
+
+export type NotificationEventWrite = Infer<typeof notificationEventWriteValidator>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNotificationEventType(value: unknown): value is NotificationEventType {
+  return (
+    typeof value === "string" &&
+    notificationEventTypes.includes(value as NotificationEventType)
+  );
+}
+
+function positiveSafeIdentityVersion(version: number): number {
+  if (!Number.isSafeInteger(version) || version <= 0) {
+    throw new Error("Notification source identity versions must be positive safe integers");
+  }
+  return version;
+}
+
+function identitySourceAuthorityVersion(identity: NotificationSourceIdentity): string {
+  switch (identity.eventType) {
+    case "assisted_period_start.v1":
+    case "assisted_period_end.v1":
+      return `period-authority:${positiveSafeIdentityVersion(identity.authorityVersion)}`;
+    case "period_window_approaching.v1":
+    case "late_status.v1":
+      positiveSafeIdentityVersion(identity.reminderWindowVersion);
+      if (parseSourceAuthorityVersion(identity.sourceAuthorityVersion) === null) {
+        throw new Error("Notification source authority version is invalid");
+      }
+      return identity.sourceAuthorityVersion;
+    case "pain_check_in.v1":
+      return `pain-reminder-request:v${positiveSafeIdentityVersion(identity.requestVersion)}`;
+    case "partner_linked.v1":
+    case "partner_message.v1":
+    case "partner_nudge.v1":
+      return `relationship-membership:${identity.relationshipMembershipId}`;
+    case "partner_chat_cleared.v1":
+      return `chat-clear:${positiveSafeIdentityVersion(identity.clearOperationVersion)}`;
+    case "connected_since_updated.v1":
+      return `connected-since-setting:${positiveSafeIdentityVersion(identity.settingVersion)}`;
+  }
+}
+
+/** Adds numeric and cross-field checks to the strict new-write shape validator. */
+export function assertValidNotificationEventWrite(
+  value: unknown,
+): asserts value is NotificationEventWrite {
+  if (
+    !isRecord(value) ||
+    !isNotificationEventType(value.eventType) ||
+    !isRecord(value.sourceIdentity) ||
+    !isNotificationEventType(value.sourceIdentity.eventType)
+  ) {
+    throw new Error("Notification event source identity is required");
+  }
+
+  const event = value as unknown as NotificationEventWrite;
+  const { sourceIdentity: identity } = event;
+  const definition = notificationEventDefinitions[event.eventType];
+
+  if (
+    event.eventVersion !== definition.version ||
+    event.purpose !== definition.purpose ||
+    event.producerKind !== definition.producer ||
+    event.recipientScope !== definition.recipient ||
+    event.privacyClass !== definition.privacyClass ||
+    event.validityRule !== definition.validity ||
+    !definition.allowedChannels.includes(event.allowedChannel)
+  ) {
+    throw new Error("Notification event does not match the frozen event catalog");
+  }
+
+  const ownerUserId = "primaryId" in identity ? identity.primaryId : identity.ownerUserId;
+  const recipientUserId = "primaryId" in identity ? identity.primaryId : identity.recipientUserId;
+  if (
+    identity.eventType !== event.eventType ||
+    ownerUserId !== event.ownerUserId ||
+    recipientUserId !== event.recipientUserId ||
+    event.sourceAuthorityVersion !== identitySourceAuthorityVersion(identity)
+  ) {
+    throw new Error("Notification source identity does not match its event envelope");
+  }
+
+  if (
+    !("primaryId" in identity) &&
+    identity.eventType !== "partner_linked.v1" &&
+    identity.ownerUserId === identity.recipientUserId
+  ) {
+    throw new Error("Relationship notification owner and recipient must be distinct");
+  }
+
+  if (
+    (identity.eventType === "partner_linked.v1" &&
+      identity.sourceId !== identity.relationshipMembershipId) ||
+    ((identity.eventType === "partner_chat_cleared.v1" ||
+      identity.eventType === "connected_since_updated.v1") &&
+      identity.sourceId !== identity.coupleId)
+  ) {
+    throw new Error("Notification source identity has inconsistent source-row identifiers");
+  }
+}
