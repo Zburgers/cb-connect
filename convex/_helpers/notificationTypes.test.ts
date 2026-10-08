@@ -126,7 +126,13 @@ const expectedEvents = [
     recipient: "other_active_member",
     privacyClass: "account_relationship_sensitive",
     validity: "until_newer_chat_state_or_link_revocation",
-    idempotencyComponents: ["type", "coupleId", "clearOperationId", "recipientId"],
+    idempotencyComponents: [
+      "type",
+      "coupleId",
+      "clearOperationId",
+      "relationshipMembershipId",
+      "recipientId",
+    ],
     cancellationConditions: ["newer_chat_state", "link_revoked"],
   },
   {
@@ -136,7 +142,13 @@ const expectedEvents = [
     recipient: "other_active_member",
     privacyClass: "account_relationship_sensitive",
     validity: "until_setting_version_changes_or_link_revocation",
-    idempotencyComponents: ["type", "coupleId", "settingVersion", "recipientId"],
+    idempotencyComponents: [
+      "type",
+      "coupleId",
+      "settingVersion",
+      "relationshipMembershipId",
+      "recipientId",
+    ],
     cancellationConditions: ["newer_setting_version", "link_revoked"],
   },
 ] as const;
