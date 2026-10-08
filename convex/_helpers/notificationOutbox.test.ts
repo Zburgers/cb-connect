@@ -14,11 +14,15 @@ import {
   ensureAssistedPeriodEvent,
   lateStatusSourceReference,
 } from "./notificationOutbox";
+import * as notificationCycleState from "./notificationCycleState";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe("notification outbox", () => {
   test("creates one opaque event for a confirmed, certain assisted period start", async () => {
@@ -55,6 +59,12 @@ describe("notification outbox", () => {
         eventType: "assisted_period_start.v1",
         sourceReference: `period:${periodEventId}`,
         sourceAuthorityVersion: "period-authority:7",
+        sourceIdentity: {
+          eventType: "assisted_period_start.v1",
+          sourceId: periodEventId,
+          authorityVersion: 7,
+          primaryId,
+        },
         ownerUserId: primaryId,
         recipientUserId: primaryId,
         allowedChannel: "in_app",
@@ -65,6 +75,47 @@ describe("notification outbox", () => {
       expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
     });
+  });
+
+  test("rejects a replay whose persisted typed source identity changed", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { primaryId, partnerId } = await seedActiveCouple(t);
+    const periodEventId = await t.run((ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
+        startDate: "2026-06-20",
+        startCertainty: "exact",
+        authorityVersion: 7,
+        createdAt: 10,
+        updatedAt: 10,
+      }),
+    );
+    const { ensureAssistedPeriodEvent } = await import("./notificationOutbox");
+    const eventId = await t.run((ctx) =>
+      ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", periodEventId, 20),
+    );
+    if (!eventId) throw new Error("Expected an assisted period event");
+    await t.run((ctx) =>
+      ctx.db.patch(eventId, {
+        sourceIdentity: {
+          eventType: "assisted_period_start.v1",
+          sourceId: periodEventId,
+          authorityVersion: 8,
+          primaryId,
+        },
+      }),
+    );
+
+    await expect(
+      t.run((ctx) =>
+        ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", periodEventId, 30),
+      ),
+    ).rejects.toThrow("Notification event key conflicts with its source authority");
   });
 
   test("does not create events for unreviewed or legacy-unknown assisted facts", async () => {
@@ -220,9 +271,9 @@ describe("current Late-state outbox events", () => {
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t, { fixtureRunId: "n3e-late" });
-    await t.run(async (ctx) => {
+    const periodEventId = await t.run(async (ctx) => {
       await ctx.db.patch(primaryId, { timeZone: "America/Los_Angeles" });
-      await ctx.db.insert("periodEvents", {
+      const periodEventId = await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-03-01",
         startCertainty: "exact",
@@ -250,6 +301,7 @@ describe("current Late-state outbox events", () => {
         reminderWindowVersion: 3,
         updatedAt: Date.now(),
       });
+      return periodEventId;
     });
     const { internal } = await import("../_generated/api");
     const snapshotId = await t.mutation(
@@ -263,7 +315,7 @@ describe("current Late-state outbox events", () => {
       `${addCalendarDays(snapshot.latestDate, 1)}T20:00:00.000Z`,
     );
     vi.setSystemTime(lateInstant);
-    return { t, primaryId, snapshot, snapshotId, lateInstant };
+    return { t, primaryId, periodEventId, snapshot, snapshotId, lateInstant };
   }
 
   test("uses the full canonical authority in bounded Late references", async () => {
@@ -503,7 +555,7 @@ describe("current Late-state outbox events", () => {
   });
 
   test("creates one stable late_status.v1 event and dedupes an incidental snapshot refresh", async () => {
-    const { t, primaryId, snapshot, snapshotId, lateInstant } =
+    const { t, primaryId, periodEventId, snapshot, snapshotId, lateInstant } =
       await seedLateContext();
     const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
     const first = await t.run((ctx) =>
@@ -542,6 +594,14 @@ describe("current Late-state outbox events", () => {
         eventVersion: 1,
         purpose: "late_status",
         producerKind: "approved_served_late_state",
+        sourceIdentity: {
+          eventType: "late_status.v1",
+          primaryId,
+          latestEligibleStartEventId: periodEventId,
+          sourceAuthorityVersion: event!.sourceAuthorityVersion,
+          reminderWindowVersion: 3,
+          localDay,
+        },
         sourceReference: expectedSourceReference,
         ownerUserId: primaryId,
         recipientUserId: primaryId,
@@ -582,6 +642,26 @@ describe("current Late-state outbox events", () => {
       expect(await ctx.db.query("predictionSnapshots").take(5)).toHaveLength(2);
       expect(await ctx.db.query("notificationEvents").take(5)).toHaveLength(1);
     });
+  });
+
+  test("fails closed when the selected Late anchor has no source event ID", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    const current = await t.run((ctx) =>
+      notificationCycleState.readCurrentNotificationCycleState(ctx, primaryId, lateInstant),
+    );
+    if (!current) throw new Error("Expected current Late source state");
+    const readState = vi
+      .spyOn(notificationCycleState, "readCurrentNotificationCycleState")
+      .mockResolvedValue({ ...current, latestEligibleStartEventId: undefined });
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+
+    const eventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+
+    expect(readState).toHaveBeenCalledOnce();
+    expect(eventId).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(5))).toEqual([]);
   });
 
   test("bounds retained same-day Late history by the reminder-window generation", async () => {

@@ -22,6 +22,7 @@ export type CurrentNotificationCycleState = {
   localDay: string;
   sourceRevision: number;
   sourceAuthorityVersion: string;
+  latestEligibleStartEventId?: Id<"periodEvents">;
 };
 
 function isSafeRevision(value: number): boolean {
@@ -76,6 +77,7 @@ export async function readCurrentNotificationCycleState(
   }
 
   let predictionBounds: PredictionBounds | null = null;
+  let latestEligibleStartEventId: Id<"periodEvents"> | undefined;
   let sourceAuthorityVersion = makeSourceAuthorityVersion({
     sourceRevision: scheduleState.sourceRevision,
     servedCycleContract: "cycle-read-model-v1",
@@ -89,13 +91,19 @@ export async function readCurrentNotificationCycleState(
     snapshot.featureVersion === "period_prediction_v2" &&
     snapshot.intervalMethodVersion === PREDICTION_CALIBRATION_VERSION
   ) {
-    const servedIntervals = deriveCycleIntervals(predictionData.periodEvents, {
-      cutoffAt: snapshot.inputCutoffAt,
-      cutoffDate: snapshot.inputCutoffDate,
-      segments: predictionData.activeSegment
-        ? [predictionData.activeSegment]
-        : [],
-    });
+    const servedIntervals = deriveCycleIntervals(
+      predictionData.periodEvents.map((period) => ({
+        ...period,
+        id: String(period._id),
+      })),
+      {
+        cutoffAt: snapshot.inputCutoffAt,
+        cutoffDate: snapshot.inputCutoffDate,
+        segments: predictionData.activeSegment
+          ? [predictionData.activeSegment]
+          : [],
+      },
+    );
     const cycleIntervals = predictionData.historyComplete
       ? servedIntervals
       : {
@@ -122,6 +130,10 @@ export async function readCurrentNotificationCycleState(
     if (predictionSnapshotMatchesCurrent(snapshot, current)) {
       predictionBounds = predictionFromSnapshot(snapshot);
       if (predictionBounds) {
+        const latestStartId = servedIntervals.latestEligibleStartEventId;
+        latestEligibleStartEventId = latestStartId
+          ? ctx.db.normalizeId("periodEvents", latestStartId) ?? undefined
+          : undefined;
         sourceAuthorityVersion = makeSourceAuthorityVersion({
           sourceRevision: scheduleState.sourceRevision,
           servedCycleContract: "cycle-read-model-v1",
@@ -160,5 +172,6 @@ export async function readCurrentNotificationCycleState(
     localDay,
     sourceRevision: scheduleState.sourceRevision,
     sourceAuthorityVersion,
+    ...(latestEligibleStartEventId ? { latestEligibleStartEventId } : {}),
   };
 }
