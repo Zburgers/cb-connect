@@ -462,6 +462,46 @@ describe("current Late-state outbox events", () => {
     });
   });
 
+  test("creates and cancels the first Late reminder-window generation", async () => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    await t.run(async (ctx) => {
+      const preference = await ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "late_status"),
+        )
+        .unique();
+      await ctx.db.patch(preference!._id, { reminderWindowVersion: 1 });
+    });
+    const { ensureCurrentLateStatusEvent } = await import("./notificationOutbox");
+    const eventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    expect(eventId).not.toBeNull();
+    await expect(t.run((ctx) =>
+      cancelCurrentLateStatusSource(ctx, primaryId, "preference_off", lateInstant),
+    )).resolves.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(eventId!))).not.toBeNull();
+  });
+
+  test.each([undefined, 0])("cancellation ignores an unversioned Late preference (%s)", async (version) => {
+    const { t, primaryId, lateInstant } = await seedLateContext();
+    await t.run(async (ctx) => {
+      const preference = await ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "late_status"),
+        )
+        .unique();
+      if (version === undefined) await ctx.db.delete(preference!._id);
+      else await ctx.db.patch(preference!._id, { reminderWindowVersion: version });
+    });
+    await expect(t.run((ctx) =>
+      cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", lateInstant),
+    )).resolves.toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(1))).toEqual([]);
+  });
+
   test("creates one stable late_status.v1 event and dedupes an incidental snapshot refresh", async () => {
     const { t, primaryId, snapshot, snapshotId, lateInstant } =
       await seedLateContext();
