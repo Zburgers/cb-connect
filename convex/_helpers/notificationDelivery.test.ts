@@ -52,6 +52,7 @@ const componentSamples: Record<string, string> = {
   requestVersion: "3",
   coupleId: "couples:1",
   linkGeneration: "8",
+  relationshipMembershipId: "coupleMembers:9",
   recipientId: "users:2",
   messageId: "coupleMessages:1",
   nudgeId: "nudges:1",
@@ -141,6 +142,56 @@ describe("G4-DELIVERY-V1 keys", () => {
         recipientId: "",
       }),
     ).toThrow("Event idempotency components must be non-empty strings");
+  });
+
+  test("chat-clear keys require and isolate relationship membership generation", () => {
+    const operation = {
+      coupleId: "couples:1",
+      clearOperationId: "chat-clear:1730000000000",
+      recipientId: "users:2",
+    };
+    const firstGeneration = {
+      ...operation,
+      relationshipMembershipId: "coupleMembers:1",
+    };
+    const secondGeneration = {
+      ...operation,
+      relationshipMembershipId: "coupleMembers:2",
+    };
+
+    expect(
+      makeEventIdempotencyKey("partner_chat_cleared.v1", firstGeneration),
+    ).not.toBe(
+      makeEventIdempotencyKey("partner_chat_cleared.v1", secondGeneration),
+    );
+    expect(() =>
+      makeEventIdempotencyKey("partner_chat_cleared.v1", operation),
+    ).toThrow("Missing event idempotency component: relationshipMembershipId");
+  });
+
+  test("connected-since keys require and isolate relationship membership generation", () => {
+    const setting = {
+      coupleId: "couples:1",
+      settingVersion: "1730000000000",
+      recipientId: "users:2",
+    };
+    const firstGeneration = {
+      ...setting,
+      relationshipMembershipId: "coupleMembers:1",
+    };
+    const secondGeneration = {
+      ...setting,
+      relationshipMembershipId: "coupleMembers:2",
+    };
+
+    expect(
+      makeEventIdempotencyKey("connected_since_updated.v1", firstGeneration),
+    ).not.toBe(
+      makeEventIdempotencyKey("connected_since_updated.v1", secondGeneration),
+    );
+    expect(() =>
+      makeEventIdempotencyKey("connected_since_updated.v1", setting),
+    ).toThrow("Missing event idempotency component: relationshipMembershipId");
   });
 
   test("logical delivery identity uses event, channel, and stable destination only", () => {
