@@ -1,5 +1,6 @@
 import { v, type GenericValidator, type Infer } from "convex/values";
-import type { Id } from "../_generated/dataModel";
+import type { Id, TableNames } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
 import { parseSourceAuthorityVersion } from "./notificationSourceAuthority";
 
 export const notificationEventTypes = [
@@ -413,10 +414,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // ponytail: match only kinds used by these validators; add cases when they gain kinds.
-function matchesValidator(validator: GenericValidator, value: unknown): boolean {
+function matchesValidator(
+  ctx: Pick<QueryCtx, "db">,
+  validator: GenericValidator,
+  value: unknown,
+): boolean {
   switch (validator.kind) {
     case "union":
-      return validator.members.some((member) => matchesValidator(member, value));
+      return validator.members.some((member) => matchesValidator(ctx, member, value));
     case "object":
       if (
         !isRecord(value) ||
@@ -428,9 +433,13 @@ function matchesValidator(validator: GenericValidator, value: unknown): boolean 
         if (!(field in value) || value[field] === undefined) {
           return fieldValidator.isOptional === "optional";
         }
-        return matchesValidator(fieldValidator, value[field]);
+        return matchesValidator(ctx, fieldValidator, value[field]);
       });
     case "id":
+      return (
+        typeof value === "string" &&
+        ctx.db.normalizeId(validator.tableName as TableNames, value) !== null
+      );
     case "string":
       return typeof value === "string";
     case "float64":
@@ -476,12 +485,13 @@ function identitySourceAuthorityVersion(identity: NotificationSourceIdentity): s
 
 /** Adds numeric and cross-field checks to the strict new-write shape validator. */
 export function assertValidNotificationEventWrite(
+  ctx: Pick<QueryCtx, "db">,
   value: unknown,
 ): asserts value is NotificationEventWrite {
   if (
     !isRecord(value) ||
-    !matchesValidator(notificationSourceIdentityValidator, value.sourceIdentity) ||
-    !matchesValidator(notificationEventWriteValidator, value)
+    !matchesValidator(ctx, notificationSourceIdentityValidator, value.sourceIdentity) ||
+    !matchesValidator(ctx, notificationEventWriteValidator, value)
   ) {
     throw new Error("Notification event does not match frozen write shape");
   }
