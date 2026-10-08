@@ -40,6 +40,39 @@ function eventsForIntervals(
 }
 
 describe("deriveCycleIntervals", () => {
+  test("exposes the selected eligible anchor ID while keeping legacy inputs valid", () => {
+    const periods = [
+      event("2026-01-01", { id: "period-1" }),
+      event("2026-01-15", {
+        id: "period-approximate",
+        startCertainty: "approximate",
+      }),
+      event("2026-02-26", { id: "period-2" }),
+    ];
+    const withIds = deriveCycleIntervals(periods, cutoff);
+    const withoutIds = deriveCycleIntervals(
+      periods.map((period) => {
+        const legacyPeriod = { ...period };
+        delete legacyPeriod.id;
+        return legacyPeriod;
+      }),
+      cutoff,
+    );
+
+    expect(withIds).toMatchObject({
+      latestEligibleStartDate: "2026-02-26",
+      latestEligibleStartEventId: "period-2",
+      eligibleAnchorCount: 2,
+      eligibleIntervalCount: 1,
+      intervals: [{ lengthDays: 56, included: true }],
+      reasonCodes: ["APPROXIMATE_DATE", "LIMITED_HISTORY"],
+    });
+    const { latestEligibleStartEventId, ...legacyOutput } = withIds;
+    expect(latestEligibleStartEventId).toBe("period-2");
+    expect(legacyOutput).toEqual(withoutIds);
+    expect(withoutIds).not.toHaveProperty("latestEligibleStartEventId");
+  });
+
   test("derives stable and variable start-to-start calendar days", () => {
     const stable = deriveCycleIntervals(
       eventsForIntervals([28, 29, 28]),
