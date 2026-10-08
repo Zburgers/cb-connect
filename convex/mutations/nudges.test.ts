@@ -6,6 +6,7 @@ import { makeDeliveryIdempotencyKey, makeEventIdempotencyKey } from "../_helpers
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+import { ensureNudgeEvent } from "./nudges";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -60,6 +61,14 @@ describe("nudge notification outbox", () => {
         }),
         allowedChannel: "in_app",
       });
+      expect(event.sourceIdentity).toEqual({
+        eventType: "partner_nudge.v1",
+        sourceId: nudge!._id,
+        coupleId: nudge!.coupleId,
+        relationshipMembershipId: nudge!.relationshipMembershipId,
+        ownerUserId: nudge!.senderId,
+        recipientUserId: nudge!.receiverId,
+      });
       expect(event).not.toHaveProperty("emoji");
       expect(event).not.toHaveProperty("message");
       expect(event).not.toHaveProperty("senderName");
@@ -78,6 +87,37 @@ describe("nudge notification outbox", () => {
       expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
     });
+  });
+
+  test("rejects a same-key replay whose source identity changed", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const nudgeId = await asPrimary.mutation(api.mutations.nudges.send, { emoji: "💗" });
+    const anotherNudgeId = await asPrimary.mutation(api.mutations.nudges.send, { emoji: "✨" });
+    const event = await t.run(async (ctx) => {
+      const events = await ctx.db.query("notificationEvents").collect();
+      return events.find((candidate) => candidate.sourceReference === `nudge:${nudgeId}`);
+    });
+    const nudge = await t.run((ctx) => ctx.db.get(nudgeId));
+    expect(event).toBeDefined();
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(event!._id, {
+        sourceIdentity: {
+          eventType: "partner_nudge.v1",
+          sourceId: anotherNudgeId,
+          coupleId: nudge!.coupleId,
+          relationshipMembershipId: nudge!.relationshipMembershipId!,
+          ownerUserId: nudge!.senderId,
+          recipientUserId: nudge!.receiverId,
+        },
+      });
+    });
+
+    await expect(t.run((ctx) => ensureNudgeEvent(ctx, nudgeId))).rejects.toThrow(
+      "Nudge notification event key conflicts with its source",
+    );
   });
 
   test("seen acknowledgements cancel projection work without deleting the event", async () => {
