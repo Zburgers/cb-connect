@@ -4,7 +4,10 @@ import { toCalendarDateInTimeZone } from "./calendarDates";
 import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
 import { readCurrentNotificationCycleState } from "./notificationCycleState";
-import { parseSourceAuthorityVersion } from "./notificationSourceAuthority";
+import {
+  parseSourceAuthorityVersion,
+  persistNotificationSourceAuthorityVersion,
+} from "./notificationSourceAuthority";
 import { notificationEventDefinitions } from "./notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
@@ -237,6 +240,10 @@ export async function cancelCurrentLateStatusSource(
     throw new Error("Late-status reminder window version is invalid");
   }
   if (reminderWindowVersion === 0) return;
+  const persistedAuthority = parseSourceAuthorityVersion(scheduleState.sourceAuthorityVersion);
+  const sourceAuthorityVersion = persistedAuthority?.sourceRevision === scheduleState.sourceRevision
+    ? scheduleState.sourceAuthorityVersion!
+    : authority.sourceAuthorityVersion;
   const localDay = toCalendarDateInTimeZone(
     new Date(now),
     user.timeZone ?? "UTC",
@@ -251,7 +258,7 @@ export async function cancelCurrentLateStatusSource(
       await cancelLateStatusGeneration(
         ctx,
         primaryId,
-        authority.sourceAuthorityVersion,
+        sourceAuthorityVersion,
         scheduleState.sourceRevision,
         day,
         version,
@@ -401,6 +408,9 @@ export async function ensureCurrentLateStatusEvent(
   }
   if (process.env[OUTBOX_ENABLED_ENV] !== "true") return null;
 
+  await persistNotificationSourceAuthorityVersion(
+    ctx, primaryId, current.sourceAuthorityVersion, now,
+  );
   const envelope = await lateStatusEventEnvelope(
     primaryId,
     current.sourceAuthorityVersion,
