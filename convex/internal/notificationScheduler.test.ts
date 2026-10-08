@@ -1543,7 +1543,11 @@ describe("notification schedule reconciliation", () => {
     );
   });
 
-  test("final reconciliation deduplicates current-fence work inserted behind a stale cursor", async () => {
+  test.each([
+    ["pending", 0],
+    ["pending", 101],
+    ["claimed", 101],
+  ] as const)("final reconciliation deduplicates %s work behind a stale cursor and %i newer same-time rows", async (state, newerRows) => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.setSystemTime(now);
@@ -1619,20 +1623,39 @@ describe("notification schedule reconciliation", () => {
     expect(continuationArgs.pendingDone).toBe(false);
 
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    await t.run(async (ctx) => {
+      const current = await ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q.eq("ownerUserId", primaryId).eq("state", "pending").eq("dueAt", original.dueAt),
+        )
+        .first();
+      if (!current) throw new Error("Expected concurrently inserted work");
+      await ctx.db.patch(current._id, { state });
+      for (let index = 0; index < newerRows; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "delivery",
+          state,
+          dueAt: original.dueAt,
+          generation: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
     await t.mutation(
       continueScheduleReconciliationRef,
       continuationArgs as never,
     );
 
     const activePredictionWork = await t.run(async (ctx) =>
-      (
-        await ctx.db
+      (await Promise.all((["pending", "claimed"] as const).map((activeState) => ctx.db
           .query("notificationDueWork")
           .withIndex("by_owner_and_state_and_due_at", (q) =>
-            q.eq("ownerUserId", primaryId).eq("state", "pending"),
+            q.eq("ownerUserId", primaryId).eq("state", activeState),
           )
-          .take(200)
-      ).filter((row) => row.kind === "prediction_window"),
+          .take(200)))).flat().filter((row) => row.kind === "prediction_window"),
     );
     expect(activePredictionWork).toEqual([
       expect.objectContaining({
@@ -1640,7 +1663,7 @@ describe("notification schedule reconciliation", () => {
         generation: original.generation,
         sourceAuthorityVersion: original.sourceAuthorityVersion,
         reminderWindowVersion: original.reminderWindowVersion,
-        state: "pending",
+        state,
       }),
     ]);
   });
