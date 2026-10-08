@@ -898,6 +898,14 @@ describe("couple notification outbox", () => {
     );
     for (const event of events) {
       const linkGeneration = String(partnerMembership!._id);
+      expect(event.sourceIdentity).toEqual({
+        eventType: "partner_linked.v1",
+        coupleId,
+        relationshipMembershipId: partnerMembership!._id,
+        ownerUserId: partnerId,
+        recipientUserId: event.recipientUserId,
+        sourceId: partnerMembership!._id,
+      });
       expect(event).toMatchObject({
         eventType: "partner_linked.v1",
         eventVersion: 1,
@@ -1096,6 +1104,15 @@ describe("couple notification outbox", () => {
       expect(events.map((event) => event.recipientUserId)).toEqual([partnerId, partnerId]);
       for (const event of events) {
         const settingVersion = event.sourceAuthorityVersion.replace("connected-since-setting:", "");
+        expect(event.sourceIdentity).toEqual({
+          eventType: "connected_since_updated.v1",
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+          sourceId: coupleId,
+          settingVersion: Number(settingVersion),
+        });
         expect(event).toMatchObject({
           eventType: "connected_since_updated.v1",
           eventVersion: 1,
