@@ -339,6 +339,12 @@ async function insertNewWrite(write: NotificationEventWrite) {
   );
 }
 
+async function assertWriteGuard(write: unknown) {
+  return convexTest(schema, modules).run(async (ctx) =>
+    assertValidNotificationEventWrite(ctx, write),
+  );
+}
+
 describe("typed event source identity contract", () => {
   test("accepts a matching typed identity for every catalog event on new writes", async () => {
     for (const eventType of notificationEventTypes) {
@@ -346,7 +352,7 @@ describe("typed event source identity contract", () => {
       const write = makeEventWrite(identity);
 
       await expect(insertNewWrite(write)).resolves.toBeDefined();
-      expect(() => assertValidNotificationEventWrite(write)).not.toThrow();
+      await expect(assertWriteGuard(write)).resolves.toBeNull();
     }
     expect(notificationEventWriteValidator.fields.sourceIdentity.isOptional).toBe("required");
     expect(notificationSourceIdentityValidator.kind).toBe("union");
@@ -359,9 +365,34 @@ describe("typed event source identity contract", () => {
     });
 
     await expect(insertNewWrite(malformed)).rejects.toThrow();
-    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+    await expect(assertWriteGuard(malformed)).rejects.toThrow(
       "Notification event does not match frozen write shape",
     );
+  });
+
+  test("rejects a valid nudges ID as a partner message source ID at the write guard", async () => {
+    const t = convexTest(schema, modules);
+    const nudgeId = await t.run(async (ctx) =>
+      ctx.db.insert("nudges", {
+        coupleId,
+        senderId: ownerId,
+        receiverId: recipientId,
+        emoji: "✨",
+        message: "test",
+        createdAt: 1,
+      }),
+    );
+    const identity = sourceIdentities["partner_message.v1"];
+    const malformed = makeEventWrite(identity, {
+      sourceIdentity: {
+        ...identity,
+        sourceId: nudgeId as unknown as Id<"coupleMessages">,
+      },
+    });
+
+    await expect(
+      t.run(async (ctx) => assertValidNotificationEventWrite(ctx, malformed)),
+    ).rejects.toThrow("Notification event does not match frozen write shape");
   });
 
   test("rejects a null partner message couple ID at the write guard", async () => {
@@ -371,7 +402,7 @@ describe("typed event source identity contract", () => {
     });
 
     await expect(insertNewWrite(malformed)).rejects.toThrow();
-    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+    await expect(assertWriteGuard(malformed)).rejects.toThrow(
       "Notification event does not match frozen write shape",
     );
   });
@@ -382,7 +413,7 @@ describe("typed event source identity contract", () => {
     });
 
     await expect(insertNewWrite(malformed)).rejects.toThrow();
-    expect(() => assertValidNotificationEventWrite(malformed)).toThrow(
+    await expect(assertWriteGuard(malformed)).rejects.toThrow(
       "Notification event does not match frozen write shape",
     );
   });
@@ -392,12 +423,13 @@ describe("typed event source identity contract", () => {
 
     const missingIdentity = { ...valid, sourceIdentity: undefined } as unknown as NotificationEventWrite;
     await expect(insertNewWrite(missingIdentity)).rejects.toThrow();
-    expect(() => assertValidNotificationEventWrite(missingIdentity)).toThrow();
+    await expect(assertWriteGuard(missingIdentity)).rejects.toThrow();
     const malformedIdentity = {
       ...valid,
       sourceIdentity: { ...valid.sourceIdentity, unexpected: true },
     } as unknown as NotificationEventWrite;
     await expect(insertNewWrite(malformedIdentity)).rejects.toThrow();
+    await expect(assertWriteGuard(malformedIdentity)).rejects.toThrow();
     const wrongSourceTable = {
       ...valid,
       sourceIdentity: {
@@ -407,80 +439,78 @@ describe("typed event source identity contract", () => {
     } as unknown as NotificationEventWrite;
     await expect(insertNewWrite(wrongSourceTable)).rejects.toThrow();
 
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(sourceIdentities["partner_message.v1"], {
-          sourceIdentity: sourceIdentities["partner_nudge.v1"],
-        }),
-      ),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(sourceIdentities["partner_message.v1"], {
-          purpose: "pain_check_in",
-        }),
-      ),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(sourceIdentities["partner_message.v1"], { ownerUserId: recipientId }),
-      ),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(
-          {
-            ...sourceIdentities["partner_linked.v1"],
-            sourceId: "2coupleMembers" as Id<"coupleMembers">,
-          } as Extract<NotificationSourceIdentity, { eventType: "partner_linked.v1" }>,
+    await convexTest(schema, modules).run(async (ctx) => {
+      const guard = (write: unknown) => assertValidNotificationEventWrite(ctx, write);
+
+      expect(() =>
+        guard(
+          makeEventWrite(sourceIdentities["partner_message.v1"], {
+            sourceIdentity: sourceIdentities["partner_nudge.v1"],
+          }),
         ),
-      ),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(
-          {
-            ...sourceIdentities["partner_chat_cleared.v1"],
-            sourceId: "2couples" as Id<"couples">,
-          } as Extract<
-            NotificationSourceIdentity,
-            { eventType: "partner_chat_cleared.v1" }
-          >,
+      ).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(sourceIdentities["partner_message.v1"], {
+            purpose: "pain_check_in",
+          }),
         ),
-      ),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(sourceIdentities["partner_message.v1"], { recipientUserId: ownerId }),
-      ),
-    ).toThrow();
-    const selfDirectedMessage = {
-      ...sourceIdentities["partner_message.v1"],
-      recipientUserId: ownerId,
-    } as Extract<NotificationSourceIdentity, { eventType: "partner_message.v1" }>;
-    expect(() =>
-      assertValidNotificationEventWrite(makeEventWrite(selfDirectedMessage)),
-    ).toThrow();
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(sourceIdentities["partner_message.v1"], {
-          sourceAuthorityVersion: "relationship-membership:coupleMembers:other",
-        }),
-      ),
-    ).toThrow();
-    const scheduledIdentity = sourceIdentities["period_window_approaching.v1"];
-    const malformedScheduledIdentity = {
-      ...scheduledIdentity,
-      sourceAuthorityVersion: "g4-source-v1:not-a-canonical-tuple",
-    };
-    expect(() =>
-      assertValidNotificationEventWrite(
-        makeEventWrite(malformedScheduledIdentity),
-      ),
-    ).toThrow();
+      ).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(sourceIdentities["partner_message.v1"], { ownerUserId: recipientId }),
+        ),
+      ).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(
+            {
+              ...sourceIdentities["partner_linked.v1"],
+              sourceId: "2coupleMembers" as Id<"coupleMembers">,
+            } as Extract<NotificationSourceIdentity, { eventType: "partner_linked.v1" }>,
+          ),
+        ),
+      ).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(
+            {
+              ...sourceIdentities["partner_chat_cleared.v1"],
+              sourceId: "2couples" as Id<"couples">,
+            } as Extract<
+              NotificationSourceIdentity,
+              { eventType: "partner_chat_cleared.v1" }
+            >,
+          ),
+        ),
+      ).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(sourceIdentities["partner_message.v1"], { recipientUserId: ownerId }),
+        ),
+      ).toThrow();
+      const selfDirectedMessage = {
+        ...sourceIdentities["partner_message.v1"],
+        recipientUserId: ownerId,
+      } as Extract<NotificationSourceIdentity, { eventType: "partner_message.v1" }>;
+      expect(() => guard(makeEventWrite(selfDirectedMessage))).toThrow();
+      expect(() =>
+        guard(
+          makeEventWrite(sourceIdentities["partner_message.v1"], {
+            sourceAuthorityVersion: "relationship-membership:coupleMembers:other",
+          }),
+        ),
+      ).toThrow();
+      const scheduledIdentity = sourceIdentities["period_window_approaching.v1"];
+      const malformedScheduledIdentity = {
+        ...scheduledIdentity,
+        sourceAuthorityVersion: "g4-source-v1:not-a-canonical-tuple",
+      };
+      expect(() => guard(makeEventWrite(malformedScheduledIdentity))).toThrow();
+    });
   });
 
-  test("requires every identity version to be a positive safe integer", () => {
+  test("requires every identity version to be a positive safe integer", async () => {
     const numericVersions = [
       { eventType: "assisted_period_start.v1", field: "authorityVersion" },
       { eventType: "period_window_approaching.v1", field: "reminderWindowVersion" },
@@ -502,19 +532,15 @@ describe("typed event source identity contract", () => {
       for (const version of invalidVersions) {
         const identity = { ...sourceIdentities[eventType] } as Record<string, unknown>;
         identity[field] = version;
-        expect(() =>
-          assertValidNotificationEventWrite(
-            makeEventWrite(identity as unknown as NotificationSourceIdentity),
-          ),
-        ).toThrow();
+        await expect(
+          assertWriteGuard(makeEventWrite(identity as unknown as NotificationSourceIdentity)),
+        ).rejects.toThrow();
       }
       const identity = { ...sourceIdentities[eventType] } as Record<string, unknown>;
       identity[field] = Number.MAX_SAFE_INTEGER;
-      expect(() =>
-        assertValidNotificationEventWrite(
-          makeEventWrite(identity as unknown as NotificationSourceIdentity),
-        ),
-      ).not.toThrow();
+      await expect(
+        assertWriteGuard(makeEventWrite(identity as unknown as NotificationSourceIdentity)),
+      ).resolves.toBeNull();
     }
   });
 
