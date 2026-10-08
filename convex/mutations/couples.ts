@@ -136,7 +136,6 @@ async function ensureConnectedSinceEvent(
   if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
 
   const definition = notificationEventDefinitions["connected_since_updated.v1"];
-  const settingVersion = `${args.linkGeneration}:${args.settingVersion}`;
   await insertRelationshipEvent(
     ctx,
     {
@@ -149,7 +148,7 @@ async function ensureConnectedSinceEvent(
         args.linkGeneration,
         args.settingVersion,
       ),
-      sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
+      sourceAuthorityVersion: `connected-since-setting:${args.settingVersion}`,
       ownerUserId: args.ownerUserId,
       recipientUserId: args.recipientUserId,
       recipientScope: "other_active_member",
@@ -157,7 +156,8 @@ async function ensureConnectedSinceEvent(
       validityRule: definition.validity,
       idempotencyKey: makeEventIdempotencyKey("connected_since_updated.v1", {
         coupleId: String(args.coupleId),
-        settingVersion,
+        settingVersion: String(args.settingVersion),
+        relationshipMembershipId: String(args.linkGeneration),
         recipientId: String(args.recipientUserId),
       }),
       allowedChannel: "in_app",

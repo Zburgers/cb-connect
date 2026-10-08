@@ -759,6 +759,7 @@ describe("couple notification outbox", () => {
     t: ReturnType<typeof convexTest>,
     args: {
       coupleId: Id<"couples">;
+      relationshipMembershipId?: Id<"coupleMembers">;
       primaryId: Id<"users">;
       partnerId: Id<"users">;
       sourceReference: string;
@@ -768,6 +769,19 @@ describe("couple notification outbox", () => {
   ) {
     return await t.run(async (ctx) => {
       const now = Date.now();
+      const idempotencyKey = args.relationshipMembershipId
+        ? makeEventIdempotencyKey("connected_since_updated.v1", {
+            coupleId: String(args.coupleId),
+            settingVersion: args.idempotencySettingVersion,
+            relationshipMembershipId: String(args.relationshipMembershipId),
+            recipientId: String(args.partnerId),
+          })
+        : `event:v1:${JSON.stringify([
+            "connected_since_updated.v1",
+            String(args.coupleId),
+            args.idempotencySettingVersion,
+            String(args.partnerId),
+          ])}`;
       const eventId = await ctx.db.insert("notificationEvents", {
         eventType: "connected_since_updated.v1",
         eventVersion: 1,
@@ -780,11 +794,7 @@ describe("couple notification outbox", () => {
         recipientScope: "other_active_member",
         privacyClass: "account_relationship_sensitive",
         validityRule: "until_setting_version_changes_or_link_revocation",
-        idempotencyKey: makeEventIdempotencyKey("connected_since_updated.v1", {
-          coupleId: String(args.coupleId),
-          settingVersion: args.idempotencySettingVersion,
-          recipientId: String(args.partnerId),
-        }),
+        idempotencyKey,
         allowedChannel: "in_app",
         createdAt: now,
       });
@@ -1004,6 +1014,16 @@ describe("couple notification outbox", () => {
     try {
       const t = convexTest(schema, modules);
       const { asPrimary, primaryId, partnerId, coupleId } = await seedActiveCouple(t);
+      const relationshipMembershipId = await t.run(async (ctx) => {
+        const membership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+            q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+          )
+          .unique();
+        if (!membership) throw new Error("Expected the active partner membership");
+        return membership._id;
+      });
       await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
         connectedSinceDate: "2000-02-14",
       });
@@ -1081,7 +1101,7 @@ describe("couple notification outbox", () => {
           eventVersion: 1,
           purpose: "connected_since_updated",
           producerKind: "explicit_connected_since_update",
-          sourceReference: `couple:${coupleId}:connected-since:${settingVersion}`,
+          sourceReference: `couple:${coupleId}:connected-since:${relationshipMembershipId}:${settingVersion}`,
           ownerUserId: primaryId,
           recipientUserId: partnerId,
           recipientScope: "other_active_member",
@@ -1090,6 +1110,7 @@ describe("couple notification outbox", () => {
           idempotencyKey: makeEventIdempotencyKey("connected_since_updated.v1", {
             coupleId: String(coupleId),
             settingVersion,
+            relationshipMembershipId: String(relationshipMembershipId),
             recipientId: String(partnerId),
           }),
           allowedChannel: "in_app",
@@ -1154,24 +1175,26 @@ describe("couple notification outbox", () => {
         primaryId,
         partnerId,
         sourceReference: `couple:${coupleId}:connected-since:${settingVersion}`,
-        sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
-        idempotencySettingVersion: String(settingVersion),
-      });
-      const currentGeneration = await seedConnectedSinceProjection(t, {
-        coupleId,
-        primaryId,
-        partnerId,
-        sourceReference: `couple:${coupleId}:connected-since:${partnerMembershipId}:${settingVersion}`,
         sourceAuthorityVersion: `connected-since-setting:${partnerMembershipId}:${settingVersion}`,
         idempotencySettingVersion: `${partnerMembershipId}:${settingVersion}`,
       });
+      const currentGeneration = await seedConnectedSinceProjection(t, {
+        coupleId,
+        relationshipMembershipId: partnerMembershipId,
+        primaryId,
+        partnerId,
+        sourceReference: `couple:${coupleId}:connected-since:${partnerMembershipId}:${settingVersion}`,
+        sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
+        idempotencySettingVersion: String(settingVersion),
+      });
       const otherGeneration = await seedConnectedSinceProjection(t, {
         coupleId,
+        relationshipMembershipId: otherGenerationId,
         primaryId,
         partnerId,
         sourceReference: `couple:${coupleId}:connected-since:${otherGenerationId}:${settingVersion}`,
-        sourceAuthorityVersion: `connected-since-setting:${otherGenerationId}:${settingVersion}`,
-        idempotencySettingVersion: `${otherGenerationId}:${settingVersion}`,
+        sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
+        idempotencySettingVersion: String(settingVersion),
       });
 
       await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
@@ -1206,6 +1229,16 @@ describe("couple notification outbox", () => {
       const t = convexTest(schema, modules);
       const { asPrimary, primaryId, partnerId, coupleId } = await seedActiveCouple(t);
       const settingVersion = Date.now() - 1_000;
+      const partnerMembershipId = await t.run(async (ctx) => {
+        const membership = await ctx.db
+          .query("coupleMembers")
+          .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+            q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+          )
+          .unique();
+        if (!membership) throw new Error("Expected the active partner membership");
+        return membership._id;
+      });
       await t.run(async (ctx) => {
         await ctx.db.patch(coupleId, {
           connectedSinceDate: "2000-02-14",
@@ -1218,8 +1251,8 @@ describe("couple notification outbox", () => {
         primaryId,
         partnerId,
         sourceReference: `couple:${coupleId}:connected-since:${settingVersion}`,
-        sourceAuthorityVersion: `connected-since-setting:${settingVersion}`,
-        idempotencySettingVersion: String(settingVersion),
+        sourceAuthorityVersion: `connected-since-setting:${partnerMembershipId}:${settingVersion}`,
+        idempotencySettingVersion: `${partnerMembershipId}:${settingVersion}`,
       });
 
       await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
@@ -1337,16 +1370,18 @@ describe("couple notification outbox", () => {
       expect(secondEvent._id).not.toBe(firstEvent._id);
       expect(secondEvent.sourceReference).not.toBe(firstEvent.sourceReference);
       expect(secondEvent.idempotencyKey).not.toBe(firstEvent.idempotencyKey);
-      expect(secondEvent.sourceAuthorityVersion).not.toBe(firstEvent.sourceAuthorityVersion);
+      expect(secondEvent.sourceAuthorityVersion).toBe(firstEvent.sourceAuthorityVersion);
       for (const event of connectedSinceEvents) {
         const settingVersion = event.sourceAuthorityVersion.replace(
           "connected-since-setting:",
           "",
         );
+        const relationshipMembershipId = event.sourceReference.split(":")[3];
         expect(event.idempotencyKey).toBe(
           makeEventIdempotencyKey("connected_since_updated.v1", {
             coupleId: String(coupleId),
             settingVersion,
+            relationshipMembershipId,
             recipientId: String(partnerId),
           }),
         );
