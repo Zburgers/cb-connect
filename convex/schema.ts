@@ -640,6 +640,18 @@ export default defineSchema({
     .index("by_state_and_due_at", ["state", "dueAt"])
     .index("by_kind_and_state_and_due_at", ["kind", "state", "dueAt"])
     .index("by_owner_and_state_and_due_at", ["ownerUserId", "state", "dueAt"])
+    .index(
+      "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+      [
+        "ownerUserId",
+        "kind",
+        "state",
+        "dueAt",
+        "generation",
+        "sourceAuthorityVersion",
+        "reminderWindowVersion",
+      ],
+    )
     .index("by_delivery_id", ["deliveryId"])
     .index("by_request_id", ["painReminderRequestId"]),
 

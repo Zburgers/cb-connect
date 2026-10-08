@@ -17,6 +17,64 @@ import { seedActiveCouple } from "../test.fixtures";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("G4-SOURCE-V1 canonical authority", () => {
+  test.each(["pending", "claimed"] as const)(
+    "looks up the full %s schedule fence beyond same-time unrelated work",
+    async (state) => {
+      const t = convexTest(schema, modules);
+      const { primaryId, partnerId } = await seedActiveCouple(t);
+      const sourceAuthorityVersion = makeSourceAuthorityVersion({
+        sourceRevision: 5,
+        servedCycleContract: "cycle-read-model-v1",
+        servedPredictionContract: "prediction-serving-v2",
+        estimatorMethodVersion: "estimate-v3",
+        calibrationMethodVersion: "calibrate-v2",
+      });
+      await t.run(async (ctx) => {
+        const record = {
+          ownerUserId: primaryId,
+          kind: "prediction_window" as const,
+          state,
+          dueAt: 100,
+          generation: 5,
+          sourceAuthorityVersion,
+          reminderWindowVersion: 3,
+          createdAt: 50,
+          updatedAt: 50,
+        };
+        const matchingId = await ctx.db.insert("notificationDueWork", record);
+        for (let index = 0; index < 101; index += 1) {
+          await ctx.db.insert("notificationDueWork", { ...record, kind: "delivery" });
+        }
+        for (const change of [
+          { ownerUserId: partnerId },
+          { kind: "late_boundary" as const },
+          { state: "cancelled" as const },
+          { dueAt: 101 },
+          { generation: 6 },
+          { sourceAuthorityVersion: undefined },
+          { reminderWindowVersion: 4 },
+        ]) {
+          await ctx.db.insert("notificationDueWork", { ...record, ...change });
+        }
+        const matches = await ctx.db
+          .query("notificationDueWork")
+          .withIndex(
+            "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+            (q) =>
+              q.eq("ownerUserId", primaryId)
+                .eq("kind", "prediction_window")
+                .eq("state", state)
+                .eq("dueAt", 100)
+                .eq("generation", 5)
+                .eq("sourceAuthorityVersion", sourceAuthorityVersion)
+                .eq("reminderWindowVersion", 3),
+          )
+          .take(2);
+        expect(matches.map((row) => row._id)).toEqual([matchingId]);
+      });
+    },
+  );
+
   test("includes source revision and served method contracts, but ignores refresh metadata", () => {
     const first = makeSourceAuthorityVersion({
       sourceRevision: 5,
