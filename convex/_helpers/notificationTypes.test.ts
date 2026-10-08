@@ -358,6 +358,20 @@ describe("typed event source identity contract", () => {
     expect(notificationSourceIdentityValidator.kind).toBe("union");
   });
 
+  test.each([
+    ["envelope", "constructor"], ["sourceIdentity", "constructor"],
+    ["envelope", "toString"], ["sourceIdentity", "toString"],
+    ["envelope", "__proto__"], ["sourceIdentity", "__proto__"],
+  ])("%s rejects unexpected own %s fields at the write guard", async (location, field) => {
+    const valid = makeEventWrite(sourceIdentities["partner_message.v1"]);
+    const write = location === "envelope"
+      ? { ...valid, [field]: "unexpected" }
+      : { ...valid, sourceIdentity: { ...valid.sourceIdentity, [field]: "unexpected" } };
+    await expect(assertWriteGuard(JSON.parse(JSON.stringify(write)))).rejects.toThrow(
+      "Notification event does not match frozen write shape",
+    );
+  });
+
   test("rejects a numeric partner message source ID at the write guard", async () => {
     const identity = sourceIdentities["partner_message.v1"];
     const malformed = makeEventWrite(identity, {
