@@ -24,9 +24,9 @@ describe("current notification cycle state", () => {
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t, { fixtureRunId: "n3e-late" });
-    await t.run(async (ctx) => {
+    const periodEventId = await t.run(async (ctx) => {
       await ctx.db.patch(primaryId, { timeZone: "America/Los_Angeles" });
-      await ctx.db.insert("periodEvents", {
+      const periodEventId = await ctx.db.insert("periodEvents", {
         userId: primaryId,
         startDate: "2026-03-01",
         startCertainty: "exact",
@@ -46,6 +46,7 @@ describe("current notification cycle state", () => {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      return periodEventId;
     });
     const snapshotId = await t.mutation(
       internal.internal.predictionSnapshots.ensureCurrentForUser,
@@ -78,6 +79,7 @@ describe("current notification cycle state", () => {
     expect(after).toMatchObject({
       localDay: addCalendarDays(snapshot.latestDate, 1),
       sourceRevision: 7,
+      latestEligibleStartEventId: periodEventId,
       state: {
         status: "late_or_uncertain",
         reason: "AFTER_LATEST_BOUND",

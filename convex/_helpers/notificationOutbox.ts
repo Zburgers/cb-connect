@@ -8,7 +8,11 @@ import {
   parseSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "./notificationSourceAuthority";
-import { notificationEventDefinitions } from "./notificationTypes";
+import {
+  assertValidNotificationEventWrite,
+  notificationEventDefinitions,
+  type NotificationSourceIdentity,
+} from "./notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const MAX_SOURCE_EVENTS = 256;
@@ -39,6 +43,10 @@ type AssistedPeriodEventEnvelope = {
   validityRule: "while_authority_is_current_and_primary_has_access";
   idempotencyKey: string;
   allowedChannel: "in_app";
+  sourceIdentity: Extract<
+    NotificationSourceIdentity,
+    { eventType: AssistedPeriodEventType }
+  >;
 };
 
 type LateStatusEventEnvelope = {
@@ -55,6 +63,7 @@ type LateStatusEventEnvelope = {
   validityRule: "while_current_late_state_is_valid";
   idempotencyKey: string;
   allowedChannel: "in_app";
+  sourceIdentity: Extract<NotificationSourceIdentity, { eventType: "late_status.v1" }>;
 };
 
 type EventEnvelope = AssistedPeriodEventEnvelope | LateStatusEventEnvelope;
@@ -94,6 +103,12 @@ function eventEnvelope(
       primaryId: String(primaryId),
     }),
     allowedChannel: "in_app",
+    sourceIdentity: {
+      eventType,
+      sourceId: periodEventId,
+      authorityVersion,
+      primaryId,
+    },
   };
 }
 
@@ -133,6 +148,7 @@ function assertCanonicalSourceAuthorityVersion(
 
 async function lateStatusEventEnvelope(
   primaryId: Id<"users">,
+  latestEligibleStartEventId: Id<"periodEvents">,
   sourceAuthorityVersion: string,
   sourceRevision: number,
   localDay: string,
@@ -164,6 +180,14 @@ async function lateStatusEventEnvelope(
       reminderWindowVersion: String(reminderWindowVersion),
     }),
     allowedChannel: "in_app",
+    sourceIdentity: {
+      eventType,
+      primaryId,
+      latestEligibleStartEventId,
+      sourceAuthorityVersion,
+      reminderWindowVersion,
+      localDay,
+    },
   };
 }
 
@@ -284,6 +308,7 @@ function sameEnvelope(
     validityRule: string;
     idempotencyKey: string;
     allowedChannel: string;
+    sourceIdentity?: NotificationSourceIdentity;
   },
   expected: EventEnvelope,
 ): boolean {
@@ -300,7 +325,22 @@ function sameEnvelope(
     existing.privacyClass === expected.privacyClass &&
     existing.validityRule === expected.validityRule &&
     existing.idempotencyKey === expected.idempotencyKey &&
-    existing.allowedChannel === expected.allowedChannel
+    existing.allowedChannel === expected.allowedChannel &&
+    sameSourceIdentity(existing.sourceIdentity, expected.sourceIdentity)
+  );
+}
+
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing || existing.eventType !== expected.eventType) return false;
+  const existingFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  const expectedKeys = Object.keys(expectedFields);
+  return (
+    Object.keys(existingFields).length === expectedKeys.length &&
+    expectedKeys.every((key) => existingFields[key] === expectedFields[key])
   );
 }
 
@@ -339,6 +379,7 @@ export async function ensureAssistedPeriodEvent(
     return null;
   }
   const envelope = eventEnvelope(eventType, period._id, period.userId, authorityVersion);
+  assertValidNotificationEventWrite(ctx, envelope);
   const existing = await ctx.db
     .query("notificationEvents")
     .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", envelope.idempotencyKey))
@@ -372,7 +413,8 @@ export async function ensureCurrentLateStatusEvent(
   if (
     !current ||
     current.state.status !== "late_or_uncertain" ||
-    current.state.reason !== "AFTER_LATEST_BOUND"
+    current.state.reason !== "AFTER_LATEST_BOUND" ||
+    !current.latestEligibleStartEventId
   ) {
     await cancelCurrentLateStatusSource(
       ctx,
@@ -413,11 +455,13 @@ export async function ensureCurrentLateStatusEvent(
   );
   const envelope = await lateStatusEventEnvelope(
     primaryId,
+    current.latestEligibleStartEventId,
     current.sourceAuthorityVersion,
     current.sourceRevision,
     current.localDay,
     preference.reminderWindowVersion,
   );
+  assertValidNotificationEventWrite(ctx, envelope);
   const existing = await ctx.db
     .query("notificationEvents")
     .withIndex("by_idempotency_key", (q) =>
