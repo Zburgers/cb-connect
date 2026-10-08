@@ -275,6 +275,14 @@ describe("N2e durable delivery reconciliation", () => {
         leaseUntil: now - 1,
         dispatchStartedAt: now - 10,
       }),
+      markedExpired: await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "processing",
+        attemptCount: 1,
+        claimGeneration: 7,
+        leaseUntil: now - 1,
+        expiresAt: now - 1,
+        dispatchStartedAt: now - 10,
+      }),
       exhausted: await insertDelivery(ctx, recipientUserId, renderIdentity, {
         state: "processing",
         attemptCount: 4,
@@ -294,6 +302,20 @@ describe("N2e durable delivery reconciliation", () => {
         claimGeneration: Number.MAX_SAFE_INTEGER,
         leaseUntil: now - 1,
       }),
+      maxExpired: await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "processing",
+        attemptCount: 1,
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        leaseUntil: now - 1,
+        expiresAt: now - 1,
+      }),
+      maxMarked: await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "processing",
+        attemptCount: 1,
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        leaseUntil: now - 1,
+        dispatchStartedAt: now - 10,
+      }),
     }));
 
     const result = await t.mutation(reconcileRef, {
@@ -301,7 +323,13 @@ describe("N2e durable delivery reconciliation", () => {
       cursor: null,
       deadlineCursor: null,
     } as never);
-    expect(result).toMatchObject({ retried: 1, expired: 1, exhausted: 1, skipped: 2 });
+    expect(result).toMatchObject({
+      retried: 1,
+      unknown: 2,
+      expired: 3,
+      exhausted: 2,
+      skipped: 0,
+    });
 
     await t.run(async (ctx) => {
       expect(await ctx.db.get(rows.retry.deliveryId)).toMatchObject({
@@ -310,10 +338,21 @@ describe("N2e durable delivery reconciliation", () => {
         nextAttemptAt: now + 50,
       });
       expect(await ctx.db.get(rows.marked.deliveryId)).toMatchObject({
-        state: "processing",
-        claimGeneration: 5,
+        state: "unknown",
+        providerOutcome: "unknown",
+        claimGeneration: 6,
         dispatchStartedAt: now - 10,
+        reviewAt: expect.any(Number),
       });
+      expect((await ctx.db.get(rows.marked.deliveryId))?.leaseUntil).toBeUndefined();
+      expect((await ctx.db.get(rows.marked.deliveryId))?.nextAttemptAt).toBeUndefined();
+      expect(await ctx.db.get(rows.markedExpired.deliveryId)).toMatchObject({
+        state: "expired",
+        eligibility: "expired",
+        providerOutcome: "unknown",
+        claimGeneration: 8,
+      });
+      expect((await ctx.db.get(rows.markedExpired.deliveryId))?.leaseUntil).toBeUndefined();
       expect(await ctx.db.get(rows.exhausted.deliveryId)).toMatchObject({
         state: "failed_permanent",
         claimGeneration: 9,
@@ -325,14 +364,35 @@ describe("N2e durable delivery reconciliation", () => {
         claimGeneration: 10,
       });
       expect(await ctx.db.get(rows.maxGeneration.deliveryId)).toMatchObject({
-        state: "processing",
+        state: "failed_permanent",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        errorCode: "attempts_exhausted",
+      });
+      expect((await ctx.db.get(rows.maxGeneration.deliveryId))?.leaseUntil).toBeUndefined();
+      expect(await ctx.db.get(rows.maxExpired.deliveryId)).toMatchObject({
+        state: "expired",
+        eligibility: "expired",
         claimGeneration: Number.MAX_SAFE_INTEGER,
       });
+      expect((await ctx.db.get(rows.maxExpired.deliveryId))?.leaseUntil).toBeUndefined();
+      expect(await ctx.db.get(rows.maxMarked.deliveryId)).toMatchObject({
+        state: "unknown",
+        providerOutcome: "unknown",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        dispatchStartedAt: now - 10,
+      });
+      expect((await ctx.db.get(rows.maxMarked.deliveryId))?.leaseUntil).toBeUndefined();
     });
     await expect(
       t.mutation(projectInAppRef, {
         eventId: rows.retry.eventId,
         expectedGeneration: 4,
+      } as never),
+    ).resolves.toMatchObject({ status: "stale" });
+    await expect(
+      t.mutation(projectInAppRef, {
+        eventId: rows.marked.eventId,
+        expectedGeneration: 5,
       } as never),
     ).resolves.toMatchObject({ status: "stale" });
     const scheduled = await t.run((ctx) =>
@@ -352,6 +412,19 @@ describe("N2e durable delivery reconciliation", () => {
       eventId: rows.retry.eventId,
       expectedGeneration: 5,
     });
+    for (const row of [rows.marked, rows.markedExpired, rows.maxMarked]) {
+      expect(
+        scheduled.some(({ args }) => {
+          const arg = args[0];
+          return (
+            typeof arg === "object" &&
+            arg !== null &&
+            "eventId" in arg &&
+            arg.eventId === row.eventId
+          );
+        }),
+      ).toBe(false);
+    }
   });
 
   test("reserves the maximum generation for terminal recovery when no wake can be created", async () => {
@@ -476,6 +549,21 @@ describe("N2e durable delivery reconciliation", () => {
         currentGeneration: 7,
         fact: { kind: "accepted", providerMessageId: "synthetic" },
       }).applied,
+    ).toBe(false);
+    expect(
+      transitionDeliveryStateFenced(
+        {
+          channel: "in_app",
+          status: "unknown",
+          eligibility: "eligible",
+          providerOutcome: "unknown",
+        },
+        {
+          expectedGeneration: Number.MAX_SAFE_INTEGER,
+          currentGeneration: Number.MAX_SAFE_INTEGER,
+          fact: { kind: "accepted", providerMessageId: "stale" },
+        },
+      ).applied,
     ).toBe(false);
     const unknown = transitionDeliveryState(processing, {
       kind: "unknown",

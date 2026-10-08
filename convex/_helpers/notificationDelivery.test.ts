@@ -592,6 +592,54 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
       ),
     ).toEqual({ kind: "not_claimable" });
     expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "unknown",
+        eligibility: "eligible",
+        providerOutcome: "unknown",
+      }),
+    ).toBe(true);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "unknown",
+        eligibility: "eligible",
+        providerOutcome: "none",
+      }),
+    ).toBe(false);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "expired",
+        eligibility: "expired",
+        providerOutcome: "unknown",
+      }),
+    ).toBe(true);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "unknown",
+        eligibility: "cancelled",
+        providerOutcome: "unknown",
+      }),
+    ).toBe(true);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "cancelled",
+        eligibility: "cancelled",
+        providerOutcome: "unknown",
+      }),
+    ).toBe(true);
+    expect(
+      isValidDeliveryState({
+        channel: "in_app",
+        status: "suppressed",
+        eligibility: "suppressed",
+        providerOutcome: "unknown",
+      }),
+    ).toBe(true);
+    expect(
       claimInAppDelivery(
         inAppDeliveryRecord({ channel: "discord", stableDestinationId: "webhook:1" }),
         { expectedGeneration: 0, now: 100, limits: testLimits },

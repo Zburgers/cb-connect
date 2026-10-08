@@ -112,13 +112,14 @@ export const notificationInAppDeliveryValidator = v.object({
     v.literal("pending"),
     v.literal("processing"),
     v.literal("retry_wait"),
+    v.literal("unknown"),
     v.literal("failed_permanent"),
     v.literal("delivered"),
     v.literal("expired"),
     v.literal("suppressed"),
     v.literal("cancelled"),
   ),
-  providerOutcome: v.literal("none"),
+  providerOutcome: v.union(v.literal("none"), v.literal("unknown")),
 });
 
 export const notificationInAppAttemptValidator = v.object({
