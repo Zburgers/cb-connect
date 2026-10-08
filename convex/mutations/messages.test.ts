@@ -614,6 +614,32 @@ describe("couple message state", () => {
     expect(senderEvents).toHaveLength(0);
   });
 
+  test("binds message identities to the source row and partner generation in both directions", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Primary message" });
+    await asPartner.mutation(api.mutations.messages.send, { body: "Partner message" });
+
+    const messages = await t.run((ctx) => ctx.db.query("coupleMessages").collect());
+    const events = await t.run((ctx) => ctx.db.query("notificationEvents").collect());
+    expect(events).toHaveLength(2);
+    for (const message of messages) {
+      const recipientUserId = message.senderId === primaryId ? partnerId : primaryId;
+      const event = events.find((candidate) => candidate.sourceReference === `message:${message._id}`);
+      expect(event?.sourceIdentity).toEqual({
+        eventType: "partner_message.v1",
+        sourceId: message._id,
+        coupleId,
+        relationshipMembershipId: message.relationshipMembershipId,
+        ownerUserId: message.senderId,
+        recipientUserId,
+      });
+      expect(event).toMatchObject({ ownerUserId: message.senderId, recipientUserId });
+    }
+  });
+
   test("replaying a message event returns the existing event without duplicating it", async () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
     const t = convexTest(schema, modules);
@@ -639,10 +665,7 @@ describe("couple message state", () => {
     const replay = await t.run(async (ctx) => {
       const eventId = await ensurePartnerMessageEvent(ctx, {
         messageId,
-        senderId: primaryId,
         recipientId: partnerId,
-        relationshipMembershipId: message!.relationshipMembershipId!,
-        createdAt: message!.createdAt,
       });
       const events = await ctx.db
         .query("notificationEvents")
@@ -653,6 +676,51 @@ describe("couple message state", () => {
 
     expect(replay.eventId).toBe(originalEvent!._id);
     expect(replay.events).toEqual([originalEvent]);
+  });
+
+  test("rejects a same-key replay whose source identity changed", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId, partnerId } = await seedActiveCouple(t);
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "Identity replay source",
+    });
+    const anotherMessageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "Different identity source",
+    });
+    const message = await t.run((ctx) => ctx.db.get(messageId));
+    const idempotencyKey = makeEventIdempotencyKey("partner_message.v1", {
+      messageId: String(messageId),
+      recipientId: String(partnerId),
+    });
+    const event = await t.run((ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", idempotencyKey))
+        .unique(),
+    );
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(event!._id, {
+        sourceIdentity: {
+          eventType: "partner_message.v1",
+          sourceId: anotherMessageId,
+          coupleId: message!.coupleId,
+          relationshipMembershipId: message!.relationshipMembershipId!,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
+      });
+    });
+
+    await expect(
+      t.run((ctx) =>
+        ensurePartnerMessageEvent(ctx, {
+          messageId,
+          recipientId: partnerId,
+        }),
+      ),
+    ).rejects.toThrow("Notification event key conflicts with its message source");
   });
 
   test("stores no message event when the outbox flag is off", async () => {
@@ -725,8 +793,18 @@ describe("couple message state", () => {
     const clearEvent = events.find(
       (event) => event.eventType === "partner_chat_cleared.v1",
     );
+    const partnerMembershipId = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      return membership!._id;
+    });
     expect(messageEvents).toHaveLength(1);
     expect(messageEvents[0].sourceReference).toBe(`message:${messageId}`);
+    expect(couple?.chatClearedBy).toBe(primaryId);
     expect(clearEvent).toMatchObject({
       purpose: "partner_chat_cleared",
       producerKind: "explicit_chat_clear_transition",
@@ -735,11 +813,21 @@ describe("couple message state", () => {
       ownerUserId: primaryId,
       recipientUserId: partnerId,
       recipientScope: "other_active_member",
+      sourceIdentity: {
+        eventType: "partner_chat_cleared.v1",
+        sourceId: coupleId,
+        coupleId,
+        relationshipMembershipId: partnerMembershipId,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        clearOperationVersion: clearResult.clearedAt,
+      },
       privacyClass: "account_relationship_sensitive",
       validityRule: "until_newer_chat_state_or_link_revocation",
       idempotencyKey: makeEventIdempotencyKey("partner_chat_cleared.v1", {
         coupleId: String(coupleId),
         clearOperationId: `chat-clear:${clearResult.clearedAt}`,
+        relationshipMembershipId: String(partnerMembershipId),
         recipientId: String(partnerId),
       }),
       allowedChannel: "in_app",
