@@ -453,6 +453,34 @@ async function reconcileKind(
     return;
   }
 
+  // Continuations can miss earlier inserts.
+  // ponytail: checks 100 newest rows per state; add a fence index if a bucket can exceed that.
+  const [pendingAtFence, claimedAtFence] = await Promise.all(
+    (["pending", "claimed"] as const).map((state) =>
+      ctx.db
+        .query("notificationDueWork")
+        .withIndex("by_owner_and_state_and_due_at", (q) =>
+          q
+            .eq("ownerUserId", args.userId)
+            .eq("state", state)
+            .eq("dueAt", dueAt),
+        )
+        .order("desc")
+        .take(OWNER_PENDING_PAGE_SIZE),
+    ),
+  );
+  if (
+    [...pendingAtFence, ...claimedAtFence].some(
+      (row) =>
+        row.kind === args.kind &&
+        row.generation === args.generation &&
+        row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
+        row.reminderWindowVersion === args.reminderWindowVersion,
+    )
+  ) {
+    return;
+  }
+
   const workId = await createNotificationDueWork(ctx, {
     ownerUserId: args.userId,
     kind: args.kind,
