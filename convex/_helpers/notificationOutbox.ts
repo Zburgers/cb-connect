@@ -236,13 +236,14 @@ export async function cancelCurrentLateStatusSource(
   if (!Number.isSafeInteger(reminderWindowVersion) || reminderWindowVersion < 0) {
     throw new Error("Late-status reminder window version is invalid");
   }
+  if (reminderWindowVersion === 0) return;
   const localDay = toCalendarDateInTimeZone(
     new Date(now),
     user.timeZone ?? "UTC",
   );
   const localDaysToCancel = [localDay, addCalendarDays(localDay, -1)];
   const versionsToCancel =
-    reminderWindowVersion === 0
+    reminderWindowVersion === 1
       ? [reminderWindowVersion]
       : [reminderWindowVersion, reminderWindowVersion - 1];
   for (const day of localDaysToCancel) {
@@ -422,7 +423,7 @@ export async function ensureCurrentLateStatusEvent(
 
   const daysToSupersede = [current.localDay, addCalendarDays(current.localDay, -1)];
   const versionsToSupersede =
-    preference.reminderWindowVersion === 0
+    preference.reminderWindowVersion === 1
       ? [preference.reminderWindowVersion]
       : [preference.reminderWindowVersion, preference.reminderWindowVersion - 1];
   for (const day of daysToSupersede) {
