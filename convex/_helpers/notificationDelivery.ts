@@ -555,6 +555,7 @@ export function isValidDeliveryState(state: DeliveryState): boolean {
     "pending",
     "processing",
     "retry_wait",
+    "unknown",
     "failed_permanent",
     "delivered",
     "expired",
@@ -579,7 +580,8 @@ export function isValidDeliveryState(state: DeliveryState): boolean {
     if (
       state.eligibility !== "eligible" &&
       state.status !== state.eligibility &&
-      state.status !== "delivered"
+      state.status !== "delivered" &&
+      state.status !== "unknown"
     ) {
       return false;
     }
@@ -589,9 +591,17 @@ export function isValidDeliveryState(state: DeliveryState): boolean {
     ) {
       return false;
     }
+    const outcomeIsValid =
+      state.status === "unknown"
+        ? state.providerOutcome === "unknown"
+        : state.status === "expired" ||
+            state.status === "suppressed" ||
+            state.status === "cancelled"
+          ? state.providerOutcome === "none" || state.providerOutcome === "unknown"
+          : state.providerOutcome === "none";
     return (
       inAppOnlyStatuses.includes(state.status) &&
-      state.providerOutcome === "none" &&
+      outcomeIsValid &&
       state.providerMessageId === undefined
     );
   }

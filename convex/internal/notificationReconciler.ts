@@ -30,6 +30,7 @@ const reconcileResultValidator = v.object({
   inspected: v.number(),
   scheduled: v.number(),
   retried: v.number(),
+  unknown: v.number(),
   expired: v.number(),
   exhausted: v.number(),
   skipped: v.number(),
@@ -88,37 +89,30 @@ async function expireDelivery(
   ctx: MutationCtx,
   delivery: Doc<"notificationDeliveries">,
   now: number,
-): Promise<boolean> {
-  const claimGeneration = nextTerminalClaimGeneration(delivery.claimGeneration);
-  if (claimGeneration === null) return false;
+): Promise<void> {
+  const claimGeneration =
+    nextTerminalClaimGeneration(delivery.claimGeneration) ?? delivery.claimGeneration;
   await ctx.db.patch(delivery._id, {
     state: "expired",
     eligibility: "expired",
     claimGeneration,
+    providerOutcome:
+      delivery.dispatchStartedAt !== undefined ? "unknown" : delivery.providerOutcome,
     errorCode: "expired",
     nextAttemptAt: undefined,
     leaseUntil: undefined,
     updatedAt: now,
   });
-  return true;
 }
 
-type LeaseResult = "retried" | "expired" | "exhausted" | "skipped";
+type LeaseResult = "retried" | "unknown" | "expired" | "exhausted" | "skipped";
 
 async function recoverLease(
   ctx: MutationCtx,
   delivery: Doc<"notificationDeliveries">,
   now: number,
 ): Promise<LeaseResult> {
-  if (
-    !isValidDelivery(delivery) ||
-    delivery.claimGeneration >= Number.MAX_SAFE_INTEGER ||
-    // In-app work has no network side effect. A dispatch marker is ambiguous
-    // and therefore cannot be retried by this lane.
-    delivery.dispatchStartedAt !== undefined
-  ) {
-    return "skipped";
-  }
+  if (!isValidDelivery(delivery)) return "skipped";
   const recovered = recoverExpiredDeliveryClaim(
     delivery as NotificationDeliveryRecord,
     {
@@ -130,13 +124,14 @@ async function recoverLease(
   );
   if (
     recovered.kind !== "retry" &&
+    recovered.kind !== "unknown" &&
     recovered.kind !== "expired" &&
     recovered.kind !== "exhausted"
   ) {
     return "skipped";
   }
-  const claimGeneration = nextTerminalClaimGeneration(delivery.claimGeneration);
-  if (claimGeneration === null) return "skipped";
+  const claimGeneration =
+    nextTerminalClaimGeneration(delivery.claimGeneration) ?? delivery.claimGeneration;
   if (recovered.kind === "retry") {
     const dueAt = recovered.record.nextAttemptAt!;
     if (!(await scheduleWake(ctx, delivery, dueAt, now, claimGeneration))) {
@@ -165,12 +160,27 @@ async function recoverLease(
     });
     return "retried";
   }
+  if (recovered.kind === "unknown") {
+    await ctx.db.patch(delivery._id, {
+      state: "unknown",
+      eligibility: recovered.record.eligibility,
+      claimGeneration,
+      providerOutcome: "unknown",
+      errorCode: recovered.record.errorCode,
+      nextAttemptAt: undefined,
+      leaseUntil: undefined,
+      reviewAt: recovered.record.reviewAt,
+      updatedAt: now,
+    });
+    return "unknown";
+  }
   if (recovered.kind === "expired") {
     await ctx.db.patch(delivery._id, {
       state: "expired",
       eligibility: "expired",
       claimGeneration,
-      providerOutcome: delivery.providerOutcome,
+      providerOutcome:
+        delivery.dispatchStartedAt !== undefined ? "unknown" : delivery.providerOutcome,
       errorCode: recovered.record.errorCode,
       nextAttemptAt: undefined,
       leaseUntil: undefined,
@@ -200,6 +210,7 @@ export const reconcile = internalMutation({
       inspected: 0,
       scheduled: 0,
       retried: 0,
+      unknown: 0,
       expired: 0,
       exhausted: 0,
       skipped: 0,
@@ -233,6 +244,7 @@ export const reconcile = internalMutation({
 
     let scheduled = 0;
     let retried = 0;
+    let unknown = 0;
     let expired = 0;
     let exhausted = 0;
     let skipped = 0;
@@ -242,10 +254,9 @@ export const reconcile = internalMutation({
       deadlineIds.add(String(delivery._id));
       if (!isValidDelivery(delivery) || delivery.expiresAt === undefined) {
         skipped += 1;
-      } else if (await expireDelivery(ctx, delivery, now)) {
-        expired += 1;
       } else {
-        skipped += 1;
+        await expireDelivery(ctx, delivery, now);
+        expired += 1;
       }
     }
 
@@ -256,13 +267,14 @@ export const reconcile = internalMutation({
         continue;
       }
       if (delivery.expiresAt !== undefined && delivery.expiresAt <= now) {
-        if (await expireDelivery(ctx, delivery, now)) expired += 1;
-        else skipped += 1;
+        await expireDelivery(ctx, delivery, now);
+        expired += 1;
         continue;
       }
       if (args.state === "processing") {
         const result = await recoverLease(ctx, delivery, now);
         if (result === "retried") retried += 1;
+        else if (result === "unknown") unknown += 1;
         else if (result === "expired") expired += 1;
         else if (result === "exhausted") exhausted += 1;
         else skipped += 1;
@@ -308,6 +320,7 @@ export const reconcile = internalMutation({
       inspected: workPage.page.length + deadlinePage.page.length,
       scheduled,
       retried,
+      unknown,
       expired,
       exhausted,
       skipped,
