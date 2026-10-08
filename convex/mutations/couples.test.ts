@@ -882,7 +882,13 @@ describe("couple notification outbox", () => {
       asPartner.mutation(api.mutations.couples.linkPartnerWithCode, { code: "482731" }),
     ).resolves.toMatchObject({ success: false });
 
-    const { partnerMembership, events } = await t.run(async (ctx) => ({
+    const { primaryMembership, partnerMembership, events } = await t.run(async (ctx) => ({
+      primaryMembership: await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary").eq("revokedAt", undefined),
+        )
+        .unique(),
       partnerMembership: await ctx.db
         .query("coupleMembers")
         .withIndex("by_couple_and_role_and_revoked_at", (q) =>
@@ -891,13 +897,21 @@ describe("couple notification outbox", () => {
         .unique(),
       events: await ctx.db.query("notificationEvents").collect(),
     }));
+    expect(primaryMembership).not.toBeNull();
     expect(partnerMembership).not.toBeNull();
+    expect(partnerMembership!.userId).toBe(partnerId);
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.recipientUserId).sort()).toEqual(
       [primaryId, partnerId].sort(),
     );
     for (const event of events) {
       const linkGeneration = String(partnerMembership!._id);
+      const recipientMembership = [primaryMembership!, partnerMembership!].find(
+        (membership) => membership.userId === event.recipientUserId,
+      );
+      expect(recipientMembership?.coupleId).toBe(coupleId);
+      expect(recipientMembership?.revokedAt).toBeUndefined();
+      expect(event.ownerUserId).toBe(partnerMembership!.userId);
       expect(event.sourceIdentity).toEqual({
         eventType: "partner_linked.v1",
         coupleId,
@@ -1100,6 +1114,19 @@ describe("couple notification outbox", () => {
         events: await ctx.db.query("notificationEvents").collect(),
       }));
       expect(events).toHaveLength(2);
+      const currentEvent = events.find(
+        (event) =>
+          event.sourceIdentity?.eventType === "connected_since_updated.v1" &&
+          event.sourceIdentity.settingVersion === couple?.connectedSinceUpdatedAt,
+      );
+      expect(currentEvent?.ownerUserId).toBe(couple?.connectedSinceUpdatedBy);
+      expect(currentEvent?.sourceIdentity).toMatchObject({
+        ownerUserId: couple?.connectedSinceUpdatedBy,
+        recipientUserId: partnerId,
+        relationshipMembershipId,
+        sourceId: coupleId,
+        settingVersion: couple?.connectedSinceUpdatedAt,
+      });
       expect(new Set(events.map((event) => event.sourceAuthorityVersion)).size).toBe(2);
       expect(events.map((event) => event.recipientUserId)).toEqual([partnerId, partnerId]);
       for (const event of events) {
