@@ -425,7 +425,7 @@ function matchesValidator(
     case "object":
       if (
         !isRecord(value) ||
-        Object.keys(value).some((field) => !(field in validator.fields))
+        Object.keys(value).some((field) => !Object.prototype.hasOwnProperty.call(validator.fields, field))
       ) {
         return false;
       }
