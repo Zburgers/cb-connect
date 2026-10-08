@@ -454,32 +454,26 @@ async function reconcileKind(
   }
 
   // Continuations can miss earlier inserts.
-  // ponytail: checks 100 newest rows per state; add a fence index if a bucket can exceed that.
   const [pendingAtFence, claimedAtFence] = await Promise.all(
     (["pending", "claimed"] as const).map((state) =>
       ctx.db
         .query("notificationDueWork")
-        .withIndex("by_owner_and_state_and_due_at", (q) =>
-          q
-            .eq("ownerUserId", args.userId)
-            .eq("state", state)
-            .eq("dueAt", dueAt),
+        .withIndex(
+          "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+          (q) =>
+            q
+              .eq("ownerUserId", args.userId)
+              .eq("kind", args.kind)
+              .eq("state", state)
+              .eq("dueAt", dueAt)
+              .eq("generation", args.generation)
+              .eq("sourceAuthorityVersion", args.sourceAuthorityVersion)
+              .eq("reminderWindowVersion", args.reminderWindowVersion),
         )
-        .order("desc")
-        .take(OWNER_PENDING_PAGE_SIZE),
+        .first(),
     ),
   );
-  if (
-    [...pendingAtFence, ...claimedAtFence].some(
-      (row) =>
-        row.kind === args.kind &&
-        row.generation === args.generation &&
-        row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
-        row.reminderWindowVersion === args.reminderWindowVersion,
-    )
-  ) {
-    return;
-  }
+  if (pendingAtFence || claimedAtFence) return;
 
   const workId = await createNotificationDueWork(ctx, {
     ownerUserId: args.userId,
