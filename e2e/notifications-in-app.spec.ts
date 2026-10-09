@@ -232,7 +232,13 @@ test.describe("in-app notification preferences", () => {
         exact: true,
       });
 
-      await expect(preferences.getByRole("checkbox")).toHaveCount(10);
+      await expect(preferences.getByRole("checkbox")).toHaveCount(9);
+      await expect(
+        preferences.getByRole("checkbox", {
+          name: "Daily cycle status",
+          exact: true,
+        }),
+      ).toHaveCount(0);
       for (const option of await preferences.getByRole("checkbox").all()) {
         await expect(option).not.toBeChecked();
       }

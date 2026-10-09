@@ -9,7 +9,7 @@ import type { notificationEventDefinitions } from "@/convex/_helpers/notificatio
 
 type NotificationPurpose =
   (typeof notificationEventDefinitions)[keyof typeof notificationEventDefinitions]["purpose"];
-type ScheduledPurpose = "period_window_approaching" | "late_status";
+type ScheduledPurpose = "period_window_approaching";
 
 type PreferenceOption = {
   purpose: NotificationPurpose;
@@ -39,13 +39,6 @@ const OPTIONS = [
     label: "Upcoming cycle window",
     description:
       "A private reminder based on your current served cycle estimate.",
-    primaryOnly: true,
-    scheduled: true,
-  },
-  {
-    purpose: "late_status",
-    label: "Daily cycle status",
-    description: "A private, optional daily status reminder.",
     primaryOnly: true,
     scheduled: true,
   },
@@ -84,7 +77,6 @@ const OPTIONS = [
 
 const SCHEDULED_PURPOSES = new Set<ScheduledPurpose>([
   "period_window_approaching",
-  "late_status",
 ]);
 
 export default function NotificationPreferences({
