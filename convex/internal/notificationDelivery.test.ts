@@ -373,6 +373,16 @@ describe("N2d transactional in-app delivery", () => {
       inAppEnabled: true,
     } as never);
     const now = Date.now();
+    const relationshipMembershipId = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected the active relationship generation");
+      return membership._id;
+    });
     const event = {
       eventType: "partner_chat_cleared.v1" as const,
       eventVersion: 1 as const,
@@ -388,6 +398,7 @@ describe("N2d transactional in-app delivery", () => {
       idempotencyKey: makeEventIdempotencyKey("partner_chat_cleared.v1", {
         coupleId: String(coupleId),
         clearOperationId: `chat-clear:${now}`,
+        relationshipMembershipId: String(relationshipMembershipId),
         recipientId: String(partnerId),
       }),
       allowedChannel: "in_app" as const,
