@@ -37,6 +37,12 @@ integrated authenticated qualification.
   revocation, primary, and partner cases on authenticated desktop and mobile.
   The current notification E2E accepts empty/unavailable inboxes and explicitly
   does not seed a populated inbox; test discovery is not coverage.
+- [ ] Close the relationship-event delivery seam: message producers persist
+  typed events, but no generic event-to-delivery consumer currently creates a
+  logical delivery for them. The existing scheduler delivery path covers
+  scheduled prediction work only; that template remains blocked under D-011.
+  Any fixture-only projector evidence must be labeled as such and cannot stand
+  in for this runtime path.
 - [ ] Run protected exact-head authenticated qualification against the
   isolated `dev:hallowed-hummingbird-284` test backend, with explicit target
   and flag attestation, zero skips, and zero fixture residue. The current
