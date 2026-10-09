@@ -16,6 +16,7 @@ import {
   type NotificationOperationalLimits,
 } from "../_helpers/notificationDelivery";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
+import { isNotificationSourceCurrent } from "../_helpers/notificationSourceReader";
 import { renderFrozen } from "../_helpers/notificationTemplates";
 import { notificationEventDefinitions } from "../_helpers/notificationTypes";
 
@@ -23,7 +24,6 @@ const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const PROJECTION_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 const DELIVERY_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const MAX_SOURCE_ROWS = 2;
-type SourceTable = "periodEvents" | "coupleMessages" | "couples" | "nudges";
 
 // The in-app adapter is a single atomic Convex transaction. The remaining
 // finite settings share the N2c versioned limits contract and are measured at
@@ -54,13 +54,6 @@ const projectResultValidator = v.object({
   inboxItemId: v.union(v.id("notificationInboxItems"), v.null()),
 });
 
-type SourceCheck =
-  | { current: true; sourceAuthorityVersion: string }
-  | {
-      current: false;
-      cancellationReason: "source_changed" | "authority_revoked";
-    };
-
 function isEnabled(name: string): boolean {
   return process.env[name] === "true";
 }
@@ -71,187 +64,6 @@ export function nextTerminalClaimGeneration(generation: number): number | null {
     generation < Number.MAX_SAFE_INTEGER
     ? generation + 1
     : null;
-}
-
-function parseId<TableName extends SourceTable>(
-  ctx: MutationCtx,
-  tableName: TableName,
-  value: string,
-): Id<TableName> | null {
-  if (!value || value.length > 1_024) return null;
-  return ctx.db.normalizeId(tableName, value) as Id<TableName> | null;
-}
-
-function idFromReference<TableName extends SourceTable>(
-  ctx: MutationCtx,
-  tableName: TableName,
-  reference: string,
-  prefix: string,
-): Id<TableName> | null {
-  if (!reference.startsWith(prefix) || reference.length > 1_024) return null;
-  return parseId(ctx, tableName, reference.slice(prefix.length));
-}
-
-async function getCurrentMembership(ctx: MutationCtx, userId: Id<"users">) {
-  const rows = await ctx.db
-    .query("coupleMembers")
-    .withIndex("by_user_and_revoked_at", (q) =>
-      q.eq("userId", userId).eq("revokedAt", undefined),
-    )
-    .take(MAX_SOURCE_ROWS);
-  return rows.length === 1 ? rows[0] : null;
-}
-
-async function getActiveRelationship(
-  ctx: MutationCtx,
-  ownerUserId: Id<"users">,
-  recipientUserId: Id<"users">,
-) {
-  if (ownerUserId === recipientUserId) return null;
-  const [ownerMembership, recipientMembership] = await Promise.all([
-    getCurrentMembership(ctx, ownerUserId),
-    getCurrentMembership(ctx, recipientUserId),
-  ]);
-  if (
-    !ownerMembership ||
-    !recipientMembership ||
-    ownerMembership.coupleId !== recipientMembership.coupleId ||
-    ownerMembership.role === recipientMembership.role
-  ) {
-    return null;
-  }
-  const couple = await ctx.db.get(ownerMembership.coupleId);
-  if (!couple || couple.status !== "active") return null;
-  return { couple, ownerMembership, recipientMembership };
-}
-
-async function checkEventSource(
-  ctx: MutationCtx,
-  event: Doc<"notificationEvents">,
-): Promise<SourceCheck> {
-  switch (event.eventType) {
-    case "assisted_period_start.v1":
-    case "assisted_period_end.v1": {
-      const periodId = idFromReference(ctx, "periodEvents", event.sourceReference, "period:");
-      const expectedVersion = /^period-authority:([1-9][0-9]*)$/.exec(
-        event.sourceAuthorityVersion,
-      );
-      if (!periodId || !expectedVersion) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      const period = await ctx.db.get(periodId);
-      const recipient = await ctx.db.get(event.recipientUserId);
-      const authorityVersion = Number(expectedVersion[1]);
-      if (
-        !period ||
-        !recipient ||
-        recipient.role !== "primary" ||
-        event.ownerUserId !== event.recipientUserId ||
-        period.userId !== event.recipientUserId ||
-        period.source !== "partner_assist" ||
-        period.confirmationStatus !== "confirmed" ||
-        period.tombstoneAt !== undefined ||
-        period.authorityVersion !== authorityVersion ||
-        (period.startCertainty !== "exact" && period.startCertainty !== "approximate") ||
-        (event.eventType === "assisted_period_end.v1" &&
-          (period.endDate === undefined ||
-            (period.endCertainty !== "exact" && period.endCertainty !== "approximate")))
-      ) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      return { current: true, sourceAuthorityVersion: event.sourceAuthorityVersion };
-    }
-    case "partner_message.v1": {
-      const messageId = idFromReference(ctx, "coupleMessages", event.sourceReference, "message:");
-      if (!messageId) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      const message = await ctx.db.get(messageId);
-      if (!message || message.senderId !== event.ownerUserId) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      const relationship = await getActiveRelationship(
-        ctx,
-        event.ownerUserId,
-        event.recipientUserId,
-      );
-      if (
-        !relationship ||
-        relationship.couple._id !== message.coupleId ||
-        message.relationshipMembershipId !== relationship.recipientMembership._id ||
-        message.clearedAt !== undefined ||
-        (relationship.couple.chatClearedAt !== undefined &&
-          message.createdAt <= relationship.couple.chatClearedAt)
-      ) {
-        return {
-          current: false,
-          cancellationReason: relationship ? "source_changed" : "authority_revoked",
-        };
-      }
-      return { current: true, sourceAuthorityVersion: event.sourceAuthorityVersion };
-    }
-    case "partner_chat_cleared.v1": {
-      const coupleId = idFromReference(ctx, "couples", event.sourceReference, "couple-chat:");
-      const clearVersion = /^chat-clear:([1-9][0-9]*)$/.exec(
-        event.sourceAuthorityVersion,
-      );
-      if (!coupleId || !clearVersion) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      const relationship = await getActiveRelationship(
-        ctx,
-        event.ownerUserId,
-        event.recipientUserId,
-      );
-      const clearedAt = Number(clearVersion[1]);
-      if (
-        !relationship ||
-        relationship.couple._id !== coupleId ||
-        relationship.couple.chatClearedAt !== clearedAt ||
-        (relationship.couple.linkedAt !== undefined &&
-          relationship.couple.linkedAt > event.createdAt)
-      ) {
-        return {
-          current: false,
-          cancellationReason: relationship ? "source_changed" : "authority_revoked",
-        };
-      }
-      return { current: true, sourceAuthorityVersion: event.sourceAuthorityVersion };
-    }
-    case "partner_nudge.v1": {
-      const nudgeId = idFromReference(ctx, "nudges", event.sourceReference, "nudge:");
-      if (!nudgeId) return { current: false, cancellationReason: "source_changed" };
-      const nudge = await ctx.db.get(nudgeId);
-      if (
-        !nudge ||
-        nudge.seenAt !== undefined ||
-        nudge.senderId !== event.ownerUserId ||
-        nudge.receiverId !== event.recipientUserId
-      ) {
-        return { current: false, cancellationReason: "source_changed" };
-      }
-      const relationship = await getActiveRelationship(
-        ctx,
-        event.ownerUserId,
-        event.recipientUserId,
-      );
-      if (
-        !relationship ||
-        relationship.couple._id !== nudge.coupleId ||
-        nudge.relationshipMembershipId !== relationship.recipientMembership._id
-      ) {
-        return {
-          current: false,
-          cancellationReason: relationship ? "source_changed" : "authority_revoked",
-        };
-      }
-      return { current: true, sourceAuthorityVersion: event.sourceAuthorityVersion };
-    }
-    default:
-      // Event kinds without an integrated source reader fail closed until their
-      // owner hands the current source contract to the N8 integration lane.
-      return { current: false, cancellationReason: "source_changed" };
-  }
 }
 
 function eventMatchesCatalog(event: Doc<"notificationEvents">): boolean {
@@ -458,12 +270,12 @@ export const projectInApp = internalMutation({
     }
 
     if (delivery.state === "delivered") {
-      const source = await checkEventSource(ctx, event);
-      if (!source.current) {
+      const sourceCurrent = await isNotificationSourceCurrent(ctx, event);
+      if (!sourceCurrent) {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
         const patch = deniedDeliveryPatch(delivery, {
           status: "cancelled",
-          reason: source.cancellationReason,
+          reason: "source_changed",
           now,
         });
         if (patch) await ctx.db.patch(delivery._id, patch);
@@ -478,7 +290,7 @@ export const projectInApp = internalMutation({
     }
 
     const recipient = await ctx.db.get(event.recipientUserId);
-    const source = await checkEventSource(ctx, event);
+    const sourceCurrent = await isNotificationSourceCurrent(ctx, event);
     const preference = await ctx.db
       .query("notificationPreferences")
       .withIndex("by_user_and_purpose", (q) =>
@@ -498,8 +310,8 @@ export const projectInApp = internalMutation({
       currentRecipientUserId:
         recipient && recipient.role !== undefined ? String(recipient._id) : null,
       sourceAuthorityVersion: event.sourceAuthorityVersion,
-      currentSourceAuthorityVersion: source.current
-        ? source.sourceAuthorityVersion
+      currentSourceAuthorityVersion: sourceCurrent
+        ? event.sourceAuthorityVersion
         : null,
       expectedGeneration: args.expectedGeneration,
       currentGeneration: delivery.claimGeneration,
@@ -514,9 +326,9 @@ export const projectInApp = internalMutation({
         authorization.reason === "stale_source" ||
         authorization.reason === "recipient_mismatch";
       const reason = isRevocation
-        ? source.current
+        ? sourceCurrent
           ? "authority_revoked"
-          : source.cancellationReason
+          : "source_changed"
         : undefined;
       if (isRevocation) {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);

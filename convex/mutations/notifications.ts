@@ -3,8 +3,10 @@ import { makeFunctionReference } from "convex/server";
 
 import { internalMutation, mutation } from "../_generated/server";
 import {
+  assertValidNotificationEventWrite,
   notificationEventDefinitions,
-  notificationEventEnvelopeValidator,
+  notificationEventWriteValidator,
+  type NotificationSourceIdentity,
 } from "../_helpers/notificationTypes";
 import {
   frozenRenderIdentityValidator,
@@ -53,7 +55,7 @@ const preferenceReconciliationContinuationRef = makeFunctionReference<"mutation"
 );
 
 const ensureInAppRecordsArgsValidator = v.object({
-  envelope: notificationEventEnvelopeValidator,
+  envelope: notificationEventWriteValidator,
   route: notificationInboxRouteValidator,
   templateVersion: v.string(),
   renderIdentity: frozenRenderIdentityValidator,
@@ -194,6 +196,24 @@ function assertEventEnvelope(envelope: {
   }
 }
 
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing || existing.eventType !== expected.eventType) return false;
+  const existingFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  const expectedKeys = Object.keys(expectedFields);
+  return (
+    Object.keys(existingFields).length === expectedKeys.length &&
+    expectedKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(existingFields, key) &&
+        existingFields[key] === expectedFields[key],
+    )
+  );
+}
+
 function expectedRoute(eventType: keyof typeof notificationEventDefinitions): NotificationInboxRoute {
   if (eventType === "pain_check_in.v1") return "pain";
   if (
@@ -275,6 +295,7 @@ export const ensureInAppRecords = internalMutation({
     }
 
     assertEventEnvelope(args.envelope);
+    assertValidNotificationEventWrite(ctx, args.envelope);
     assertFiniteTimestamp(args.createdAt, "createdAt");
     assertFiniteTimestamp(args.notBefore, "notBefore");
     if (args.expiresAt !== undefined) {
@@ -311,7 +332,8 @@ export const ensureInAppRecords = internalMutation({
     ] as const;
     if (
       existingEvent &&
-      envelopeFields.some((field) => existingEvent[field] !== args.envelope[field])
+      (envelopeFields.some((field) => existingEvent[field] !== args.envelope[field]) ||
+        !sameSourceIdentity(existingEvent.sourceIdentity, args.envelope.sourceIdentity))
     ) {
       throw new Error("Notification event idempotency key conflicts with stored authority");
     }

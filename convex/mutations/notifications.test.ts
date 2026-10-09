@@ -136,21 +136,30 @@ describe("notification persistence", () => {
       inAppEnabled: true,
     });
 
-    const messageId = await t.run((ctx) =>
-      ctx.db.insert("coupleMessages", {
+    const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
         coupleId,
+        relationshipMembershipId: partnerMembership._id,
         senderId: primaryId,
         body: "Private message body must not be copied",
         createdAt: 1_800_000_000_000,
-      }),
-    );
+      });
+      return { messageId, relationshipMembershipId: partnerMembership._id };
+    });
     const event = {
       eventType: "partner_message.v1" as const,
       eventVersion: 1 as const,
       purpose: "partner_message" as const,
       producerKind: "new_couple_message" as const,
       sourceReference: `message:${messageId}`,
-      sourceAuthorityVersion: "link-generation:1",
+      sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
       ownerUserId: primaryId,
       recipientUserId: partnerId,
       recipientScope: "other_active_member" as const,
@@ -161,6 +170,14 @@ describe("notification persistence", () => {
         recipientId: String(partnerId),
       }),
       allowedChannel: "in_app" as const,
+      sourceIdentity: {
+        eventType: "partner_message.v1" as const,
+        sourceId: messageId,
+        coupleId,
+        relationshipMembershipId,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+      },
     };
     const rendered = await renderFrozen({
       eventType: event.eventType,
@@ -198,6 +215,28 @@ describe("notification persistence", () => {
       expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
     });
 
+    const otherMessageId = await t.run((ctx) =>
+      ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId,
+        senderId: primaryId,
+        body: "second source identity",
+        createdAt: 1_800_000_000_001,
+      }),
+    );
+    await expect(
+      t.mutation(internal.mutations.notifications.ensureInAppRecords, {
+        ...args,
+        envelope: {
+          ...event,
+          sourceIdentity: {
+            ...event.sourceIdentity,
+            sourceId: otherMessageId,
+          },
+        },
+      }),
+    ).rejects.toThrow(/conflict|identity/i);
+
     await t.run(async (ctx) => {
       const delivery = await ctx.db.query("notificationDeliveries").first();
       if (!delivery) throw new Error("Expected the private in-app delivery");
@@ -219,10 +258,27 @@ describe("notification persistence", () => {
   test("rejects fractional and unsafe event timestamps before persistence", async () => {
     enableOutboxProjection();
     const t = convexTest(schema, modules);
-    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
     await asPartner.mutation(api.mutations.notifications.setMyPreference, {
       purpose: "partner_message",
       inAppEnabled: true,
+    });
+    const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: membership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: Date.now(),
+      });
+      return { messageId, relationshipMembershipId: membership._id };
     });
     const rendered = await renderFrozen({
       eventType: "partner_message.v1",
@@ -236,18 +292,26 @@ describe("notification persistence", () => {
         eventVersion: 1 as const,
         purpose: "partner_message" as const,
         producerKind: "new_couple_message" as const,
-        sourceReference: "message:opaque",
-        sourceAuthorityVersion: "link-generation:1",
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
         ownerUserId: primaryId,
         recipientUserId: partnerId,
         recipientScope: "other_active_member" as const,
         privacyClass: "relationship_private_free_text_source" as const,
         validityRule: "while_message_and_active_link_exist" as const,
         idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
-          messageId: "coupleMessages:opaque",
+          messageId: String(messageId),
           recipientId: String(partnerId),
         }),
         allowedChannel: "in_app" as const,
+        sourceIdentity: {
+          eventType: "partner_message.v1" as const,
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
       },
       route: "messages" as const,
       templateVersion: "g4-static-v1",
@@ -277,7 +341,24 @@ describe("notification persistence", () => {
 
   test("does not create new storage while the absent outbox flag is off", async () => {
     const t = convexTest(schema, modules);
-    const { primaryId, partnerId } = await seedActiveCouple(t);
+    const { coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const { relationshipMembershipId, messageId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: partnerMembership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: 1,
+      });
+      return { relationshipMembershipId: partnerMembership._id, messageId };
+    });
     const result = await t.mutation(
       internal.mutations.notifications.ensureInAppRecords,
       {
@@ -287,7 +368,7 @@ describe("notification persistence", () => {
           purpose: "partner_message",
           producerKind: "new_couple_message",
           sourceReference: "message:opaque",
-          sourceAuthorityVersion: "link-generation:1",
+          sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
           ownerUserId: primaryId,
           recipientUserId: partnerId,
           recipientScope: "other_active_member",
@@ -295,6 +376,14 @@ describe("notification persistence", () => {
           validityRule: "while_message_and_active_link_exist",
           idempotencyKey: "event:v1:opaque",
           allowedChannel: "in_app",
+          sourceIdentity: {
+            eventType: "partner_message.v1",
+            sourceId: messageId,
+            coupleId,
+            relationshipMembershipId,
+            ownerUserId: primaryId,
+            recipientUserId: partnerId,
+          },
         },
           route: "messages",
           templateVersion: "g4-static-v1",
@@ -800,15 +889,32 @@ describe("notification persistence", () => {
 
   test("rejects external-channel fields on new preference and persistence paths", async () => {
     const t = convexTest(schema, modules);
-    const { asPrimary, primaryId, partnerId } = await seedActiveCouple(t);
+    const { asPrimary, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const { relationshipMembershipId, messageId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: partnerMembership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: Date.now(),
+      });
+      return { relationshipMembershipId: partnerMembership._id, messageId };
+    });
     const args = {
       envelope: {
         eventType: "partner_message.v1" as const,
         eventVersion: 1 as const,
         purpose: "partner_message" as const,
         producerKind: "new_couple_message" as const,
-        sourceReference: "message:opaque",
-        sourceAuthorityVersion: "link-generation:1",
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
         ownerUserId: primaryId,
         recipientUserId: partnerId,
         recipientScope: "other_active_member" as const,
@@ -816,6 +922,14 @@ describe("notification persistence", () => {
         validityRule: "while_message_and_active_link_exist" as const,
         idempotencyKey: "event:v1:opaque",
         allowedChannel: "in_app" as const,
+        sourceIdentity: {
+          eventType: "partner_message.v1" as const,
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
       },
       route: "messages" as const,
       templateVersion: "g4-static-v1",
