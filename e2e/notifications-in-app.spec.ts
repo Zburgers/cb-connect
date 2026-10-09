@@ -1,6 +1,8 @@
 import { devices, type Page } from "@playwright/test";
 import { expect, getApprovedReleaseFixture, test } from "./fixtures";
 
+test.use({ trace: "off", screenshot: "off", video: "off" });
+
 const SAFE_COPY = [
   {
     title: "Connection update",
@@ -96,6 +98,34 @@ function fixtureContextOptions(projectName: string) {
   return device;
 }
 
+async function resetCycleWindowPreference(page: Page) {
+  await page.goto("/dashboard/settings");
+  const preferences = page.getByRole("region", {
+    name: "In-app notification preferences",
+  });
+  const cycleWindow = preferences.getByRole("checkbox", {
+    name: "Upcoming cycle window",
+    exact: true,
+  });
+  const reminderTime = preferences.getByLabel(
+    "Reminder time for upcoming cycle window",
+  );
+
+  if (await cycleWindow.isChecked()) {
+    await cycleWindow.uncheck();
+  }
+  await reminderTime.fill("");
+  const saveTime = preferences.getByRole("button", {
+    name: "Save upcoming cycle window time",
+    exact: true,
+  });
+  if (await saveTime.isEnabled()) {
+    await saveTime.click();
+  }
+  await expect(cycleWindow).not.toBeChecked();
+  await expect(reminderTime).toHaveValue("");
+}
+
 test("synthetic primary and partner inboxes render only static safe copy and support read/dismiss", async ({
   browser,
 }) => {
@@ -163,4 +193,109 @@ test("revoked synthetic partner has no current inbox entries", async ({ browser 
     await partnerContext.close();
     await primaryContext.close();
   }
+});
+
+test.describe("in-app notification preferences", () => {
+  test("primary preferences default off and scheduled changes take effect immediately", async ({
+    browser,
+  }) => {
+    const device = fixtureContextOptions(test.info().project.name);
+    const context = await browser.newContext({
+      ...device,
+      storageState: getApprovedReleaseFixture("primary"),
+    });
+    const page = await context.newPage();
+    let preferenceTouched = false;
+
+    try {
+      await page.goto("/dashboard/settings");
+      preferenceTouched = true;
+      await expect(
+        page.getByRole("heading", {
+          name: "In-app notification preferences",
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 30000 });
+
+      const preferences = page.getByRole("region", {
+        name: "In-app notification preferences",
+      });
+      const cycleWindow = preferences.getByRole("checkbox", {
+        name: "Upcoming cycle window",
+        exact: true,
+      });
+      const reminderTime = preferences.getByLabel(
+        "Reminder time for upcoming cycle window",
+      );
+      const saveTime = preferences.getByRole("button", {
+        name: "Save upcoming cycle window time",
+        exact: true,
+      });
+
+      await expect(preferences.getByRole("checkbox")).toHaveCount(10);
+      for (const option of await preferences.getByRole("checkbox").all()) {
+        await expect(option).not.toBeChecked();
+      }
+      await expect(cycleWindow).toBeDisabled();
+
+      await reminderTime.fill("10:30");
+      await saveTime.click();
+      await expect(preferences.getByRole("status")).toContainText(
+        "Notification preference saved.",
+      );
+      await expect(cycleWindow).toBeEnabled();
+
+      await cycleWindow.check();
+      await expect(cycleWindow).toBeChecked();
+      await reminderTime.fill("11:45");
+      await saveTime.click();
+      await expect(preferences.getByRole("status")).toContainText(
+        "Notification preference saved.",
+      );
+      await expect(cycleWindow).toBeEnabled();
+
+      await cycleWindow.uncheck();
+      await expect(cycleWindow).not.toBeChecked();
+      await expect(preferences.getByRole("status")).toContainText(
+        "Preference turned off.",
+      );
+    } finally {
+      try {
+        if (preferenceTouched) await resetCycleWindowPreference(page);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  test("partner preferences only show relationship purposes and default off", async ({
+    browser,
+  }) => {
+    const device = fixtureContextOptions(test.info().project.name);
+    const context = await browser.newContext({
+      ...device,
+      storageState: getApprovedReleaseFixture("partner"),
+    });
+    const page = await context.newPage();
+
+    try {
+      await page.goto("/dashboard/settings");
+      await expect(
+        page.getByRole("heading", {
+          name: "In-app notification preferences",
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 30000 });
+
+      const preferences = page.getByRole("region", {
+        name: "In-app notification preferences",
+      });
+      await expect(preferences.getByRole("checkbox")).toHaveCount(5);
+      for (const option of await preferences.getByRole("checkbox").all()) {
+        await expect(option).not.toBeChecked();
+      }
+    } finally {
+      await context.close();
+    }
+  });
 });
