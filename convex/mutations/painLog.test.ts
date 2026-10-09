@@ -66,6 +66,82 @@ describe("pain log date boundaries", () => {
   });
 });
 
+describe("pain log timezone notification reconciliation", () => {
+  test("advances source authority and cancels stale work in the write transaction", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const now = Date.now();
+    const workId = await t.run(async (ctx) => {
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now,
+        generation: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date: toCalendarDateInTimeZone(new Date(), "America/Los_Angeles"),
+      ...validPainLog(),
+      timeZone: "America/Los_Angeles",
+    });
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({
+        timeZone: "America/Los_Angeles",
+      });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 5 });
+      expect(await ctx.db.get(workId)).toMatchObject({ state: "cancelled" });
+    });
+  });
+
+  test("rolls back timezone and source changes when the pain-log write is invalid", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+        date: "not-a-date",
+        ...validPainLog(),
+        timeZone: "America/Los_Angeles",
+      }),
+    ).rejects.toThrow("Pain log date must be a valid date");
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({ timeZone: "UTC" });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 4 });
+    });
+  });
+});
+
 test("high pain create and update cannot POST or write a legacy log with a stale webhook", async () => {
   vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
   const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
