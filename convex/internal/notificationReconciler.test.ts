@@ -12,6 +12,7 @@ import {
   transitionProviderReceiptFactual,
   type DeliveryState,
   type FrozenRenderIdentity,
+  type NotificationDeliveryRecord,
 } from "../_helpers/notificationDelivery";
 import { renderFrozen } from "../_helpers/notificationTemplates";
 import schema from "../schema";
@@ -38,6 +39,9 @@ const reconcileRef = makeFunctionReference<"mutation">(
 );
 const projectInAppRef = makeFunctionReference<"mutation">(
   "internal/notificationDelivery:projectInApp",
+);
+const projectInAppWakeRef = makeFunctionReference<"mutation">(
+  "internal/notificationDelivery:projectInAppWake",
 );
 let syntheticId = 0;
 
@@ -111,6 +115,81 @@ async function insertDelivery(
   return { eventId, deliveryId };
 }
 
+async function insertPredictionWindowDelivery(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  renderIdentity: FrozenRenderIdentity,
+  notBefore: number,
+) {
+  const now = Date.now();
+  const sourcePeriodEventId = await ctx.db.insert("periodEvents", {
+    userId: primaryId,
+    startDate: "2026-10-01",
+    createdAt: now,
+    updatedAt: now,
+  });
+  const sourceAuthorityVersion =
+    'g4-source-v1:[12,"cycle-read-model-v1","prediction-serving-v2","estimate-v3","calibrate-v2"]';
+  const reminderWindowVersion = 3;
+  const dueLocalDay = "2026-10-08";
+  const eventId = await ctx.db.insert("notificationEvents", {
+    eventType: "period_window_approaching.v1",
+    eventVersion: 1,
+    purpose: "period_window_approaching",
+    producerKind: "current_served_v2_snapshot",
+    sourceReference: `period-window:${primaryId}:${sourceAuthorityVersion}:${dueLocalDay}`,
+    sourceAuthorityVersion,
+    sourceIdentity: {
+      eventType: "period_window_approaching.v1",
+      primaryId,
+      latestEligibleStartEventId: sourcePeriodEventId,
+      sourceAuthorityVersion,
+      reminderWindowVersion,
+      dueLocalDay,
+    },
+    ownerUserId: primaryId,
+    recipientUserId: primaryId,
+    recipientScope: "primary",
+    privacyClass: "primary_private_inferred_health",
+    validityRule: "designated_due_local_day_while_snapshot_is_current",
+    idempotencyKey: makeEventIdempotencyKey("period_window_approaching.v1", {
+      primaryId: String(primaryId),
+      latestEligibleStartEventId: String(sourcePeriodEventId),
+      sourceAuthorityVersion,
+      dueLocalDay,
+      reminderWindowVersion: String(reminderWindowVersion),
+    }),
+    allowedChannel: "in_app",
+    createdAt: now,
+  });
+  const deliveryId = await ctx.db.insert("notificationDeliveries", {
+    eventId,
+    recipientUserId: primaryId,
+    channel: "in_app",
+    stableDestinationId: String(primaryId),
+    logicalKey: makeDeliveryIdempotencyKey(
+      String(eventId),
+      "in_app",
+      String(primaryId),
+    ),
+    notBefore,
+    state: "pending",
+    eligibility: "eligible",
+    providerOutcome: "none",
+    attemptCount: 0,
+    claimGeneration: 0,
+    renderIdentity,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return {
+    eventId,
+    deliveryId,
+    sourceAuthorityVersion,
+    reminderWindowVersion,
+  };
+}
+
 async function setup(t: TestBackend) {
   const { primaryId } = await seedActiveCouple(t);
   const rendered = await renderFrozen({
@@ -120,6 +199,83 @@ async function setup(t: TestBackend) {
     variableSchemaVersion: "g4-no-variables-v1",
   });
   return { recipientUserId: primaryId, renderIdentity: rendered.identity };
+}
+
+async function readWakeMarker(
+  t: TestBackend,
+  deliveryId: Id<"notificationDeliveries">,
+) {
+  return await t.run(async (ctx) => {
+    const delivery = await ctx.db.get(deliveryId);
+    if (!delivery) throw new Error("Expected a persisted delivery");
+    const record = delivery as NotificationDeliveryRecord;
+    return {
+      wakeScheduledFunctionId: record.wakeScheduledFunctionId,
+      wakeSequence: record.wakeSequence,
+    };
+  });
+}
+
+async function findPendingWakeWrappers(
+  t: TestBackend,
+  eventId: Id<"notificationEvents">,
+  expected: {
+    expectedGeneration: number;
+    expectedWakeSequence: number;
+    expectedSourceAuthorityVersion?: string;
+    expectedReminderWindowVersion?: number;
+  },
+) {
+  return await t.run(async (ctx) =>
+    (await ctx.db.system.query("_scheduled_functions").take(100)).filter(
+      (scheduled) => {
+        const arg = scheduled.args[0];
+        return (
+          scheduled.name === "internal/notificationDelivery:projectInAppWake" &&
+          scheduled.state.kind === "pending" &&
+          typeof arg === "object" &&
+          arg !== null &&
+          "eventId" in arg &&
+          arg.eventId === eventId &&
+          "expectedGeneration" in arg &&
+          arg.expectedGeneration === expected.expectedGeneration &&
+          "expectedWakeSequence" in arg &&
+          arg.expectedWakeSequence === expected.expectedWakeSequence &&
+          ("expectedSourceAuthorityVersion" in arg
+            ? arg.expectedSourceAuthorityVersion
+            : undefined) === expected.expectedSourceAuthorityVersion &&
+          ("expectedReminderWindowVersion" in arg
+            ? arg.expectedReminderWindowVersion
+            : undefined) === expected.expectedReminderWindowVersion
+        );
+      },
+    ),
+  );
+}
+
+async function danglingScheduledFunctionId(
+  t: TestBackend,
+): Promise<Id<"_scheduled_functions">> {
+  const other = convexTest(schema, modules);
+  const candidates = await other.run(async (ctx) => {
+    const ids: Id<"_scheduled_functions">[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      ids.push(
+        await ctx.scheduler.runAfter(60_000, reconcileRef, {
+          state: "pending",
+          cursor: null,
+          deadlineCursor: null,
+        }),
+      );
+    }
+    return ids;
+  });
+  for (const candidate of candidates) {
+    if (!(await t.run((ctx) => ctx.db.system.get("_scheduled_functions", candidate)))) {
+      return candidate;
+    }
+  }
+  throw new Error("Expected a scheduled function ID absent from this backend");
 }
 
 describe("N2e durable delivery reconciliation", () => {
@@ -146,6 +302,325 @@ describe("N2e durable delivery reconciliation", () => {
     expect(await t.run((ctx) => ctx.db.get(row.deliveryId))).toMatchObject({
       state: "pending",
       claimGeneration: 0,
+    });
+  });
+
+  test.each(["pending", "retry_wait"] as const)(
+    "deduplicates repeated %s wakes and replaces a cancelled timer",
+    async (state) => {
+      enableDelivery();
+      const now = Date.parse("2026-10-05T00:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      const t = convexTest(schema, modules);
+      const { recipientUserId, renderIdentity } = await setup(t);
+      const row = await t.run((ctx) =>
+        insertDelivery(ctx, recipientUserId, renderIdentity, {
+          state,
+          notBefore: now + 60_000,
+          ...(state === "retry_wait" ? { nextAttemptAt: now + 60_000 } : {}),
+        }),
+      );
+
+      expect(
+        await t.mutation(reconcileRef, {
+          state,
+          cursor: null,
+          deadlineCursor: null,
+        } as never),
+      ).toMatchObject({ scheduled: 1 });
+      expect(
+        await t.mutation(reconcileRef, {
+          state,
+          cursor: null,
+          deadlineCursor: null,
+        } as never),
+      ).toMatchObject({ scheduled: 0 });
+
+      const firstWakes = await findPendingWakeWrappers(t, row.eventId, {
+        expectedGeneration: 0,
+        expectedWakeSequence: 1,
+      });
+      expect(firstWakes).toHaveLength(1);
+      const firstWake = firstWakes[0];
+      const marker = await readWakeMarker(t, row.deliveryId);
+      expect(marker).toEqual({
+        wakeScheduledFunctionId: firstWake._id,
+        wakeSequence: 1,
+      });
+      expect(firstWake.args[0]).toMatchObject({
+        eventId: row.eventId,
+        expectedGeneration: 0,
+        expectedWakeSequence: 1,
+      });
+
+      await t.run((ctx) => ctx.scheduler.cancel(firstWake._id));
+      const recovered = await t.mutation(reconcileRef, {
+        state,
+        cursor: null,
+        deadlineCursor: null,
+      } as never);
+      expect(recovered.scheduled).toBe(1);
+      const replacements = await findPendingWakeWrappers(t, row.eventId, {
+        expectedGeneration: 0,
+        expectedWakeSequence: 2,
+      });
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0]._id).not.toBe(firstWake._id);
+      expect(await readWakeMarker(t, row.deliveryId)).toEqual({
+        wakeScheduledFunctionId: replacements[0]._id,
+        wakeSequence: 2,
+      });
+    },
+  );
+
+  test("stale and legacy callbacks no-op after a replacement wake is current", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const row = await t.run((ctx) =>
+      insertDelivery(ctx, recipientUserId, renderIdentity, {
+        notBefore: now + 60_000,
+      }),
+    );
+
+    await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    const first = await findPendingWakeWrappers(t, row.eventId, {
+      expectedGeneration: 0,
+      expectedWakeSequence: 1,
+    });
+    expect(first).toHaveLength(1);
+    await t.run((ctx) => ctx.scheduler.cancel(first[0]._id));
+    await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    expect(
+      await findPendingWakeWrappers(t, row.eventId, {
+        expectedGeneration: 0,
+        expectedWakeSequence: 2,
+      }),
+    ).toHaveLength(1);
+
+    const before = await t.run((ctx) => ctx.db.get(row.deliveryId));
+    await t.mutation(projectInAppWakeRef, {
+      eventId: row.eventId,
+      expectedGeneration: 0,
+      expectedWakeSequence: 1,
+    } as never);
+    await t.mutation(projectInAppWakeRef, {
+      eventId: row.eventId,
+      expectedGeneration: 0,
+    } as never);
+    // The frozen legacy projectInApp reference omits a wake sequence.
+    await t.mutation(projectInAppRef, {
+      eventId: row.eventId,
+      expectedGeneration: 0,
+    } as never);
+    expect(await t.run((ctx) => ctx.db.get(row.deliveryId))).toEqual(before);
+    expect(await t.run((ctx) => ctx.db.query("notificationInboxItems").collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("notificationDeliveryAttempts").collect())).toEqual([]);
+  });
+
+  test.each(["missing", "mismatched"] as const)(
+    "replaces a %s wake reference and advances its sequence once",
+    async (kind) => {
+      enableDelivery();
+      const now = Date.parse("2026-10-05T00:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      const t = convexTest(schema, modules);
+      const { recipientUserId, renderIdentity } = await setup(t);
+      const row = await t.run((ctx) =>
+        insertDelivery(ctx, recipientUserId, renderIdentity, {
+          notBefore: now + 60_000,
+        }),
+      );
+      await t.mutation(reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      } as never);
+      const first = await findPendingWakeWrappers(t, row.eventId, {
+        expectedGeneration: 0,
+        expectedWakeSequence: 1,
+      });
+      expect(first).toHaveLength(1);
+      const invalidId = kind === "missing"
+        ? await danglingScheduledFunctionId(t)
+        : await t.run((ctx) =>
+            ctx.scheduler.runAfter(60_000, reconcileRef, {
+              state: "pending",
+              cursor: null,
+              deadlineCursor: null,
+            }),
+          );
+      const invalidJob = await t.run((ctx) =>
+        ctx.db.system.get("_scheduled_functions", invalidId),
+      );
+      if (kind === "missing") expect(invalidJob).toBeNull();
+      else expect(invalidJob).not.toBeNull();
+      await t.run((ctx) =>
+        ctx.db.patch(row.deliveryId, {
+          wakeScheduledFunctionId: invalidId,
+          wakeSequence: 1,
+        }),
+      );
+      expect(
+        await t.mutation(reconcileRef, {
+          state: "pending",
+          cursor: null,
+          deadlineCursor: null,
+        } as never),
+      ).toMatchObject({ scheduled: 1 });
+      const replacements = await findPendingWakeWrappers(t, row.eventId, {
+        expectedGeneration: 0,
+        expectedWakeSequence: 2,
+      });
+      expect(replacements).toHaveLength(1);
+      expect(await readWakeMarker(t, row.deliveryId)).toEqual({
+        wakeScheduledFunctionId: replacements[0]._id,
+        wakeSequence: 2,
+      });
+    },
+  );
+
+  test("outbox-off reconciliation preserves pending work and re-enable repairs one wake", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const row = await t.run((ctx) =>
+      insertDelivery(ctx, recipientUserId, renderIdentity, {
+        notBefore: now + 60_000,
+      }),
+    );
+    await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    const first = await findPendingWakeWrappers(t, row.eventId, {
+      expectedGeneration: 0,
+      expectedWakeSequence: 1,
+    });
+    expect(first).toHaveLength(1);
+    const marker = await readWakeMarker(t, row.deliveryId);
+
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "false");
+    expect(
+      await t.mutation(reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      } as never),
+    ).toMatchObject({ status: "disabled", scheduled: 0 });
+    expect(await readWakeMarker(t, row.deliveryId)).toEqual(marker);
+    await t.run((ctx) => ctx.scheduler.cancel(first[0]._id));
+    await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    expect(await readWakeMarker(t, row.deliveryId)).toEqual(marker);
+
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    expect(
+      await t.mutation(reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      } as never),
+    ).toMatchObject({ scheduled: 1 });
+    const recovered = await findPendingWakeWrappers(t, row.eventId, {
+      expectedGeneration: 0,
+      expectedWakeSequence: 2,
+    });
+    expect(recovered).toHaveLength(1);
+    expect(await readWakeMarker(t, row.deliveryId)).toEqual({
+      wakeScheduledFunctionId: recovered[0]._id,
+      wakeSequence: 2,
+    });
+  });
+
+  test("typed prediction source wakes retain semantic fences", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const row = await t.run((ctx) =>
+      insertPredictionWindowDelivery(ctx, recipientUserId, renderIdentity, now + 60_000),
+    );
+    await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    const wakes = await findPendingWakeWrappers(t, row.eventId, {
+      expectedGeneration: 0,
+      expectedWakeSequence: 1,
+      expectedSourceAuthorityVersion: row.sourceAuthorityVersion,
+      expectedReminderWindowVersion: row.reminderWindowVersion,
+    });
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0].args[0]).toMatchObject({
+      eventId: row.eventId,
+      expectedGeneration: 0,
+      expectedWakeSequence: 1,
+      expectedSourceAuthorityVersion: row.sourceAuthorityVersion,
+      expectedReminderWindowVersion: row.reminderWindowVersion,
+    });
+  });
+
+  test("wake-sequence overflow settles safely without another timer", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const markerId = await t.run((ctx) =>
+      ctx.scheduler.runAfter(60_000, reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      }),
+    );
+    const row = await t.run(async (ctx) => {
+      const delivery = await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        notBefore: now + 60_000,
+      });
+      await ctx.db.patch(delivery.deliveryId, {
+        wakeScheduledFunctionId: markerId,
+        wakeSequence: Number.MAX_SAFE_INTEGER,
+      });
+      return delivery;
+    });
+    expect(
+      await t.mutation(reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      } as never),
+    ).toMatchObject({ scheduled: 0, exhausted: 1 });
+    expect(await t.run((ctx) => ctx.db.get(row.deliveryId))).toMatchObject({
+      state: "failed_permanent",
+      eligibility: "eligible",
+      errorCode: "attempts_exhausted",
+      wakeScheduledFunctionId: markerId,
+      wakeSequence: Number.MAX_SAFE_INTEGER,
     });
   });
 
