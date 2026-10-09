@@ -110,6 +110,69 @@ describe("pain log timezone notification reconciliation", () => {
     });
   });
 
+  test.each(["new", "updated"] as const)(
+    "allows partner timezone changes on %s pain logs without reconciling primary work",
+    async (operation) => {
+      const t = convexTest(schema, modules);
+      const { asPartner, partnerId, primaryId } = await seedActiveCouple(t);
+      const date = toCalendarDateInTimeZone(new Date(), "America/Los_Angeles");
+      const now = Date.now();
+      const workId = await t.run(async (ctx) => {
+        await ctx.db.insert("notificationScheduleState", {
+          userId: primaryId,
+          sourceRevision: 4,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "prediction_window",
+          state: "pending",
+          dueAt: now,
+          generation: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+
+      if (operation === "updated") {
+        await asPartner.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+          date,
+          ...validPainLog(),
+        });
+      }
+
+      await expect(
+        asPartner.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+          date,
+          ...validPainLog(),
+          timeZone: "America/Los_Angeles",
+        }),
+      ).resolves.toMatchObject({ created: operation === "new" });
+
+      await t.run(async (ctx) => {
+        expect(await ctx.db.get(partnerId)).toMatchObject({
+          timeZone: "America/Los_Angeles",
+        });
+        expect(
+          await ctx.db
+            .query("painLogs")
+            .withIndex("by_user_and_date", (q) =>
+              q.eq("userId", partnerId).eq("date", date),
+            )
+            .unique(),
+        ).toMatchObject({ painScore: 4, tags: ["cramps"] });
+        expect(
+          await ctx.db
+            .query("notificationScheduleState")
+            .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+            .unique(),
+        ).toMatchObject({ sourceRevision: 4 });
+        expect(await ctx.db.get(workId)).toMatchObject({ state: "pending" });
+      });
+    },
+  );
+
   test("rolls back timezone and source changes when the pain-log write is invalid", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

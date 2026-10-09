@@ -56,7 +56,7 @@ export const createOrUpdatePainLog = mutation({
         updatedAt: Date.now(),
       });
 
-      if (timeZoneChanged) {
+      if (timeZoneChanged && user.role === "primary") {
         const source = await advanceNotificationSourceAuthority(ctx, user._id);
         if (source) await reconcileUserSchedule(ctx, user._id);
       }
@@ -74,7 +74,7 @@ export const createOrUpdatePainLog = mutation({
       updatedAt: Date.now(),
     });
 
-    if (timeZoneChanged) {
+    if (timeZoneChanged && user.role === "primary") {
       const source = await advanceNotificationSourceAuthority(ctx, user._id);
       if (source) await reconcileUserSchedule(ctx, user._id);
     }
