@@ -28,7 +28,7 @@ type SourceTable = "periodEvents" | "coupleMessages" | "couples" | "nudges";
 // The in-app adapter is a single atomic Convex transaction. The remaining
 // finite settings share the N2c versioned limits contract and are measured at
 // N8 before qualification.
-const IN_APP_LIMITS: NotificationOperationalLimits = Object.freeze({
+export const IN_APP_LIMITS: NotificationOperationalLimits = Object.freeze({
   version: "g4-limits-v1",
   maxBatchSize: 10,
   maxConcurrent: 2,
@@ -63,6 +63,14 @@ type SourceCheck =
 
 function isEnabled(name: string): boolean {
   return process.env[name] === "true";
+}
+
+export function nextTerminalClaimGeneration(generation: number): number | null {
+  return Number.isSafeInteger(generation) &&
+    generation >= 0 &&
+    generation < Number.MAX_SAFE_INTEGER
+    ? generation + 1
+    : null;
 }
 
 function parseId<TableName extends SourceTable>(
@@ -331,10 +339,13 @@ function deniedDeliveryPatch(
     now: number;
   },
 ) {
+  const claimGeneration = nextTerminalClaimGeneration(delivery.claimGeneration);
+  if (claimGeneration === null) return null;
   const ineligible = args.status;
   return {
     state: ineligible,
     eligibility: ineligible,
+    claimGeneration,
     ...(args.reason ? { cancellationReason: args.reason } : {}),
     errorCode: args.status === "cancelled" ? "authorization_revoked" as const : undefined,
     nextAttemptAt: undefined,
@@ -430,10 +441,8 @@ export const projectInApp = internalMutation({
       );
     if (inboxConflict) {
       if (delivery.state !== "delivered") {
-        await ctx.db.patch(
-          delivery._id,
-          deniedDeliveryPatch(delivery, { status: "suppressed", now }),
-        );
+        const patch = deniedDeliveryPatch(delivery, { status: "suppressed", now });
+        if (patch) await ctx.db.patch(delivery._id, patch);
       }
       return { status: "denied" as const, ...resultBase };
     }
@@ -442,10 +451,8 @@ export const projectInApp = internalMutation({
       if (delivery.state === "delivered") {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
       } else {
-        await ctx.db.patch(
-          delivery._id,
-          deniedDeliveryPatch(delivery, { status: "suppressed", now }),
-        );
+        const patch = deniedDeliveryPatch(delivery, { status: "suppressed", now });
+        if (patch) await ctx.db.patch(delivery._id, patch);
       }
       return { status: "denied" as const, ...resultBase };
     }
@@ -454,14 +461,12 @@ export const projectInApp = internalMutation({
       const source = await checkEventSource(ctx, event);
       if (!source.current) {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
-        await ctx.db.patch(
-          delivery._id,
-          deniedDeliveryPatch(delivery, {
-            status: "cancelled",
-            reason: source.cancellationReason,
-            now,
-          }),
-        );
+        const patch = deniedDeliveryPatch(delivery, {
+          status: "cancelled",
+          reason: source.cancellationReason,
+          now,
+        });
+        if (patch) await ctx.db.patch(delivery._id, patch);
         return { status: "denied" as const, ...resultBase };
       }
       return {
@@ -516,14 +521,12 @@ export const projectInApp = internalMutation({
       if (isRevocation) {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
       }
-      await ctx.db.patch(
-        delivery._id,
-        deniedDeliveryPatch(delivery, {
-          status: isRevocation ? "cancelled" : "suppressed",
-          reason,
-          now,
-        }),
-      );
+      const patch = deniedDeliveryPatch(delivery, {
+        status: isRevocation ? "cancelled" : "suppressed",
+        reason,
+        now,
+      });
+      if (patch) await ctx.db.patch(delivery._id, patch);
       return { status: "denied" as const, ...resultBase };
     }
 
@@ -532,10 +535,8 @@ export const projectInApp = internalMutation({
       (inboxItem.templateVersion !== delivery.renderIdentity.templateVersion ||
         inboxItem.route === undefined)
     ) {
-      await ctx.db.patch(
-        delivery._id,
-        deniedDeliveryPatch(delivery, { status: "suppressed", now }),
-      );
+      const patch = deniedDeliveryPatch(delivery, { status: "suppressed", now });
+      if (patch) await ctx.db.patch(delivery._id, patch);
       return { status: "denied" as const, ...resultBase };
     }
 
@@ -552,10 +553,8 @@ export const projectInApp = internalMutation({
         error instanceof Error &&
         error.message === "Notification template is gated pending D-011 approval"
       ) {
-        await ctx.db.patch(
-          delivery._id,
-          deniedDeliveryPatch(delivery, { status: "suppressed", now }),
-        );
+        const patch = deniedDeliveryPatch(delivery, { status: "suppressed", now });
+        if (patch) await ctx.db.patch(delivery._id, patch);
         return { status: "denied" as const, ...resultBase };
       }
       throw error;
@@ -564,10 +563,8 @@ export const projectInApp = internalMutation({
       !sameFrozenRenderIdentity(delivery.renderIdentity, rendered.identity) ||
       (inboxItem && inboxItem.route !== rendered.payload.route)
     ) {
-      await ctx.db.patch(
-        delivery._id,
-        deniedDeliveryPatch(delivery, { status: "suppressed", now }),
-      );
+      const patch = deniedDeliveryPatch(delivery, { status: "suppressed", now });
+      if (patch) await ctx.db.patch(delivery._id, patch);
       return { status: "denied" as const, ...resultBase };
     }
 
@@ -580,12 +577,16 @@ export const projectInApp = internalMutation({
       return { status: "stale" as const, ...resultBase };
     }
     if (claim.kind === "expired") {
+      const claimGeneration = nextTerminalClaimGeneration(delivery.claimGeneration);
+      if (claimGeneration === null) {
+        return { status: "stale" as const, ...resultBase };
+      }
       const expired = assertValidNotificationDeliveryRecord(claim.record);
       await ctx.db.patch(delivery._id, {
         state: "expired",
         eligibility: "expired",
+        claimGeneration,
         attemptCount: expired.attemptCount,
-        claimGeneration: expired.claimGeneration,
         leaseUntil: expired.leaseUntil,
         errorCode: expired.errorCode,
         nextAttemptAt: undefined,
@@ -594,10 +595,15 @@ export const projectInApp = internalMutation({
       return { status: "expired" as const, ...resultBase };
     }
     if (claim.kind === "attempts_exhausted") {
+      const claimGeneration = nextTerminalClaimGeneration(delivery.claimGeneration);
+      if (claimGeneration === null) {
+        return { status: "stale" as const, ...resultBase };
+      }
       const exhausted = assertValidNotificationDeliveryRecord(claim.record);
       await ctx.db.patch(delivery._id, {
         state: "failed_permanent",
         eligibility: "eligible",
+        claimGeneration,
         errorCode: "attempts_exhausted",
         nextAttemptAt: undefined,
         leaseUntil: exhausted.leaseUntil,
