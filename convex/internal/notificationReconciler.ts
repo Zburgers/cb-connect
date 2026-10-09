@@ -4,6 +4,9 @@ import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import {
+  isValidProjectInAppArgs,
+  nextNotificationWakeSequence,
+  type ProjectInAppArgs,
   isValidNotificationDeliveryRecord,
   recoverExpiredDeliveryClaim,
   type NotificationDeliveryRecord,
@@ -52,9 +55,60 @@ const reconcileResultValidator = v.object({
 const reconcileRef = makeFunctionReference<"mutation">(
   "internal/notificationReconciler:reconcile",
 );
-const projectInAppRef = makeFunctionReference<"mutation">(
-  "internal/notificationDelivery:projectInApp",
+const projectInAppWakeRef = makeFunctionReference<"mutation">(
+  "internal/notificationDelivery:projectInAppWake",
 );
+
+type ScheduledProjectInAppArgs = ProjectInAppArgs & { expectedWakeSequence: number };
+type ScheduleWakeResult = "scheduled" | "reused" | "invalid" | "exhausted";
+
+function sameScheduledWakeArgs(
+  value: unknown,
+  expected: ScheduledProjectInAppArgs,
+): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const actual = value as Record<string, unknown>;
+  const entries = Object.entries(expected);
+  return (
+    Object.keys(actual).length === entries.length &&
+    entries.every(([key, expectedValue]) => actual[key] === expectedValue)
+  );
+}
+
+async function projectArgsForWake(
+  ctx: MutationCtx,
+  delivery: Doc<"notificationDeliveries">,
+  expectedGeneration: number,
+): Promise<ProjectInAppArgs | null> {
+  const event = await ctx.db.get(delivery.eventId);
+  if (!event) return null;
+  const typedSource =
+    event.eventType === "period_window_approaching.v1" ||
+    event.eventType === "late_status.v1";
+  const args: ProjectInAppArgs = {
+    eventId: delivery.eventId,
+    expectedGeneration,
+  };
+  if (typedSource) {
+    const identity = event.sourceIdentity;
+    if (
+      !identity ||
+      identity.eventType !== event.eventType ||
+      !("latestEligibleStartEventId" in identity) ||
+      !("sourceAuthorityVersion" in identity) ||
+      identity.sourceAuthorityVersion !== event.sourceAuthorityVersion ||
+      !Number.isSafeInteger(identity.reminderWindowVersion) ||
+      identity.reminderWindowVersion <= 0
+    ) {
+      return null;
+    }
+    args.expectedSourceAuthorityVersion = identity.sourceAuthorityVersion;
+    args.expectedReminderWindowVersion = identity.reminderWindowVersion;
+  }
+  return isValidProjectInAppArgs(args, { requireScheduleFences: typedSource })
+    ? args
+    : null;
+}
 
 function isEnabled(name: string): boolean {
   return process.env[name] === "true";
@@ -78,21 +132,57 @@ async function scheduleWake(
   dueAt: number,
   now: number,
   expectedGeneration = delivery.claimGeneration,
-): Promise<boolean> {
+): Promise<ScheduleWakeResult> {
+  const wakeMetadata = delivery as NotificationDeliveryRecord;
   if (
     expectedGeneration >= Number.MAX_SAFE_INTEGER ||
     !Number.isSafeInteger(dueAt) ||
     dueAt < 0 ||
     dueAt > now + MAX_RUN_AT_DELAY_MS
   ) {
-    return false;
+    return expectedGeneration >= Number.MAX_SAFE_INTEGER ? "exhausted" : "invalid";
   }
-  await ctx.scheduler.runAt(
+  const projectArgs = await projectArgsForWake(ctx, delivery, expectedGeneration);
+  if (!projectArgs) return "invalid";
+
+  if (
+    wakeMetadata.wakeScheduledFunctionId !== undefined &&
+    wakeMetadata.wakeSequence !== undefined
+  ) {
+    const currentWake = await ctx.db.system.get(
+      "_scheduled_functions",
+      wakeMetadata.wakeScheduledFunctionId,
+    );
+    const currentWakeArgs: ScheduledProjectInAppArgs = {
+      ...projectArgs,
+      expectedWakeSequence: wakeMetadata.wakeSequence,
+    };
+    if (
+      currentWake?.state.kind === "pending" &&
+      currentWake.name === "internal/notificationDelivery:projectInAppWake" &&
+      currentWake.args.length === 1 &&
+      sameScheduledWakeArgs(currentWake.args[0], currentWakeArgs)
+    ) {
+      return "reused";
+    }
+  }
+
+  const expectedWakeSequence = nextNotificationWakeSequence(wakeMetadata);
+  if (expectedWakeSequence === null) return "exhausted";
+  const wakeArgs: ScheduledProjectInAppArgs = {
+    ...projectArgs,
+    expectedWakeSequence,
+  };
+  const wakeScheduledFunctionId = await ctx.scheduler.runAt(
     Math.max(now, dueAt),
-    projectInAppRef,
-    { eventId: delivery.eventId, expectedGeneration },
+    projectInAppWakeRef,
+    wakeArgs,
   );
-  return true;
+  await ctx.db.patch(delivery._id, {
+    wakeScheduledFunctionId,
+    wakeSequence: expectedWakeSequence,
+  });
+  return "scheduled";
 }
 
 async function expireDelivery(
@@ -115,14 +205,16 @@ async function expireDelivery(
   });
 }
 
-type LeaseResult = "retried" | "unknown" | "expired" | "exhausted" | "skipped";
+type LeaseResult =
+  | { kind: "retried"; scheduled: number }
+  | { kind: "unknown" | "expired" | "exhausted" | "skipped"; scheduled: 0 };
 
 async function recoverLease(
   ctx: MutationCtx,
   delivery: Doc<"notificationDeliveries">,
   now: number,
 ): Promise<LeaseResult> {
-  if (!isValidDelivery(delivery)) return "skipped";
+  if (!isValidDelivery(delivery)) return { kind: "skipped", scheduled: 0 };
   const recovered = recoverExpiredDeliveryClaim(
     delivery as NotificationDeliveryRecord,
     {
@@ -138,13 +230,14 @@ async function recoverLease(
     recovered.kind !== "expired" &&
     recovered.kind !== "exhausted"
   ) {
-    return "skipped";
+    return { kind: "skipped", scheduled: 0 };
   }
   const claimGeneration =
     nextTerminalClaimGeneration(delivery.claimGeneration) ?? delivery.claimGeneration;
   if (recovered.kind === "retry") {
     const dueAt = recovered.record.nextAttemptAt!;
-    if (!(await scheduleWake(ctx, delivery, dueAt, now, claimGeneration))) {
+    const wakeResult = await scheduleWake(ctx, delivery, dueAt, now, claimGeneration);
+    if (wakeResult !== "scheduled" && wakeResult !== "reused") {
       await ctx.db.patch(delivery._id, {
         state: "failed_permanent",
         eligibility: "eligible",
@@ -155,7 +248,7 @@ async function recoverLease(
         leaseUntil: undefined,
         updatedAt: now,
       });
-      return "exhausted";
+      return { kind: "exhausted", scheduled: 0 };
     }
     await ctx.db.patch(delivery._id, {
       state: "retry_wait",
@@ -168,7 +261,7 @@ async function recoverLease(
       dispatchStartedAt: undefined,
       updatedAt: now,
     });
-    return "retried";
+    return { kind: "retried", scheduled: wakeResult === "scheduled" ? 1 : 0 };
   }
   if (recovered.kind === "unknown") {
     await ctx.db.patch(delivery._id, {
@@ -182,7 +275,7 @@ async function recoverLease(
       reviewAt: recovered.record.reviewAt,
       updatedAt: now,
     });
-    return "unknown";
+    return { kind: "unknown", scheduled: 0 };
   }
   if (recovered.kind === "expired") {
     await ctx.db.patch(delivery._id, {
@@ -196,7 +289,7 @@ async function recoverLease(
       leaseUntil: undefined,
       updatedAt: now,
     });
-    return "expired";
+    return { kind: "expired", scheduled: 0 };
   }
   await ctx.db.patch(delivery._id, {
     state: "failed_permanent",
@@ -208,7 +301,7 @@ async function recoverLease(
     leaseUntil: undefined,
     updatedAt: now,
   });
-  return "exhausted";
+  return { kind: "exhausted", scheduled: 0 };
 }
 
 export const reconcile = internalMutation({
@@ -293,14 +386,13 @@ export const reconcile = internalMutation({
       if (args.state === "unknown") continue;
       if (args.state === "processing") {
         const result = await recoverLease(ctx, delivery, now);
-        if (result === "retried") retried += 1;
-        else if (result === "unknown") unknown += 1;
-        else if (result === "expired") expired += 1;
-        else if (result === "exhausted") exhausted += 1;
+        if (result.kind === "retried") {
+          retried += 1;
+          scheduled += result.scheduled;
+        } else if (result.kind === "unknown") unknown += 1;
+        else if (result.kind === "expired") expired += 1;
+        else if (result.kind === "exhausted") exhausted += 1;
         else skipped += 1;
-        if (result === "retried") {
-          scheduled += 1;
-        }
         continue;
       }
       const dueAt = Math.max(
@@ -310,9 +402,10 @@ export const reconcile = internalMutation({
       const wakeAt = delivery.expiresAt === undefined
         ? dueAt
         : Math.min(dueAt, delivery.expiresAt);
-      if (await scheduleWake(ctx, delivery, wakeAt, now)) {
+      const wakeResult = await scheduleWake(ctx, delivery, wakeAt, now);
+      if (wakeResult === "scheduled") {
         scheduled += 1;
-      } else if (delivery.claimGeneration >= Number.MAX_SAFE_INTEGER) {
+      } else if (wakeResult === "exhausted") {
         await ctx.db.patch(delivery._id, {
           state: "failed_permanent",
           eligibility: "eligible",
@@ -322,6 +415,8 @@ export const reconcile = internalMutation({
           updatedAt: now,
         });
         exhausted += 1;
+      } else if (wakeResult === "reused") {
+        // A matching pending wake is already durable for this exact row generation.
       } else {
         skipped += 1;
       }

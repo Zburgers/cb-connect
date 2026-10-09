@@ -7,6 +7,7 @@ import {
   assertValidNotificationDeliveryAttemptNumbers,
   assertValidNotificationDeliveryRecord,
   claimInAppDelivery,
+  isExpectedNotificationWake,
   isValidProjectInAppArgs,
   isValidNotificationDeliveryRecord,
   makeDeliveryIdempotencyKey,
@@ -14,6 +15,7 @@ import {
   sameFrozenRenderIdentity,
   type NotificationDeliveryRecord,
   type NotificationOperationalLimits,
+  type ProjectInAppArgs,
 } from "../_helpers/notificationDelivery";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
 import { isNotificationSourceCurrent } from "../_helpers/notificationSourceReader";
@@ -52,6 +54,11 @@ const projectResultValidator = v.object({
   eventId: v.id("notificationEvents"),
   deliveryId: v.union(v.id("notificationDeliveries"), v.null()),
   inboxItemId: v.union(v.id("notificationInboxItems"), v.null()),
+});
+
+const projectInAppWakeArgsValidator = v.object({
+  ...projectInAppArgsValidator.fields,
+  expectedWakeSequence: v.optional(v.number()),
 });
 
 function isEnabled(name: string): boolean {
@@ -201,10 +208,11 @@ async function hideCurrentInboxItem(
   }
 }
 
-export const projectInApp = internalMutation({
-  args: projectInAppArgsValidator.fields,
-  returns: projectResultValidator,
-  handler: async (ctx, args) => {
+async function projectInAppInTransaction(
+  ctx: MutationCtx,
+  args: ProjectInAppArgs,
+  expectedWakeSequence?: number,
+) {
     const eventId = args.eventId;
     const emptyResult = {
       eventId,
@@ -214,6 +222,12 @@ export const projectInApp = internalMutation({
     if (
       !Number.isSafeInteger(args.expectedGeneration) ||
       args.expectedGeneration < 0
+    ) {
+      return { status: "stale" as const, ...emptyResult };
+    }
+    if (
+      expectedWakeSequence !== undefined &&
+      (!Number.isSafeInteger(expectedWakeSequence) || expectedWakeSequence <= 0)
     ) {
       return { status: "stale" as const, ...emptyResult };
     }
@@ -258,7 +272,14 @@ export const projectInApp = internalMutation({
     ) {
       throw new Error("Stored delivery does not match the event recipient authority");
     }
-    if (args.expectedGeneration !== delivery.claimGeneration) {
+    if (
+      args.expectedGeneration !== delivery.claimGeneration ||
+      !isExpectedNotificationWake({
+        expectedSequence: expectedWakeSequence,
+        wakeScheduledFunctionId: currentRecord.wakeScheduledFunctionId,
+        wakeSequence: currentRecord.wakeSequence,
+      })
+    ) {
       return { status: "stale" as const, ...resultBase };
     }
 
@@ -521,5 +542,19 @@ export const projectInApp = internalMutation({
           createdAt: now,
         });
     return { status: "projected" as const, eventId, deliveryId, inboxItemId };
+}
+
+export const projectInApp = internalMutation({
+  args: projectInAppArgsValidator.fields,
+  returns: projectResultValidator,
+  handler: async (ctx, args) => projectInAppInTransaction(ctx, args),
+});
+
+export const projectInAppWake = internalMutation({
+  args: projectInAppWakeArgsValidator.fields,
+  returns: projectResultValidator,
+  handler: async (ctx, args) => {
+    const { expectedWakeSequence, ...projectArgs } = args;
+    return projectInAppInTransaction(ctx, projectArgs, expectedWakeSequence);
   },
 });
