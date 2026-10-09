@@ -22,6 +22,7 @@ import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
 import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 import {
   cancelCurrentLateStatusSource,
   cancelSource,
@@ -35,9 +36,12 @@ async function advanceAndInvalidateLateStatus(
   ctx: MutationCtx,
   primaryId: Id<"users">,
   now?: number,
+  reconcile = true,
 ) {
   await cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", now);
-  return advanceNotificationSourceAuthority(ctx, primaryId, now);
+  const source = await advanceNotificationSourceAuthority(ctx, primaryId, now);
+  if (source && reconcile) await reconcileUserSchedule(ctx, primaryId);
+  return source;
 }
 
 const cycleFactCertaintyValidator = v.union(
@@ -330,10 +334,7 @@ export const logPeriodStart = mutation({
     requirePrimaryUser(user);
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
-    if (timeZoneChanged) {
-      await advanceAndInvalidateLateStatus(ctx, user._id);
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
     if (!isCycleFactsV1Enabled()) {
@@ -405,10 +406,7 @@ export const logPeriodEnd = mutation({
     requirePrimaryUser(user);
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
-    if (timeZoneChanged) {
-      await advanceAndInvalidateLateStatus(ctx, user._id);
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
 
     if (!isCycleFactsV1Enabled()) {
@@ -776,10 +774,7 @@ export const updatePeriodEvent = mutation({
 
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
     const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
-    if (timeZoneChanged) {
-      await advanceAndInvalidateLateStatus(ctx, user._id);
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
       requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
@@ -811,8 +806,10 @@ export const updatePeriodEvent = mutation({
           : {}),
         updatedAt: Date.now(),
       });
-      if (sourceChanged) {
-        await cancelSource(ctx, `period:${period._id}`, "source_changed");
+      if (sourceChanged || timeZoneChanged) {
+        if (sourceChanged) {
+          await cancelSource(ctx, `period:${period._id}`, "source_changed");
+        }
         await advanceAndInvalidateLateStatus(ctx, user._id);
       }
       if (startOutcomeChanged) {
@@ -885,7 +882,7 @@ export const updatePeriodEvent = mutation({
       updatedAt: Date.now(),
     });
     await cancelSource(ctx, `period:${period._id}`, "source_changed");
-    if (sourceChanged) {
+    if (sourceChanged || timeZoneChanged) {
       await advanceAndInvalidateLateStatus(ctx, user._id);
     }
     if (startOutcomeChanged) {
@@ -970,6 +967,7 @@ export const autoEndPeriods = internalMutation({
       .collect();
 
     let endedCount = 0;
+    const usersToReconcile = new Set<Id<"users">>();
     for (const period of openPeriods) {
       const settings = await ctx.db
         .query("cycleSettings")
@@ -987,9 +985,19 @@ export const autoEndPeriods = internalMutation({
           updatedAt: now,
         });
         await cancelSource(ctx, `period:${period._id}`, "source_changed", now);
-        await advanceAndInvalidateLateStatus(ctx, period.userId, now);
+        const source = await advanceAndInvalidateLateStatus(
+          ctx,
+          period.userId,
+          now,
+          false,
+        );
+        if (source) usersToReconcile.add(period.userId);
         endedCount++;
       }
+    }
+
+    for (const userId of usersToReconcile) {
+      await reconcileUserSchedule(ctx, userId);
     }
 
     console.log(`autoEndPeriods: closed ${endedCount} open period(s)`);

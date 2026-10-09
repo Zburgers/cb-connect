@@ -1960,6 +1960,66 @@ describe("derived period endings", () => {
   });
 });
 
+describe("period timezone scheduler reconciliation", () => {
+  test("advances source authority and cancels stale due work with an accepted timezone change", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await setPrimaryTimeZone(t);
+    const now = Date.now();
+    const { periodEventId, workId } = await t.run(async (ctx) => {
+      const periodEventId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-06-20",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const workId = await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now,
+        generation: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { periodEventId, workId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId,
+      startDate: "2026-06-20",
+      expectedAuthorityVersion: 1,
+      timeZone: "America/Los_Angeles",
+    });
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({
+        timeZone: "America/Los_Angeles",
+      });
+      expect(await ctx.db.get(workId)).toMatchObject({ state: "cancelled" });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 5 });
+    });
+  });
+});
+
 describe("served Late-state period invalidation", () => {
   test(
     "keeps daily Late history bounded and allows a later pause to invalidate the current intent",
