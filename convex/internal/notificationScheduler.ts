@@ -30,11 +30,11 @@ import { authorizeNotificationProjection } from "../_helpers/notificationPolicy"
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 
 const SCHEDULER_FLAG = "CB_CONNECT_NOTIFICATION_SCHEDULER_V1";
+const OUTBOX_FLAG = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const PROJECTION_FLAG = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const DUE_WORK_PAGE_SIZE = 50;
 const OWNER_PENDING_PAGE_SIZE = 100;
-const SERVED_SNAPSHOT_LOOKBACK = 100;
 const INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS = 5 * 60 * 1_000;
 const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
 const MINUTE_MS = 60 * 1_000;
@@ -238,21 +238,18 @@ async function readCurrentServedSnapshot(
     return { status: "unavailable" };
   }
 
-  const snapshots = await ctx.db
+  const snapshot = await ctx.db
     .query("predictionSnapshots")
     .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
     .order("desc")
-    .take(SERVED_SNAPSHOT_LOOKBACK);
-  const snapshot = snapshots.find(
-    (candidate) =>
-      candidate.displayStatus === "visible" &&
-      candidate.featureVersion === "period_prediction_v2" &&
-      candidate.intervalMethodVersion === PREDICTION_CALIBRATION_VERSION,
-  );
-  if (!snapshot) {
-    return snapshots.length === SERVED_SNAPSHOT_LOOKBACK
-      ? { status: "indeterminate" as const, scheduleState }
-      : { status: "unavailable" as const };
+    .first();
+  if (
+    !snapshot ||
+    snapshot.displayStatus !== "visible" ||
+    snapshot.featureVersion !== "period_prediction_v2" ||
+    snapshot.intervalMethodVersion !== PREDICTION_CALIBRATION_VERSION
+  ) {
+    return { status: "unavailable" as const };
   }
   const servedIntervals = deriveCycleIntervals(
     predictionData.periodEvents.map((period) => ({
@@ -1332,7 +1329,9 @@ export const reconcileDueWork = internalMutation({
   },
   returns: v.object({ scheduled: v.number() }),
   handler: async (ctx, args) => {
-    if (!schedulerEnabled()) return { scheduled: 0 };
+    if (!schedulerEnabled() || process.env[OUTBOX_FLAG] !== "true") {
+      return { scheduled: 0 };
+    }
     const now = Date.now();
     let scheduled = 0;
     const kinds: ScheduleKind[] = args.kind
