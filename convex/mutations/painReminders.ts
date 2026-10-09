@@ -10,7 +10,11 @@ import {
   resolveCalendarTimeZone,
   toCalendarDateInTimeZone,
 } from "../_helpers/calendarDates";
-import { notificationEventDefinitions } from "../_helpers/notificationTypes";
+import {
+  assertValidNotificationEventWrite,
+  notificationEventDefinitions,
+  type NotificationSourceIdentity,
+} from "../_helpers/notificationTypes";
 
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const MAX_REQUEST_VERSION = Number.MAX_SAFE_INTEGER;
@@ -24,11 +28,25 @@ const painLogIdArgs = { painLogId: v.id("painLogs") };
 
 type PainReminderRequestReference = Pick<
   Doc<"painReminderRequests">,
-  "_id" | "ownerUserId" | "requestVersion" | "state"
+  "_id" | "ownerUserId" | "painLogId" | "selectedLocalDay" | "requestVersion" | "state"
 >;
 
 function requestSourceReference(requestId: Id<"painReminderRequests">): string {
   return String(requestId);
+}
+
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing || existing.eventType !== expected.eventType) return false;
+  const existingFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  const expectedKeys = Object.keys(expectedFields);
+  return (
+    Object.keys(existingFields).length === expectedKeys.length &&
+    expectedKeys.every((key) => existingFields[key] === expectedFields[key])
+  );
 }
 
 function assertRequestVersion(version: number): void {
@@ -57,6 +75,8 @@ async function ensurePainReminderEvent(
   }
 
   assertRequestVersion(request.requestVersion);
+  const painLog = await ctx.db.get(request.painLogId);
+  if (!painLog || painLog.userId !== request.ownerUserId) return null;
   const definition = notificationEventDefinitions["pain_check_in.v1"];
   const sourceReference = requestSourceReference(request._id);
   const requestVersion = String(request.requestVersion);
@@ -78,7 +98,19 @@ async function ensurePainReminderEvent(
       primaryId: String(request.ownerUserId),
     }),
     allowedChannel: "in_app" as const,
+    sourceIdentity: {
+      eventType: "pain_check_in.v1" as const,
+      requestId: request._id,
+      painLogId: request.painLogId,
+      requestVersion: request.requestVersion,
+      primaryId: request.ownerUserId,
+      selectedLocalDay: request.selectedLocalDay,
+    } satisfies Extract<
+      NotificationSourceIdentity,
+      { eventType: "pain_check_in.v1" }
+    >,
   };
+  assertValidNotificationEventWrite(ctx, envelope);
 
   const existing = await ctx.db
     .query("notificationEvents")
@@ -100,7 +132,8 @@ async function ensurePainReminderEvent(
       existing.privacyClass !== envelope.privacyClass ||
       existing.validityRule !== envelope.validityRule ||
       existing.idempotencyKey !== envelope.idempotencyKey ||
-      existing.allowedChannel !== envelope.allowedChannel
+      existing.allowedChannel !== envelope.allowedChannel ||
+      !sameSourceIdentity(existing.sourceIdentity, envelope.sourceIdentity)
     ) {
       throw new Error("Pain reminder event key conflicts with its source authority");
     }
@@ -180,6 +213,7 @@ export const setMyPainReminder = mutation({
 
       await ensurePainReminderEvent(ctx, {
         ...latestRequest,
+        selectedLocalDay: args.selectedLocalDay,
         requestVersion,
         state: "active",
       });
@@ -200,6 +234,8 @@ export const setMyPainReminder = mutation({
     await ensurePainReminderEvent(ctx, {
       _id: requestId,
       ownerUserId: user._id,
+      painLogId: painLog._id,
+      selectedLocalDay: args.selectedLocalDay,
       requestVersion,
       state: "active",
     });

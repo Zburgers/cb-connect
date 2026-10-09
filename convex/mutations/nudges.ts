@@ -5,7 +5,12 @@ import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
 import { cancelSource } from "../_helpers/notificationOutbox";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
-import { notificationEventDefinitions } from "../_helpers/notificationTypes";
+import {
+  assertValidNotificationEventWrite,
+  notificationEventDefinitions,
+  type NotificationEventWrite,
+  type NotificationSourceIdentity,
+} from "../_helpers/notificationTypes";
 
 const NUDGE_EVENT_TYPE = "partner_nudge.v1" as const;
 const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
@@ -19,35 +24,57 @@ const NUDGE_MESSAGES: Record<string, string> = {
   "🫶": "I am here with you",
 };
 
-async function ensureNudgeEvent(
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing) return false;
+  const actualFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  return (
+    Object.keys(actualFields).length === Object.keys(expectedFields).length &&
+    Object.entries(expectedFields).every(([field, value]) => actualFields[field] === value)
+  );
+}
+
+export async function ensureNudgeEvent(
   ctx: MutationCtx,
   nudgeId: Id<"nudges">,
-  senderId: Id<"users">,
-  receiverId: Id<"users">,
-  relationshipMembershipId: Id<"coupleMembers">,
-  createdAt: number,
 ): Promise<void> {
   if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
 
+  const nudge = await ctx.db.get(nudgeId);
+  if (!nudge?.relationshipMembershipId) {
+    throw new Error("Nudge notification source has no relationship generation");
+  }
   const definition = notificationEventDefinitions[NUDGE_EVENT_TYPE];
-  const envelope = {
+  const envelope: NotificationEventWrite = {
     eventType: NUDGE_EVENT_TYPE,
     eventVersion: definition.version,
     purpose: definition.purpose,
     producerKind: definition.producer,
     sourceReference: `nudge:${nudgeId}`,
-    sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
-    ownerUserId: senderId,
-    recipientUserId: receiverId,
+    sourceAuthorityVersion: `relationship-membership:${nudge.relationshipMembershipId}`,
+    ownerUserId: nudge.senderId,
+    recipientUserId: nudge.receiverId,
     recipientScope: "nudge_receiver" as const,
     privacyClass: definition.privacyClass,
     validityRule: definition.validity,
     idempotencyKey: makeEventIdempotencyKey(NUDGE_EVENT_TYPE, {
       nudgeId: String(nudgeId),
-      receiverId: String(receiverId),
+      receiverId: String(nudge.receiverId),
     }),
     allowedChannel: "in_app" as const,
+    sourceIdentity: {
+      eventType: NUDGE_EVENT_TYPE,
+      sourceId: nudge._id,
+      coupleId: nudge.coupleId,
+      relationshipMembershipId: nudge.relationshipMembershipId,
+      ownerUserId: nudge.senderId,
+      recipientUserId: nudge.receiverId,
+    },
   };
+  assertValidNotificationEventWrite(ctx, envelope);
 
   const existing = await ctx.db
     .query("notificationEvents")
@@ -56,27 +83,19 @@ async function ensureNudgeEvent(
     )
     .unique();
   if (existing) {
-    if (
-      existing.eventType !== envelope.eventType ||
-      existing.eventVersion !== envelope.eventVersion ||
-      existing.purpose !== envelope.purpose ||
-      existing.producerKind !== envelope.producerKind ||
-      existing.sourceReference !== envelope.sourceReference ||
-      existing.sourceAuthorityVersion !== envelope.sourceAuthorityVersion ||
-      existing.ownerUserId !== envelope.ownerUserId ||
-      existing.recipientUserId !== envelope.recipientUserId ||
-      existing.recipientScope !== envelope.recipientScope ||
-      existing.privacyClass !== envelope.privacyClass ||
-      existing.validityRule !== envelope.validityRule ||
-      existing.idempotencyKey !== envelope.idempotencyKey ||
-      existing.allowedChannel !== envelope.allowedChannel
-    ) {
+    const matchesEnvelope = Object.entries(envelope).every(
+      ([field, value]) =>
+        field === "sourceIdentity"
+          ? sameSourceIdentity(existing.sourceIdentity, value as NotificationSourceIdentity)
+          : existing[field as keyof typeof envelope] === value,
+    );
+    if (!matchesEnvelope) {
       throw new Error("Nudge notification event key conflicts with its source");
     }
     return;
   }
 
-  await ctx.db.insert("notificationEvents", { ...envelope, createdAt });
+  await ctx.db.insert("notificationEvents", { ...envelope, createdAt: nudge.createdAt });
 }
 
 export const send = mutation({
@@ -126,14 +145,7 @@ export const send = mutation({
       message,
       createdAt: now,
     });
-    await ensureNudgeEvent(
-      ctx,
-      nudgeId,
-      user._id,
-      partnerMembership.userId,
-      relationshipMembershipId,
-      now,
-    );
+    await ensureNudgeEvent(ctx, nudgeId);
     return nudgeId;
   },
 });

@@ -147,6 +147,14 @@ describe("user-requested pain reminders", () => {
         producerKind: "explicit_primary_request",
         sourceReference: String(request._id),
         sourceAuthorityVersion: "pain-reminder-request:v1",
+        sourceIdentity: {
+          eventType: "pain_check_in.v1",
+          requestId: request._id,
+          painLogId,
+          requestVersion: 1,
+          primaryId,
+          selectedLocalDay,
+        },
         ownerUserId: primaryId,
         recipientUserId: primaryId,
         recipientScope: "primary",
@@ -160,7 +168,6 @@ describe("user-requested pain reminders", () => {
         allowedChannel: "in_app",
       });
       const eventText = JSON.stringify(event);
-      expect(eventText).not.toContain(selectedLocalDay);
       expect(eventText).not.toContain(painLogDate);
       expect(eventText).not.toContain("private-pain-note-do-not-copy-73d1");
       expect(event).not.toHaveProperty("painLogId");
@@ -173,6 +180,35 @@ describe("user-requested pain reminders", () => {
       expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
       expect(await ctx.db.query("notificationDueWork").collect()).toHaveLength(0);
     });
+  });
+
+  test("rejects a replay whose persisted pain source identity changed", async () => {
+    enableOutbox();
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const painLogId = await seedPainLog(t, primaryId);
+    const selectedLocalDay = addCalendarDays(todayUtc(), 2);
+    await asPrimary.mutation(setMyPainReminder, { painLogId, selectedLocalDay });
+    const request = await t.run((ctx) => latestRequest(ctx, painLogId));
+    if (!request) throw new Error("Expected the pain reminder request");
+    const event = await t.run((ctx) => eventForRequest(ctx, request._id));
+    if (!event) throw new Error("Expected the pain reminder event");
+    await t.run((ctx) =>
+      ctx.db.patch(event._id, {
+        sourceIdentity: {
+          eventType: "pain_check_in.v1",
+          requestId: request._id,
+          painLogId,
+          requestVersion: request.requestVersion,
+          primaryId,
+          selectedLocalDay: addCalendarDays(selectedLocalDay, 1),
+        },
+      }),
+    );
+
+    await expect(
+      asPrimary.mutation(setMyPainReminder, { painLogId, selectedLocalDay }),
+    ).rejects.toThrow("Pain reminder event key conflicts with its source authority");
   });
 
   test("rejects partners, non-owned logs, malformed days, and past selected days", async () => {
@@ -308,6 +344,24 @@ describe("user-requested pain reminders", () => {
           primaryId: String(primaryId),
         }),
       );
+      expect(
+        events.find(
+          (event) =>
+            event.idempotencyKey ===
+            makeEventIdempotencyKey("pain_check_in.v1", {
+              requestId: String(firstRequest._id),
+              requestVersion: "2",
+              primaryId: String(primaryId),
+            }),
+        )?.sourceIdentity,
+      ).toEqual({
+        eventType: "pain_check_in.v1",
+        requestId: firstRequest._id,
+        painLogId,
+        requestVersion: 2,
+        primaryId,
+        selectedLocalDay: secondDay,
+      });
       expect(events.map((event) => event.idempotencyKey)).toContain(
         makeEventIdempotencyKey("pain_check_in.v1", {
           requestId: String(firstRequest._id),
