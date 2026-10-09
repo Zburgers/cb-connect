@@ -47,22 +47,14 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
   } as never);
 
   const now = Date.now();
-  const { messageId } = await t.run(async (ctx) => {
-    const primaryMembership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
-        q.eq("coupleId", coupleId).eq("role", "primary").eq("revokedAt", undefined),
-      )
-      .unique();
+  const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
     const partnerMembership = await ctx.db
       .query("coupleMembers")
       .withIndex("by_couple_and_role_and_revoked_at", (q) =>
         q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
       )
       .unique();
-    if (!primaryMembership || !partnerMembership) {
-      throw new Error("Expected one current membership for each role");
-    }
+    if (!partnerMembership) throw new Error("Expected the active relationship generation");
     const messageId = await ctx.db.insert("coupleMessages", {
       coupleId,
       relationshipMembershipId: partnerMembership._id,
@@ -70,7 +62,7 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
       body: "This private source text must never enter notification storage",
       createdAt: now,
     });
-    return { messageId };
+    return { messageId, relationshipMembershipId: partnerMembership._id };
   });
 
   const envelope = {
@@ -79,7 +71,7 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
     purpose: "partner_message" as const,
     producerKind: "new_couple_message" as const,
     sourceReference: `message:${messageId}`,
-    sourceAuthorityVersion: "link-generation:1",
+    sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
     ownerUserId: primaryId,
     recipientUserId: partnerId,
     recipientScope: "other_active_member" as const,
@@ -90,6 +82,14 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
       recipientId: String(partnerId),
     }),
     allowedChannel: "in_app" as const,
+    sourceIdentity: {
+      eventType: "partner_message.v1" as const,
+      sourceId: messageId,
+      coupleId,
+      relationshipMembershipId,
+      ownerUserId: primaryId,
+      recipientUserId: partnerId,
+    },
   };
   const rendered = await renderFrozen({
     eventType: envelope.eventType,
@@ -373,6 +373,16 @@ describe("N2d transactional in-app delivery", () => {
       inAppEnabled: true,
     } as never);
     const now = Date.now();
+    const relationshipMembershipId = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected the active relationship generation");
+      return membership._id;
+    });
     const event = {
       eventType: "partner_chat_cleared.v1" as const,
       eventVersion: 1 as const,
@@ -388,9 +398,19 @@ describe("N2d transactional in-app delivery", () => {
       idempotencyKey: makeEventIdempotencyKey("partner_chat_cleared.v1", {
         coupleId: String(coupleId),
         clearOperationId: `chat-clear:${now}`,
+        relationshipMembershipId: String(relationshipMembershipId),
         recipientId: String(partnerId),
       }),
       allowedChannel: "in_app" as const,
+      sourceIdentity: {
+        eventType: "partner_chat_cleared.v1" as const,
+        sourceId: coupleId,
+        coupleId,
+        relationshipMembershipId,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        clearOperationVersion: now,
+      },
     };
     await t.run(async (ctx) => {
       await ctx.db.patch(coupleId, { chatClearedAt: now + 1 });

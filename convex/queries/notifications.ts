@@ -12,6 +12,7 @@ import {
 import {
   notificationInboxRouteValidator,
 } from "../_helpers/notificationDelivery";
+import { isNotificationSourceCurrent } from "../_helpers/notificationSourceReader";
 import { notificationEventTypeValidator } from "../_helpers/notificationTypes";
 import {
   notificationControlValidator,
@@ -188,7 +189,7 @@ export const getMyInbox = query({
     const joinedPage = await Promise.all(
       page.page.map(async (item) => {
         const event = await ctx.db.get(item.eventId);
-        if (!event) return null;
+        if (!event || !(await isNotificationSourceCurrent(ctx, event))) return null;
         return {
           itemId: item._id,
           eventType: event.eventType,

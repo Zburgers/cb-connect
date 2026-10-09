@@ -60,7 +60,7 @@ describe("notification recipient queries", () => {
       purpose: "partner_message",
       inAppEnabled: true,
     });
-    const messageId = await t.run(async (ctx) => {
+    const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
       const partnerMembership = await ctx.db
         .query("coupleMembers")
         .withIndex("by_couple_and_role_and_revoked_at", (q) =>
@@ -68,13 +68,14 @@ describe("notification recipient queries", () => {
         )
         .unique();
       if (!partnerMembership) throw new Error("Expected a current partner membership");
-      return await ctx.db.insert("coupleMessages", {
+      const messageId = await ctx.db.insert("coupleMessages", {
         coupleId,
         relationshipMembershipId: partnerMembership._id,
         senderId: primaryId,
         body: "body is not notification data",
         createdAt: 100,
       });
+      return { messageId, relationshipMembershipId: partnerMembership._id };
     });
     const rendered = await renderFrozen({
       eventType: "partner_message.v1",
@@ -91,7 +92,7 @@ describe("notification recipient queries", () => {
         purpose: "partner_message",
         producerKind: "new_couple_message",
         sourceReference: `message:${messageId}`,
-        sourceAuthorityVersion: "link-generation:1",
+        sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
         ownerUserId: primaryId,
         recipientUserId: partnerId,
         recipientScope: "other_active_member",
@@ -102,6 +103,14 @@ describe("notification recipient queries", () => {
           recipientId: String(partnerId),
         }),
         allowedChannel: "in_app",
+        sourceIdentity: {
+          eventType: "partner_message.v1",
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
       },
       route: "messages",
       templateVersion: "g4-static-v1",
@@ -148,6 +157,99 @@ describe("notification recipient queries", () => {
         userId: partnerId,
       } as never),
     ).rejects.toThrow();
+  });
+
+  test("hides a current inbox row after its typed identity or relationship generation is revoked", async () => {
+    enableInAppInbox();
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const now = Date.now();
+    const { eventId, membershipId, sourceIdentity } = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected an active partner membership");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: membership._id,
+        senderId: primaryId,
+        body: "Private source body",
+        createdAt: now,
+      });
+      const sourceIdentity = {
+        eventType: "partner_message.v1" as const,
+        sourceId: messageId,
+        coupleId,
+        relationshipMembershipId: membership._id,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+      };
+      const eventId = await ctx.db.insert("notificationEvents", {
+        eventType: "partner_message.v1",
+        eventVersion: 1,
+        purpose: "partner_message",
+        producerKind: "new_couple_message",
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${membership._id}`,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        recipientScope: "other_active_member",
+        privacyClass: "relationship_private_free_text_source",
+        validityRule: "while_message_and_active_link_exist",
+        idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+          messageId: String(messageId),
+          recipientId: String(partnerId),
+        }),
+        allowedChannel: "in_app",
+        sourceIdentity,
+        createdAt: now,
+      });
+      await ctx.db.insert("notificationInboxItems", {
+        eventId,
+        recipientUserId: partnerId,
+        idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+          messageId: String(messageId),
+          recipientId: String(partnerId),
+        }),
+        templateVersion: "g4-static-v1",
+        route: "messages",
+        state: "current",
+        createdAt: now,
+      });
+      return { eventId, membershipId: membership._id, sourceIdentity };
+    });
+    const queryInbox = () =>
+      asPartner.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: { numItems: 20, cursor: null },
+      });
+
+    await expect(queryInbox()).resolves.toMatchObject({ page: [expect.objectContaining({
+      eventType: "partner_message.v1",
+      state: "current",
+    })] });
+
+    await t.run((ctx) => ctx.db.patch(eventId, { sourceIdentity: undefined }));
+    await expect(queryInbox()).resolves.toMatchObject({ page: [] });
+    await t.run((ctx) => ctx.db.patch(eventId, { sourceIdentity }));
+    await expect(queryInbox()).resolves.toMatchObject({ page: [expect.objectContaining({
+      eventType: "partner_message.v1",
+    })] });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(membershipId, { revokedAt: now + 1 });
+      await ctx.db.insert("coupleMembers", {
+        coupleId,
+        userId: partnerId,
+        role: "partner",
+        sharingPain: false,
+        sharingPhase: false,
+        joinedAt: now + 2,
+      });
+    });
+    await expect(queryInbox()).resolves.toMatchObject({ page: [] });
   });
 
   test("fails closed with an absent inbox flag and rejects pages above the fixed bound", async () => {
