@@ -642,11 +642,43 @@ describe("notification schedule reconciliation", () => {
     if (!work) throw new Error("Expected prediction-window work");
     vi.setSystemTime(work.dueAt);
 
+    const findWakeId = async () =>
+      await t.run(async (ctx) => {
+        const wake = (await ctx.db.system.query("_scheduled_functions").take(100)).find(
+          (scheduled) => {
+            const arg = scheduled.args[0];
+            return (
+              scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+              scheduled.state.kind === "pending" &&
+              typeof arg === "object" &&
+              arg !== null &&
+              "workId" in arg &&
+              arg.workId === work._id
+            );
+          },
+        );
+        return wake?._id ?? null;
+      });
+    const originalWakeId = await findWakeId();
+    if (!originalWakeId) throw new Error("Expected the due-work wake id");
+    await t.run((ctx) => ctx.scheduler.cancel(originalWakeId));
+    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
+      scheduled: 0,
+    });
+
     await expect(
       t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
     ).resolves.toEqual({ status: "blocked", reason: "outbox_disabled" });
     expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
     expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({ state: "pending" });
+    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
+      scheduled: 0,
+    });
+
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
+      scheduled: 1,
+    });
   });
 
   test("does not catch up prediction-window or Late work after its local validity day", async () => {
@@ -1086,7 +1118,7 @@ describe("notification schedule reconciliation", () => {
     ).toEqual([3, 3]);
   });
 
-  test("shadow snapshot history cannot replace work for the still-served snapshot", async () => {
+  test("newest shadow history cancels work instead of falling back to an older visible snapshot", async () => {
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -1131,16 +1163,60 @@ describe("notification schedule reconciliation", () => {
       kind,
       dueAt,
       generation,
-    }))).toEqual(originalWork.map(({ _id, state, kind, dueAt, generation }) => ({
+    }))).toEqual(originalWork.map(({ _id, kind, dueAt, generation }) => ({
       _id,
-      state,
+      state: "cancelled",
       kind,
       dueAt,
       generation,
     })));
   });
 
-  test("indeterminate snapshot history backs off due-work recovery without losing it", async () => {
+  test.each(["shadow", "non-v2"] as const)(
+    "does not fall back to an older visible snapshot when the newest is %s",
+    async (newestKind) => {
+      const now = Date.parse("2026-03-07T20:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+
+      const t = convexTest(schema, modules);
+      const { primaryId } = await seedActiveCouple(t);
+      await seedScheduleInputs(t, primaryId, {
+        timeZone: "America/Los_Angeles",
+        localReminderTime: "09:00",
+      });
+      const servedSnapshotId = await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        { userId: primaryId },
+      );
+      if (servedSnapshotId === null) throw new Error("Expected a current V2 snapshot");
+      const servedSnapshot = await t.run((ctx) => ctx.db.get(servedSnapshotId));
+      if (!servedSnapshot) throw new Error("Expected the served V2 snapshot");
+      const originalWork = await pendingScheduleRows(t, primaryId);
+      const newestArgs = snapshotRefreshArgs(
+        servedSnapshot,
+        servedSnapshot.generatedAt + 2_000,
+      );
+      await t.mutation(internal.internal.predictionSnapshots.createSnapshot, {
+        ...newestArgs,
+        ...(newestKind === "shadow"
+          ? { displayStatus: "shadow" as const }
+          : { featureVersion: "period_prediction_v1" }),
+      });
+
+      await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+
+      const allWork = await allScheduleRows(t, primaryId);
+      expect(allWork.filter((row) => row.state === "pending")).toEqual([]);
+      expect(
+        allWork
+          .filter((row) => originalWork.some((original) => original._id === row._id))
+          .every((row) => row.state === "cancelled"),
+      ).toBe(true);
+    },
+  );
+
+  test("unavailable newest shadow snapshot cancels due work without scheduling a retry", async () => {
     const start = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(start);
@@ -1181,72 +1257,34 @@ describe("notification schedule reconciliation", () => {
     vi.setSystemTime(firstAttemptAt);
     await expect(
       t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
-    ).resolves.toMatchObject({ status: "blocked", reason: "served_snapshot_indeterminate" });
-    const deferred = await t.run((ctx) => ctx.db.get(work._id));
-    expect(deferred?.state).toBe("pending");
-    expect(deferred?.updatedAt).toBe(firstAttemptAt);
-
+    ).resolves.toEqual({ status: "stale" });
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      state: "cancelled",
+    });
+    expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
     const retryAt = firstAttemptAt + 5 * 60 * 1_000;
-    const scheduledRetry = await t.run(async (ctx) =>
-      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
-        (scheduled) => {
-          const args = scheduled.args[0];
-          return (
+    expect(
+      await t.run(async (ctx) =>
+        (await ctx.db.system.query("_scheduled_functions").take(100)).some(
+          (scheduled) =>
             scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
             scheduled.scheduledTime === retryAt &&
-            typeof args === "object" &&
-            args !== null &&
-            "workId" in args &&
-            args.workId === work._id
-          );
-        },
+            typeof scheduled.args[0] === "object" &&
+            scheduled.args[0] !== null &&
+            "workId" in scheduled.args[0] &&
+            scheduled.args[0].workId === work._id,
+        ),
       ),
-    );
-    expect(scheduledRetry).toBeDefined();
-    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
-      scheduled: 0,
-    });
-
-    const refreshedAt = Math.max(
-      firstAttemptAt + 60 * 1_000,
-      servedSnapshot.generatedAt + 2_000,
-    );
-    vi.setSystemTime(refreshedAt);
-    const refreshedSnapshotId = await t.mutation(
-      internal.internal.predictionSnapshots.ensureCurrentForUser,
-      { userId: primaryId },
-    );
-    expect(refreshedSnapshotId).not.toBeNull();
-    const refreshedWake = await t.run(async (ctx) =>
-      (await ctx.db.system.query("_scheduled_functions").take(100)).find(
-        (scheduled) => {
-          const args = scheduled.args[0];
-          return (
-            scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
-            scheduled.scheduledTime === refreshedAt &&
-            typeof args === "object" &&
-            args !== null &&
-            "workId" in args &&
-            args.workId === work._id
-          );
-        },
-      ),
-    );
-    expect(refreshedWake).toBeDefined();
-
-    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
-    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
-    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
-    await expect(
-      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
-    ).resolves.toEqual({ status: "ready" });
-    expect((await t.run((ctx) => ctx.db.get(work._id)))?.state).toBe("claimed");
+    ).toBe(false);
   });
 
   test("kind-scoped cron recovery reaches pending work past terminal and other-kind history", async () => {
     const now = Date.parse("2026-10-04T12:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -1683,7 +1721,7 @@ describe("notification schedule reconciliation", () => {
     ).toEqual([]);
   });
 
-  test("indeterminate history cancels all schedule claims and preserves pending work", async () => {
+  test("unavailable latest snapshot cancels all active schedule work", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.setSystemTime(now);
@@ -1781,7 +1819,12 @@ describe("notification schedule reconciliation", () => {
     );
     expect(
       after.filter(({ state }) => state === "pending").map(({ _id }) => _id),
-    ).toEqual(pendingBefore.map(({ _id }) => _id));
+    ).toEqual([]);
+    expect(
+      after
+        .filter(({ _id }) => pendingBefore.some((row) => row._id === _id))
+        .every(({ state }) => state === "cancelled"),
+    ).toBe(true);
   });
 
   test("indeterminate cleanup skips unrelated claimed work without broad paging", async () => {
