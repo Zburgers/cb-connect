@@ -4,7 +4,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  makeDeliveryIdempotencyKey,
+  makeEventIdempotencyKey,
+} from "../_helpers/notificationDelivery";
 import { renderFrozen } from "../_helpers/notificationTemplates";
 import {
   initializeNotificationSourceAuthority,
@@ -157,13 +160,32 @@ describe("notification recipient queries", () => {
         userId: partnerId,
       } as never),
     ).rejects.toThrow();
+
+    await t.run(async (ctx) => {
+      if (!projected.inboxItemId || !projected.deliveryId) {
+        throw new Error("Expected a projected inbox item and delivery");
+      }
+      await ctx.db.patch(projected.inboxItemId, { state: "current" });
+      await ctx.db.patch(projected.deliveryId, { expiresAt: Date.now() - 1 });
+    });
+    await expect(
+      asPartner.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: { numItems: 20, cursor: null },
+      }),
+    ).resolves.toMatchObject({ page: [] });
   });
 
   test("hides a current inbox row after its typed identity or relationship generation is revoked", async () => {
     enableInAppInbox();
     const t = convexTest(schema, modules);
-    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const { asPartner, asPrimary, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
     const now = Date.now();
+    const renderIdentity = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
     const { eventId, membershipId, sourceIdentity } = await t.run(async (ctx) => {
       const membership = await ctx.db
         .query("coupleMembers")
@@ -219,6 +241,22 @@ describe("notification recipient queries", () => {
         state: "current",
         createdAt: now,
       });
+      await ctx.db.insert("notificationDeliveries", {
+        eventId,
+        recipientUserId: partnerId,
+        channel: "in_app",
+        stableDestinationId: String(partnerId),
+        logicalKey: makeDeliveryIdempotencyKey(String(eventId), "in_app", String(partnerId)),
+        notBefore: now,
+        state: "delivered",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 1,
+        claimGeneration: 1,
+        renderIdentity: renderIdentity.identity,
+        createdAt: now,
+        updatedAt: now,
+      });
       return { eventId, membershipId: membership._id, sourceIdentity };
     });
     const queryInbox = () =>
@@ -226,6 +264,37 @@ describe("notification recipient queries", () => {
         paginationOpts: { numItems: 20, cursor: null },
       });
 
+    await expect(queryInbox()).resolves.toMatchObject({ page: [expect.objectContaining({
+      eventType: "partner_message.v1",
+      state: "current",
+    })] });
+
+    const inboxItemId = await t.run(async (ctx) => {
+      const item = await ctx.db
+        .query("notificationInboxItems")
+        .withIndex("by_event_id", (q) => q.eq("eventId", eventId))
+        .unique();
+      if (!item) throw new Error("Expected the current inbox item");
+      return item._id;
+    });
+    await t.run((ctx) => ctx.db.patch(inboxItemId, { recipientUserId: primaryId }));
+    await expect(queryInbox()).resolves.toMatchObject({ page: [] });
+    await expect(
+      asPrimary.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: { numItems: 20, cursor: null },
+      }),
+    ).resolves.toMatchObject({ page: [] });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(inboxItemId, { recipientUserId: partnerId });
+      await ctx.db.patch(eventId, { recipientUserId: primaryId });
+    });
+    await expect(queryInbox()).resolves.toMatchObject({ page: [] });
+    await expect(
+      asPrimary.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: { numItems: 20, cursor: null },
+      }),
+    ).resolves.toMatchObject({ page: [] });
+    await t.run((ctx) => ctx.db.patch(eventId, { recipientUserId: partnerId }));
     await expect(queryInbox()).resolves.toMatchObject({ page: [expect.objectContaining({
       eventType: "partner_message.v1",
       state: "current",

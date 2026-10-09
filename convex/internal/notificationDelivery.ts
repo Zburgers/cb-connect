@@ -86,6 +86,30 @@ function eventMatchesCatalog(event: Doc<"notificationEvents">): boolean {
   );
 }
 
+function projectorScheduleFencesMatchEvent(
+  event: Doc<"notificationEvents">,
+  args: Parameters<typeof isValidProjectInAppArgs>[0] & {
+    expectedSourceAuthorityVersion?: string;
+    expectedReminderWindowVersion?: number;
+  },
+): boolean {
+  if (
+    event.eventType !== "period_window_approaching.v1" &&
+    event.eventType !== "late_status.v1"
+  ) {
+    return true;
+  }
+  const identity = event.sourceIdentity;
+  return (
+    identity !== undefined &&
+    identity.eventType === event.eventType &&
+    "sourceAuthorityVersion" in identity &&
+    args.expectedSourceAuthorityVersion === identity.sourceAuthorityVersion &&
+    args.expectedReminderWindowVersion === identity.reminderWindowVersion &&
+    event.sourceAuthorityVersion === identity.sourceAuthorityVersion
+  );
+}
+
 async function hasControl(
   ctx: MutationCtx,
   scope: "global" | "channel" | "purpose",
@@ -206,7 +230,10 @@ export const projectInApp = internalMutation({
     const requiresScheduleFences =
       event.eventType === "period_window_approaching.v1" ||
       event.eventType === "late_status.v1";
-    if (!isValidProjectInAppArgs(args, { requireScheduleFences: requiresScheduleFences })) {
+    if (
+      !isValidProjectInAppArgs(args, { requireScheduleFences: requiresScheduleFences }) ||
+      !projectorScheduleFencesMatchEvent(event, args)
+    ) {
       return { status: "denied" as const, ...emptyResult };
     }
     const deliveryRows = await ctx.db
@@ -270,6 +297,24 @@ export const projectInApp = internalMutation({
     }
 
     if (delivery.state === "delivered") {
+      if (delivery.expiresAt !== undefined && delivery.expiresAt <= now) {
+        await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
+        await ctx.db.patch(delivery._id, {
+          state: "expired",
+          eligibility: "expired",
+          claimGeneration: nextTerminalClaimGeneration(delivery.claimGeneration) ??
+            delivery.claimGeneration,
+          cancellationReason: "expired",
+          errorCode: "expired",
+          nextAttemptAt: undefined,
+          leaseUntil: undefined,
+          dispatchStartedAt: undefined,
+          nextReceiptCheckAt: undefined,
+          reviewAt: undefined,
+          updatedAt: now,
+        });
+        return { status: "expired" as const, ...resultBase };
+      }
       const sourceCurrent = await isNotificationSourceCurrent(ctx, event);
       if (!sourceCurrent) {
         await hideCurrentInboxItem(ctx, event._id, event.recipientUserId);
