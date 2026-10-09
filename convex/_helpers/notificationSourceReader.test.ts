@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { Doc } from "../_generated/dataModel";
+import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
 import {
   makeSourceAuthorityVersion,
@@ -113,6 +114,25 @@ async function seedCurrentPredictionWindow(t: TestBackend) {
   ) {
     throw new Error("Expected current served V2 prediction authority");
   }
+  if (
+    current.state.bounds.version !== 2 ||
+    current.state.bounds.source !== "period_prediction_v2"
+  ) {
+    throw new Error("Expected current served V2 prediction bounds");
+  }
+  const dueLocalDay = addCalendarDays(current.state.bounds.pointDate, -3);
+  vi.setSystemTime(Date.parse(`${dueLocalDay}T12:00:00.000Z`));
+  const currentOnDueDay = await t.run((ctx) =>
+    readCurrentNotificationCycleState(ctx, primaryId, Date.now()),
+  );
+  if (
+    !currentOnDueDay ||
+    currentOnDueDay.state.status !== "estimated" ||
+    currentOnDueDay.localDay !== dueLocalDay ||
+    currentOnDueDay.latestEligibleStartEventId !== periodEventId
+  ) {
+    throw new Error("Expected current served V2 authority on its designated due day");
+  }
   await t.run(async (ctx) => {
     const state = await ctx.db
       .query("notificationScheduleState")
@@ -120,10 +140,10 @@ async function seedCurrentPredictionWindow(t: TestBackend) {
       .unique();
     if (!state) throw new Error("Expected notification source state");
     await ctx.db.patch(state._id, {
-      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      sourceAuthorityVersion: currentOnDueDay.sourceAuthorityVersion,
     });
   });
-  return { primaryId, periodEventId, current };
+  return { primaryId, periodEventId, current: currentOnDueDay, dueLocalDay };
 }
 
 async function seedMessageEvent(t: TestBackend) {
@@ -491,7 +511,7 @@ describe("N8c notification source authority reader", () => {
 
   test("requires a current served V2 snapshot and unchanged purpose fence", async () => {
     const t = convexTest(schema, modules);
-    const { primaryId, periodEventId, current } = await seedCurrentPredictionWindow(t);
+    const { primaryId, periodEventId, current, dueLocalDay } = await seedCurrentPredictionWindow(t);
     const eventId = await insertTypedEvent(
       t,
       {
@@ -500,7 +520,7 @@ describe("N8c notification source authority reader", () => {
         latestEligibleStartEventId: periodEventId,
         sourceAuthorityVersion: current.sourceAuthorityVersion,
         reminderWindowVersion: 2,
-        dueLocalDay: current.localDay,
+        dueLocalDay,
       },
       current.sourceAuthorityVersion,
     );
@@ -531,6 +551,34 @@ describe("N8c notification source authority reader", () => {
     });
     await expect(readEvent(t, eventId)).resolves.toBe(false);
   });
+
+  test.each([-1, 1])(
+    "denies prediction reminders on a day %s from the V2 point-date window",
+    async (offset) => {
+      const t = convexTest(schema, modules);
+      const { primaryId, periodEventId, current } = await seedCurrentPredictionWindow(t);
+      if (current.state.status !== "estimated" || current.state.bounds.version !== 2) {
+        throw new Error("Expected current V2 point-date bounds");
+      }
+      const designatedDay = addCalendarDays(current.state.bounds.pointDate, -3);
+      const requestedDay = addCalendarDays(designatedDay, offset);
+      vi.setSystemTime(Date.parse(`${requestedDay}T12:00:00.000Z`));
+      const eventId = await insertTypedEvent(
+        t,
+        {
+          eventType: "period_window_approaching.v1",
+          primaryId,
+          latestEligibleStartEventId: periodEventId,
+          sourceAuthorityVersion: current.sourceAuthorityVersion,
+          reminderWindowVersion: 2,
+          dueLocalDay: requestedDay,
+        },
+        current.sourceAuthorityVersion,
+      );
+
+      await expect(readEvent(t, eventId)).resolves.toBe(false);
+    },
+  );
 
   test("keeps D-011 Late events out of current reads", async () => {
     const t = convexTest(schema, modules);

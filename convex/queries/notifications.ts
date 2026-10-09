@@ -188,8 +188,28 @@ export const getMyInbox = query({
 
     const joinedPage = await Promise.all(
       page.page.map(async (item) => {
-        const event = await ctx.db.get(item.eventId);
-        if (!event || !(await isNotificationSourceCurrent(ctx, event))) return null;
+        if (item.recipientUserId !== user._id) return null;
+        const [event, deliveries] = await Promise.all([
+          ctx.db.get(item.eventId),
+          ctx.db
+            .query("notificationDeliveries")
+            .withIndex("by_event_id", (q) => q.eq("eventId", item.eventId))
+            .take(2),
+        ]);
+        if (
+          !event ||
+          event.recipientUserId !== user._id ||
+          deliveries.length !== 1 ||
+          deliveries[0].eventId !== event._id ||
+          deliveries[0].recipientUserId !== user._id ||
+          deliveries[0].channel !== "in_app" ||
+          deliveries[0].state !== "delivered" ||
+          deliveries[0].eligibility !== "eligible" ||
+          (deliveries[0].expiresAt !== undefined && deliveries[0].expiresAt <= Date.now()) ||
+          !(await isNotificationSourceCurrent(ctx, event))
+        ) {
+          return null;
+        }
         return {
           itemId: item._id,
           eventType: event.eventType,

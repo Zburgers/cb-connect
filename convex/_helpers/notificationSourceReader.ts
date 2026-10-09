@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { addCalendarDays } from "./cycleCalculations";
 import {
   requireValidCalendarDate,
   resolveCalendarTimeZone,
@@ -105,7 +106,10 @@ async function currentScheduledPrediction(
     !scheduleState ||
     !preference ||
     current.state.status !== "estimated" ||
+    current.state.bounds.version !== 2 ||
+    current.state.bounds.source !== "period_prediction_v2" ||
     current.localDay !== identity.dueLocalDay ||
+    identity.dueLocalDay !== addCalendarDays(current.state.bounds.pointDate, -3) ||
     current.latestEligibleStartEventId !== identity.latestEligibleStartEventId ||
     current.sourceAuthorityVersion !== identity.sourceAuthorityVersion ||
     scheduleState.sourceRevision !== current.sourceRevision ||

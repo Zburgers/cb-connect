@@ -4,13 +4,20 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
 import {
+  makeDeliveryIdempotencyKey,
   makeEventIdempotencyKey,
   transitionDeliveryState,
   transitionDeliveryStateFenced,
   transitionProviderReceiptFactual,
   type ProjectInAppArgs,
 } from "../_helpers/notificationDelivery";
+import { readCurrentNotificationCycleState } from "../_helpers/notificationCycleState";
+import {
+  makeSourceAuthorityVersion,
+  parseSourceAuthorityVersion,
+} from "../_helpers/notificationSourceAuthority";
 import { renderFrozen } from "../_helpers/notificationTemplates";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -113,6 +120,147 @@ async function seedMessageDelivery(templateVersion = "g4-static-v1") {
   return { t, coupleId, primaryId, partnerId, messageId, ready, envelope, now };
 }
 
+async function seedPredictionDelivery() {
+  enableProjection();
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+  const t = convexTest(schema, modules);
+  const { primaryId } = await seedActiveCouple(t, { fixtureRunId: "n8c-projector-fences" });
+  const periodEventId = await t.run(async (ctx) => {
+    const now = Date.now();
+    const periodEventId = await ctx.db.insert("periodEvents", {
+      userId: primaryId,
+      startDate: "2026-03-01",
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.parse("2026-03-01T08:00:00.000Z"),
+      updatedAt: Date.parse("2026-03-01T08:00:00.000Z"),
+    });
+    await ctx.db.insert("cyclePredictionSegments", {
+      userId: primaryId,
+      startDate: "2026-03-01",
+      status: "active",
+      createdAt: Date.parse("2026-03-01T08:00:00.000Z"),
+    });
+    await ctx.db.insert("notificationPreferences", {
+      userId: primaryId,
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+      reminderWindowVersion: 2,
+      updatedAt: now,
+    });
+    await ctx.db.insert("notificationScheduleState", {
+      userId: primaryId,
+      sourceRevision: 7,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return periodEventId;
+  });
+  const snapshotId = await t.mutation(
+    internal.internal.predictionSnapshots.ensureCurrentForUser,
+    { userId: primaryId },
+  );
+  if (!snapshotId) throw new Error("Expected the served V2 snapshot");
+  const initialCurrent = await t.run((ctx) =>
+    readCurrentNotificationCycleState(ctx, primaryId, Date.now()),
+  );
+  if (
+    !initialCurrent ||
+    initialCurrent.state.status !== "estimated" ||
+    initialCurrent.state.bounds.version !== 2 ||
+    initialCurrent.latestEligibleStartEventId !== periodEventId
+  ) {
+    throw new Error("Expected current served V2 point-date authority");
+  }
+  const dueLocalDay = addCalendarDays(initialCurrent.state.bounds.pointDate, -3);
+  vi.setSystemTime(Date.parse(`${dueLocalDay}T12:00:00.000Z`));
+  const current = await t.run((ctx) =>
+    readCurrentNotificationCycleState(ctx, primaryId, Date.now()),
+  );
+  if (
+    !current ||
+    current.state.status !== "estimated" ||
+    current.localDay !== dueLocalDay ||
+    current.latestEligibleStartEventId !== periodEventId
+  ) {
+    throw new Error("Expected current served V2 authority on its designated day");
+  }
+  await t.run(async (ctx) => {
+    const scheduleState = await ctx.db
+      .query("notificationScheduleState")
+      .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+      .unique();
+    if (!scheduleState) throw new Error("Expected notification source state");
+    await ctx.db.patch(scheduleState._id, {
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+    });
+  });
+
+  const sourceIdentity = {
+    eventType: "period_window_approaching.v1" as const,
+    primaryId,
+    latestEligibleStartEventId: periodEventId,
+    sourceAuthorityVersion: current.sourceAuthorityVersion,
+    reminderWindowVersion: 2,
+    dueLocalDay,
+  };
+  const eventId = await t.run((ctx) =>
+    ctx.db.insert("notificationEvents", {
+      eventType: "period_window_approaching.v1",
+      eventVersion: 1,
+      purpose: "period_window_approaching",
+      producerKind: "current_served_v2_snapshot",
+      sourceReference: "fixture-reference-not-authority",
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      ownerUserId: primaryId,
+      recipientUserId: primaryId,
+      recipientScope: "primary",
+      privacyClass: "primary_private_inferred_health",
+      validityRule: "designated_due_local_day_while_snapshot_is_current",
+      idempotencyKey: makeEventIdempotencyKey("period_window_approaching.v1", {
+        primaryId: String(primaryId),
+        latestEligibleStartEventId: String(periodEventId),
+        sourceAuthorityVersion: current.sourceAuthorityVersion,
+        dueLocalDay,
+        reminderWindowVersion: "2",
+      }),
+      allowedChannel: "in_app",
+      sourceIdentity,
+      createdAt: Date.now(),
+    }),
+  );
+  const renderIdentity = await renderFrozen({
+    eventType: "partner_message.v1",
+    templateVersion: "g4-static-v1",
+    locale: "en",
+    variableSchemaVersion: "g4-no-variables-v1",
+  });
+  const deliveryId = await t.run((ctx) =>
+    ctx.db.insert("notificationDeliveries", {
+      eventId,
+      recipientUserId: primaryId,
+      channel: "in_app",
+      stableDestinationId: String(primaryId),
+      logicalKey: makeDeliveryIdempotencyKey(String(eventId), "in_app", String(primaryId)),
+      notBefore: Date.now(),
+      state: "pending",
+      eligibility: "eligible",
+      providerOutcome: "none",
+      attemptCount: 0,
+      claimGeneration: 0,
+      renderIdentity: renderIdentity.identity,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }),
+  );
+  return { t, primaryId, eventId, deliveryId, current };
+}
+
 describe("N2d transactional in-app delivery", () => {
   test("does not mutate a scheduled delivery when its semantic fences are missing", async () => {
     const { t, ready } = await seedMessageDelivery();
@@ -132,6 +280,97 @@ describe("N2d transactional in-app delivery", () => {
     await t.run(async (ctx) => {
       expect(await ctx.db.get(ready.deliveryId!)).toEqual(before);
       expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
+    });
+  });
+
+  test("requires projector schedule fences to match the event and current source", async () => {
+    const { t, eventId, deliveryId, current } = await seedPredictionDelivery();
+    const parsed = parseSourceAuthorityVersion(current.sourceAuthorityVersion);
+    if (!parsed) throw new Error("Expected canonical current source authority");
+    const staleSourceAuthorityVersion = makeSourceAuthorityVersion({
+      ...parsed,
+      sourceRevision: parsed.sourceRevision + 1,
+    });
+
+    const wrongSource = await t.mutation(projectInAppReference, {
+      eventId,
+      expectedGeneration: 0,
+      expectedSourceAuthorityVersion: staleSourceAuthorityVersion,
+      expectedReminderWindowVersion: 2,
+    });
+    expect(wrongSource.status).toBe("denied");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(deliveryId)).toMatchObject({
+        state: "pending",
+        eligibility: "eligible",
+        claimGeneration: 0,
+      });
+    });
+
+    const wrongReminderWindow = await t.mutation(projectInAppReference, {
+      eventId,
+      expectedGeneration: 0,
+      expectedSourceAuthorityVersion: current.sourceAuthorityVersion,
+      expectedReminderWindowVersion: 3,
+    });
+    expect(wrongReminderWindow.status).toBe("denied");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(deliveryId)).toMatchObject({
+        state: "pending",
+        eligibility: "eligible",
+        claimGeneration: 0,
+      });
+    });
+
+    const currentSource = await t.mutation(projectInAppReference, {
+      eventId,
+      expectedGeneration: 0,
+      expectedSourceAuthorityVersion: current.sourceAuthorityVersion,
+      expectedReminderWindowVersion: 2,
+    });
+    // The exact current fences pass authority checks; the still-frozen template
+    // gate then suppresses this inferred-health content under D-011.
+    expect(currentSource.status).toBe("denied");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(deliveryId)).toMatchObject({
+        state: "suppressed",
+        eligibility: "suppressed",
+        claimGeneration: 1,
+      });
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
+    });
+  });
+
+  test("expires a previously delivered inbox item on projector replay", async () => {
+    const { t, ready } = await seedMessageDelivery();
+    const first = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: 0,
+    });
+    expect(first.status).toBe("projected");
+    if (!first.deliveryId || !first.inboxItemId) {
+      throw new Error("Expected the in-app projection records");
+    }
+    await t.run((ctx) =>
+      ctx.db.patch(first.deliveryId!, { expiresAt: Date.now() - 1 }),
+    );
+
+    const replay = await t.mutation(projectInAppReference, {
+      eventId: ready.eventId!,
+      expectedGeneration: 1,
+    });
+
+    expect(replay.status).toBe("expired");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(first.deliveryId!)).toMatchObject({
+        state: "expired",
+        eligibility: "expired",
+        cancellationReason: "expired",
+        errorCode: "expired",
+        claimGeneration: 2,
+      });
+      expect(await ctx.db.get(first.inboxItemId!)).toMatchObject({ state: "hidden" });
     });
   });
 
