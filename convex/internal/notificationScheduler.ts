@@ -27,7 +27,12 @@ import {
   persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
 import { authorizeNotificationProjection } from "../_helpers/notificationPolicy";
-import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  isExpectedNotificationWake,
+  makeEventIdempotencyKey,
+  nextNotificationWakeSequence,
+  type NotificationWakeMetadata,
+} from "../_helpers/notificationDelivery";
 
 const SCHEDULER_FLAG = "CB_CONNECT_NOTIFICATION_SCHEDULER_V1";
 const OUTBOX_FLAG = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
@@ -35,7 +40,6 @@ const PROJECTION_FLAG = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 const DELIVERY_FLAG = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 const DUE_WORK_PAGE_SIZE = 50;
 const OWNER_PENDING_PAGE_SIZE = 100;
-const INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS = 5 * 60 * 1_000;
 const MAX_RUN_AT_DELAY_MS = 5 * 365 * 24 * 60 * 60 * 1_000;
 const MINUTE_MS = 60 * 1_000;
 
@@ -49,15 +53,12 @@ type ServedSnapshotResult =
       sourceAuthorityVersion: string;
       latestEligibleStartEventId?: Id<"periodEvents">;
     }
-  | {
-      status: "indeterminate";
-      scheduleState: Doc<"notificationScheduleState">;
-    }
   | { status: "unavailable" };
 
 const wakeArgsValidator = v.object({
   workId: v.id("notificationDueWork"),
   generation: v.number(),
+  expectedWakeSequence: v.optional(v.number()),
 });
 
 const wakeWorkRef = makeFunctionReference<"mutation">(
@@ -134,6 +135,70 @@ function isSafeRevision(value: number): boolean {
 
 function workGeneration(sourceRevision: number): number {
   return Math.max(1, Math.min(sourceRevision, Number.MAX_SAFE_INTEGER - 1));
+}
+
+type ScheduledWakeArgs = {
+  workId: Id<"notificationDueWork">;
+  generation: number;
+  expectedWakeSequence: number;
+};
+
+function sameScheduledWakeArgs(value: unknown, expected: ScheduledWakeArgs): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const actual = value as Record<string, unknown>;
+  const entries = Object.entries(expected);
+  return (
+    Object.keys(actual).length === entries.length &&
+    entries.every(([key, expectedValue]) => actual[key] === expectedValue)
+  );
+}
+
+async function scheduleWake(
+  ctx: MutationCtx,
+  work: Pick<Doc<"notificationDueWork">, "_id" | "generation"> &
+    NotificationWakeMetadata,
+  dueAt: number,
+  now: number,
+): Promise<"scheduled" | "reused" | "exhausted"> {
+  if (
+    work.wakeScheduledFunctionId !== undefined &&
+    work.wakeSequence !== undefined
+  ) {
+    const currentWake = await ctx.db.system.get(
+      "_scheduled_functions",
+      work.wakeScheduledFunctionId,
+    );
+    const currentWakeArgs: ScheduledWakeArgs = {
+      workId: work._id,
+      generation: work.generation,
+      expectedWakeSequence: work.wakeSequence,
+    };
+    if (
+      currentWake?.state.kind === "pending" &&
+      currentWake.name === "internal/notificationScheduler:wakeDueWork" &&
+      currentWake.args.length === 1 &&
+      sameScheduledWakeArgs(currentWake.args[0], currentWakeArgs)
+    ) {
+      return "reused";
+    }
+  }
+
+  const expectedWakeSequence = nextNotificationWakeSequence(work);
+  if (expectedWakeSequence === null) return "exhausted";
+  const wakeScheduledFunctionId = await ctx.scheduler.runAt(
+    Math.max(now, dueAt),
+    wakeWorkRef,
+    {
+      workId: work._id,
+      generation: work.generation,
+      expectedWakeSequence,
+    },
+  );
+  await ctx.db.patch(work._id, {
+    wakeScheduledFunctionId,
+    wakeSequence: expectedWakeSequence,
+  });
+  return "scheduled";
 }
 
 function formatLocalMinute(instant: number, timeZone: string): string {
@@ -472,12 +537,7 @@ async function reconcileKind(
   }
   if (alreadyClaimed || !supportedRunAt || dueAt === null) return;
   if (reusable) {
-    if (isIndeterminateSnapshotRetryDeferred(reusable, args.now)) {
-      await ctx.scheduler.runAt(Math.max(dueAt, args.now), wakeWorkRef, {
-        workId: reusable._id,
-        generation: reusable.generation,
-      });
-    }
+    await scheduleWake(ctx, reusable, dueAt, args.now);
     return;
   }
 
@@ -514,10 +574,12 @@ async function reconcileKind(
     createdAt: args.now,
     updatedAt: args.now,
   });
-  await ctx.scheduler.runAt(Math.max(dueAt, args.now), wakeWorkRef, {
-    workId,
-    generation: args.generation,
-  });
+  await scheduleWake(
+    ctx,
+    { _id: workId, generation: args.generation },
+    dueAt,
+    args.now,
+  );
 }
 
 async function cancelAllActiveScheduleWork(
@@ -638,8 +700,6 @@ export const continueUnavailableScheduleCancellation = internalMutation({
     const current = await readCurrentServedSnapshot(ctx, args.userId);
     if (current.status === "current") {
       await reconcileUserSchedule(ctx, args.userId);
-    } else if (current.status === "indeterminate") {
-      await cancelClaimedScheduleWork(ctx, args.userId, Date.now());
     } else {
       await cancelUnavailableSchedulePage(ctx, args.userId, Date.now(), args);
     }
@@ -836,10 +896,6 @@ async function reconcileCurrentSchedulePage(
 ): Promise<void> {
   const now = Date.now();
   const current = await readCurrentServedSnapshot(ctx, args.userId);
-  if (current.status === "indeterminate") {
-    await cancelClaimedScheduleWork(ctx, args.userId, now);
-    return;
-  }
   if (current.status !== "current") {
     await cancelAllActiveScheduleWork(ctx, args.userId, now);
     return;
@@ -1119,16 +1175,6 @@ function eventForKind(kind: ScheduleKind) {
     : { eventType: "late_status.v1" as const, purpose: "late_status" as const };
 }
 
-function isIndeterminateSnapshotRetryDeferred(
-  work: Doc<"notificationDueWork">,
-  now: number,
-): boolean {
-  return (
-    work.updatedAt > work.createdAt &&
-    now - work.updatedAt < INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS
-  );
-}
-
 export const wakeDueWork = internalMutation({
   args: wakeArgsValidator.fields,
   returns: v.object({
@@ -1151,21 +1197,19 @@ export const wakeDueWork = internalMutation({
     ) {
       return { status: "stale" as const };
     }
+    const wakeMetadata = work as Doc<"notificationDueWork"> &
+      NotificationWakeMetadata;
+    if (
+      !isExpectedNotificationWake({
+        expectedSequence: args.expectedWakeSequence,
+        wakeScheduledFunctionId: wakeMetadata.wakeScheduledFunctionId,
+        wakeSequence: wakeMetadata.wakeSequence,
+      })
+    ) {
+      return { status: "stale" as const };
+    }
     if (!schedulerEnabled()) return { status: "paused" as const };
     const current = await readCurrentServedSnapshot(ctx, work.ownerUserId);
-    if (current.status === "indeterminate") {
-      if (isIndeterminateSnapshotRetryDeferred(work, Date.now())) {
-        return { status: "blocked" as const, reason: "served_snapshot_indeterminate" };
-      }
-      const now = Date.now();
-      await ctx.db.patch(work._id, { updatedAt: now });
-      await ctx.scheduler.runAfter(
-        INDETERMINATE_SNAPSHOT_RETRY_DELAY_MS,
-        wakeWorkRef,
-        { workId: work._id, generation: args.generation },
-      );
-      return { status: "blocked" as const, reason: "served_snapshot_indeterminate" };
-    }
     if (
       current.status !== "current" ||
       workGeneration(current.scheduleState.sourceRevision) !== args.generation
@@ -1348,12 +1392,9 @@ export const reconcileDueWork = internalMutation({
         },
       );
       for (const work of page.page) {
-        if (isIndeterminateSnapshotRetryDeferred(work, now)) continue;
-        await ctx.scheduler.runAt(now, wakeWorkRef, {
-          workId: work._id,
-          generation: work.generation,
-        });
-        scheduled += 1;
+        if ((await scheduleWake(ctx, work, work.dueAt, now)) === "scheduled") {
+          scheduled += 1;
+        }
       }
       if (!page.isDone) {
         if (page.continueCursor === null) {

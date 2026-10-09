@@ -10,7 +10,10 @@ import {
   advanceNotificationSourceAuthority,
   makeSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
-import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  makeEventIdempotencyKey,
+  type NotificationWakeMetadata,
+} from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -37,6 +40,63 @@ const continueUnavailableScheduleCancellationRef =
   );
 
 type TestBackend = TestConvex<typeof schema>;
+type DueWorkWithWakeMetadata = Doc<"notificationDueWork"> &
+  NotificationWakeMetadata;
+
+function wakeArgs(work: DueWorkWithWakeMetadata) {
+  return {
+    workId: work._id,
+    generation: work.generation,
+    ...(work.wakeSequence === undefined
+      ? {}
+      : { expectedWakeSequence: work.wakeSequence }),
+  };
+}
+
+async function scheduledWakeFor(
+  t: TestBackend,
+  workId: Id<"notificationDueWork">,
+) {
+  return await t.run(async (ctx) =>
+    (await ctx.db.system.query("_scheduled_functions").take(200)).find(
+      (scheduled) => {
+        const arg = scheduled.args[0];
+        return (
+          scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+          scheduled.state.kind === "pending" &&
+          typeof arg === "object" &&
+          arg !== null &&
+          "workId" in arg &&
+          arg.workId === workId
+        );
+      },
+    ) ?? null,
+  );
+}
+
+async function danglingScheduledFunctionId(
+  t: TestBackend,
+): Promise<Id<"_scheduled_functions">> {
+  const other = convexTest(schema, modules);
+  const candidates = await other.run(async (ctx) => {
+    const ids: Id<"_scheduled_functions">[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      ids.push(
+        await ctx.scheduler.runAfter(60_000, reconcileDueWorkRef, {
+          kind: "prediction_window",
+          cursor: null,
+        }),
+      );
+    }
+    return ids;
+  });
+  for (const candidate of candidates) {
+    if (!(await t.run((ctx) => ctx.db.system.get("_scheduled_functions", candidate)))) {
+      return candidate;
+    }
+  }
+  throw new Error("Expected a scheduled function ID absent from this backend");
+}
 
 beforeEach(() => {
   vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
@@ -198,12 +258,12 @@ function snapshotRefreshArgs(
 
 async function pendingScheduleRows(t: TestBackend, userId: Id<"users">) {
   return await t.run(async (ctx) =>
-    ctx.db
+    (await ctx.db
       .query("notificationDueWork")
       .withIndex("by_owner_and_state_and_due_at", (q) =>
         q.eq("ownerUserId", userId).eq("state", "pending"),
       )
-      .take(100),
+      .take(100)).map((row) => row as DueWorkWithWakeMetadata),
   );
 }
 
@@ -551,9 +611,9 @@ describe("notification schedule reconciliation", () => {
     if (!work) throw new Error("Expected prediction-window work");
     vi.setSystemTime(work.dueAt);
 
-    await expect(
-      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
-    ).resolves.toEqual({ status: "ready" });
+    await expect(t.mutation(wakeDueWorkRef, wakeArgs(work))).resolves.toEqual({
+      status: "ready",
+    });
 
     const events = await t.run((ctx) => ctx.db.query("notificationEvents").take(10));
     expect(events).toHaveLength(1);
@@ -575,6 +635,309 @@ describe("notification schedule reconciliation", () => {
     expect(events[0].ownerUserId).not.toBe(partnerId);
     expect(await t.run((ctx) => ctx.db.query("notificationDeliveries").take(10))).toEqual([]);
     expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({ state: "claimed" });
+  });
+
+  test("persists the first wake token and reuses its exact pending wrapper", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      {
+        userId: primaryId,
+      },
+    );
+    const work = (await pendingScheduleRows(t, primaryId))[0];
+    if (!work) throw new Error("Expected prediction-window work");
+    const marker = {
+      wakeScheduledFunctionId: work.wakeScheduledFunctionId,
+      wakeSequence: work.wakeSequence,
+    };
+    expect(marker).toMatchObject({ wakeSequence: 1 });
+    expect(marker.wakeScheduledFunctionId).toBeDefined();
+
+    expect(await scheduledWakeFor(t, work._id)).toMatchObject({
+      _id: marker.wakeScheduledFunctionId,
+      name: "internal/notificationScheduler:wakeDueWork",
+      scheduledTime: work.dueAt,
+      args: [
+        {
+          workId: work._id,
+          generation: work.generation,
+          expectedWakeSequence: 1,
+        },
+      ],
+    });
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const after = await t.run(async (ctx) => ({
+      work: await ctx.db.get(work._id),
+      pendingWakeCount: (
+        await ctx.db.system.query("_scheduled_functions").take(100)
+      ).filter((scheduled) => {
+        const arg = scheduled.args[0];
+        return (
+          scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+          scheduled.state.kind === "pending" &&
+          typeof arg === "object" &&
+          arg !== null &&
+          "workId" in arg &&
+          arg.workId === work._id
+        );
+      }).length,
+    }));
+    expect(after.work).toMatchObject(marker);
+    expect(after.pendingWakeCount).toBe(1);
+  });
+
+  test.each(["missing", "terminal", "mismatched"] as const)(
+    "cron replaces a %s wake once and fences its old callback",
+    async (failure) => {
+      const start = Date.parse("2026-03-07T20:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(start);
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+
+      const t = convexTest(schema, modules);
+      const { primaryId } = await seedActiveCouple(t);
+      await seedScheduleInputs(t, primaryId, {
+        timeZone: "America/Los_Angeles",
+        localReminderTime: "09:00",
+        includeLateStatus: false,
+      });
+      await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        {
+          userId: primaryId,
+        },
+      );
+      const work = (await pendingScheduleRows(t, primaryId))[0];
+      if (!work?.wakeScheduledFunctionId || work.wakeSequence !== 1) {
+        throw new Error("Expected a paired initial wake token");
+      }
+      const oldId = work.wakeScheduledFunctionId;
+      const markerId =
+        failure === "missing"
+          ? await danglingScheduledFunctionId(t)
+          : failure === "mismatched"
+            ? await t.run((ctx) =>
+                ctx.scheduler.runAfter(60_000, reconcileDueWorkRef, {
+                  kind: "prediction_window",
+                  cursor: null,
+                }),
+              )
+            : oldId;
+      await t.run(async (ctx) => {
+        await ctx.scheduler.cancel(oldId);
+        await ctx.db.patch(work._id, {
+          wakeScheduledFunctionId: markerId,
+          wakeSequence: 1,
+        });
+      });
+
+      vi.setSystemTime(work.dueAt + 1);
+      expect(
+        await t.mutation(reconcileDueWorkRef, { kind: work.kind }),
+      ).toEqual({
+        scheduled: 1,
+      });
+      const repaired = (await t.run((ctx) => ctx.db.get(work._id))) as
+        | DueWorkWithWakeMetadata
+        | null;
+      expect(repaired).toMatchObject({ state: "pending", wakeSequence: 2 });
+      expect(repaired?.wakeScheduledFunctionId).not.toBe(markerId);
+      expect(await scheduledWakeFor(t, work._id)).toMatchObject({
+        _id: repaired?.wakeScheduledFunctionId,
+        state: { kind: "pending" },
+        args: [
+          {
+            workId: work._id,
+            generation: work.generation,
+            expectedWakeSequence: 2,
+          },
+        ],
+      });
+
+      await expect(
+        t.mutation(wakeDueWorkRef, {
+          workId: work._id,
+          generation: work.generation,
+          expectedWakeSequence: 1,
+        }),
+      ).resolves.toEqual({ status: "stale" });
+      expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+        state: "pending",
+        wakeSequence: 2,
+      });
+    },
+  );
+
+  test("wake sequence exhaustion leaves the pending row and saturated token intact", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      {
+        userId: primaryId,
+      },
+    );
+    const work = (await pendingScheduleRows(t, primaryId))[0];
+    if (!work?.wakeScheduledFunctionId)
+      throw new Error("Expected an initial wake");
+    const wakeId = work.wakeScheduledFunctionId;
+    await t.run(async (ctx) => {
+      await ctx.scheduler.cancel(wakeId);
+      await ctx.db.patch(work._id, { wakeSequence: Number.MAX_SAFE_INTEGER });
+    });
+
+    vi.setSystemTime(work.dueAt + 1);
+    expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
+      scheduled: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      state: "pending",
+      wakeScheduledFunctionId: wakeId,
+      wakeSequence: Number.MAX_SAFE_INTEGER,
+    });
+    expect(await scheduledWakeFor(t, work._id)).toBeNull();
+  });
+
+  test("legacy callbacks act only without a pair; paired callbacks require sequence and generation", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      {
+        userId: primaryId,
+      },
+    );
+    const paired = (await pendingScheduleRows(t, primaryId))[0];
+    if (!paired?.wakeSequence) throw new Error("Expected a paired wake token");
+    vi.setSystemTime(paired.dueAt);
+
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: paired._id,
+        generation: paired.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: paired._id,
+        generation: paired.generation + 1,
+        expectedWakeSequence: paired.wakeSequence,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+    expect(await t.run((ctx) => ctx.db.get(paired._id))).toMatchObject({
+      state: "pending",
+    });
+
+    const legacyId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: paired.ownerUserId,
+        kind: paired.kind,
+        state: "pending",
+        dueAt: paired.dueAt,
+        generation: paired.generation,
+        sourceAuthorityVersion: paired.sourceAuthorityVersion,
+        reminderWindowVersion: paired.reminderWindowVersion,
+        createdAt: start,
+        updatedAt: start,
+      }),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: legacyId,
+        generation: paired.generation,
+      }),
+    ).resolves.toEqual({ status: "ready" });
+  });
+
+  test("transaction rollback removes the replacement timer and marker together", async () => {
+    const start = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      {
+        userId: primaryId,
+      },
+    );
+    const work = (await pendingScheduleRows(t, primaryId))[0];
+    if (!work?.wakeScheduledFunctionId || work.wakeSequence !== 1) {
+      throw new Error("Expected a paired wake token");
+    }
+    const originalWakeId = work.wakeScheduledFunctionId;
+    await t.run((ctx) => ctx.scheduler.cancel(originalWakeId));
+
+    await expect(
+      t.run(async (ctx) => {
+        await reconcileUserSchedule(ctx, primaryId);
+        throw new Error("force transaction rollback");
+      }),
+    ).rejects.toThrow("force transaction rollback");
+
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      wakeScheduledFunctionId: originalWakeId,
+      wakeSequence: 1,
+      state: "pending",
+    });
+    const wakes = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(100)).filter(
+        (scheduled) => {
+          const arg = scheduled.args[0];
+          return (
+            scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
+            typeof arg === "object" &&
+            arg !== null &&
+            "workId" in arg &&
+            arg.workId === work._id
+          );
+        },
+      ),
+    );
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]).toMatchObject({
+      _id: originalWakeId,
+      state: { kind: "canceled" },
+    });
   });
 
   test("missing eligible start anchor suppresses prediction-window scheduling", async () => {
@@ -661,16 +1024,25 @@ describe("notification schedule reconciliation", () => {
       });
     const originalWakeId = await findWakeId();
     if (!originalWakeId) throw new Error("Expected the due-work wake id");
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      wakeScheduledFunctionId: originalWakeId,
+      wakeSequence: 1,
+    });
     await t.run((ctx) => ctx.scheduler.cancel(originalWakeId));
     expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
       scheduled: 0,
     });
 
-    await expect(
-      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
-    ).resolves.toEqual({ status: "blocked", reason: "outbox_disabled" });
+    await expect(t.mutation(wakeDueWorkRef, wakeArgs(work))).resolves.toEqual({
+      status: "blocked",
+      reason: "outbox_disabled",
+    });
     expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
     expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({ state: "pending" });
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      wakeScheduledFunctionId: originalWakeId,
+      wakeSequence: 1,
+    });
     expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
       scheduled: 0,
     });
@@ -678,6 +1050,9 @@ describe("notification schedule reconciliation", () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
     expect(await t.mutation(reconcileDueWorkRef, { kind: work.kind })).toEqual({
       scheduled: 1,
+    });
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
+      wakeSequence: 2,
     });
   });
 
@@ -756,8 +1131,7 @@ describe("notification schedule reconciliation", () => {
     );
     await expect(
       t.mutation(wakeDueWorkRef, {
-        workId: predictionWork._id,
-        generation: predictionWork.generation,
+        ...wakeArgs(predictionWork),
       }),
     ).resolves.toEqual({ status: "ready" });
 
@@ -784,8 +1158,7 @@ describe("notification schedule reconciliation", () => {
     );
     await expect(
       t.mutation(wakeDueWorkRef, {
-        workId: lateWork._id,
-        generation: lateWork.generation,
+        ...wakeArgs(lateWork),
       }),
     ).resolves.toEqual({ status: "blocked", reason: "content_not_approved" });
 
@@ -798,8 +1171,7 @@ describe("notification schedule reconciliation", () => {
     );
     await expect(
       t.mutation(wakeDueWorkRef, {
-        workId: lateWork._id,
-        generation: lateWork.generation,
+        ...wakeArgs(lateWork),
       }),
     ).resolves.toEqual({ status: "stale" });
 
@@ -1017,8 +1389,7 @@ describe("notification schedule reconciliation", () => {
     );
     await expect(
       t.mutation(wakeDueWorkRef, {
-        workId: work._id,
-        generation: work.generation,
+        ...wakeArgs(work),
       }),
     ).resolves.toEqual({ status: "stale" });
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
@@ -1255,27 +1626,25 @@ describe("notification schedule reconciliation", () => {
 
     const firstAttemptAt = work.dueAt + 1;
     vi.setSystemTime(firstAttemptAt);
-    await expect(
-      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
-    ).resolves.toEqual({ status: "stale" });
+    await expect(t.mutation(wakeDueWorkRef, wakeArgs(work))).resolves.toEqual({
+      status: "stale",
+    });
     expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({
       state: "cancelled",
     });
     expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
-    const retryAt = firstAttemptAt + 5 * 60 * 1_000;
     expect(
       await t.run(async (ctx) =>
-        (await ctx.db.system.query("_scheduled_functions").take(100)).some(
+        (await ctx.db.system.query("_scheduled_functions").take(100)).filter(
           (scheduled) =>
             scheduled.name === "internal/notificationScheduler:wakeDueWork" &&
-            scheduled.scheduledTime === retryAt &&
             typeof scheduled.args[0] === "object" &&
             scheduled.args[0] !== null &&
             "workId" in scheduled.args[0] &&
             scheduled.args[0].workId === work._id,
         ),
       ),
-    ).toBe(false);
+    ).toHaveLength(1);
   });
 
   test("kind-scoped cron recovery reaches pending work past terminal and other-kind history", async () => {
@@ -1556,11 +1925,13 @@ describe("notification schedule reconciliation", () => {
       ),
     );
     expect(recoveredWake).toBeDefined();
+    const currentWork = await t.run((ctx) => ctx.db.get(work._id));
+    if (!currentWork) throw new Error("Expected recovered work");
     await expect(
-      t.mutation(wakeDueWorkRef, {
-        workId: work._id,
-        generation: work.generation,
-      }),
+      t.mutation(
+        wakeDueWorkRef,
+        wakeArgs(currentWork as DueWorkWithWakeMetadata),
+      ),
     ).resolves.toEqual({ status: "ready" });
     expect((await t.run((ctx) => ctx.db.get(work._id)))?.state).toBe("claimed");
   });
@@ -1620,13 +1991,12 @@ describe("notification schedule reconciliation", () => {
     const firstPage = indexedDue.slice(0, 50);
     expect(indexedDue).toHaveLength(61);
 
-    expect(await t.mutation(reconcileDueWorkRef, {})).toEqual({ scheduled: 50 });
+    expect(await t.mutation(reconcileDueWorkRef, {})).toEqual({ scheduled: 49 });
     for (const work of firstPage) {
+      const scheduledWork = await t.run((ctx) => ctx.db.get(work._id));
+      if (!scheduledWork) throw new Error("Expected scheduled work");
       await expect(
-        t.mutation(wakeDueWorkRef, {
-          workId: work._id,
-          generation: work.generation,
-        }),
+        t.mutation(wakeDueWorkRef, wakeArgs(scheduledWork)),
       ).resolves.toEqual({ status: "ready" });
     }
     const afterFirstPage = await allScheduleRows(t, primaryId);
@@ -1642,10 +2012,7 @@ describe("notification schedule reconciliation", () => {
     expect(secondPage).toHaveLength(11);
     for (const work of secondPage) {
       await expect(
-        t.mutation(wakeDueWorkRef, {
-          workId: work._id,
-          generation: work.generation,
-        }),
+        t.mutation(wakeDueWorkRef, wakeArgs(work)),
       ).resolves.toEqual({ status: "ready" });
     }
     const afterSecondPage = await allScheduleRows(t, primaryId);
@@ -1683,12 +2050,9 @@ describe("notification schedule reconciliation", () => {
       resolveLocalReminderInstant(dueDay, "12:00", "America/Los_Angeles"),
     );
 
-    await expect(
-      t.mutation(wakeDueWorkRef, {
-        workId: work._id,
-        generation: work.generation,
-      }),
-    ).resolves.toEqual({ status: "ready" });
+    await expect(t.mutation(wakeDueWorkRef, wakeArgs(work))).resolves.toEqual({
+      status: "ready",
+    });
     await t.mutation(
       internal.internal.predictionSnapshots.ensureCurrentForUser,
       { userId: primaryId },
