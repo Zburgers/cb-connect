@@ -16,17 +16,27 @@ const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const PROJECTION_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_PROJECTION_V1";
 const DELIVERY_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_DELIVERY_V1";
 
-type ReconcileState = "pending" | "retry_wait" | "processing";
+type ReconcileState = "pending" | "retry_wait" | "processing" | "unknown";
 
 const reconcileArgsValidator = v.object({
-  state: v.union(v.literal("pending"), v.literal("retry_wait"), v.literal("processing")),
+  state: v.union(
+    v.literal("pending"),
+    v.literal("retry_wait"),
+    v.literal("processing"),
+    v.literal("unknown"),
+  ),
   cursor: v.union(v.string(), v.null()),
   deadlineCursor: v.union(v.string(), v.null()),
 });
 
 const reconcileResultValidator = v.object({
   status: v.union(v.literal("disabled"), v.literal("reconciled")),
-  state: v.union(v.literal("pending"), v.literal("retry_wait"), v.literal("processing")),
+  state: v.union(
+    v.literal("pending"),
+    v.literal("retry_wait"),
+    v.literal("processing"),
+    v.literal("unknown"),
+  ),
   inspected: v.number(),
   scheduled: v.number(),
   retried: v.number(),
@@ -221,14 +231,23 @@ export const reconcile = internalMutation({
     if (!deliveryIsEnabled()) return { status: "disabled" as const, ...emptyResult };
 
     const now = Date.now();
-    const deadlinePage = await ctx.db
-      .query("notificationDeliveries")
-      .withIndex("by_state_and_expires_at", (q) =>
-        q.eq("state", args.state).gte("expiresAt", 0).lte("expiresAt", now),
-      )
-      .paginate({ numItems: PAGE_SIZE, cursor: args.deadlineCursor });
+    const deadlinePage = args.state === "unknown"
+      ? { page: [], isDone: true, continueCursor: null }
+      : await ctx.db
+        .query("notificationDeliveries")
+        .withIndex("by_state_and_expires_at", (q) =>
+          q.eq("state", args.state).gte("expiresAt", 0).lte("expiresAt", now),
+        )
+        .paginate({ numItems: PAGE_SIZE, cursor: args.deadlineCursor });
     const workPage =
-      args.state === "processing"
+      args.state === "unknown"
+        ? await ctx.db
+          .query("notificationDeliveries")
+          .withIndex("by_state_and_expires_at", (q) =>
+            q.eq("state", "unknown").gte("expiresAt", 0).lte("expiresAt", now),
+          )
+          .paginate({ numItems: PAGE_SIZE, cursor: args.cursor })
+        : args.state === "processing"
         ? await ctx.db
           .query("notificationDeliveries")
           .withIndex("by_state_and_lease_until", (q) =>
@@ -271,6 +290,7 @@ export const reconcile = internalMutation({
         expired += 1;
         continue;
       }
+      if (args.state === "unknown") continue;
       if (args.state === "processing") {
         const result = await recoverLease(ctx, delivery, now);
         if (result === "retried") retried += 1;
@@ -290,8 +310,21 @@ export const reconcile = internalMutation({
       const wakeAt = delivery.expiresAt === undefined
         ? dueAt
         : Math.min(dueAt, delivery.expiresAt);
-      if (await scheduleWake(ctx, delivery, wakeAt, now)) scheduled += 1;
-      else skipped += 1;
+      if (await scheduleWake(ctx, delivery, wakeAt, now)) {
+        scheduled += 1;
+      } else if (delivery.claimGeneration >= Number.MAX_SAFE_INTEGER) {
+        await ctx.db.patch(delivery._id, {
+          state: "failed_permanent",
+          eligibility: "eligible",
+          errorCode: "attempts_exhausted",
+          nextAttemptAt: undefined,
+          leaseUntil: undefined,
+          updatedAt: now,
+        });
+        exhausted += 1;
+      } else {
+        skipped += 1;
+      }
     }
 
     const hasMore = !workPage.isDone || !deadlinePage.isDone;
@@ -308,6 +341,8 @@ export const reconcile = internalMutation({
       continuation = { state: "retry_wait", cursor: null, deadlineCursor: null };
     } else if (args.state === "retry_wait") {
       continuation = { state: "processing", cursor: null, deadlineCursor: null };
+    } else if (args.state === "processing") {
+      continuation = { state: "unknown", cursor: null, deadlineCursor: null };
     }
     if (continuation) {
       // ponytail: one bounded page per maxBackoffMs; tune from N8 load evidence.
