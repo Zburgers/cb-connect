@@ -19,10 +19,11 @@ import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
 
 type TestBackend = TestConvex<typeof schema>;
-type ReconcileState = "pending" | "retry_wait" | "processing";
+type ReconcileState = "pending" | "retry_wait" | "processing" | "unknown";
 type SeedOptions = {
   state?: ReconcileState | "expired" | "failed_permanent";
   eligibility?: "eligible" | "expired";
+  providerOutcome?: "none" | "unknown";
   claimGeneration?: number;
   attemptCount?: number;
   notBefore?: number;
@@ -93,7 +94,7 @@ async function insertDelivery(
     ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt }),
     state,
     eligibility: options.eligibility ?? (state === "expired" ? "expired" : "eligible"),
-    providerOutcome: "none",
+    providerOutcome: options.providerOutcome ?? (state === "unknown" ? "unknown" : "none"),
     attemptCount: options.attemptCount ?? 0,
     ...(options.nextAttemptAt === undefined
       ? {}
@@ -252,6 +253,128 @@ describe("N2e durable delivery reconciliation", () => {
       });
     }
     expect(seeded.terminalIds).toHaveLength(80);
+  });
+
+  test("expires unknown rows in bounded cursor pages without changing their factual outcome", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const ids = await t.run(async (ctx) => {
+      const values: Id<"notificationDeliveries">[] = [];
+      for (let index = 0; index < 25; index += 1) {
+        const row = await insertDelivery(ctx, recipientUserId, renderIdentity, {
+          state: "unknown",
+          providerOutcome: "unknown",
+          eligibility: "eligible",
+          expiresAt: now - 1,
+        });
+        values.push(row.deliveryId);
+      }
+      return values;
+    });
+
+    const first = await t.mutation(reconcileRef, {
+      state: "unknown",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    expect(first).toMatchObject({ state: "unknown", inspected: 10, expired: 10, hasMore: true });
+    expect(first.cursor).not.toBeNull();
+    expect(first.deadlineCursor).toBeNull();
+
+    const second = await t.mutation(reconcileRef, {
+      state: "unknown",
+      cursor: first.cursor,
+      deadlineCursor: first.deadlineCursor,
+    } as never);
+    expect(second).toMatchObject({ inspected: 10, expired: 10, hasMore: true });
+    expect(second.cursor).not.toBeNull();
+
+    const third = await t.mutation(reconcileRef, {
+      state: "unknown",
+      cursor: second.cursor,
+      deadlineCursor: second.deadlineCursor,
+    } as never);
+    expect(third).toMatchObject({ inspected: 5, expired: 5, hasMore: false });
+    expect(third.cursor).toBeNull();
+
+    const rows = await t.run(async (ctx) => Promise.all(ids.map((id) => ctx.db.get(id))));
+    expect(rows).toHaveLength(25);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        state: "expired",
+        eligibility: "expired",
+        providerOutcome: "unknown",
+        errorCode: "expired",
+      });
+      expect(row?.nextAttemptAt).toBeUndefined();
+      expect(row?.leaseUntil).toBeUndefined();
+    }
+  });
+
+  test("terminalizes pending and retry_wait work when a saturated generation cannot schedule", async () => {
+    enableDelivery();
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { recipientUserId, renderIdentity } = await setup(t);
+    const rows = await t.run(async (ctx) => ({
+      pending: await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "pending",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        notBefore: now,
+      }),
+      retryWait: await insertDelivery(ctx, recipientUserId, renderIdentity, {
+        state: "retry_wait",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        notBefore: now,
+        nextAttemptAt: now,
+      }),
+    }));
+
+    const pending = await t.mutation(reconcileRef, {
+      state: "pending",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+    const retryWait = await t.mutation(reconcileRef, {
+      state: "retry_wait",
+      cursor: null,
+      deadlineCursor: null,
+    } as never);
+
+    expect(pending).toMatchObject({ scheduled: 0, exhausted: 1, skipped: 0 });
+    expect(retryWait).toMatchObject({ scheduled: 0, exhausted: 1, skipped: 0 });
+    for (const row of [rows.pending, rows.retryWait]) {
+      expect(await t.run((ctx) => ctx.db.get(row.deliveryId))).toMatchObject({
+        state: "failed_permanent",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        claimGeneration: Number.MAX_SAFE_INTEGER,
+        errorCode: "attempts_exhausted",
+      });
+      const delivery = await t.run((ctx) => ctx.db.get(row.deliveryId));
+      expect(delivery?.nextAttemptAt).toBeUndefined();
+      expect(delivery?.leaseUntil).toBeUndefined();
+    }
+    const scheduled = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").take(20));
+    for (const row of [rows.pending, rows.retryWait]) {
+      expect(
+        scheduled.some(({ args }) => {
+          const arg = args[0];
+          return (
+            typeof arg === "object" &&
+            arg !== null &&
+            "eventId" in arg &&
+            arg.eventId === row.eventId
+          );
+        }),
+      ).toBe(false);
+    }
   });
 
   test("retries only proven-undispatched leases and fences every terminal recovery", async () => {
