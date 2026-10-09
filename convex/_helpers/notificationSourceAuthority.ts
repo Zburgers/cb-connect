@@ -140,6 +140,55 @@ function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+export type NotificationWakeMetadata = {
+  wakeScheduledFunctionId?: Id<"_scheduled_functions">;
+  wakeSequence?: number;
+};
+
+/** Both wake fields are absent on legacy rows or present as one complete token. */
+export function isValidNotificationWakeMetadata(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const metadata = value as Record<string, unknown>;
+  const hasScheduledFunctionId = metadata.wakeScheduledFunctionId !== undefined;
+  const hasSequence = metadata.wakeSequence !== undefined;
+  if (!hasScheduledFunctionId && !hasSequence) return true;
+  return (
+    hasScheduledFunctionId &&
+    typeof metadata.wakeScheduledFunctionId === "string" &&
+    metadata.wakeScheduledFunctionId.length > 0 &&
+    isPositiveSafeInteger(metadata.wakeSequence)
+  );
+}
+
+/** Returns the first token or the next exact token; null means fail closed. */
+export function nextNotificationWakeSequence(
+  current: NotificationWakeMetadata = {},
+): number | null {
+  if (!isValidNotificationWakeMetadata(current)) return null;
+  const currentSequence = current.wakeSequence;
+  if (currentSequence === undefined) return 1;
+  if (currentSequence === Number.MAX_SAFE_INTEGER) {
+    return null;
+  }
+  return currentSequence + 1;
+}
+
+/** Legacy callbacks are accepted only before a paired wake token has been stored. */
+export function isExpectedNotificationWake(args: {
+  expectedSequence?: number;
+  wakeScheduledFunctionId?: unknown;
+  wakeSequence?: unknown;
+}): boolean {
+  if (args.expectedSequence === undefined) {
+    return args.wakeScheduledFunctionId === undefined && args.wakeSequence === undefined;
+  }
+  return (
+    isPositiveSafeInteger(args.expectedSequence) &&
+    isValidNotificationWakeMetadata(args) &&
+    args.wakeSequence === args.expectedSequence
+  );
+}
+
 function isFiniteNonNegativeIntegerTimestamp(value: unknown): value is number {
   return isNonNegativeSafeInteger(value);
 }
@@ -199,7 +248,7 @@ export type NotificationDueWorkKind =
   | "source_reconcile"
   | "pain_reminder";
 
-type NotificationDueWorkBase = {
+type NotificationDueWorkBase = NotificationWakeMetadata & {
   ownerUserId: Id<"users">;
   state: "pending" | "claimed" | "completed" | "cancelled";
   dueAt: number;
@@ -248,6 +297,7 @@ export function isValidNotificationDueWorkRecord(
     row.state !== "pending" ||
     !isFiniteNonNegativeIntegerTimestamp(row.dueAt) ||
     !isPositiveSafeInteger(row.generation) ||
+    !isValidNotificationWakeMetadata(row) ||
     !isFiniteNonNegativeIntegerTimestamp(row.createdAt) ||
     !isFiniteNonNegativeIntegerTimestamp(row.updatedAt) ||
     typeof row.ownerUserId !== "string" ||
@@ -300,6 +350,9 @@ export function assertValidNotificationDueWorkWrite(
     const row = value as Record<string, unknown>;
     if (!isPositiveSafeInteger(row.generation)) {
       throw new Error("Due-work generation must be a positive safe integer");
+    }
+    if (!isValidNotificationWakeMetadata(row)) {
+      throw new Error("Due-work wake metadata must contain a valid paired schedule ID and sequence");
     }
     for (const field of ["dueAt", "createdAt", "updatedAt"] as const) {
       if (!isFiniteNonNegativeIntegerTimestamp(row[field])) {

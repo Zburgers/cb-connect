@@ -60,7 +60,7 @@ export const notificationControlValidator = v.object({
   updatedAt: v.number(),
 });
 
-export const notificationDueWorkValidator = v.object({
+const notificationDueWorkFields = {
   ownerUserId: v.id("users"),
   kind: v.union(
     v.literal("delivery"),
@@ -77,6 +77,8 @@ export const notificationDueWorkValidator = v.object({
   ),
   dueAt: v.number(),
   generation: v.number(),
+  wakeScheduledFunctionId: v.optional(v.id("_scheduled_functions")),
+  wakeSequence: v.optional(v.number()),
   sourceAuthorityVersion: v.optional(v.string()),
   reminderWindowVersion: v.optional(v.number()),
   eventId: v.optional(v.id("notificationEvents")),
@@ -84,7 +86,24 @@ export const notificationDueWorkValidator = v.object({
   painReminderRequestId: v.optional(v.id("painReminderRequests")),
   createdAt: v.number(),
   updatedAt: v.number(),
-});
+};
+
+export const notificationDueWorkValidator = v.object(notificationDueWorkFields);
+
+const {
+  wakeScheduledFunctionId: _dueWorkWakeId,
+  wakeSequence: _dueWorkWakeSequence,
+  ...notificationDueWorkBaseFields
+} = notificationDueWorkFields;
+
+export const notificationDueWorkStorageValidator = v.union(
+  v.object(notificationDueWorkBaseFields),
+  v.object({
+    ...notificationDueWorkBaseFields,
+    wakeScheduledFunctionId: v.id("_scheduled_functions"),
+    wakeSequence: v.number(),
+  }),
+);
 
 export const painReminderRequestValidator = v.object({
   ownerUserId: v.id("users"),
@@ -96,16 +115,14 @@ export const painReminderRequestValidator = v.object({
   updatedAt: v.number(),
 });
 
-const {
-  providerMessageId: _providerMessageId,
-  ...inAppDeliveryFields
-} = notificationDeliveryRecordValidator.fields;
+const { providerMessageId: _providerMessageId, ...inAppDeliveryFields } =
+  notificationDeliveryRecordValidator.fields;
 const {
   result: _attemptResult,
   ...inAppAttemptFields
 } = notificationDeliveryAttemptRecordValidator.fields;
 
-export const notificationInAppDeliveryValidator = v.object({
+const notificationInAppDeliveryFields = {
   ...inAppDeliveryFields,
   channel: v.literal("in_app"),
   state: v.union(
@@ -120,7 +137,24 @@ export const notificationInAppDeliveryValidator = v.object({
     v.literal("cancelled"),
   ),
   providerOutcome: v.union(v.literal("none"), v.literal("unknown")),
-});
+};
+
+export const notificationInAppDeliveryValidator = v.object(notificationInAppDeliveryFields);
+
+const {
+  wakeScheduledFunctionId: _inAppWakeId,
+  wakeSequence: _inAppWakeSequence,
+  ...notificationInAppDeliveryBaseFields
+} = notificationInAppDeliveryFields;
+
+export const notificationInAppDeliveryStorageValidator = v.union(
+  v.object(notificationInAppDeliveryBaseFields),
+  v.object({
+    ...notificationInAppDeliveryBaseFields,
+    wakeScheduledFunctionId: v.id("_scheduled_functions"),
+    wakeSequence: v.number(),
+  }),
+);
 
 export const notificationInAppAttemptValidator = v.object({
   ...inAppAttemptFields,
@@ -623,7 +657,7 @@ export default defineSchema({
       "createdAt",
     ]),
 
-  notificationDeliveries: defineTable(notificationInAppDeliveryValidator)
+  notificationDeliveries: defineTable(notificationInAppDeliveryStorageValidator)
     .index("by_logical_key", ["logicalKey"])
     .index("by_event_id", ["eventId"])
     .index("by_recipient_and_state", ["recipientUserId", "state"])
@@ -637,7 +671,7 @@ export default defineSchema({
     .index("by_delivery_and_ordinal", ["deliveryId", "attemptOrdinal"])
     .index("by_delivery_and_generation", ["deliveryId", "claimGeneration"]),
 
-  notificationDueWork: defineTable(notificationDueWorkValidator)
+  notificationDueWork: defineTable(notificationDueWorkStorageValidator)
     .index("by_state_and_due_at", ["state", "dueAt"])
     .index("by_kind_and_state_and_due_at", ["kind", "state", "dueAt"])
     .index("by_owner_and_state_and_due_at", ["ownerUserId", "state", "dueAt"])

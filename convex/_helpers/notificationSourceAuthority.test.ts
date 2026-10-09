@@ -1,4 +1,5 @@
 import { convexTest } from "convex-test";
+import { makeFunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -6,13 +7,18 @@ import {
   createNotificationDueWork,
   isCurrentNotificationScheduleFence,
   initializeNotificationSourceAuthority,
+  isValidNotificationDueWorkRecord,
   makeSourceAuthorityVersion,
   parseSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "./notificationSourceAuthority";
-import schema from "../schema";
+import schema, { notificationDueWorkStorageValidator } from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
+
+const reconcileRef = makeFunctionReference<"mutation">(
+  "internal/notificationReconciler:reconcile",
+);
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -212,6 +218,112 @@ describe("G4-SOURCE-V1 canonical authority", () => {
 });
 
 describe("transactional notification source revision", () => {
+  test("due work permits both legacy-absent wake markers and complete current pairs", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const scheduledId = await t.run((ctx) =>
+      ctx.scheduler.runAfter(60_000, reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      }),
+    );
+    const base = {
+      ownerUserId: primaryId,
+      kind: "source_reconcile" as const,
+      state: "pending" as const,
+      dueAt: 10,
+      generation: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    expect(isValidNotificationDueWorkRecord(base)).toBe(true);
+    const legacyId = await t.run((ctx) => createNotificationDueWork(ctx, base));
+    expect(legacyId).toBeTruthy();
+    const wakeSequence = 1;
+    expect(isValidNotificationDueWorkRecord({
+      ...base,
+      wakeScheduledFunctionId: scheduledId,
+      wakeSequence,
+    })).toBe(true);
+    const pairedId = await t.run((ctx) => createNotificationDueWork(ctx, {
+      ...base,
+      wakeScheduledFunctionId: scheduledId,
+      wakeSequence,
+    }));
+    const stored = await t.run((ctx) => ctx.db.get(pairedId));
+    expect(stored).toMatchObject({ wakeScheduledFunctionId: scheduledId, wakeSequence: 1 });
+    const pairedDueWorkFields = notificationDueWorkStorageValidator.members[1].fields;
+    expect(pairedDueWorkFields.wakeScheduledFunctionId).toMatchObject({
+      kind: "id",
+      tableName: "_scheduled_functions",
+    });
+    expect(pairedDueWorkFields.wakeSequence.isOptional).toBe("required");
+  });
+
+  test("due work rejects half-pairs, invalid sequences, and IDs from other tables", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const scheduledId = await t.run((ctx) =>
+      ctx.scheduler.runAfter(60_000, reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      }),
+    );
+    const eventId = await t.run((ctx) => ctx.db.insert("notificationEvents", {
+      eventType: "partner_message.v1",
+      eventVersion: 1,
+      purpose: "partner_message",
+      producerKind: "new_couple_message",
+      sourceReference: "message-ref",
+      sourceAuthorityVersion: "relationship-membership:1",
+      ownerUserId: primaryId,
+      recipientUserId: primaryId,
+      recipientScope: "primary",
+      privacyClass: "relationship_private_free_text_source",
+      validityRule: "while_message_and_active_link_exist",
+      idempotencyKey: "event:v1:due-work-wake-id-test",
+      allowedChannel: "in_app",
+      createdAt: 1,
+    }));
+    const base = {
+      ownerUserId: primaryId,
+      kind: "source_reconcile" as const,
+      state: "pending" as const,
+      dueAt: 10,
+      generation: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(t.run((ctx) => createNotificationDueWork(ctx, {
+      ...base,
+      wakeScheduledFunctionId: scheduledId,
+    } as never))).rejects.toThrow(/wake|pair|invalid/i);
+    await expect(t.run((ctx) => createNotificationDueWork(ctx, {
+      ...base,
+      wakeSequence: 1,
+    } as never))).rejects.toThrow(/wake|pair|invalid/i);
+    await expect(t.run((ctx) => ctx.db.insert("notificationDueWork", {
+      ...base,
+      wakeSequence: 1,
+    } as never))).rejects.toThrow();
+    for (const wakeSequence of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(t.run((ctx) => createNotificationDueWork(ctx, {
+        ...base,
+        wakeScheduledFunctionId: scheduledId,
+        wakeSequence,
+      } as never))).rejects.toThrow(/wake|sequence|invalid/i);
+    }
+    await expect(t.run((ctx) => createNotificationDueWork(ctx, {
+      ...base,
+      wakeScheduledFunctionId: eventId as never,
+      wakeSequence: 1,
+    } as never))).rejects.toThrow();
+  });
+
   test("flags-off fresh installs have no metadata; first opt-in initializes once without backfill", async () => {
     vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "false");
     const t = convexTest(schema, modules);
