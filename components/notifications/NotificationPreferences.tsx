@@ -167,6 +167,7 @@ export default function NotificationPreferences({
     purpose: NotificationPurpose,
     inAppEnabled: boolean,
     localReminderTime?: string | null,
+    operation: "toggle" | "save_time" = "toggle",
   ) {
     setSavingPurpose(purpose);
     setMessage("");
@@ -178,7 +179,7 @@ export default function NotificationPreferences({
         ...(localReminderTime === undefined ? {} : { localReminderTime }),
       });
       setMessage(
-        inAppEnabled
+        operation === "save_time" || inAppEnabled
           ? "Notification preference saved."
           : "Preference turned off.",
       );
@@ -294,6 +295,7 @@ export default function NotificationPreferences({
                               option.purpose,
                               preference.inAppEnabled,
                               reminderTime || null,
+                              "save_time",
                             )
                           }
                           className="min-h-11 rounded-xl border border-foreground/15 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-[var(--color-glass-2)] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"

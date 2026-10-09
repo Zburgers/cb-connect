@@ -243,6 +243,7 @@ test.describe("in-app notification preferences", () => {
       await expect(preferences.getByRole("status")).toContainText(
         "Notification preference saved.",
       );
+      await expect(cycleWindow).not.toBeChecked();
       await expect(cycleWindow).toBeEnabled();
 
       await cycleWindow.check();
