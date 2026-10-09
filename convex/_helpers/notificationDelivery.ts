@@ -6,6 +6,16 @@ import {
   notificationEventTypeValidator,
   type NotificationEventType,
 } from "./notificationTypes";
+import {
+  isValidNotificationWakeMetadata,
+} from "./notificationSourceAuthority";
+import type { NotificationWakeMetadata } from "./notificationSourceAuthority";
+export {
+  isExpectedNotificationWake,
+  isValidNotificationWakeMetadata,
+  nextNotificationWakeSequence,
+} from "./notificationSourceAuthority";
+export type { NotificationWakeMetadata } from "./notificationSourceAuthority";
 
 export const notificationDeliveryChannels = [
   "in_app",
@@ -292,7 +302,7 @@ export type NotificationAdapterResult =
   | { kind: "permanent_failure"; errorCode: DeliveryErrorCode }
   | { kind: "unknown"; errorCode?: DeliveryErrorCode };
 
-export type NotificationDeliveryRecord = {
+export type NotificationDeliveryRecord = NotificationWakeMetadata & {
   eventId: string;
   recipientUserId: string;
   channel: NotificationDeliveryChannel;
@@ -484,6 +494,8 @@ export const notificationDeliveryRecordValidator = v.object({
   attemptCount: v.number(),
   nextAttemptAt: v.optional(v.number()),
   claimGeneration: v.number(),
+  wakeScheduledFunctionId: v.optional(v.id("_scheduled_functions")),
+  wakeSequence: v.optional(v.number()),
   leaseUntil: v.optional(v.number()),
   dispatchStartedAt: v.optional(v.number()),
   nextReceiptCheckAt: v.optional(v.number()),
@@ -992,6 +1004,7 @@ export function isValidNotificationDeliveryRecord(
     ) ||
     !isNonNegativeSafeInteger(record.attemptCount) ||
     !isNonNegativeSafeInteger(record.claimGeneration) ||
+    !isValidNotificationWakeMetadata(record) ||
     typeof record.eventId !== "string" ||
     record.eventId.length === 0 ||
     typeof record.recipientUserId !== "string" ||

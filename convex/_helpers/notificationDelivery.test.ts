@@ -1,13 +1,19 @@
 import { describe, expect, test } from "vitest";
+import { convexTest } from "convex-test";
+import { makeFunctionReference } from "convex/server";
 
 import { notificationEventDefinitions } from "./notificationTypes";
 import {
+  assertValidNotificationDeliveryRecord,
   assertValidNotificationDeliveryAttemptNumbers,
   canRebindDestinationVersion,
   createProviderIdempotencyKey,
   isEventChannelAllowed,
   isValidDeliveryState,
   isValidNotificationDeliveryRecord,
+  isValidNotificationWakeMetadata,
+  isExpectedNotificationWake,
+  nextNotificationWakeSequence,
   isValidFrozenNotificationPayload,
   isValidFrozenRenderIdentity,
   isValidProviderIdempotencyCapability,
@@ -37,6 +43,14 @@ import {
   type NotificationDeliveryRecord,
   type NotificationOperationalLimits,
 } from "./notificationDelivery";
+import schema from "../schema";
+import { notificationInAppDeliveryStorageValidator } from "../schema";
+import { modules } from "../test.setup";
+import { seedActiveCouple } from "../test.fixtures";
+
+const reconcileRef = makeFunctionReference<"mutation">(
+  "internal/notificationReconciler:reconcile",
+);
 
 const componentSamples: Record<string, string> = {
   type: "unused",
@@ -1010,6 +1024,8 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
         "attemptCount",
         "nextAttemptAt",
         "claimGeneration",
+        "wakeScheduledFunctionId",
+        "wakeSequence",
         "leaseUntil",
         "dispatchStartedAt",
         "nextReceiptCheckAt",
@@ -1048,6 +1064,161 @@ describe("G4-DELIVERY-V1 lifecycle", () => {
     expect(notificationDeliveryRecordValidator.fields).not.toHaveProperty("payload");
     expect(notificationDeliveryAttemptRecordValidator.fields).not.toHaveProperty("response");
     expect(notificationInboxItemRecordValidator.fields).not.toHaveProperty("message");
+    expect(notificationDeliveryRecordValidator.fields.wakeScheduledFunctionId).toMatchObject({
+      kind: "id",
+      tableName: "_scheduled_functions",
+      isOptional: "optional",
+    });
+    expect(notificationDeliveryRecordValidator.fields.wakeSequence.isOptional).toBe("optional");
+    const pairedDeliveryFields = notificationInAppDeliveryStorageValidator.members[1].fields;
+    expect(pairedDeliveryFields.wakeScheduledFunctionId).toMatchObject({
+      kind: "id",
+      tableName: "_scheduled_functions",
+    });
+    expect(pairedDeliveryFields.wakeSequence.isOptional).toBe("required");
+  });
+
+  test("delivery wake metadata accepts only paired scheduled IDs and safe positive sequences", () => {
+    expect(isValidNotificationWakeMetadata({})).toBe(true);
+    expect(isValidNotificationWakeMetadata({ wakeScheduledFunctionId: "scheduled:1" })).toBe(false);
+    expect(isValidNotificationWakeMetadata({ wakeSequence: 1 })).toBe(false);
+    expect(
+      isValidNotificationWakeMetadata({ wakeScheduledFunctionId: "scheduled:1", wakeSequence: 1 }),
+    ).toBe(true);
+    for (const wakeSequence of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        isValidNotificationWakeMetadata({ wakeScheduledFunctionId: "scheduled:1", wakeSequence }),
+      ).toBe(false);
+    }
+    expect(isValidNotificationDeliveryRecord(inAppDeliveryRecord())).toBe(true);
+    expect(
+      isValidNotificationDeliveryRecord(
+        inAppDeliveryRecord({ wakeScheduledFunctionId: "scheduled:1" } as never),
+      ),
+    ).toBe(false);
+    expect(
+      isValidNotificationDeliveryRecord(
+        inAppDeliveryRecord({ wakeSequence: 1 } as never),
+      ),
+    ).toBe(false);
+    expect(
+      isValidNotificationDeliveryRecord(
+        inAppDeliveryRecord({ wakeScheduledFunctionId: "scheduled:1", wakeSequence: 1 } as never),
+      ),
+    ).toBe(true);
+    expect(() =>
+      assertValidNotificationDeliveryRecord(
+        inAppDeliveryRecord({ wakeScheduledFunctionId: "scheduled:1" } as never),
+      ),
+    ).toThrow(/invalid|fields/i);
+  });
+
+  test("wake tokens initialize at one, advance exactly once, and fail closed at exhaustion", () => {
+    expect(nextNotificationWakeSequence()).toBe(1);
+    expect(nextNotificationWakeSequence({})).toBe(1);
+    expect(nextNotificationWakeSequence({
+      wakeScheduledFunctionId: "scheduled:current" as never,
+      wakeSequence: 1,
+    })).toBe(2);
+    expect(nextNotificationWakeSequence({
+      wakeScheduledFunctionId: "scheduled:current" as never,
+      wakeSequence: 41,
+    })).toBe(42);
+    expect(nextNotificationWakeSequence({
+      wakeScheduledFunctionId: "scheduled:current" as never,
+      wakeSequence: Number.MAX_SAFE_INTEGER - 1,
+    })).toBe(Number.MAX_SAFE_INTEGER);
+    expect(nextNotificationWakeSequence({
+      wakeScheduledFunctionId: "scheduled:current" as never,
+      wakeSequence: Number.MAX_SAFE_INTEGER,
+    })).toBeNull();
+    for (const invalid of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(nextNotificationWakeSequence({
+        wakeScheduledFunctionId: "scheduled:current" as never,
+        wakeSequence: invalid,
+      })).toBeNull();
+    }
+    expect(nextNotificationWakeSequence({ wakeSequence: 1 } as never)).toBeNull();
+    expect(isExpectedNotificationWake({ expectedSequence: undefined })).toBe(true);
+    expect(isExpectedNotificationWake({ expectedSequence: undefined, wakeSequence: 1 })).toBe(false);
+    expect(
+      isExpectedNotificationWake({
+        expectedSequence: 3,
+        wakeScheduledFunctionId: "scheduled:current",
+        wakeSequence: 3,
+      }),
+    ).toBe(true);
+    expect(
+      isExpectedNotificationWake({
+        expectedSequence: 2,
+        wakeScheduledFunctionId: "scheduled:current",
+        wakeSequence: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isExpectedNotificationWake({
+        expectedSequence: 3,
+        wakeSequence: 3,
+      }),
+    ).toBe(false);
+  });
+
+  test("the persisted delivery schema rejects IDs from tables other than the scheduler", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId, partnerId } = await seedActiveCouple(t);
+    const eventId = await t.run((ctx) => ctx.db.insert("notificationEvents", {
+      eventType: "partner_message.v1",
+      eventVersion: 1,
+      purpose: "partner_message",
+      producerKind: "new_couple_message",
+      sourceReference: "message-ref",
+      sourceAuthorityVersion: "relationship-membership:1",
+      ownerUserId: primaryId,
+      recipientUserId: partnerId,
+      recipientScope: "other_active_member",
+      privacyClass: "relationship_private_free_text_source",
+      validityRule: "while_message_and_active_link_exist",
+      idempotencyKey: "event:v1:test",
+      allowedChannel: "in_app",
+      createdAt: 1,
+    }));
+    const scheduledId = await t.run((ctx) =>
+      ctx.scheduler.runAfter(60_000, reconcileRef, {
+        state: "pending",
+        cursor: null,
+        deadlineCursor: null,
+      }),
+    );
+    const delivery = {
+      ...inAppDeliveryRecord(),
+      eventId,
+      recipientUserId: partnerId,
+      stableDestinationId: String(partnerId),
+      wakeScheduledFunctionId: scheduledId,
+      wakeSequence: 1,
+    };
+    await t.run((ctx) => ctx.db.insert("notificationDeliveries", delivery as never));
+    const legacyDelivery: Partial<typeof delivery> = { ...delivery };
+    delete legacyDelivery.wakeScheduledFunctionId;
+    delete legacyDelivery.wakeSequence;
+    await t.run((ctx) => ctx.db.insert("notificationDeliveries", {
+      ...legacyDelivery,
+      logicalKey: "delivery:v1:legacy-without-wake-markers",
+    } as never));
+    await expect(
+      t.run((ctx) => ctx.db.insert("notificationDeliveries", {
+        ...legacyDelivery,
+        logicalKey: "delivery:v1:half-pair-is-invalid",
+        wakeSequence: 1,
+      } as never)),
+    ).rejects.toThrow();
+    await expect(
+      t.run((ctx) => ctx.db.insert("notificationDeliveries", {
+        ...delivery,
+        logicalKey: "delivery:v1:wrong-scheduled-table-id",
+        wakeScheduledFunctionId: eventId as never,
+      } as never)),
+    ).rejects.toThrow();
   });
 
   test("checked delivery writes reject non-finite timestamps and unsafe counters", () => {
