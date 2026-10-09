@@ -10,6 +10,7 @@ import {
   advanceNotificationSourceAuthority,
   makeSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -39,6 +40,7 @@ type TestBackend = TestConvex<typeof schema>;
 
 beforeEach(() => {
   vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
   vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
   vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
 });
@@ -107,6 +109,64 @@ async function seedScheduleInputs(
   });
 }
 
+function predictionWindowEventArgs(args: {
+  userId: Id<"users">;
+  anchorId: Id<"periodEvents">;
+  sourceAuthorityVersion: string;
+  reminderWindowVersion: number;
+  dueLocalDay: string;
+  createdAt: number;
+  notBefore: number;
+  expiresAt: number;
+}) {
+  const sourceIdentity = {
+    eventType: "period_window_approaching.v1" as const,
+    primaryId: args.userId,
+    latestEligibleStartEventId: args.anchorId,
+    sourceAuthorityVersion: args.sourceAuthorityVersion,
+    reminderWindowVersion: args.reminderWindowVersion,
+    dueLocalDay: args.dueLocalDay,
+  };
+  return {
+    envelope: {
+      eventType: "period_window_approaching.v1" as const,
+      eventVersion: 1 as const,
+      purpose: "period_window_approaching" as const,
+      producerKind: "current_served_v2_snapshot" as const,
+      sourceReference: `period:${String(args.anchorId)}`,
+      sourceAuthorityVersion: args.sourceAuthorityVersion,
+      ownerUserId: args.userId,
+      recipientUserId: args.userId,
+      recipientScope: "primary" as const,
+      privacyClass: "primary_private_inferred_health" as const,
+      validityRule: "designated_due_local_day_while_snapshot_is_current" as const,
+      idempotencyKey: makeEventIdempotencyKey(
+        "period_window_approaching.v1",
+        {
+          primaryId: String(args.userId),
+          latestEligibleStartEventId: String(args.anchorId),
+          sourceAuthorityVersion: args.sourceAuthorityVersion,
+          dueLocalDay: args.dueLocalDay,
+          reminderWindowVersion: String(args.reminderWindowVersion),
+        },
+      ),
+      allowedChannel: "in_app" as const,
+      sourceIdentity,
+    },
+    route: "periods" as const,
+    templateVersion: "g4-static-v1",
+    renderIdentity: {
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+      payloadHash: "d011-blocked",
+    },
+    createdAt: args.createdAt,
+    notBefore: args.notBefore,
+    expiresAt: args.expiresAt,
+  };
+}
+
 function snapshotRefreshArgs(
   snapshot: Doc<"predictionSnapshots">,
   generatedAt: number,
@@ -154,7 +214,7 @@ async function allScheduleRows(t: TestBackend, userId: Id<"users">) {
       .withIndex("by_owner_and_state_and_due_at", (q) =>
         q.eq("ownerUserId", userId),
       )
-      .take(100),
+      .take(1_000),
   );
 }
 
@@ -290,6 +350,305 @@ describe("notification schedule reconciliation", () => {
     expect(projected).toEqual({ events: [], deliveries: [], inboxItems: [] });
   });
 
+  test("scheduled prediction creation uses the selected anchor and idempotent source-window key", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const { periodEventId } = await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const predictionWork = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    const scheduleState = await t.run((ctx) =>
+      ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique(),
+    );
+    if (!predictionWork || !scheduleState?.sourceAuthorityVersion) {
+      throw new Error("Expected current prediction work and source authority");
+    }
+    const dueLocalDay = toCalendarDateInTimeZone(
+      new Date(predictionWork.dueAt),
+      "America/Los_Angeles",
+    );
+    vi.setSystemTime(predictionWork.dueAt);
+    const eventArgs = predictionWindowEventArgs({
+      userId: primaryId,
+      anchorId: periodEventId,
+      sourceAuthorityVersion: scheduleState.sourceAuthorityVersion,
+      reminderWindowVersion: 3,
+      dueLocalDay,
+      createdAt: predictionWork.dueAt,
+      notBefore: predictionWork.dueAt,
+      expiresAt: resolveLocalReminderInstant(
+        addCalendarDays(dueLocalDay, 1),
+        "00:00",
+        "America/Los_Angeles",
+      ),
+    });
+
+    const created = await t.mutation(
+      internal.mutations.notifications.ensureInAppRecords,
+      eventArgs,
+    );
+    expect(created.status).toBe("event_only");
+    if (!created.eventId) throw new Error("Expected the gated event record");
+    const replayed = await t.mutation(
+      internal.mutations.notifications.ensureInAppRecords,
+      eventArgs,
+    );
+    expect(replayed.eventId).toBe(created.eventId);
+    expect(
+      await t.run((ctx) => ctx.db.query("notificationEvents").take(10)),
+    ).toHaveLength(1);
+    expect(
+      await t.run((ctx) => ctx.db.query("notificationDeliveries").take(10)),
+    ).toEqual([]);
+    expect(
+      await t.run((ctx) => ctx.db.query("notificationInboxItems").take(10)),
+    ).toEqual([]);
+  });
+
+  test.each([
+    "source advanced",
+    "preference disabled",
+    "wrong anchor",
+    "snapshot stale",
+  ] as const)(
+    "scheduled prediction creation denies a stale fence when %s",
+    async (change) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+
+      const t = convexTest(schema, modules);
+      const { primaryId, partnerId } = await seedActiveCouple(t);
+      const { periodEventId } = await seedScheduleInputs(t, primaryId, {
+        timeZone: "America/Los_Angeles",
+        localReminderTime: "09:00",
+        includeLateStatus: false,
+      });
+      const snapshotId = await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        { userId: primaryId },
+      );
+      if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+      const work = (await pendingScheduleRows(t, primaryId)).find(
+        (row) => row.kind === "prediction_window",
+      );
+      const scheduleState = await t.run((ctx) =>
+        ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      );
+      if (!work || !scheduleState?.sourceAuthorityVersion) {
+        throw new Error("Expected current prediction work and source authority");
+      }
+      const dueLocalDay = toCalendarDateInTimeZone(
+        new Date(work.dueAt),
+        "America/Los_Angeles",
+      );
+      vi.setSystemTime(work.dueAt);
+      const anchorId =
+        change === "wrong anchor"
+          ? await t.run((ctx) =>
+              ctx.db.insert("periodEvents", {
+                userId: partnerId,
+                startDate: "2026-02-01",
+                startCertainty: "exact",
+                authorityVersion: 1,
+                createdAt: Date.UTC(2026, 1, 1),
+                updatedAt: Date.UTC(2026, 1, 1),
+              }),
+            )
+          : periodEventId;
+      const eventArgs = predictionWindowEventArgs({
+        userId: primaryId,
+        anchorId,
+        sourceAuthorityVersion: scheduleState.sourceAuthorityVersion,
+        reminderWindowVersion: 3,
+        dueLocalDay,
+        createdAt: work.dueAt,
+        notBefore: work.dueAt,
+        expiresAt: resolveLocalReminderInstant(
+          addCalendarDays(dueLocalDay, 1),
+          "00:00",
+          "America/Los_Angeles",
+        ),
+      });
+
+      await t.run(async (ctx) => {
+        if (change === "source advanced") {
+          await ctx.db.patch(periodEventId, {
+            startDate: "2026-03-02",
+            authorityVersion: 2,
+            updatedAt: Date.now(),
+          });
+          await advanceNotificationSourceAuthority(ctx, primaryId);
+        } else if (change === "preference disabled") {
+          const preference = await ctx.db
+            .query("notificationPreferences")
+            .withIndex("by_user_and_purpose", (q) =>
+              q.eq("userId", primaryId).eq("purpose", "period_window_approaching"),
+            )
+            .unique();
+          if (!preference) throw new Error("Expected prediction preference");
+          await ctx.db.patch(preference._id, { inAppEnabled: false });
+        } else if (change === "snapshot stale") {
+          const snapshot = await ctx.db.get(snapshotId);
+          if (!snapshot) throw new Error("Expected the served V2 snapshot");
+          await ctx.db.patch(snapshotId, {
+            pointDate: addCalendarDays(snapshot.pointDate, 1),
+          });
+        }
+      });
+
+      await expect(
+        t.mutation(
+          internal.mutations.notifications.ensureInAppRecords,
+          eventArgs,
+        ),
+      ).resolves.toMatchObject({ status: "stale", eventId: null });
+      expect(
+        await t.run((ctx) => ctx.db.query("notificationEvents").take(10)),
+      ).toEqual([]);
+    },
+  );
+
+  test("due prediction wake creates a typed in-app event from the selected served anchor", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId, partnerId } = await seedActiveCouple(t);
+    const { periodEventId } = await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+    const work = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!work) throw new Error("Expected prediction-window work");
+    vi.setSystemTime(work.dueAt);
+
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
+    ).resolves.toEqual({ status: "ready" });
+
+    const events = await t.run((ctx) => ctx.db.query("notificationEvents").take(10));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventType: "period_window_approaching.v1",
+      ownerUserId: primaryId,
+      recipientUserId: primaryId,
+      sourceReference: `period:${String(periodEventId)}`,
+      sourceIdentity: {
+        eventType: "period_window_approaching.v1",
+        primaryId,
+        latestEligibleStartEventId: periodEventId,
+        dueLocalDay: toCalendarDateInTimeZone(
+          new Date(work.dueAt),
+          "America/Los_Angeles",
+        ),
+      },
+    });
+    expect(events[0].ownerUserId).not.toBe(partnerId);
+    expect(await t.run((ctx) => ctx.db.query("notificationDeliveries").take(10))).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({ state: "claimed" });
+  });
+
+  test("missing eligible start anchor suppresses prediction-window scheduling", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(primaryId, { timeZone: "America/Los_Angeles" });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 7,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 3,
+        updatedAt: now,
+      });
+    });
+
+    expect(
+      await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+        userId: primaryId,
+      }),
+    ).toBeNull();
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+
+    expect(
+      (await allScheduleRows(t, primaryId)).filter(
+        (row) =>
+          row.kind === "prediction_window" &&
+          (row.state === "pending" || row.state === "claimed"),
+      ),
+    ).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
+  });
+
+  test("outbox-off prediction wake leaves no event or claimed work", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "false");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+    const work = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!work) throw new Error("Expected prediction-window work");
+    vi.setSystemTime(work.dueAt);
+
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
+    ).resolves.toEqual({ status: "blocked", reason: "outbox_disabled" });
+    expect(await t.run((ctx) => ctx.db.query("notificationEvents").take(10))).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get(work._id))).toMatchObject({ state: "pending" });
+  });
+
   test("does not catch up prediction-window or Late work after its local validity day", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.parse("2026-04-15T12:00:00.000Z"));
@@ -327,6 +686,7 @@ describe("notification schedule reconciliation", () => {
     vi.setSystemTime(now);
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -423,7 +783,7 @@ describe("notification schedule reconciliation", () => {
     ).toBe("cancelled");
     expect(
       await t.run((ctx) => ctx.db.query("notificationEvents").take(10)),
-    ).toEqual([]);
+    ).toHaveLength(1);
   });
 
   test.each([
@@ -471,6 +831,7 @@ describe("notification schedule reconciliation", () => {
     vi.setSystemTime(now);
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -875,6 +1236,7 @@ describe("notification schedule reconciliation", () => {
 
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
     await expect(
       t.mutation(wakeDueWorkRef, { workId: work._id, generation: work.generation }),
     ).resolves.toEqual({ status: "ready" });
@@ -975,12 +1337,82 @@ describe("notification schedule reconciliation", () => {
     expect(scheduledWorkIds.sort()).toEqual([...workIds].sort());
   });
 
+  test("owner schedule reconciliation skips other due-work kinds without prefix paging", async () => {
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+    });
+    await t.mutation(internal.internal.predictionSnapshots.ensureCurrentForUser, {
+      userId: primaryId,
+    });
+    const prediction = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!prediction) throw new Error("Expected prediction-window work");
+
+    const unrelatedIds = await t.run(async (ctx) => {
+      const ids: Id<"notificationDueWork">[] = [];
+      for (let index = 0; index < 100; index += 1) {
+        ids.push(
+          await ctx.db.insert("notificationDueWork", {
+            ownerUserId: primaryId,
+            kind: "pain_reminder",
+            state: "claimed",
+            dueAt: prediction.dueAt - 1_000 + index,
+            generation: index + 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+      }
+      return ids;
+    });
+    const staleClaimId = await t.run((ctx) =>
+      ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "claimed",
+        dueAt: prediction.dueAt,
+        generation: prediction.generation,
+        sourceAuthorityVersion: prediction.sourceAuthorityVersion,
+        reminderWindowVersion: (prediction.reminderWindowVersion ?? 0) - 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const after = await t.run(async (ctx) => ({
+      stale: (await ctx.db.get(staleClaimId))?.state,
+      unrelated: await Promise.all(
+        unrelatedIds.map(async (id) => (await ctx.db.get(id))?.state),
+      ),
+      continuations: (await ctx.db.system.query("_scheduled_functions").take(100))
+        .filter(({ args }) =>
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "phase" in args[0],
+        ),
+    }));
+    expect(after.stale).toBe("cancelled");
+    expect(after.unrelated).toEqual(Array.from({ length: 100 }, () => "claimed"));
+    expect(after.continuations).toEqual([]);
+  });
+
   test("cron continues after a filtered-empty kind page and avoids other-kind starvation", async () => {
     const start = Date.parse("2026-03-07T20:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(start);
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -1101,6 +1533,7 @@ describe("notification schedule reconciliation", () => {
     vi.setSystemTime(start);
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -1189,6 +1622,7 @@ describe("notification schedule reconciliation", () => {
     vi.setSystemTime(start);
     vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
     vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
 
     const t = convexTest(schema, modules);
     const { primaryId } = await seedActiveCouple(t);
@@ -1350,7 +1784,7 @@ describe("notification schedule reconciliation", () => {
     ).toEqual(pendingBefore.map(({ _id }) => _id));
   });
 
-  test("indeterminate cleanup pages past unrelated claimed work", async () => {
+  test("indeterminate cleanup skips unrelated claimed work without broad paging", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");
     vi.setSystemTime(now);
@@ -1420,16 +1854,21 @@ describe("notification schedule reconciliation", () => {
       }
     });
 
-    const firstPage = await t.run((ctx) =>
+    const predictionPage = await t.run((ctx) =>
       ctx.db
         .query("notificationDueWork")
-        .withIndex("by_owner_and_state_and_due_at", (q) =>
-          q.eq("ownerUserId", primaryId).eq("state", "claimed"),
+        .withIndex(
+          "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+          (q) =>
+            q
+              .eq("ownerUserId", primaryId)
+              .eq("kind", "prediction_window")
+              .eq("state", "claimed"),
         )
         .paginate({ numItems: 100, cursor: null }),
     );
-    expect(firstPage.page).toHaveLength(100);
-    expect(firstPage.isDone).toBe(false);
+    expect(predictionPage.page.map(({ _id }) => _id)).toEqual([targetClaimId]);
+    expect(predictionPage.isDone).toBe(true);
 
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
     const continuationQueued = await t.run(async (ctx) =>
@@ -1441,11 +1880,7 @@ describe("notification schedule reconciliation", () => {
           "cursor" in args[0],
       ),
     );
-    expect(continuationQueued).toBe(true);
-    await t.mutation(continueClaimedScheduleCancellationRef, {
-      userId: primaryId,
-      cursor: firstPage.continueCursor,
-    });
+    expect(continuationQueued).toBe(false);
 
     const states = await t.run(async (ctx) => ({
       target: (await ctx.db.get(targetClaimId))?.state,
@@ -1611,7 +2046,7 @@ describe("notification schedule reconciliation", () => {
     if (
       typeof continuationArgs !== "object" ||
       continuationArgs === null ||
-      !("pendingCursor" in continuationArgs) ||
+      !("pendingPredictionCursor" in continuationArgs) ||
       !("candidates" in continuationArgs)
     ) {
       throw new Error("Expected a paginated schedule continuation");
@@ -1620,7 +2055,7 @@ describe("notification schedule reconciliation", () => {
       pendingPredictionId: null,
       claimedPredictionId: null,
     });
-    expect(continuationArgs.pendingDone).toBe(false);
+    expect(continuationArgs.pendingPredictionDone).toBe(false);
 
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
     await t.run(async (ctx) => {
@@ -1694,10 +2129,12 @@ describe("notification schedule reconciliation", () => {
       for (let index = 0; index < 100; index += 1) {
         await ctx.db.insert("notificationDueWork", {
           ownerUserId: primaryId,
-          kind: "pain_reminder",
+          kind: "prediction_window",
           state: "pending",
           dueAt: original.dueAt + index + 1,
-          generation: 1,
+          generation: original.generation - 1,
+          sourceAuthorityVersion: original.sourceAuthorityVersion,
+          reminderWindowVersion: original.reminderWindowVersion,
           createdAt: now,
           updatedAt: now,
         });
@@ -1730,7 +2167,7 @@ describe("notification schedule reconciliation", () => {
       pendingPredictionId: original._id,
       claimedPredictionId: null,
     });
-    expect(continuationArgs.claimedDone).toBe(true);
+    expect(continuationArgs.claimedPredictionDone).toBe(true);
 
     await t.run((ctx) => ctx.db.patch(original._id, { state: "claimed" }));
     await t.mutation(
@@ -1821,8 +2258,13 @@ describe("notification schedule reconciliation", () => {
     const firstPage = await t.run((ctx) =>
       ctx.db
         .query("notificationDueWork")
-        .withIndex("by_owner_and_state_and_due_at", (q) =>
-          q.eq("ownerUserId", primaryId).eq("state", "claimed"),
+        .withIndex(
+          "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+          (q) =>
+            q
+              .eq("ownerUserId", primaryId)
+              .eq("kind", "prediction_window")
+              .eq("state", "claimed"),
         )
         .paginate({ numItems: 100, cursor: null }),
     );
@@ -1832,7 +2274,10 @@ describe("notification schedule reconciliation", () => {
     await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
     await t.mutation(continueClaimedScheduleCancellationRef, {
       userId: primaryId,
-      cursor: firstPage.continueCursor,
+      predictionCursor: firstPage.continueCursor,
+      predictionDone: false,
+      lateCursor: null,
+      lateDone: true,
     });
 
     const after = await t.run(async (ctx) => ({

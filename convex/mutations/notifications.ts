@@ -25,8 +25,10 @@ import {
   notificationPurposeValues,
 } from "../schema";
 import { initializeNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { isNotificationSourceCurrent } from "../_helpers/notificationSourceReader";
 import { reconcileUserSchedule } from "../internal/notificationScheduler";
 import { ensureCurrentSnapshot } from "../internal/predictionSnapshots";
+import type { Doc } from "../_generated/dataModel";
 
 const MAX_KEY_LENGTH = 1_024;
 const INBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_INBOX_V1";
@@ -67,6 +69,7 @@ const ensureInAppRecordsArgsValidator = v.object({
 const ensureInAppRecordsResultValidator = v.object({
   status: v.union(
     v.literal("disabled"),
+    v.literal("stale"),
     v.literal("event_only"),
     v.literal("delivery_ready"),
   ),
@@ -307,6 +310,24 @@ export const ensureInAppRecords = internalMutation({
     assertRenderInputs(args.route, args.templateVersion, args.renderIdentity);
     if (args.route !== expectedRoute(args.envelope.eventType)) {
       throw new Error("Notification route does not match the static event route");
+    }
+
+    if (
+      args.envelope.eventType === "period_window_approaching.v1" &&
+      !(await isNotificationSourceCurrent(
+        ctx,
+        {
+          ...args.envelope,
+          createdAt: args.createdAt,
+        } as unknown as Doc<"notificationEvents">,
+      ))
+    ) {
+      return {
+        status: "stale" as const,
+        eventId: null,
+        deliveryId: null,
+        inboxItemId: null,
+      };
     }
 
     const existingEvent = await ctx.db
