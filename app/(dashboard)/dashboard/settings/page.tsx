@@ -8,6 +8,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import GlassPanel from "@/components/common/GlassPanel";
 import { Eye, EyeOff, HandHeart, Lock, Shield } from "lucide-react";
 import { formatPredictionCalendarDate } from "@/components/dashboard/predictionPresentation";
+import NotificationPreferences from "@/components/notifications/NotificationPreferences";
 
 const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
@@ -245,6 +246,10 @@ export default function SettingsPage() {
           </div>
         </div>
       </GlassPanel>
+
+      {(me.role === "primary" || me.role === "partner") && (
+        <NotificationPreferences role={me.role} />
+      )}
 
       {isPrimary && (
         <GlassPanel variant="quiet" className="space-y-6 p-6">
