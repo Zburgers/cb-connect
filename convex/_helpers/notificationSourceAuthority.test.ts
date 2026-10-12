@@ -65,7 +65,7 @@ describe("G4-SOURCE-V1 canonical authority", () => {
         const matches = await ctx.db
           .query("notificationDueWork")
           .withIndex(
-            "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+            "by_owner_kind_state_due_gen_src_auth_ver_reminder_window_ver",
             (q) =>
               q.eq("ownerUserId", primaryId)
                 .eq("kind", "prediction_window")

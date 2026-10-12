@@ -1064,6 +1064,18 @@ describe("notification persistence", () => {
       indexDescriptor: "by_kind_and_state_and_due_at",
       fields: ["kind", "state", "dueAt"],
     });
+    expect(indexDefinitions(schema.tables.notificationDueWork)).toContainEqual({
+      indexDescriptor: "by_owner_kind_state_due_gen_src_auth_ver_reminder_window_ver",
+      fields: [
+        "ownerUserId",
+        "kind",
+        "state",
+        "dueAt",
+        "generation",
+        "sourceAuthorityVersion",
+        "reminderWindowVersion",
+      ],
+    });
     expect(Object.keys(notificationScheduleStateValidator.fields).sort()).toEqual([
       "createdAt",
       "sourceAuthorityVersion",
