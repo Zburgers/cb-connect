@@ -39,7 +39,7 @@ The exact candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37` was deployed 
 | `release-desktop` | 3 passed, 0 failed, 0 skipped |
 | `release-mobile` | 3 passed, 0 failed, 0 skipped |
 
-Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, revocation, and primary/partner preferences. Each teardown proof records `remaining=false` and zero rows in the approved fixture tables. Proofs are [desktop](../../../e2e/.evidence/local-g4-0027a0ac-desktop/e2-live-proof.md) and [mobile](../../../e2e/.evidence/local-g4-0027a0ac-mobile/e2-live-proof.md); private Playwright artifacts remain under `/tmp/cb-connect-g4-0027a0ac-e2e.KFyewU`.
+Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, revocation, and primary/partner preferences. Each local teardown proof records `remaining=false` and zero rows in the approved fixture tables. The generated proofs are kept untracked under `e2e/.evidence/local-g4-0027a0ac-desktop/` and `e2e/.evidence/local-g4-0027a0ac-mobile/` per the fixture-evidence boundary. Private Playwright artifacts remain under `/tmp/cb-connect-g4-0027a0ac-e2e.KFyewU`.
 
 An older local `.last-run.json` records the pre-fix preference helper failure: Playwright `.check()` was called when “Message activity” was already checked, so the click did not change state. The fixture helper now checks the current state before toggling; the final desktop and mobile reruns pass. The five notification flags were `false` before the run, enabled only on the isolated test backend, restored in an exit trap, and verified `false` afterward. No production flags were changed.
 
