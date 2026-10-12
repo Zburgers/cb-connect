@@ -27,6 +27,7 @@ import type * as _helpers_historyProjections from "../_helpers/historyProjection
 import type * as _helpers_legacyCycleFactClassification from "../_helpers/legacyCycleFactClassification.js";
 import type * as _helpers_notificationCycleState from "../_helpers/notificationCycleState.js";
 import type * as _helpers_notificationDelivery from "../_helpers/notificationDelivery.js";
+import type * as _helpers_notificationInboxPagination from "../_helpers/notificationInboxPagination.js";
 import type * as _helpers_notificationOutbox from "../_helpers/notificationOutbox.js";
 import type * as _helpers_notificationPolicy from "../_helpers/notificationPolicy.js";
 import type * as _helpers_notificationPrediction from "../_helpers/notificationPrediction.js";
@@ -106,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/legacyCycleFactClassification": typeof _helpers_legacyCycleFactClassification;
   "_helpers/notificationCycleState": typeof _helpers_notificationCycleState;
   "_helpers/notificationDelivery": typeof _helpers_notificationDelivery;
+  "_helpers/notificationInboxPagination": typeof _helpers_notificationInboxPagination;
   "_helpers/notificationOutbox": typeof _helpers_notificationOutbox;
   "_helpers/notificationPolicy": typeof _helpers_notificationPolicy;
   "_helpers/notificationPrediction": typeof _helpers_notificationPrediction;
