@@ -2,54 +2,50 @@
 
 ## Current candidate — 2026-10-13
 
-**Status: exact-SHA deterministic and authenticated synthetic inbox qualification pass; release readiness remains blocked by production operations evidence and owner-gated decisions.** The application-code candidate is `bc315fb7023020e6ea513253e17865af8620d8ea` on `gate-4/final-candidate-20261012`. The report edit is documentation-only and separate from this tested application-code SHA.
+**Status: exact-SHA deterministic and authenticated synthetic inbox qualification pass; release readiness remains blocked by production operations evidence and owner-gated decisions.** The final candidate is `0027a0ac2ccc781e0fd4ba153142fe7561af4b37` on `gate-4/final-candidate-20261012`. The report edit is documentation-only and separate from this tested candidate SHA.
 
 ### Exact-SHA deterministic evidence
 
-The following checks ran against application SHA `bc315fb7023020e6ea513253e17865af8620d8ea`:
+The following checks ran against candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`:
 
 | Check | Result |
 |---|---|
-| `npm run test:unit -- --run` | Pass: 78 files, 899 tests |
-| Affected notification, scheduler, auth, and auth-environment tests | Pass: 5 files, 109 tests |
+| `npm run test:unit -- --run` | Pass: 78 files, 900 tests |
+| Focused notifications and scheduler tests | Pass: 2 files, 65 tests |
 | `npm run typecheck` | Pass after the production build completed |
 | `npm run build` | Pass with inert synthetic Clerk/Convex build values; no production deployment |
 | `npm audit --omit=dev` | Pass: 0 vulnerabilities |
-| `npm run test:convex-safe-exec` | Pass; expected negative policy cases were exercised |
-| `npm run test:convex-command-policy` | Pass |
-| `npm run test:fixture-evidence-boundary` | Pass |
-| `npm run test:ci-workflow` | Pass |
-| `npm run test:cycle-facts-plan` | Pass |
+| CI, cycle-facts, Convex safe-exec/command, and fixture-evidence policy scripts | Pass; safe-exec negative cases emitted their expected rejection output |
 | Auth-fixture, release-smoke, deploy-workflow, Convex-env-reconciliation, and prediction-runner policy scripts | Pass |
-| `npm run benchmark:cycle:golden` | Pass; source commit is `bc315fb7023020e6ea513253e17865af8620d8ea`, source tree clean, verdict `synthetic_not_evidence` |
-| `git diff --check HEAD^ HEAD` | Pass |
+| Golden cycle benchmark | Pass; source commit is `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`, source tree clean, verdict `synthetic_not_evidence` |
+| `git diff --check` | Pass |
 
-An initial standalone typecheck ran concurrently with Next.js regenerating `.next/types` and failed on missing generated files. The typecheck was rerun after the build and passed; the build's own type validation also passed. The golden benchmark is synthetic evidence only and does not qualify promotion.
+The build used inert synthetic Clerk and Convex values. The golden benchmark is synthetic evidence only and does not qualify promotion.
 
-### Fresh PR #63 review and remediation
+### Review findings and remediation
 
-The reviewer confirmed a P2 inbox pagination bug: filtering stale/revoked rows after fetching a page could return a short or empty page even while older valid inbox items remained. `convex/queries/notifications.ts` now scans successive pages with the same Convex pagination cursor, fills the requested page, and caps a request at 200 scanned rows. A regression covers a stale prefix longer than the requested page and verifies the next page has no skipped valid items. Bounded exhaustion is surfaced as “No current notifications on this page” instead of claiming the inbox is empty.
+The GitHub review on PR #63 identified a P2 false-empty inbox page when a page of newest rows contains stale or revoked items. `getMyInbox` now makes at most one Convex paginated read per request, scans at most 200 indexed inbox rows, buffers only bounded item IDs in its cursor, and revalidates each buffered item before returning it. The regression creates 25 stale rows ahead of 22 valid older messages and verifies a full first page followed by the remaining two items without skips.
 
-The first authenticated desktop run also exposed a genuine Convex runtime error: scheduler reconciliation called four paginated queries in one mutation. The scheduler now performs at most one paginated query per mutation and uses bounded prefix reads for other streams; full prefixes resume through their own paginator, and already-issued cursors are not advanced or replaced. The existing scheduler continuation and source-fence tests pass.
+The one targeted read-only re-review of the prior qualified candidate found two additional issues: a repeated inbox `.paginate()` call that could fail at Convex runtime, and a scheduler prefix reread that could cancel the same current claim on a continuation. The inbox query now calls `.paginate()` only once, with its bounded cursor carrying buffered results. Scheduler candidate inspection treats a repeated same-ID claim as idempotent while still cancelling different stale candidates. New regressions cover both findings. This targeted review was against the prior SHA; final review of `0027a0a` is pending after the updated PR checks.
 
 ### Issuer handling and authenticated populated-inbox E2E
 
-The approved synthetic issuer `https://holy-clam-29.clerk.accounts.dev` is accepted only for the isolated `dev:hallowed-hummingbird-284` backend when fixture cleanup is enabled. The production issuer check remains exact and foreign issuers remain rejected. No issuer verification was weakened. The isolated backend identity reported deployment `dev:hallowed-hummingbird-284`, compatibility `v1`, and deploy time `2026-10-12T18:33:40.837Z`; the deployed code was application SHA `bc315fb7023020e6ea513253e17865af8620d8ea`.
+The authenticated test issuer `https://holy-clam-29.clerk.accounts.dev` is accepted only when both the exact isolated deployment `dev:hallowed-hummingbird-284` and fixture cleanup are enabled. The production issuer remains the exact `https://clerk.cb.builtbynaki.tech`; foreign issuers remain rejected. `loadAuthEnvironment` also enforces the approved Clerk test host, test keys, Convex deployment, and Convex URL. No issuer verification, tenant isolation, or fixture boundary was weakened.
 
-`e2e/notifications-in-app.spec.ts` passed on the exact application SHA:
+The exact candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37` was deployed only to `dev:hallowed-hummingbird-284`. Backend identity reported compatibility `v1` and deploy time `2026-10-12T19:32:57.833Z`. `e2e/notifications-in-app.spec.ts` passed on that SHA:
 
 | Project | Result |
 |---|---|
 | `release-desktop` | 3 passed, 0 failed, 0 skipped |
 | `release-mobile` | 3 passed, 0 failed, 0 skipped |
 
-Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, access revocation, and primary/partner preference behavior. The previously failing primary preference save passed on both projects. Each authenticated teardown proof recorded `remaining=false` and zero rows across the approved fixture tables. The private local Playwright artifacts are retained under `/tmp/cb-connect-gate4-bc315fb-zREq5A`; teardown proofs are under `e2e/.evidence/` for run IDs `local-20261012183636575-367ef7e9` and `local-20261012183447279-3690293b`.
+Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, revocation, and primary/partner preferences. Each teardown proof records `remaining=false` and zero rows in the approved fixture tables. Proofs are [desktop](../../../e2e/.evidence/local-g4-0027a0ac-desktop/e2-live-proof.md) and [mobile](../../../e2e/.evidence/local-g4-0027a0ac-mobile/e2-live-proof.md); private Playwright artifacts remain under `/tmp/cb-connect-g4-0027a0ac-e2e.KFyewU`.
 
-The wrapper's final artifact-parent removal reported `ENOTEMPTY` because it retained the two Playwright artifact directories. Both Playwright invocations exited successfully and both `.last-run.json` records say `passed` with zero failed tests. The wrapper restored all five temporary notification flags to `false`; no production flags were changed.
+An older local `.last-run.json` records the pre-fix preference helper failure: Playwright `.check()` was called when “Message activity” was already checked, so the click did not change state. The fixture helper now checks the current state before toggling; the final desktop and mobile reruns pass. The five notification flags were `false` before the run, enabled only on the isolated test backend, restored in an exit trap, and verified `false` afterward. No production flags were changed.
 
 ### Final targeted review
 
-One targeted final re-review of the exact code SHA and qualification evidence is pending. It will be requested after this candidate and its evidence are published to PR #63. No broad reviewer loop is planned.
+One targeted final re-review of `0027a0ac` will be requested after this evidence and the complete CI result are published to PR #63. No additional review loop is planned.
 
 ### Existing source PRs
 
@@ -72,7 +68,7 @@ Main deployment run 38132266518 at e08a2a1 failed both Verify qualified release 
 
 D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. The exact candidate was deployed only to the approved isolated test backend; all five notification flags were restored to `false` after E2E. No production flags were changed, no production deployment or merge to main was performed, and no destructive retention changes were made. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
 
-**Conclusion:** implementation, deterministic checks, and authenticated synthetic populated-inbox qualification pass on application SHA `bc315fb7023020e6ea513253e17865af8620d8ea`. Gate 4 is ready for one targeted final review, but is not release-qualified: production promotion/rollback verification failed in run [38132266518](https://github.com/Zburgers/cb-connect/actions/runs/38132266518), and owner-gated decisions and operations evidence remain outstanding. No production deployment, merge, or production flag change was performed.
+**Conclusion:** implementation, deterministic checks, and authenticated synthetic populated-inbox qualification pass on candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`. Gate 4 is not release-qualified: production promotion and rollback verification failed in run [38132266518](https://github.com/Zburgers/cb-connect/actions/runs/38132266518), and owner-gated decisions and production operations evidence remain outstanding. One targeted final re-review of this candidate is pending; no clean approval is claimed. No production deployment, merge, or production flag change was performed.
 
 ## Historical checkpoint (retained; not current evidence)
 
