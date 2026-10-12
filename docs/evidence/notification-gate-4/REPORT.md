@@ -1,4 +1,68 @@
-# Gate 4 exact-head implementation status
+# Gate 4 qualification evidence
+
+## Current candidate — 2026-10-12
+
+**Status: exact-SHA deterministic checks pass; protected authenticated inbox qualification and production operations remain unresolved.** The application-code candidate is 9df43926bac8e51ae6e5266b51f9fd8310f52c51 on gate-4/final-candidate-20261012, based directly on origin/main e08a2a1b02ec186ae67954f9197bb37340e6c971. The evidence below applies to that implementation SHA; it does not claim authenticated E2E or release qualification.
+
+### Exact-SHA deterministic evidence
+
+These checks ran in a clean detached worktree at 9df43926bac8e51ae6e5266b51f9fd8310f52c51. The report edit is separate from that application-code SHA.
+
+| Check | Result |
+|---|---|
+| npm run typecheck | Pass |
+| npm run test:unit | Pass: 78 files, 897 tests |
+| npm run build | Pass with an inert synthetic Convex URL; no deployment |
+| npm audit --omit=dev | Pass: 0 vulnerabilities |
+| npm run test:convex-safe-exec | Pass; expected policy-rejection cases were exercised |
+| npm run test:convex-command-policy | Pass |
+| npm run test:fixture-evidence-boundary | Pass |
+| npm run test:ci-workflow | Pass |
+| npm run test:cycle-facts-plan | Pass |
+| Prediction-runner, deploy-workflow, release-smoke-workflow, and Convex-env-reconciliation shell tests | Pass |
+| npm run benchmark:cycle:golden | Pass; source commit is 9df43926bac8e51ae6e5266b51f9fd8310f52c51, source tree clean, verdict synthetic_not_evidence |
+| git diff --check | Pass |
+
+The golden benchmark is synthetic evidence only and does not qualify promotion. Browser test discovery and authenticated browser execution are not included in these results.
+
+### Consolidated reviews
+
+The exact-SHA architecture and reliability re-review found no confirmed P0, P1, or P2 findings and confirmed that the earlier pagination-argument and repeated-source-revocation findings are resolved. The reviewer did not run tests; the deterministic results above are separate local evidence.
+
+The exact-SHA static privacy and security review found no confirmed P0, P1, or P2 findings. It reviewed authorization, recipient and partner isolation, sensitive health data, issuer handling, revocation and freshness races, stale-snapshot suppression, inbox projection, fixture boundaries, and default-off/in-app-only enforcement. The reviewer did not run tests; those results are separate local evidence.
+
+### Relationship delivery and authenticated inbox qualification
+
+The runtime relationship-message path is implemented: the message mutation writes an immutable typed event and schedules the durable event consumer; policy and preference checks create the logical in-app delivery; the consumer projects the delivery into the recipient inbox. The E2E spec exercises a populated partner inbox, verifies the sender inbox stays empty, marks and dismisses a delivered item, then revokes partner access and checks that a pending item disappears.
+
+The authenticated E2E spec was not executed. An earlier fixture setup attempt stopped before creating a fixture-run marker or inbox event because getLegacyClerkSubject rejects the approved synthetic issuer https://holy-clam-29.clerk.accounts.dev. No issuer allowlist or verification logic was weakened. A fresh GET to that issuer's discovery endpoint returned HTTP 200 over TLS; a fresh TLS request to the intended custom issuer https://clerk.cb.nakshatraneuratech.dev still fails with “tlsv1 unrecognized name”. Legacy identity rows remain fail-closed. The protected authenticated run therefore has not demonstrated populated delivery, read/dismiss, partner separation, revocation, zero skips, or fixture cleanup.
+
+A prior isolated test-target deployment and flag attestation applied to code SHA d946a9181a1f5298b58e77c33c43d76434495df9, not this candidate. No deployment of 9df43926bac8e51ae6e5266b51f9fd8310f52c51 was performed, and no production target or flag was changed.
+
+### Existing source PRs
+
+All four source PRs remain open drafts based on gate-4/contract-and-integration. The latest observed heads had no submitted reviews. Their exact deterministic failures were:
+
+| PR | Head | Failure | Other checks |
+|---|---|---|---|
+| #57 | c5d2f52 | Dependency audit reported three production dependency vulnerabilities, including the sharp/librsvg advisory | Authenticated release smoke and production-configured checks skipped |
+| #58 | 50384b3 | Same dependency-audit failure on its older base | Authenticated release smoke and production-configured checks skipped |
+| #59 | a177e70 | Unit test failed because event idempotency lacked relationshipMembershipId; the integrated candidate includes it | Authenticated release smoke and production-configured checks skipped |
+| #60 | 1456ed6 | Same dependency-audit failure as #57/#58 | Authenticated release smoke and production-configured checks skipped |
+
+The candidate audit reports zero production dependency vulnerabilities and its full unit suite passes. These source PRs will be marked superseded only after the consolidated PR against main exists; their source branches will be preserved.
+
+### Production promotion and rollback
+
+Main deployment run 38132266518 at e08a2a1 failed both Verify qualified release promotion and Restore prior verified release after failed promotion. PM2 reported online, but release verification failed. scripts/verify-release.sh reported only that its /api/health curl failed, so the workflow log does not expose the exact HTTP, TLS, or connection cause. A successful promotion or rollback recheck has not been recorded. This remains a release-operations blocker.
+
+### Release boundaries
+
+D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. No production flags, destructive retention changes, deployment, or merge to main were authorized or performed. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
+
+**Conclusion:** the integrated implementation has passing exact-SHA deterministic evidence and a clean architecture review. Authenticated inbox qualification, exact-candidate environment attestation, and production promotion/rollback evidence are still outstanding. This candidate is not release-qualified.
+
+## Historical checkpoint (retained; not current evidence)
 
 **Status: implementation in progress; not qualified or complete.** This report
 records local evidence for `gate-4/contract-and-integration` at
