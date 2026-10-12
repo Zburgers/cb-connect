@@ -5,6 +5,15 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { internalQuery, query, type QueryCtx } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
 import {
+  decodeInboxCursor,
+  encodeInboxCursor,
+  INBOX_CURSOR_PREFIX,
+  makeInboxSplitCursors,
+  MAX_BUFFERED_INBOX_ITEMS,
+  MAX_INBOX_CURSOR_LENGTH,
+  type InboxCursorState,
+} from "../_helpers/notificationInboxPagination";
+import {
   isCurrentNotificationScheduleFence,
   isValidNotificationDueWorkRecord,
   type NotificationDueWorkKind,
@@ -23,16 +32,8 @@ import {
 const MAX_INBOX_PAGE_SIZE = 50;
 // shortcut: scan at most 200 rows per request; raise only if valid inboxes have larger stale prefixes.
 const MAX_INBOX_SCAN_ITEMS = MAX_INBOX_PAGE_SIZE * 4;
-const MAX_BUFFERED_INBOX_ITEMS = MAX_INBOX_SCAN_ITEMS + MAX_INBOX_PAGE_SIZE;
+const MAX_DUE_WORK_CURSOR_LENGTH = 16_384;
 const MAX_DUE_WORK_ITEMS = 100;
-const MAX_CURSOR_LENGTH = 16_384;
-const INBOX_CURSOR_PREFIX = "cb-connect-inbox-v1:";
-
-type InboxCursorState = {
-  cursor: string | null;
-  bufferedItemIds: string[];
-  sourceDone: boolean;
-};
 
 const notificationDueWorkKindValidator = v.union(
   v.literal("delivery"),
@@ -82,54 +83,12 @@ const dueWorkResultValidator = v.object({
   _creationTime: v.number(),
 });
 
-function decodeInboxCursor(cursor: string | null): InboxCursorState {
-  if (cursor === null) {
-    return { cursor: null, bufferedItemIds: [], sourceDone: false };
-  }
-  if (!cursor.startsWith(INBOX_CURSOR_PREFIX)) {
-    return { cursor, bufferedItemIds: [], sourceDone: false };
-  }
-  try {
-    const value: unknown = JSON.parse(cursor.slice(INBOX_CURSOR_PREFIX.length));
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      !("cursor" in value) ||
-      (value.cursor !== null && typeof value.cursor !== "string") ||
-      !("bufferedItemIds" in value) ||
-      !Array.isArray(value.bufferedItemIds) ||
-      value.bufferedItemIds.length > MAX_BUFFERED_INBOX_ITEMS ||
-      !value.bufferedItemIds.every((id) => typeof id === "string") ||
-      new Set(value.bufferedItemIds).size !== value.bufferedItemIds.length ||
-      !("sourceDone" in value) ||
-      typeof value.sourceDone !== "boolean"
-    ) {
-      throw new Error("Invalid cursor shape");
-    }
-    return {
-      cursor: value.cursor,
-      bufferedItemIds: value.bufferedItemIds,
-      sourceDone: value.sourceDone,
-    };
-  } catch {
-    throw new Error("Notification inbox cursor is invalid");
-  }
-}
-
-function encodeInboxCursor(state: InboxCursorState): string {
-  const cursor = `${INBOX_CURSOR_PREFIX}${JSON.stringify(state)}`;
-  if (cursor.length > MAX_CURSOR_LENGTH) {
-    throw new Error("Notification inbox cursor exceeds its fixed bound");
-  }
-  return cursor;
-}
-
 async function readCurrentInboxItem(
   ctx: QueryCtx,
   userId: Id<"users">,
   item: Doc<"notificationInboxItems"> | null,
 ) {
-  if (!item || item.recipientUserId !== userId) return null;
+  if (!item || item.recipientUserId !== userId || item.state !== "current") return null;
   const [event, deliveries] = await Promise.all([
     ctx.db.get(item.eventId),
     ctx.db
@@ -264,7 +223,11 @@ export const getMyInbox = query({
       );
     }
     for (const cursor of [args.paginationOpts.cursor, args.paginationOpts.endCursor]) {
-      if (cursor !== null && cursor !== undefined && cursor.length > MAX_CURSOR_LENGTH) {
+      if (
+        cursor !== null &&
+        cursor !== undefined &&
+        cursor.length > MAX_INBOX_CURSOR_LENGTH
+      ) {
         throw new Error("Notification inbox cursor exceeds its fixed bound");
       }
     }
@@ -277,15 +240,28 @@ export const getMyInbox = query({
         )
         .order("desc");
     const state = decodeInboxCursor(args.paginationOpts.cursor);
+    const endCursorState = args.paginationOpts.endCursor == null
+      ? null
+      : decodeInboxCursor(args.paginationOpts.endCursor);
+    if (endCursorState?.bufferedItemIds.length) {
+      throw new Error("Notification inbox split cursor cannot contain buffered items");
+    }
+    const wrappedEndCursor = args.paginationOpts.endCursor?.startsWith(INBOX_CURSOR_PREFIX)
+      ? endCursorState
+      : null;
     const joinedPage = [];
+    // Split-range pages are merged independently, so drain each bounded range here.
+    const pageLimit = wrappedEndCursor
+      ? MAX_BUFFERED_INBOX_ITEMS + MAX_INBOX_SCAN_ITEMS
+      : args.paginationOpts.numItems;
     let bufferedOffset = 0;
     while (
-      joinedPage.length < args.paginationOpts.numItems &&
+      joinedPage.length < pageLimit &&
       bufferedOffset < state.bufferedItemIds.length
     ) {
       const batch = state.bufferedItemIds.slice(
         bufferedOffset,
-        bufferedOffset + args.paginationOpts.numItems - joinedPage.length,
+        bufferedOffset + pageLimit - joinedPage.length,
       );
       bufferedOffset += batch.length;
       const bufferedRows = await Promise.all(
@@ -303,45 +279,51 @@ export const getMyInbox = query({
     let sourceDone = state.sourceDone;
     let sourcePage: Awaited<ReturnType<ReturnType<typeof inboxQuery>["paginate"]>> | null = null;
 
-    if (joinedPage.length < args.paginationOpts.numItems && !sourceDone) {
+    if (joinedPage.length < pageLimit && !sourceDone) {
       sourcePage = await inboxQuery().paginate({
         ...args.paginationOpts,
         numItems: MAX_INBOX_SCAN_ITEMS,
+        maximumRowsRead: MAX_INBOX_SCAN_ITEMS,
         cursor: sourceCursor,
+        endCursor: endCursorState?.cursor ?? null,
       });
+      if (sourcePage.pageStatus === "SplitRequired") {
+        if (sourcePage.splitCursor == null) {
+          throw new Error("Notification inbox page could not be split safely");
+        }
+        return {
+          page: [],
+          ...makeInboxSplitCursors(
+            sourcePage.splitCursor,
+            sourcePage.continueCursor,
+            wrappedEndCursor?.sourceDone ?? sourcePage.isDone,
+          ),
+          isDone: false,
+          pageStatus: "SplitRequired" as const,
+        };
+      }
       const checkedPage = await Promise.all(
         sourcePage.page.map((item) => readCurrentInboxItem(ctx, user._id, item)),
       );
       joinedPage.push(...checkedPage.filter((item) => item !== null));
       sourceCursor = sourcePage.continueCursor;
-      sourceDone = sourcePage.isDone;
+      sourceDone =
+        sourcePage.isDone && (wrappedEndCursor?.sourceDone ?? true);
     }
 
-    const page = joinedPage.slice(0, args.paginationOpts.numItems);
+    const page = wrappedEndCursor
+      ? joinedPage
+      : joinedPage.slice(0, args.paginationOpts.numItems);
     const nextState: InboxCursorState = {
       cursor: sourceCursor,
       bufferedItemIds: [
         ...state.bufferedItemIds.slice(bufferedOffset),
         ...joinedPage
-          .slice(args.paginationOpts.numItems)
+          .slice(page.length)
           .map((item) => String(item.itemId)),
       ],
       sourceDone,
     };
-    if (sourcePage?.pageStatus === "SplitRequired" && sourcePage.splitCursor == null) {
-      throw new Error("Notification inbox page could not be split safely");
-    }
-    if (sourcePage?.splitCursor != null) {
-      return {
-        page,
-        continueCursor: sourcePage.continueCursor,
-        splitCursor: sourcePage.splitCursor,
-        isDone: sourceDone && nextState.bufferedItemIds.length === 0,
-        ...(sourcePage.pageStatus === undefined
-          ? {}
-          : { pageStatus: sourcePage.pageStatus }),
-      };
-    }
     return {
       page,
       continueCursor: encodeInboxCursor(nextState),
@@ -381,7 +363,7 @@ export const getDueWorkByKind = internalQuery({
   returns: paginationResultValidator(dueWorkResultValidator),
   handler: async (ctx, args) => {
     assertDueWorkBounds(args.now, args.limit);
-    if (args.cursor !== null && args.cursor.length > MAX_CURSOR_LENGTH) {
+    if (args.cursor !== null && args.cursor.length > MAX_DUE_WORK_CURSOR_LENGTH) {
       throw new Error("Due-work cursor exceeds its fixed bound");
     }
     const page = await ctx.db

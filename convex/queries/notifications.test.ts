@@ -14,6 +14,7 @@ import {
   makeSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
+import { makeInboxSplitCursors } from "../_helpers/notificationInboxPagination";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -175,7 +176,7 @@ describe("notification recipient queries", () => {
     ).resolves.toMatchObject({ page: [] });
   });
 
-  test("refills across a stale prefix without skipping the next visible page", async () => {
+  test("refills stale prefixes and preserves split and dismissal cursors", async () => {
     enableInAppInbox();
     const t = convexTest(schema, modules);
     const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
@@ -274,6 +275,65 @@ describe("notification recipient queries", () => {
     const firstPage = await asPartner.query(api.queries.notifications.getMyInbox, {
       paginationOpts: { numItems: 20, cursor: null },
     });
+
+    const rawSplitCursors = await t.run(async (ctx) => {
+      const inboxQuery = () =>
+        ctx.db
+          .query("notificationInboxItems")
+          .withIndex("by_recipient_state_and_created_at", (q) =>
+            q.eq("recipientUserId", partnerId).eq("state", "current"),
+          )
+          .order("desc");
+      const firstRange = await inboxQuery().paginate({ numItems: 46, cursor: null });
+      const allRows = await inboxQuery().paginate({ numItems: 47, cursor: null });
+      return {
+        splitCursor: firstRange.continueCursor,
+        continueCursor: allRows.continueCursor,
+      };
+    });
+    const splitCursors = makeInboxSplitCursors(
+      rawSplitCursors.splitCursor,
+      rawSplitCursors.continueCursor,
+      true,
+    );
+    const firstSplitHalf = await asPartner.query(
+      api.queries.notifications.getMyInbox,
+      {
+        paginationOpts: {
+          numItems: 20,
+          cursor: null,
+          endCursor: splitCursors.splitCursor,
+        },
+      },
+    );
+    const secondSplitHalf = await asPartner.query(
+      api.queries.notifications.getMyInbox,
+      {
+        paginationOpts: {
+          numItems: 20,
+          cursor: splitCursors.splitCursor,
+          endCursor: splitCursors.continueCursor,
+        },
+      },
+    );
+    const splitRemainder = await asPartner.query(
+      api.queries.notifications.getMyInbox,
+      {
+        paginationOpts: { numItems: 20, cursor: secondSplitHalf.continueCursor },
+      },
+    );
+    expect(firstSplitHalf.page.map((item) => item.itemId)).toEqual(
+      entries.slice(1, 22).reverse().map(({ inboxItemId }) => inboxItemId),
+    );
+    expect(secondSplitHalf.page.map((item) => item.itemId)).toEqual(
+      entries.slice(0, 1).map(({ inboxItemId }) => inboxItemId),
+    );
+    expect(splitRemainder.page).toEqual([]);
+    expect(secondSplitHalf.isDone).toBe(true);
+
+    await asPartner.mutation(api.mutations.notifications.dismissMyInboxItem, {
+      itemId: entries[1].inboxItemId,
+    });
     const secondPage = await asPartner.query(api.queries.notifications.getMyInbox, {
       paginationOpts: { numItems: 20, cursor: firstPage.continueCursor },
     });
@@ -282,8 +342,9 @@ describe("notification recipient queries", () => {
     );
     expect(firstPage.isDone).toBe(false);
     expect(secondPage.page.map((item) => item.itemId)).toEqual(
-      entries.slice(0, 2).reverse().map(({ inboxItemId }) => inboxItemId),
+      entries.slice(0, 1).reverse().map(({ inboxItemId }) => inboxItemId),
     );
+    expect(secondPage.page.map((item) => item.itemId)).not.toContain(entries[1].inboxItemId);
     expect(secondPage.isDone).toBe(true);
   });
 
