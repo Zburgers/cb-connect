@@ -1,7 +1,7 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { internalQuery, query, type QueryCtx } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
 import {
@@ -23,8 +23,16 @@ import {
 const MAX_INBOX_PAGE_SIZE = 50;
 // shortcut: scan at most 200 rows per request; raise only if valid inboxes have larger stale prefixes.
 const MAX_INBOX_SCAN_ITEMS = MAX_INBOX_PAGE_SIZE * 4;
+const MAX_BUFFERED_INBOX_ITEMS = MAX_INBOX_SCAN_ITEMS + MAX_INBOX_PAGE_SIZE;
 const MAX_DUE_WORK_ITEMS = 100;
-const MAX_CURSOR_LENGTH = 2_048;
+const MAX_CURSOR_LENGTH = 16_384;
+const INBOX_CURSOR_PREFIX = "cb-connect-inbox-v1:";
+
+type InboxCursorState = {
+  cursor: string | null;
+  bufferedItemIds: string[];
+  sourceDone: boolean;
+};
 
 const notificationDueWorkKindValidator = v.union(
   v.literal("delivery"),
@@ -73,6 +81,86 @@ const dueWorkResultValidator = v.object({
   _id: v.id("notificationDueWork"),
   _creationTime: v.number(),
 });
+
+function decodeInboxCursor(cursor: string | null): InboxCursorState {
+  if (cursor === null) {
+    return { cursor: null, bufferedItemIds: [], sourceDone: false };
+  }
+  if (!cursor.startsWith(INBOX_CURSOR_PREFIX)) {
+    return { cursor, bufferedItemIds: [], sourceDone: false };
+  }
+  try {
+    const value: unknown = JSON.parse(cursor.slice(INBOX_CURSOR_PREFIX.length));
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("cursor" in value) ||
+      (value.cursor !== null && typeof value.cursor !== "string") ||
+      !("bufferedItemIds" in value) ||
+      !Array.isArray(value.bufferedItemIds) ||
+      value.bufferedItemIds.length > MAX_BUFFERED_INBOX_ITEMS ||
+      !value.bufferedItemIds.every((id) => typeof id === "string") ||
+      new Set(value.bufferedItemIds).size !== value.bufferedItemIds.length ||
+      !("sourceDone" in value) ||
+      typeof value.sourceDone !== "boolean"
+    ) {
+      throw new Error("Invalid cursor shape");
+    }
+    return {
+      cursor: value.cursor,
+      bufferedItemIds: value.bufferedItemIds,
+      sourceDone: value.sourceDone,
+    };
+  } catch {
+    throw new Error("Notification inbox cursor is invalid");
+  }
+}
+
+function encodeInboxCursor(state: InboxCursorState): string {
+  const cursor = `${INBOX_CURSOR_PREFIX}${JSON.stringify(state)}`;
+  if (cursor.length > MAX_CURSOR_LENGTH) {
+    throw new Error("Notification inbox cursor exceeds its fixed bound");
+  }
+  return cursor;
+}
+
+async function readCurrentInboxItem(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  item: Doc<"notificationInboxItems"> | null,
+) {
+  if (!item || item.recipientUserId !== userId) return null;
+  const [event, deliveries] = await Promise.all([
+    ctx.db.get(item.eventId),
+    ctx.db
+      .query("notificationDeliveries")
+      .withIndex("by_event_id", (q) => q.eq("eventId", item.eventId))
+      .take(2),
+  ]);
+  if (
+    !event ||
+    event.recipientUserId !== userId ||
+    deliveries.length !== 1 ||
+    deliveries[0].eventId !== event._id ||
+    deliveries[0].recipientUserId !== userId ||
+    deliveries[0].channel !== "in_app" ||
+    deliveries[0].state !== "delivered" ||
+    deliveries[0].eligibility !== "eligible" ||
+    (deliveries[0].expiresAt !== undefined && deliveries[0].expiresAt <= Date.now()) ||
+    !(await isNotificationSourceCurrent(ctx, event))
+  ) {
+    return null;
+  }
+  return {
+    itemId: item._id,
+    eventType: event.eventType,
+    templateVersion: item.templateVersion,
+    ...(item.route === undefined ? {} : { route: item.route }),
+    state: "current" as const,
+    createdAt: item.createdAt,
+    ...(item.readAt === undefined ? {} : { readAt: item.readAt }),
+  };
+}
 
 const controlResultValidator = v.union(
   v.object({ blocked: v.literal(false) }),
@@ -188,70 +276,77 @@ export const getMyInbox = query({
           q.eq("recipientUserId", user._id).eq("state", "current"),
         )
         .order("desc");
+    const state = decodeInboxCursor(args.paginationOpts.cursor);
     const joinedPage = [];
-    let scanned = 0;
-    let cursor = args.paginationOpts.cursor;
-    let page = await inboxQuery().paginate(args.paginationOpts);
-
-    while (true) {
-      scanned += page.page.length;
-      cursor = page.continueCursor;
-
-      const checkedPage = await Promise.all(
-        page.page.map(async (item) => {
-          if (item.recipientUserId !== user._id) return null;
-          const [event, deliveries] = await Promise.all([
-            ctx.db.get(item.eventId),
-            ctx.db
-              .query("notificationDeliveries")
-              .withIndex("by_event_id", (q) => q.eq("eventId", item.eventId))
-              .take(2),
-          ]);
-          if (
-            !event ||
-            event.recipientUserId !== user._id ||
-            deliveries.length !== 1 ||
-            deliveries[0].eventId !== event._id ||
-            deliveries[0].recipientUserId !== user._id ||
-            deliveries[0].channel !== "in_app" ||
-            deliveries[0].state !== "delivered" ||
-            deliveries[0].eligibility !== "eligible" ||
-            (deliveries[0].expiresAt !== undefined && deliveries[0].expiresAt <= Date.now()) ||
-            !(await isNotificationSourceCurrent(ctx, event))
-          ) {
-            return null;
-          }
-          return {
-            itemId: item._id,
-            eventType: event.eventType,
-            templateVersion: item.templateVersion,
-            ...(item.route === undefined ? {} : { route: item.route }),
-            state: "current" as const,
-            createdAt: item.createdAt,
-            ...(item.readAt === undefined ? {} : { readAt: item.readAt }),
-          };
+    let bufferedOffset = 0;
+    while (
+      joinedPage.length < args.paginationOpts.numItems &&
+      bufferedOffset < state.bufferedItemIds.length
+    ) {
+      const batch = state.bufferedItemIds.slice(
+        bufferedOffset,
+        bufferedOffset + args.paginationOpts.numItems - joinedPage.length,
+      );
+      bufferedOffset += batch.length;
+      const bufferedRows = await Promise.all(
+        batch.map((rawId) => {
+          const itemId = ctx.db.normalizeId("notificationInboxItems", rawId);
+          return itemId === null ? null : ctx.db.get(itemId);
         }),
       );
-      joinedPage.push(...checkedPage.filter((item) => item !== null));
-      if (
-        page.isDone ||
-        page.page.length === 0 ||
-        joinedPage.length >= args.paginationOpts.numItems ||
-        scanned >= MAX_INBOX_SCAN_ITEMS
-      ) {
-        break;
-      }
-      page = await inboxQuery().paginate({
+      const checkedBuffer = await Promise.all(
+        bufferedRows.map((item) => readCurrentInboxItem(ctx, user._id, item)),
+      );
+      joinedPage.push(...checkedBuffer.filter((item) => item !== null));
+    }
+    let sourceCursor = state.cursor;
+    let sourceDone = state.sourceDone;
+    let sourcePage: Awaited<ReturnType<ReturnType<typeof inboxQuery>["paginate"]>> | null = null;
+
+    if (joinedPage.length < args.paginationOpts.numItems && !sourceDone) {
+      sourcePage = await inboxQuery().paginate({
         ...args.paginationOpts,
-        numItems: Math.min(
-          args.paginationOpts.numItems - joinedPage.length,
-          MAX_INBOX_SCAN_ITEMS - scanned,
-        ),
-        cursor,
+        numItems: MAX_INBOX_SCAN_ITEMS,
+        cursor: sourceCursor,
       });
+      const checkedPage = await Promise.all(
+        sourcePage.page.map((item) => readCurrentInboxItem(ctx, user._id, item)),
+      );
+      joinedPage.push(...checkedPage.filter((item) => item !== null));
+      sourceCursor = sourcePage.continueCursor;
+      sourceDone = sourcePage.isDone;
     }
 
-    return { ...page, page: joinedPage };
+    const page = joinedPage.slice(0, args.paginationOpts.numItems);
+    const nextState: InboxCursorState = {
+      cursor: sourceCursor,
+      bufferedItemIds: [
+        ...state.bufferedItemIds.slice(bufferedOffset),
+        ...joinedPage
+          .slice(args.paginationOpts.numItems)
+          .map((item) => String(item.itemId)),
+      ],
+      sourceDone,
+    };
+    if (sourcePage?.pageStatus === "SplitRequired" && sourcePage.splitCursor == null) {
+      throw new Error("Notification inbox page could not be split safely");
+    }
+    if (sourcePage?.splitCursor != null) {
+      return {
+        page,
+        continueCursor: sourcePage.continueCursor,
+        splitCursor: sourcePage.splitCursor,
+        isDone: sourceDone && nextState.bufferedItemIds.length === 0,
+        ...(sourcePage.pageStatus === undefined
+          ? {}
+          : { pageStatus: sourcePage.pageStatus }),
+      };
+    }
+    return {
+      page,
+      continueCursor: encodeInboxCursor(nextState),
+      isDone: sourceDone && nextState.bufferedItemIds.length === 0,
+    };
   },
 });
 

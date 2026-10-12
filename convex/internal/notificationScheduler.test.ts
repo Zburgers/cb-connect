@@ -2510,6 +2510,98 @@ describe("notification schedule reconciliation", () => {
     ]);
   });
 
+  test("retains the same current claim when a full claimed prefix is revisited", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.setSystemTime(now);
+
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await seedScheduleInputs(t, primaryId, {
+      timeZone: "America/Los_Angeles",
+      localReminderTime: "09:00",
+      includeLateStatus: false,
+    });
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+    const original = (await pendingScheduleRows(t, primaryId)).find(
+      (row) => row.kind === "prediction_window",
+    );
+    if (!original) throw new Error("Expected prediction-window work");
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(original._id, { state: "claimed" });
+      for (let index = 0; index < 101; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "prediction_window",
+          state: "pending",
+          dueAt: original.dueAt - 200 + index,
+          generation: original.generation - 1,
+          sourceAuthorityVersion: original.sourceAuthorityVersion,
+          reminderWindowVersion: original.reminderWindowVersion,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      for (let index = 0; index < 99; index += 1) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "prediction_window",
+          state: "claimed",
+          dueAt: original.dueAt - 99 + index,
+          generation: original.generation - 1,
+          sourceAuthorityVersion: original.sourceAuthorityVersion,
+          reminderWindowVersion: original.reminderWindowVersion,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    await t.run((ctx) => reconcileUserSchedule(ctx, primaryId));
+    const continuation = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").take(200)).find(
+        ({ name, args }) =>
+          name === "internal/notificationScheduler:continueScheduleReconciliation" &&
+          args.length === 1 &&
+          typeof args[0] === "object" &&
+          args[0] !== null &&
+          "phase" in args[0] &&
+          args[0].phase === "current",
+      ),
+    );
+    if (!continuation) throw new Error("Expected a schedule continuation");
+    const continuationArgs = continuation.args[0];
+    if (
+      typeof continuationArgs !== "object" ||
+      continuationArgs === null ||
+      !("candidates" in continuationArgs)
+    ) {
+      throw new Error("Expected the claimed candidate in continuation state");
+    }
+    expect(continuationArgs.candidates).toMatchObject({
+      claimedPredictionId: original._id,
+    });
+
+    await t.mutation(
+      continueScheduleReconciliationRef,
+      continuationArgs as never,
+    );
+
+    const activePredictionWork = (await allScheduleRows(t, primaryId)).filter(
+      (row) =>
+        row.kind === "prediction_window" &&
+        (row.state === "pending" || row.state === "claimed"),
+    );
+    expect(activePredictionWork).toEqual([
+      expect.objectContaining({ _id: original._id, state: "claimed" }),
+    ]);
+  });
+
   test("current reconciliation rechecks candidates claimed between pages", async () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-03-07T20:00:00.000Z");

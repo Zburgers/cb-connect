@@ -196,7 +196,7 @@ describe("notification recipient queries", () => {
       if (!membership) throw new Error("Expected an active partner membership");
 
       const rows = [];
-      for (let index = 0; index < 47; index += 1) {
+      for (let index = 0; index < 225; index += 1) {
         const createdAt = now + index;
         const messageId = await ctx.db.insert("coupleMessages", {
           coupleId,
@@ -277,15 +277,20 @@ describe("notification recipient queries", () => {
     const secondPage = await asPartner.query(api.queries.notifications.getMyInbox, {
       paginationOpts: { numItems: 20, cursor: firstPage.continueCursor },
     });
+    const thirdPage = await asPartner.query(api.queries.notifications.getMyInbox, {
+      paginationOpts: { numItems: 20, cursor: secondPage.continueCursor },
+    });
 
-    expect(firstPage.page.map((item) => item.itemId)).toEqual(
-      entries.slice(2, 22).reverse().map(({ inboxItemId }) => inboxItemId),
-    );
+    expect(firstPage.page).toEqual([]);
     expect(firstPage.isDone).toBe(false);
     expect(secondPage.page.map((item) => item.itemId)).toEqual(
+      entries.slice(2, 22).reverse().map(({ inboxItemId }) => inboxItemId),
+    );
+    expect(secondPage.isDone).toBe(false);
+    expect(thirdPage.page.map((item) => item.itemId)).toEqual(
       entries.slice(0, 2).reverse().map(({ inboxItemId }) => inboxItemId),
     );
-    expect(secondPage.isDone).toBe(true);
+    expect(thirdPage.isDone).toBe(true);
   });
 
   test("hides a current inbox row after its typed identity or relationship generation is revoked", async () => {
@@ -461,7 +466,7 @@ describe("notification recipient queries", () => {
     ).rejects.toThrow();
     await expect(
       asPrimary.query(api.queries.notifications.getMyInbox, {
-        paginationOpts: { numItems: 20, cursor: "x".repeat(2_049) },
+        paginationOpts: { numItems: 20, cursor: "x".repeat(16_385) },
       }),
     ).rejects.toThrow(/cursor.*bound/i);
     await expect(
@@ -469,7 +474,7 @@ describe("notification recipient queries", () => {
         paginationOpts: {
           numItems: 20,
           cursor: null,
-          endCursor: "x".repeat(2_049),
+          endCursor: "x".repeat(16_385),
         },
       }),
     ).rejects.toThrow(/cursor.*bound/i);

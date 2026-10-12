@@ -931,7 +931,8 @@ async function inspectSchedulePage(
       row.generation === args.generation &&
       row.sourceAuthorityVersion === args.sourceAuthorityVersion &&
       row.reminderWindowVersion === args.reminderWindowVersion[row.kind];
-    if (!isCurrent || args.candidates[candidateKey] !== null) {
+    const candidateId = args.candidates[candidateKey];
+    if (!isCurrent || (candidateId !== null && candidateId !== row._id)) {
       await ctx.db.patch(row._id, { state: "cancelled", updatedAt: args.now });
     } else {
       args.candidates[candidateKey] = row._id;
