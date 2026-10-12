@@ -61,6 +61,8 @@ const projectInAppWakeArgsValidator = v.object({
   expectedWakeSequence: v.optional(v.number()),
 });
 
+const consumeEventArgsValidator = v.object({ eventId: v.id("notificationEvents") });
+
 function isEnabled(name: string): boolean {
   return process.env[name] === "true";
 }
@@ -548,6 +550,146 @@ export const projectInApp = internalMutation({
   args: projectInAppArgsValidator.fields,
   returns: projectResultValidator,
   handler: async (ctx, args) => projectInAppInTransaction(ctx, args),
+});
+
+export const consumeEvent = internalMutation({
+  args: consumeEventArgsValidator.fields,
+  returns: projectResultValidator,
+  handler: async (ctx, { eventId }) => {
+    const emptyResult = { eventId, deliveryId: null, inboxItemId: null };
+    if (
+      !isEnabled(OUTBOX_ENABLED_ENV) ||
+      !isEnabled(PROJECTION_ENABLED_ENV) ||
+      !isEnabled(DELIVERY_ENABLED_ENV)
+    ) {
+      return { status: "disabled" as const, ...emptyResult };
+    }
+
+    const event = await ctx.db.get(eventId);
+    if (!event || !eventMatchesCatalog(event) || !(await isNotificationSourceCurrent(ctx, event))) {
+      return { status: "stale" as const, ...emptyResult };
+    }
+    const [recipient, preference, globalDenied, channelDenied, purposeDenied] = await Promise.all([
+      ctx.db.get(event.recipientUserId),
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", event.recipientUserId).eq("purpose", event.purpose),
+        )
+        .unique(),
+      hasControl(ctx, "global", "delivery"),
+      hasControl(ctx, "channel", "in_app"),
+      hasControl(ctx, "purpose", event.purpose),
+    ]);
+    const authorization = authorizeNotificationProjection({
+      eventType: event.eventType,
+      purpose: event.purpose,
+      channel: "in_app",
+      recipientUserId: String(event.recipientUserId),
+      currentRecipientUserId:
+        recipient && recipient.role !== undefined ? String(recipient._id) : null,
+      sourceAuthorityVersion: event.sourceAuthorityVersion,
+      currentSourceAuthorityVersion: event.sourceAuthorityVersion,
+      expectedGeneration: 0,
+      currentGeneration: 0,
+      purposeEnabled: preference?.inAppEnabled === true,
+      lateContentApproved: false,
+      flags: { projectionEnabled: true, deliveryEnabled: true },
+      controls: { globalDenied, channelDenied, purposeDenied },
+    });
+    if (!authorization.allowed) return { status: "denied" as const, ...emptyResult };
+
+    let rendered;
+    try {
+      rendered = await renderFrozen({
+        eventType: event.eventType,
+        templateVersion: "g4-static-v1",
+        locale: "en",
+        variableSchemaVersion: "g4-no-variables-v1",
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Notification template is gated pending D-011 approval"
+      ) {
+        return { status: "denied" as const, ...emptyResult };
+      }
+      throw error;
+    }
+
+    const stableDestinationId = String(event.recipientUserId);
+    const logicalKey = makeDeliveryIdempotencyKey(
+      String(event._id),
+      "in_app",
+      stableDestinationId,
+    );
+    const deliveries = await ctx.db
+      .query("notificationDeliveries")
+      .withIndex("by_logical_key", (q) => q.eq("logicalKey", logicalKey))
+      .take(2);
+    if (deliveries.length > 1) {
+      throw new Error("Notification delivery key is not unique");
+    }
+    let delivery = deliveries[0] ?? null;
+    if (
+      delivery &&
+      (delivery.eventId !== event._id ||
+        delivery.recipientUserId !== event.recipientUserId ||
+        delivery.channel !== "in_app" ||
+        delivery.stableDestinationId !== stableDestinationId)
+    ) {
+      throw new Error("Notification delivery key conflicts with recipient authority");
+    }
+    const eventDeliveries = await ctx.db
+      .query("notificationDeliveries")
+      .withIndex("by_event_id", (q) => q.eq("eventId", event._id))
+      .take(MAX_SOURCE_ROWS);
+    if (
+      eventDeliveries.length > 1 ||
+      (eventDeliveries.length === 1 && eventDeliveries[0]._id !== delivery?._id)
+    ) {
+      throw new Error("Notification event has conflicting logical delivery rows");
+    }
+    if (!delivery) {
+      const now = Date.now();
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: event._id,
+        recipientUserId: event.recipientUserId,
+        channel: "in_app",
+        stableDestinationId,
+        logicalKey,
+        notBefore: event.createdAt,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 0,
+        renderIdentity: rendered.identity,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const createdDelivery = await ctx.db.get(deliveryId);
+      if (!createdDelivery) throw new Error("Notification delivery disappeared after creation");
+      delivery = createdDelivery;
+    }
+
+    const projectArgs: ProjectInAppArgs = {
+      eventId: event._id,
+      expectedGeneration: delivery.claimGeneration,
+    };
+    if (
+      event.eventType === "period_window_approaching.v1" ||
+      event.eventType === "late_status.v1"
+    ) {
+      const identity = event.sourceIdentity;
+      if (!identity || !("sourceAuthorityVersion" in identity)) {
+        return { status: "denied" as const, ...emptyResult };
+      }
+      projectArgs.expectedSourceAuthorityVersion = identity.sourceAuthorityVersion;
+      projectArgs.expectedReminderWindowVersion = identity.reminderWindowVersion;
+    }
+    return projectInAppInTransaction(ctx, projectArgs);
+  },
 });
 
 export const projectInAppWake = internalMutation({

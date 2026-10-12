@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { mutation, type MutationCtx } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
-import { cancelSource } from "../_helpers/notificationOutbox";
+import { cancelSource, scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import {
   requireValidCalendarDate,
@@ -137,13 +137,16 @@ async function ensurePainReminderEvent(
     ) {
       throw new Error("Pain reminder event key conflicts with its source authority");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return existing._id;
   }
 
-  return await ctx.db.insert("notificationEvents", {
+  const eventId = await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt: Date.now(),
   });
+  await scheduleNotificationEventProjection(ctx, eventId);
+  return eventId;
 }
 
 function validateSelectedLocalDay(selectedLocalDay: string, timeZone: string): void {

@@ -1,5 +1,6 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { makeFunctionReference } from "convex/server";
 import { toCalendarDateInTimeZone } from "./calendarDates";
 import { addCalendarDays } from "./cycleCalculations";
 import { makeEventIdempotencyKey } from "./notificationDelivery";
@@ -18,6 +19,18 @@ const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 const MAX_SOURCE_EVENTS = 256;
 const MAX_DUE_WORK_PER_DELIVERY = 256;
 const MAX_SOURCE_REFERENCE_LENGTH = 1_024;
+
+const consumeNotificationEventRef = makeFunctionReference<"mutation">(
+  "internal/notificationDelivery:consumeEvent",
+);
+
+export async function scheduleNotificationEventProjection(
+  ctx: MutationCtx,
+  eventId: Id<"notificationEvents">,
+): Promise<void> {
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
+  await ctx.scheduler.runAfter(0, consumeNotificationEventRef, { eventId });
+}
 
 export type AssistedPeriodEventType =
   | "assisted_period_start.v1"
@@ -388,13 +401,16 @@ export async function ensureAssistedPeriodEvent(
     if (!sameEnvelope(existing, envelope)) {
       throw new Error("Notification event key conflicts with its source authority");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return existing._id;
   }
 
-  return await ctx.db.insert("notificationEvents", {
+  const eventId = await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt: now,
   });
+  await scheduleNotificationEventProjection(ctx, eventId);
+  return eventId;
 }
 
 /**
@@ -472,6 +488,7 @@ export async function ensureCurrentLateStatusEvent(
     if (!sameEnvelope(existing, envelope)) {
       throw new Error("Late-status event key conflicts with its source authority");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return existing._id;
   }
 
@@ -501,10 +518,12 @@ export async function ensureCurrentLateStatusEvent(
       }
     }
   }
-  return await ctx.db.insert("notificationEvents", {
+  const eventId = await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt: now,
   });
+  await scheduleNotificationEventProjection(ctx, eventId);
+  return eventId;
 }
 
 /**

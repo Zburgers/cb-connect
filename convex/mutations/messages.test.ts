@@ -9,9 +9,107 @@ import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
 import { ensurePartnerMessageEvent } from "./messages";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("couple message state", () => {
+  test("projects an authorized message event only into its recipient inbox", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } = await seedActiveCouple(t);
+    await asPartner.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "partner_message",
+      inAppEnabled: true,
+    });
+
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "A private hello",
+    });
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+    await t.run((ctx) => ensurePartnerMessageEvent(ctx, { messageId, recipientId: partnerId }));
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+    const inboxRows = await t.run((ctx) => ctx.db.query("notificationInboxItems").take(10));
+    expect(inboxRows).toEqual([
+      expect.objectContaining({ recipientUserId: partnerId, state: "current" }),
+    ]);
+
+    const delivery = await t.run(async (ctx) => {
+      const event = await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q.eq("sourceReference", `message:${messageId}`),
+        )
+        .unique();
+      const deliveries = event
+        ? await ctx.db
+            .query("notificationDeliveries")
+            .withIndex("by_event_id", (q) => q.eq("eventId", event._id))
+            .take(2)
+        : [];
+      return deliveries[0] ?? null;
+    });
+    expect(delivery).toMatchObject({
+      recipientUserId: partnerId,
+      channel: "in_app",
+      state: "delivered",
+    });
+    expect(delivery?.recipientUserId).toBe(partnerId);
+    expect(delivery?.recipientUserId).not.toBe(primaryId);
+    const attempts = await t.run(async (ctx) =>
+      delivery
+        ? ctx.db
+            .query("notificationDeliveryAttempts")
+            .withIndex("by_delivery_and_ordinal", (q) => q.eq("deliveryId", delivery._id))
+            .take(2)
+        : [],
+    );
+    expect(attempts).toHaveLength(1);
+  });
+
+  test("does not create a delivery when relationship access is revoked before consumption", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_DELIVERY_V1", "true");
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner } = await seedActiveCouple(t);
+    await asPartner.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "partner_message",
+      inAppEnabled: true,
+    });
+
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, {
+      body: "This should be revoked before projection",
+    });
+    await asPrimary.mutation(api.mutations.couples.revokePartnerAccess, {});
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+    const event = await t.run(async (ctx) =>
+      ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q.eq("sourceReference", `message:${messageId}`),
+        )
+        .unique(),
+    );
+    const deliveries = event
+      ? await t.run(async (ctx) =>
+          ctx.db
+            .query("notificationDeliveries")
+            .withIndex("by_event_id", (q) => q.eq("eventId", event._id))
+            .take(2),
+        )
+      : [];
+    expect(deliveries).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("notificationInboxItems").take(10))).toEqual([]);
+  });
+
   test("preserves exactly 80 legacy unread messages when sequencing begins", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);

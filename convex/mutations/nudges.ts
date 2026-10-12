@@ -3,7 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import { mutation, type MutationCtx } from "../_generated/server";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
-import { cancelSource } from "../_helpers/notificationOutbox";
+import { cancelSource, scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import {
   assertValidNotificationEventWrite,
@@ -92,10 +92,12 @@ export async function ensureNudgeEvent(
     if (!matchesEnvelope) {
       throw new Error("Nudge notification event key conflicts with its source");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return;
   }
 
-  await ctx.db.insert("notificationEvents", { ...envelope, createdAt: nudge.createdAt });
+  const eventId = await ctx.db.insert("notificationEvents", { ...envelope, createdAt: nudge.createdAt });
+  await scheduleNotificationEventProjection(ctx, eventId);
 }
 
 export const send = mutation({

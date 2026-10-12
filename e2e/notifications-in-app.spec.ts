@@ -26,68 +26,49 @@ const SAFE_COPY = [
   },
 ] as const;
 
-type InboxState = "unavailable" | "empty" | "populated";
-
-async function openInbox(page: Page, requireEmpty = false): Promise<InboxState> {
+async function openInbox(page: Page) {
   await page.goto("/dashboard/notifications");
   await expect(
     page.getByRole("heading", { name: "Notification inbox", exact: true }),
   ).toBeVisible({ timeout: 30000 });
 
-  const items = page
+  return page
     .getByRole("list", { name: "Current notifications" })
     .getByRole("listitem");
-  const unavailable = page.getByText("Your inbox is unavailable right now.", {
-    exact: true,
-  });
-  const empty = page.getByText("You're all caught up.", { exact: true });
+}
 
-  await expect
-    .poll(async () =>
-      (await unavailable.isVisible().catch(() => false)) ||
-      (await empty.isVisible().catch(() => false)) ||
-      (await items.count()) > 0,
-    )
-    .toBe(true);
+async function setMessageActivity(page: Page, enabled: boolean) {
+  await page.goto("/dashboard/settings");
+  const preference = page
+    .getByRole("region", { name: "In-app notification preferences" })
+    .getByRole("checkbox", { name: "Message activity", exact: true });
+  await expect(preference).toBeVisible({ timeout: 30000 });
+  if (enabled) await preference.check();
+  else await preference.uncheck();
+  await expect(preference).toBeChecked({ checked: enabled });
+}
 
-  if (requireEmpty) {
-    await expect(items).toHaveCount(0);
-  }
+async function sendSyntheticMessage(page: Page, body: string) {
+  await page.goto("/dashboard/partner");
+  await page.getByRole("button", { name: "Open DM", exact: true }).click();
+  const thread = page.getByRole("dialog", { name: /Private message thread/i });
+  await expect(thread).toBeVisible();
+  await page.locator("#partner-message").fill(body);
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(thread.locator("p").filter({ hasText: body }).last()).toBeVisible();
+}
 
-  if (await unavailable.isVisible().catch(() => false)) {
-    await expect(items).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Mark as read" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Dismiss" })).toHaveCount(0);
-    return "unavailable";
-  }
-
-  if ((await items.count()) === 0) {
-    await expect(empty).toBeVisible();
-    return "empty";
-  }
-
-  while ((await items.count()) > 0) {
-    const item = items.first();
-    const title = (await item.getByRole("heading").textContent())?.trim();
-    const body = (await item.locator("[data-notification-body]").textContent())?.trim();
-    expect(SAFE_COPY).toContainEqual({ title, body });
-
-    const markRead = item.getByRole("button", { name: "Mark as read", exact: true });
-    if (await markRead.isVisible().catch(() => false)) {
-      await markRead.click();
-      await expect(item.getByText("Read", { exact: true })).toBeVisible();
-    } else {
-      await expect(item.getByText("Read", { exact: true })).toBeVisible();
-    }
-
-    await item.getByRole("button", { name: "Dismiss", exact: true }).click();
-    await expect(item).toBeHidden();
-  }
-
+async function expectPopulatedSafeInbox(page: Page) {
+  const items = await openInbox(page);
+  await expect(items.first()).toBeVisible({ timeout: 120000 });
+  const item = items.first();
+  const title = (await item.getByRole("heading").textContent())?.trim();
+  const body = (await item.locator("[data-notification-body]").textContent())?.trim();
+  expect({ title, body }).toEqual(SAFE_COPY[1]);
   await expect(page.locator("main")).not.toContainText(
     /recipientUserId|sourceReference|idempotencyKey|payloadHash/i,
   );
-  return "populated";
+  return { items, item };
 }
 
 function fixtureContextOptions(projectName: string) {
@@ -126,9 +107,10 @@ async function resetCycleWindowPreference(page: Page) {
   await expect(reminderTime).toHaveValue("");
 }
 
-test("synthetic primary and partner inboxes render only static safe copy and support read/dismiss", async ({
+test("synthetic relationship messages reach only the partner inbox and revocation hides pending notices", async ({
   browser,
 }) => {
+  test.setTimeout(240000);
   const device = fixtureContextOptions(test.info().project.name);
   const primaryContext = await browser.newContext({
     ...device,
@@ -142,40 +124,40 @@ test("synthetic primary and partner inboxes render only static safe copy and sup
   const partner = await partnerContext.newPage();
 
   try {
+    // The approved release fixtures are a clean, already-linked pair. Enable
+    // both preferences so an empty sender inbox proves recipient scoping.
+    await setMessageActivity(primary, true);
+    await setMessageActivity(partner, true);
     await openInbox(primary);
+    await expect(primary.getByText("You're all caught up.", { exact: true })).toBeVisible();
     await openInbox(partner);
+    await expect(partner.getByText("You're all caught up.", { exact: true })).toBeVisible();
+    await sendSyntheticMessage(primary, "Synthetic notification check one.");
 
-    // The documented release setup creates a clean linked pair. It can prove
-    // default-off/empty rendering now; N8 must seed approved relationship rows
-    // before an authenticated run can exercise the populated read/dismiss path.
-  } finally {
-    await partnerContext.close();
-    await primaryContext.close();
-  }
-});
+    const { items, item } = await expectPopulatedSafeInbox(partner);
+    await expect(items).toHaveCount(1);
+    await expect(item.getByText("Unread", { exact: true })).toBeVisible();
+    await openInbox(primary);
+    await expect(primary.getByText("You're all caught up.", { exact: true })).toBeVisible({
+      timeout: 30000,
+    });
 
-test("revoked synthetic partner has no current inbox entries", async ({ browser }) => {
-  test.setTimeout(120000);
-  const device = fixtureContextOptions(test.info().project.name);
-  const primaryContext = await browser.newContext({
-    ...device,
-    storageState: getApprovedReleaseFixture("primary"),
-  });
-  const partnerContext = await browser.newContext({
-    ...device,
-    storageState: getApprovedReleaseFixture("partner"),
-  });
-  const primary = await primaryContext.newPage();
-  const partner = await partnerContext.newPage();
+    await item.getByRole("button", { name: "Mark as read", exact: true }).click();
+    await expect(item.getByText("Read", { exact: true })).toBeVisible();
+    await item.getByRole("button", { name: "Dismiss", exact: true }).click();
+    await expect(item).toBeHidden();
 
-  try {
+    await sendSyntheticMessage(primary, "Synthetic notification check two.");
+    const second = await expectPopulatedSafeInbox(partner);
+    await expect(second.items).toHaveCount(1);
+    await setMessageActivity(primary, false);
+
     await primary.goto("/dashboard/partner");
     const closeAccess = primary.getByRole("button", {
       name: "Close partner access",
       exact: true,
     });
     await expect(closeAccess).toBeVisible({ timeout: 30000 });
-
     let confirmationMessage = "";
     primary.once("dialog", async (dialog) => {
       confirmationMessage = dialog.message();
@@ -187,8 +169,15 @@ test("revoked synthetic partner has no current inbox entries", async ({ browser 
     });
     expect(confirmationMessage).toContain("revoke partner access");
 
-    const state = await openInbox(partner, true);
-    expect(["unavailable", "empty"]).toContain(state);
+    await expect
+      .poll(async () => second.items.count(), { timeout: 30000 })
+      .toBe(0);
+    await expect(
+      partner.getByText("You're all caught up.", { exact: true }).or(
+        partner.getByText("Your inbox is unavailable right now.", { exact: true }),
+      ),
+    ).toBeVisible();
+    await setMessageActivity(partner, false);
   } finally {
     await partnerContext.close();
     await primaryContext.close();

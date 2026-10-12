@@ -3,7 +3,7 @@ import { action, internalMutation, mutation, MutationCtx } from "../_generated/s
 import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 import { internal } from "../_generated/api";
-import { cancelSource } from "../_helpers/notificationOutbox";
+import { cancelSource, scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import {
   assertValidNotificationEventWrite,
@@ -88,10 +88,12 @@ async function insertRelationshipEvent(
     ) {
       throw new Error("Relationship notification key conflicts with its source");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return;
   }
 
-  await ctx.db.insert("notificationEvents", { ...envelope, createdAt });
+  const eventId = await ctx.db.insert("notificationEvents", { ...envelope, createdAt });
+  await scheduleNotificationEventProjection(ctx, eventId);
 }
 
 async function ensurePartnerLinkedEvent(

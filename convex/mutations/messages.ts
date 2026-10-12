@@ -3,6 +3,7 @@ import { mutation } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
+import { scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
 import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import {
   assertValidNotificationEventWrite,
@@ -136,13 +137,16 @@ async function ensureNotificationEvent(
     if (!matchesEnvelope) {
       throw new Error("Notification event key conflicts with its message source");
     }
+    await scheduleNotificationEventProjection(ctx, existing._id);
     return existing._id;
   }
 
-  return await ctx.db.insert("notificationEvents", {
+  const eventId = await ctx.db.insert("notificationEvents", {
     ...envelope,
     createdAt,
   });
+  await scheduleNotificationEventProjection(ctx, eventId);
+  return eventId;
 }
 
 function sanitizeMessage(body: string) {
