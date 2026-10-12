@@ -1,15 +1,36 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
+const LEGACY_CLERK_ISSUER = "https://clerk.cb.nakshatraneuratech.dev";
+const CONVEX_TEST_ISSUER = "https://convex.test";
+
+export function getLegacyClerkSubject(
+  identity: Awaited<ReturnType<QueryCtx["auth"]["getUserIdentity"]>>,
+): string | null {
+  if (!identity) return null;
+  if (identity.issuer !== LEGACY_CLERK_ISSUER) {
+    // Legacy rows store only a subject, so scope every lookup to the approved issuer.
+    // convex-test supplies its own issuer for existing app-level auth tests.
+    if (process.env.NODE_ENV !== "test" || identity.issuer !== CONVEX_TEST_ISSUER) {
+      return null;
+    }
+  }
+  return identity.subject;
+}
+
 export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new Error("Unauthenticated");
   }
+  const clerkSubject = getLegacyClerkSubject(identity);
+  if (!clerkSubject) {
+    throw new Error("User not found in database");
+  }
 
   const user = await ctx.db
     .query("users")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkSubject))
     .unique();
 
   if (!user) {
@@ -22,10 +43,12 @@ export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
 export async function getCurrentUserOrNull(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) return null;
+  const clerkSubject = getLegacyClerkSubject(identity);
+  if (!clerkSubject) return null;
 
   return await ctx.db
     .query("users")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkSubject))
     .unique();
 }
 

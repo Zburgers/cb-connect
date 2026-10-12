@@ -3,6 +3,13 @@ import { action, internalMutation, mutation, MutationCtx } from "../_generated/s
 import { Id } from "../_generated/dataModel";
 import { getCurrentUser, getCoupleForUser } from "../_helpers/auth";
 import { internal } from "../_generated/api";
+import { cancelSource } from "../_helpers/notificationOutbox";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  assertValidNotificationEventWrite,
+  notificationEventDefinitions,
+  type NotificationSourceIdentity,
+} from "../_helpers/notificationTypes";
 
 const PAIRING_CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_PAIRING_CODE_ATTEMPTS = 10;
@@ -11,6 +18,180 @@ const PAIRING_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const PAIRING_CODE_LENGTH = 12;
 const PAIRING_CODE_PATTERN = /^[0-9A-HJKMNP-TV-Z]{12}$/;
 const LEGACY_PAIRING_CODE_PATTERN = /^\d{6}$/;
+const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
+
+function linkSourceReference(
+  coupleId: Id<"couples">,
+  linkGeneration: Id<"coupleMembers">,
+) {
+  return `couple:${coupleId}:link:${linkGeneration}`;
+}
+
+function connectedSinceSourceReference(
+  coupleId: Id<"couples">,
+  linkGeneration: Id<"coupleMembers">,
+  settingVersion: number,
+) {
+  return `couple:${coupleId}:connected-since:${linkGeneration}:${settingVersion}`;
+}
+
+function legacyConnectedSinceSourceReference(
+  coupleId: Id<"couples">,
+  settingVersion: number,
+) {
+  return `couple:${coupleId}:connected-since:${settingVersion}`;
+}
+
+async function insertRelationshipEvent(
+  ctx: MutationCtx,
+  envelope: {
+    eventType: "partner_linked.v1" | "connected_since_updated.v1";
+    eventVersion: 1;
+    purpose: "partner_linked" | "connected_since_updated";
+    producerKind: "active_link_transition" | "explicit_connected_since_update";
+    sourceIdentity: NotificationSourceIdentity;
+    sourceReference: string;
+    sourceAuthorityVersion: string;
+    ownerUserId: Id<"users">;
+    recipientUserId: Id<"users">;
+    recipientScope: "each_link_member_separately" | "other_active_member";
+    privacyClass: "account_relationship_sensitive";
+    validityRule: "while_link_generation_is_active" | "until_setting_version_changes_or_link_revocation";
+    idempotencyKey: string;
+    allowedChannel: "in_app";
+  },
+  createdAt: number,
+): Promise<void> {
+  assertValidNotificationEventWrite(ctx, envelope);
+  const existing = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_idempotency_key", (q) =>
+      q.eq("idempotencyKey", envelope.idempotencyKey),
+    )
+    .unique();
+  if (existing) {
+    if (
+      existing.eventType !== envelope.eventType ||
+      existing.eventVersion !== envelope.eventVersion ||
+      existing.purpose !== envelope.purpose ||
+      existing.producerKind !== envelope.producerKind ||
+      existing.sourceReference !== envelope.sourceReference ||
+      existing.sourceAuthorityVersion !== envelope.sourceAuthorityVersion ||
+      existing.ownerUserId !== envelope.ownerUserId ||
+      existing.recipientUserId !== envelope.recipientUserId ||
+      existing.recipientScope !== envelope.recipientScope ||
+      existing.privacyClass !== envelope.privacyClass ||
+      existing.validityRule !== envelope.validityRule ||
+      existing.idempotencyKey !== envelope.idempotencyKey ||
+      existing.allowedChannel !== envelope.allowedChannel ||
+      JSON.stringify(existing.sourceIdentity) !== JSON.stringify(envelope.sourceIdentity)
+    ) {
+      throw new Error("Relationship notification key conflicts with its source");
+    }
+    return;
+  }
+
+  await ctx.db.insert("notificationEvents", { ...envelope, createdAt });
+}
+
+async function ensurePartnerLinkedEvent(
+  ctx: MutationCtx,
+  args: {
+    coupleId: Id<"couples">;
+    linkGeneration: Id<"coupleMembers">;
+    ownerUserId: Id<"users">;
+    recipientUserId: Id<"users">;
+    createdAt: number;
+  },
+): Promise<void> {
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
+
+  const definition = notificationEventDefinitions["partner_linked.v1"];
+  await insertRelationshipEvent(
+    ctx,
+    {
+      eventType: "partner_linked.v1",
+      eventVersion: definition.version,
+      purpose: definition.purpose,
+      producerKind: definition.producer,
+      sourceIdentity: {
+        eventType: "partner_linked.v1",
+        coupleId: args.coupleId,
+        relationshipMembershipId: args.linkGeneration,
+        ownerUserId: args.ownerUserId,
+        recipientUserId: args.recipientUserId,
+        sourceId: args.linkGeneration,
+      },
+      sourceReference: linkSourceReference(args.coupleId, args.linkGeneration),
+      sourceAuthorityVersion: `relationship-membership:${args.linkGeneration}`,
+      ownerUserId: args.ownerUserId,
+      recipientUserId: args.recipientUserId,
+      recipientScope: "each_link_member_separately",
+      privacyClass: definition.privacyClass,
+      validityRule: definition.validity,
+      idempotencyKey: makeEventIdempotencyKey("partner_linked.v1", {
+        coupleId: String(args.coupleId),
+        linkGeneration: args.linkGeneration,
+        recipientId: String(args.recipientUserId),
+      }),
+      allowedChannel: "in_app",
+    },
+    args.createdAt,
+  );
+}
+
+async function ensureConnectedSinceEvent(
+  ctx: MutationCtx,
+  args: {
+    coupleId: Id<"couples">;
+    linkGeneration: Id<"coupleMembers">;
+    settingVersion: number;
+    ownerUserId: Id<"users">;
+    recipientUserId: Id<"users">;
+    createdAt: number;
+  },
+): Promise<void> {
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
+
+  const definition = notificationEventDefinitions["connected_since_updated.v1"];
+  await insertRelationshipEvent(
+    ctx,
+    {
+      eventType: "connected_since_updated.v1",
+      eventVersion: definition.version,
+      purpose: definition.purpose,
+      producerKind: definition.producer,
+      sourceIdentity: {
+        eventType: "connected_since_updated.v1",
+        coupleId: args.coupleId,
+        relationshipMembershipId: args.linkGeneration,
+        ownerUserId: args.ownerUserId,
+        recipientUserId: args.recipientUserId,
+        sourceId: args.coupleId,
+        settingVersion: args.settingVersion,
+      },
+      sourceReference: connectedSinceSourceReference(
+        args.coupleId,
+        args.linkGeneration,
+        args.settingVersion,
+      ),
+      sourceAuthorityVersion: `connected-since-setting:${args.settingVersion}`,
+      ownerUserId: args.ownerUserId,
+      recipientUserId: args.recipientUserId,
+      recipientScope: "other_active_member",
+      privacyClass: definition.privacyClass,
+      validityRule: definition.validity,
+      idempotencyKey: makeEventIdempotencyKey("connected_since_updated.v1", {
+        coupleId: String(args.coupleId),
+        settingVersion: String(args.settingVersion),
+        relationshipMembershipId: String(args.linkGeneration),
+        recipientId: String(args.recipientUserId),
+      }),
+      allowedChannel: "in_app",
+    },
+    args.createdAt,
+  );
+}
 
 export const generatePairingCode = action({
   args: {},
@@ -348,15 +529,17 @@ export const linkPartnerWithCode = mutation({
       return { success: false as const, error: "You are already linked to a couple" };
     }
 
-    // Create partner membership
-    await ctx.db.insert("coupleMembers", {
+    // The new membership row is the stable generation for this link. Re-linking
+    // creates a new row, so old link events cannot become current again.
+    const linkedAt = Date.now();
+    const partnerMembershipId = await ctx.db.insert("coupleMembers", {
       coupleId: pairingCode.coupleId,
       userId: user._id,
       role: "partner",
       sharingPain: false,
       sharingPhase: true,
       sharingPeriodWrite: false,
-      joinedAt: Date.now(),
+      joinedAt: linkedAt,
     });
 
     for (const userId of [primaryMemberships[0].userId, user._id]) {
@@ -384,40 +567,31 @@ export const linkPartnerWithCode = mutation({
     await ctx.db.patch(pairingCode._id, {
       status: "used",
       usedBy: user._id,
-      usedAt: Date.now(),
+      usedAt: linkedAt,
     });
 
     // Update couple status
     await ctx.db.patch(pairingCode.coupleId, {
       status: "active",
-      linkedAt: Date.now(),
+      linkedAt,
     });
+
+    for (const recipientUserId of [primaryMemberships[0].userId, user._id]) {
+      await ensurePartnerLinkedEvent(ctx, {
+        coupleId: pairingCode.coupleId,
+        linkGeneration: partnerMembershipId,
+        ownerUserId: user._id,
+        recipientUserId,
+        createdAt: linkedAt,
+      });
+    }
 
     await recordPairingCodeAttempt(ctx, {
       userId: user._id,
       enteredCode,
-      attemptedAt: Date.now(),
+      attemptedAt: linkedAt,
       success: true,
     });
-
-    // Find the primary user to notify them
-    const primaryMembership = await ctx.db
-      .query("coupleMembers")
-      .withIndex("by_couple_and_role_and_revoked_at", (q) =>
-        q.eq("coupleId", pairingCode.coupleId).eq("role", "primary").eq("revokedAt", undefined)
-      )
-      .first();
-
-    if (primaryMembership) {
-      const primaryUser = await ctx.db.get(primaryMembership.userId);
-      if (primaryUser?.externalNotificationConsent) {
-        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-          userId: primaryMembership.userId,
-          type: "partner_linked",
-          message: "Partner link completed.",
-        });
-      }
-    }
 
     return { success: true as const, coupleId: pairingCode.coupleId };
   },
@@ -456,6 +630,39 @@ export const revokePartnerAccess = mutation({
       (couple.status === "active" && activePartners.length === 0)
     ) {
       throw new Error("Pairing state is ambiguous. Please contact support.");
+    }
+
+    const revokedAt = Date.now();
+    for (const partnerMembership of activePartners) {
+      await cancelSource(
+        ctx,
+        linkSourceReference(couple._id, partnerMembership._id),
+        "authority_revoked",
+        revokedAt,
+      );
+    }
+    if (couple.connectedSinceUpdatedAt !== undefined) {
+      for (const partnerMembership of activePartners) {
+        await cancelSource(
+          ctx,
+          connectedSinceSourceReference(
+            couple._id,
+            partnerMembership._id,
+            couple.connectedSinceUpdatedAt,
+          ),
+          "authority_revoked",
+          revokedAt,
+        );
+      }
+      await cancelSource(
+        ctx,
+        legacyConnectedSinceSourceReference(
+          couple._id,
+          couple.connectedSinceUpdatedAt,
+        ),
+        "authority_revoked",
+        revokedAt,
+      );
     }
 
     await ctx.db.patch(memberships[0].coupleId, {
@@ -498,7 +705,6 @@ export const revokePartnerAccess = mutation({
       }
     }
 
-    const revokedAt = Date.now();
     for (const partnerMembership of activePartners) {
       await ctx.db.patch(partnerMembership._id, {
         revokedAt,
@@ -618,34 +824,70 @@ export const updateConnectedSinceDate = mutation({
       throw new Error("Use a valid date");
     }
 
-    await ctx.db.patch(coupleData.membership.coupleId, {
-      connectedSinceDate,
-      connectedSinceUpdatedAt: Date.now(),
-      connectedSinceUpdatedBy: user._id,
-    });
-
-    const partnerMembership = await ctx.db
+    const otherRole = coupleData.membership.role === "primary" ? "partner" : "primary";
+    const otherMemberships = await ctx.db
       .query("coupleMembers")
       .withIndex("by_couple_and_role_and_revoked_at", (q) =>
         q
-          .eq("coupleId", coupleData.membership.coupleId)
-          .eq("role", coupleData.membership.role === "primary" ? "partner" : "primary").eq("revokedAt", undefined)
+          .eq("coupleId", coupleData.couple._id)
+          .eq("role", otherRole)
+          .eq("revokedAt", undefined),
       )
-      .first();
-
-    if (partnerMembership) {
-      await ctx.db.insert("notificationLog", {
-        userId: partnerMembership.userId,
-        type: "connected_since_updated",
-        payload: {
-          connectedSinceDate,
-          updatedBy: user.preferredName || user.name,
-        },
-        sentAt: Date.now(),
-        status: "sent",
-      });
+      .take(2);
+    if (otherMemberships.length !== 1) {
+      throw new Error("Pairing state is ambiguous. Please contact support.");
     }
 
+    const partnerMembershipId =
+      coupleData.membership.role === "partner"
+        ? coupleData.membership._id
+        : otherMemberships[0]._id;
+
+    if (coupleData.couple.connectedSinceDate === connectedSinceDate) {
+      return { success: true };
+    }
+
+    const now = Date.now();
+    const previousSettingVersion = coupleData.couple.connectedSinceUpdatedAt;
+    const settingVersion = Math.max(now, (previousSettingVersion ?? 0) + 1);
+    if (!Number.isSafeInteger(settingVersion)) {
+      throw new Error("Connected-since setting version cannot be advanced safely");
+    }
+    if (previousSettingVersion !== undefined) {
+      await cancelSource(
+        ctx,
+        connectedSinceSourceReference(
+          coupleData.couple._id,
+          partnerMembershipId,
+          previousSettingVersion,
+        ),
+        "source_changed",
+        now,
+      );
+      await cancelSource(
+        ctx,
+        legacyConnectedSinceSourceReference(
+          coupleData.couple._id,
+          previousSettingVersion,
+        ),
+        "source_changed",
+        now,
+      );
+    }
+
+    await ctx.db.patch(coupleData.membership.coupleId, {
+      connectedSinceDate,
+      connectedSinceUpdatedAt: settingVersion,
+      connectedSinceUpdatedBy: user._id,
+    });
+    await ensureConnectedSinceEvent(ctx, {
+      coupleId: coupleData.couple._id,
+      linkGeneration: partnerMembershipId,
+      settingVersion,
+      ownerUserId: user._id,
+      recipientUserId: otherMemberships[0].userId,
+      createdAt: now,
+    });
     return { success: true };
   },
 });

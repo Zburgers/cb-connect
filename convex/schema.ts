@@ -1,5 +1,165 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  notificationEventPersistedEnvelopeValidator,
+} from "./_helpers/notificationTypes";
+import {
+  notificationDeliveryAttemptRecordValidator,
+  notificationDeliveryRecordValidator,
+  notificationInboxItemRecordValidator,
+} from "./_helpers/notificationDelivery";
+
+export const notificationPurposeValues = [
+  "assisted_period_start",
+  "assisted_period_end",
+  "period_window_approaching",
+  "late_status",
+  "pain_check_in",
+  "partner_linked",
+  "partner_message",
+  "partner_nudge",
+  "partner_chat_cleared",
+  "connected_since_updated",
+] as const;
+
+export const notificationPurposeValidator = v.union(
+  v.literal("assisted_period_start"),
+  v.literal("assisted_period_end"),
+  v.literal("period_window_approaching"),
+  v.literal("late_status"),
+  v.literal("pain_check_in"),
+  v.literal("partner_linked"),
+  v.literal("partner_message"),
+  v.literal("partner_nudge"),
+  v.literal("partner_chat_cleared"),
+  v.literal("connected_since_updated"),
+);
+
+export const notificationPreferenceValidator = v.object({
+  userId: v.id("users"),
+  purpose: notificationPurposeValidator,
+  inAppEnabled: v.boolean(),
+  localReminderTime: v.optional(v.string()),
+  reminderWindowVersion: v.number(),
+  updatedAt: v.number(),
+});
+
+export const notificationScheduleStateValidator = v.object({
+  userId: v.id("users"),
+  sourceRevision: v.number(),
+  sourceAuthorityVersion: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+export const notificationControlValidator = v.object({
+  scope: v.union(v.literal("global"), v.literal("channel"), v.literal("purpose")),
+  key: v.string(),
+  version: v.number(),
+  operatorReference: v.string(),
+  updatedAt: v.number(),
+});
+
+const notificationDueWorkFields = {
+  ownerUserId: v.id("users"),
+  kind: v.union(
+    v.literal("delivery"),
+    v.literal("prediction_window"),
+    v.literal("late_boundary"),
+    v.literal("source_reconcile"),
+    v.literal("pain_reminder"),
+  ),
+  state: v.union(
+    v.literal("pending"),
+    v.literal("claimed"),
+    v.literal("completed"),
+    v.literal("cancelled"),
+  ),
+  dueAt: v.number(),
+  generation: v.number(),
+  wakeScheduledFunctionId: v.optional(v.id("_scheduled_functions")),
+  wakeSequence: v.optional(v.number()),
+  sourceAuthorityVersion: v.optional(v.string()),
+  reminderWindowVersion: v.optional(v.number()),
+  eventId: v.optional(v.id("notificationEvents")),
+  deliveryId: v.optional(v.id("notificationDeliveries")),
+  painReminderRequestId: v.optional(v.id("painReminderRequests")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+};
+
+export const notificationDueWorkValidator = v.object(notificationDueWorkFields);
+
+const {
+  wakeScheduledFunctionId: _dueWorkWakeId,
+  wakeSequence: _dueWorkWakeSequence,
+  ...notificationDueWorkBaseFields
+} = notificationDueWorkFields;
+
+export const notificationDueWorkStorageValidator = v.union(
+  v.object(notificationDueWorkBaseFields),
+  v.object({
+    ...notificationDueWorkBaseFields,
+    wakeScheduledFunctionId: v.id("_scheduled_functions"),
+    wakeSequence: v.number(),
+  }),
+);
+
+export const painReminderRequestValidator = v.object({
+  ownerUserId: v.id("users"),
+  painLogId: v.id("painLogs"),
+  selectedLocalDay: v.string(),
+  requestVersion: v.number(),
+  state: v.union(v.literal("active"), v.literal("cancelled")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+const { providerMessageId: _providerMessageId, ...inAppDeliveryFields } =
+  notificationDeliveryRecordValidator.fields;
+const {
+  result: _attemptResult,
+  ...inAppAttemptFields
+} = notificationDeliveryAttemptRecordValidator.fields;
+
+const notificationInAppDeliveryFields = {
+  ...inAppDeliveryFields,
+  channel: v.literal("in_app"),
+  state: v.union(
+    v.literal("pending"),
+    v.literal("processing"),
+    v.literal("retry_wait"),
+    v.literal("unknown"),
+    v.literal("failed_permanent"),
+    v.literal("delivered"),
+    v.literal("expired"),
+    v.literal("suppressed"),
+    v.literal("cancelled"),
+  ),
+  providerOutcome: v.union(v.literal("none"), v.literal("unknown")),
+};
+
+export const notificationInAppDeliveryValidator = v.object(notificationInAppDeliveryFields);
+
+const {
+  wakeScheduledFunctionId: _inAppWakeId,
+  wakeSequence: _inAppWakeSequence,
+  ...notificationInAppDeliveryBaseFields
+} = notificationInAppDeliveryFields;
+
+export const notificationInAppDeliveryStorageValidator = v.union(
+  v.object(notificationInAppDeliveryBaseFields),
+  v.object({
+    ...notificationInAppDeliveryBaseFields,
+    wakeScheduledFunctionId: v.id("_scheduled_functions"),
+    wakeSequence: v.number(),
+  }),
+);
+
+export const notificationInAppAttemptValidator = v.object({
+  ...inAppAttemptFields,
+  result: v.object({ kind: v.literal("in_app_persisted") }),
+});
 
 export default defineSchema({
   users: defineTable({
@@ -150,6 +310,7 @@ export default defineSchema({
   couples: defineTable({
     createdAt: v.number(),
     chatClearedAt: v.optional(v.number()),
+    chatClearedBy: v.optional(v.id("users")),
     linkedAt: v.optional(v.number()),
     connectedSinceDate: v.optional(v.string()),
     connectedSinceUpdatedAt: v.optional(v.number()),
@@ -472,6 +633,77 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_and_tip", ["userId", "nutritionTipId"]),
+
+  notificationEvents: defineTable(
+    v.object({
+      ...notificationEventPersistedEnvelopeValidator.fields,
+      createdAt: v.number(),
+    }),
+  )
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_source_reference_and_authority", [
+      "sourceReference",
+      "sourceAuthorityVersion",
+    ])
+    .index("by_recipient_and_created_at", ["recipientUserId", "createdAt"]),
+
+  notificationInboxItems: defineTable(notificationInboxItemRecordValidator)
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_event_id", ["eventId"])
+    .index("by_recipient_and_created_at", ["recipientUserId", "createdAt"])
+    .index("by_recipient_state_and_created_at", [
+      "recipientUserId",
+      "state",
+      "createdAt",
+    ]),
+
+  notificationDeliveries: defineTable(notificationInAppDeliveryStorageValidator)
+    .index("by_logical_key", ["logicalKey"])
+    .index("by_event_id", ["eventId"])
+    .index("by_recipient_and_state", ["recipientUserId", "state"])
+    .index("by_state_and_expires_at", ["state", "expiresAt"])
+    .index("by_state_and_next_attempt_at", ["state", "nextAttemptAt"])
+    .index("by_state_and_lease_until", ["state", "leaseUntil"])
+    .index("by_state_and_next_receipt_check_at", ["state", "nextReceiptCheckAt"])
+    .index("by_state_and_review_at", ["state", "reviewAt"]),
+
+  notificationDeliveryAttempts: defineTable(notificationInAppAttemptValidator)
+    .index("by_delivery_and_ordinal", ["deliveryId", "attemptOrdinal"])
+    .index("by_delivery_and_generation", ["deliveryId", "claimGeneration"]),
+
+  notificationDueWork: defineTable(notificationDueWorkStorageValidator)
+    .index("by_state_and_due_at", ["state", "dueAt"])
+    .index("by_kind_and_state_and_due_at", ["kind", "state", "dueAt"])
+    .index("by_owner_and_state_and_due_at", ["ownerUserId", "state", "dueAt"])
+    .index(
+      "by_owner_and_kind_and_state_and_due_at_and_generation_and_source_authority_version_and_reminder_window_version",
+      [
+        "ownerUserId",
+        "kind",
+        "state",
+        "dueAt",
+        "generation",
+        "sourceAuthorityVersion",
+        "reminderWindowVersion",
+      ],
+    )
+    .index("by_delivery_id", ["deliveryId"])
+    .index("by_request_id", ["painReminderRequestId"]),
+
+  notificationPreferences: defineTable(notificationPreferenceValidator)
+    .index("by_user_and_purpose", ["userId", "purpose"])
+    .index("by_user", ["userId"]),
+
+  notificationScheduleState: defineTable(notificationScheduleStateValidator)
+    .index("by_user_id", ["userId"]),
+
+  notificationControls: defineTable(notificationControlValidator)
+    .index("by_scope_and_key", ["scope", "key"])
+    .index("by_updated_at", ["updatedAt"]),
+
+  painReminderRequests: defineTable(painReminderRequestValidator)
+    .index("by_owner_and_state", ["ownerUserId", "state"])
+    .index("by_pain_log_and_version", ["painLogId", "requestVersion"]),
 
   notificationLog: defineTable({
     userId: v.id("users"),

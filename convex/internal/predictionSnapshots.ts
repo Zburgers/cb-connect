@@ -19,6 +19,7 @@ import {
   currentPredictionSnapshotInput,
   predictionSnapshotMatchesCurrent,
 } from "../_helpers/predictionSnapshotContract";
+import { reconcileUserSchedule } from "./notificationScheduler";
 
 const MAX_REASON_CODES = 16;
 const CORRECTION_PAGE_SIZE = 100;
@@ -240,18 +241,26 @@ export const createSnapshot = internalMutation({
     contractVersion: v.number(),
   },
   returns: v.object({ snapshotId: v.id("predictionSnapshots") }),
-  handler: async (ctx, args) => ({
-    snapshotId: await insertSnapshotRecord(ctx, args),
-  }),
+  handler: async (ctx, args) => {
+    const snapshotId = await insertSnapshotRecord(ctx, args);
+    await reconcileUserSchedule(ctx, args.userId);
+    return { snapshotId };
+  },
 });
 
 export async function ensureCurrentSnapshot(
   ctx: MutationCtx,
   userId: Id<"users">,
 ): Promise<Id<"predictionSnapshots"> | null> {
-  if (!isPeriodPredictionV2Enabled()) return null;
+  if (!isPeriodPredictionV2Enabled()) {
+    await reconcileUserSchedule(ctx, userId);
+    return null;
+  }
   const user = await ctx.db.get("users", userId);
-  if (!user || user.role !== "primary") return null;
+  if (!user || user.role !== "primary") {
+    await reconcileUserSchedule(ctx, userId);
+    return null;
+  }
 
   const [predictionData, settings] = await Promise.all([
     readCyclePredictionData(ctx, userId, user),
@@ -266,7 +275,10 @@ export async function ensureCurrentSnapshot(
     configuredCycleLength: settings?.cycleLength ?? 28,
     predictionPaused: settings?.predictionPaused ?? false,
   });
-  if (prediction.pointDate === null) return null;
+  if (prediction.pointDate === null) {
+    await reconcileUserSchedule(ctx, userId);
+    return null;
+  }
 
   const { cutoffAt, cutoffDate } = predictionData.cycleIntervals.basis;
   const current = currentPredictionSnapshotInput({
@@ -286,10 +298,11 @@ export async function ensureCurrentSnapshot(
     latestSnapshot &&
     predictionSnapshotMatchesCurrent(latestSnapshot, current)
   ) {
+    await reconcileUserSchedule(ctx, userId);
     return latestSnapshot._id;
   }
 
-  return await insertSnapshotRecord(ctx, {
+  const snapshotId = await insertSnapshotRecord(ctx, {
     userId,
     generatedAt: Math.max(Date.now(), cutoffAt),
     inputCutoffAt: cutoffAt,
@@ -312,6 +325,8 @@ export async function ensureCurrentSnapshot(
     featureVersion: PREDICTION_SNAPSHOT_FEATURE_VERSION,
     contractVersion: 2,
   });
+  await reconcileUserSchedule(ctx, userId);
+  return snapshotId;
 }
 
 export const ensureCurrentForUser = internalMutation({

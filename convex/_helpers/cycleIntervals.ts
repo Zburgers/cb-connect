@@ -64,6 +64,7 @@ export type CycleIntervalDerivation = {
     segmentCreatedAt?: number;
   };
   latestEligibleStartDate?: string;
+  latestEligibleStartEventId?: string;
   eligibleAnchorCount: number;
   eligibleIntervalCount: number;
   intervals: CycleInterval[];
@@ -273,6 +274,7 @@ export function deriveCycleIntervals(
   }
 
   if (eligibleIntervalCount < 3) reasonCodes.add("LIMITED_HISTORY");
+  const latestEligibleAnchor = anchors[anchors.length - 1];
 
   return {
     basis: {
@@ -286,8 +288,13 @@ export function deriveCycleIntervals(
           }
         : {}),
     },
-    ...(anchors.length > 0
-      ? { latestEligibleStartDate: anchors[anchors.length - 1].startDate }
+    ...(latestEligibleAnchor
+      ? {
+          latestEligibleStartDate: latestEligibleAnchor.startDate,
+          ...(latestEligibleAnchor.id === undefined
+            ? {}
+            : { latestEligibleStartEventId: latestEligibleAnchor.id }),
+        }
       : {}),
     eligibleAnchorCount: anchors.length,
     eligibleIntervalCount,

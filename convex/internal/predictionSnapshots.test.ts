@@ -117,6 +117,65 @@ async function seedOutcomeEvent(
 }
 
 describe("immutable prediction snapshots", () => {
+  test("reconciles notification work from the current served snapshot path", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 0, 15, 12));
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+
+    try {
+      const t = convexTest(schema, modules);
+      const { primaryId } = await seedActiveCouple(t);
+      await seedPredictionContext(t, primaryId);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("notificationScheduleState", {
+          userId: primaryId,
+          sourceRevision: 2,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose: "period_window_approaching",
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 1,
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose: "late_status",
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 1,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const snapshotId = await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        { userId: primaryId },
+      );
+      expect(snapshotId).not.toBeNull();
+      if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+
+      const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+      expect(snapshot?.displayStatus).toBe("visible");
+      const dueWork = await t.run(async (ctx) =>
+        ctx.db
+          .query("notificationDueWork")
+          .withIndex("by_owner_and_state_and_due_at", (q) =>
+            q.eq("ownerUserId", primaryId).eq("state", "pending"),
+          )
+          .take(10),
+      );
+      expect(dueWork.map((row) => row.kind)).toEqual(
+        expect.arrayContaining(["prediction_window", "late_boundary"]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("records an outcome, then appends supersession when the primary corrects it", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);

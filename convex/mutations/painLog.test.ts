@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import { addCalendarDays } from "../_helpers/cycleCalculations";
@@ -11,6 +11,11 @@ import { seedActiveCouple } from "../test.fixtures";
 function validPainLog() {
   return { painScore: 4, tags: ["cramps"] as ("cramps")[] };
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("pain log date boundaries", () => {
   test("accepts today and valid past dates", async () => {
@@ -59,4 +64,178 @@ describe("pain log date boundaries", () => {
       })
     ).rejects.toThrow("Pain log date cannot be in the future");
   });
+});
+
+describe("pain log timezone notification reconciliation", () => {
+  test("advances source authority and cancels stale work in the write transaction", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const now = Date.now();
+    const workId = await t.run(async (ctx) => {
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now,
+        generation: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date: toCalendarDateInTimeZone(new Date(), "America/Los_Angeles"),
+      ...validPainLog(),
+      timeZone: "America/Los_Angeles",
+    });
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({
+        timeZone: "America/Los_Angeles",
+      });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 5 });
+      expect(await ctx.db.get(workId)).toMatchObject({ state: "cancelled" });
+    });
+  });
+
+  test.each(["new", "updated"] as const)(
+    "allows partner timezone changes on %s pain logs without reconciling primary work",
+    async (operation) => {
+      const t = convexTest(schema, modules);
+      const { asPartner, partnerId, primaryId } = await seedActiveCouple(t);
+      const date = toCalendarDateInTimeZone(new Date(), "America/Los_Angeles");
+      const now = Date.now();
+      const workId = await t.run(async (ctx) => {
+        await ctx.db.insert("notificationScheduleState", {
+          userId: primaryId,
+          sourceRevision: 4,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind: "prediction_window",
+          state: "pending",
+          dueAt: now,
+          generation: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+
+      if (operation === "updated") {
+        await asPartner.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+          date,
+          ...validPainLog(),
+        });
+      }
+
+      await expect(
+        asPartner.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+          date,
+          ...validPainLog(),
+          timeZone: "America/Los_Angeles",
+        }),
+      ).resolves.toMatchObject({ created: operation === "new" });
+
+      await t.run(async (ctx) => {
+        expect(await ctx.db.get(partnerId)).toMatchObject({
+          timeZone: "America/Los_Angeles",
+        });
+        expect(
+          await ctx.db
+            .query("painLogs")
+            .withIndex("by_user_and_date", (q) =>
+              q.eq("userId", partnerId).eq("date", date),
+            )
+            .unique(),
+        ).toMatchObject({ painScore: 4, tags: ["cramps"] });
+        expect(
+          await ctx.db
+            .query("notificationScheduleState")
+            .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+            .unique(),
+        ).toMatchObject({ sourceRevision: 4 });
+        expect(await ctx.db.get(workId)).toMatchObject({ state: "pending" });
+      });
+    },
+  );
+
+  test("rolls back timezone and source changes when the pain-log write is invalid", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+        date: "not-a-date",
+        ...validPainLog(),
+        timeZone: "America/Los_Angeles",
+      }),
+    ).rejects.toThrow("Pain log date must be a valid date");
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({ timeZone: "UTC" });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 4 });
+    });
+  });
+});
+
+test("high pain create and update cannot POST or write a legacy log with a stale webhook", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  vi.stubGlobal("fetch", fetchStub);
+
+  const t = convexTest(schema, modules);
+  const { asPrimary, primaryId } = await seedActiveCouple(t);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(primaryId, { externalNotificationConsent: true });
+  });
+  const date = toCalendarDateInTimeZone(new Date(), "UTC");
+
+  vi.useFakeTimers();
+  try {
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date,
+      painScore: 8,
+      tags: ["cramps"],
+    });
+    await asPrimary.mutation(api.mutations.painLog.createOrUpdatePainLog, {
+      date,
+      painScore: 9,
+      tags: ["headache"],
+    });
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+  } finally {
+    vi.useRealTimers();
+  }
+
+  expect(fetchStub).not.toHaveBeenCalled();
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
 });

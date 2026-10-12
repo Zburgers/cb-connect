@@ -10,6 +10,8 @@ import {
 } from "../_helpers/calendarDates";
 import { isEligiblePredictionSegmentStart } from "../_helpers/predictionSegments";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 
 async function requireEligibleSegmentStart(
   ctx: MutationCtx,
@@ -63,6 +65,9 @@ export const createPredictionSegment = mutation({
         q.eq("userId", user._id).eq("status", "active"),
       )
       .unique();
+    if (active?.startDate === args.startDate) {
+      return { segmentId: active._id };
+    }
     if (active) {
       await ctx.db.patch(active._id, {
         status: "superseded",
@@ -77,6 +82,9 @@ export const createPredictionSegment = mutation({
       ...(active ? { supersedesSegmentId: active._id } : {}),
       createdAt: now,
     });
+
+    await advanceNotificationSourceAuthority(ctx, user._id, now);
+    await reconcileUserSchedule(ctx, user._id);
 
     return { segmentId };
   },

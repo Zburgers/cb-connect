@@ -230,6 +230,18 @@ and mandatory for release candidates.
 **Canonical index:** `docs/plans/README.md`
 **Current boundary:** Follow the approved feature-first design and dated Gate 1 execution plan. A missing decision blocks only its dependent task. D-012 blocks production exposure, destructive deletion/migration and final retention behavior, not safe additive schema, helpers, tests, compatibility, or default-off UI implementation. Authenticated qualification remains required before calling Gate 1 qualified.
 
+### Gate 4 legacy notification acceptance scope (N6b)
+
+The local N6b implementation records acceptance scope for [issue #9](https://github.com/Zburgers/cb-connect/issues/9), [issue #11](https://github.com/Zburgers/cb-connect/issues/11), and [issue #12](https://github.com/Zburgers/cb-connect/issues/12). These issues remain open; this tracker update does not close them.
+
+| Issue | N6b acceptance scope | Explicit exclusions |
+|---|---|---|
+| #9 | Legacy notification-log reads expose only type, time, and historical status; new writes through the legacy writer are rejected. N6a separately shuts down Discord dispatch. | This task does not qualify event/delivery/inbox replay idempotency or claim exactly-once external delivery. No Discord POST is enabled. |
+| #11 | The compatibility query omits payloads, payload-derived keys/previews, and free-text errors; the settings page no longer presents legacy `sent` rows as delivery history; no new legacy row is written. | Existing rows are left untouched. No payload/error redaction in storage, migration, purge, user erase, retention period, or account cascade is claimed. D-012 and the separate #14 deletion workflow remain unresolved. |
+| #12 | The deployment-wide Discord route remains inactive under N6a even if its secret persists; Gate 4 user-facing delivery remains in-app only. | N6b adds no external channel, per-user destination, provider registration, or transport. Future external delivery remains separately gated. |
+
+N6b acceptance is local source/test evidence only. Do not close these GitHub issues or treat this row as production qualification.
+
 ---
 
 ## 📋 Backlog
@@ -324,7 +336,7 @@ The checked-in Playwright result shows `e2e/signup-repro.spec.ts` failing during
 
 - [x] Add an internal query that accepts a `userId` and returns that user's cycle settings and latest period data
 - [x] Implement prediction logic for upcoming periods
-- [x] Log notification delivery results through `notificationLog`
+- [x] Historical: log notification attempts through `notificationLog`; N6b now disables this legacy writer
 - [ ] Add a test or manual verification path for the cron behavior
 - [ ] Add phase-change and ovulation-window notifications
 
@@ -492,16 +504,16 @@ High pain logs currently schedule Discord webhook notifications containing pain 
 
 ### Notification log has no review or admin UI
 **Priority:** Medium
-**Status:** Resolved
+**Status:** Superseded by Gate 4 N6b; legacy history UI retired pending the in-app inbox contract
 **Detected:** May 20, 2026
 **Files:** `convex/schema.ts`, `convex/mutations/misc.ts`, `convex/actions/discord.ts`
 
-Discord delivery attempts are stored in `notificationLog`, but there is no user-facing or admin-facing way to inspect sent/failed notifications. This makes webhook failures and sensitive-data delivery hard to audit from the app.
+The legacy `notificationLog` is not the in-app inbox, and its historical `sent` status is not proof of display or delivery. N6b removes the misleading settings history UI, keeps only a bounded authenticated compatibility query with type/time/status, and disables the legacy writer. The new inbox is tracked by the Gate 4 execution plan; there is no legacy review UI or operator workflow in this scope.
 
-- [x] Decide whether notification history is an admin-only view, user-visible activity log, or developer diagnostic endpoint
-- [x] Add a query with appropriate authorization checks
-- [x] Add UI or documented operational workflow for reviewing failures
-- [x] Include notification type, status, sent time, and redacted payload details
+- [x] Keep legacy payloads and free-text errors out of user-facing query results
+- [x] Retire the settings UI that presented historical `sent` rows as notification delivery history
+- [x] Disable new writes through the legacy logger
+- [ ] Resolve legacy payload/error lifecycle and user/account erasure under D-012; see the Gate 4 issue acceptance scope above
 
 ---
 

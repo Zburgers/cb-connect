@@ -1,13 +1,25 @@
-import { cronJobs } from "convex/server";
+import { cronJobs, makeFunctionReference } from "convex/server";
 import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Daily check for period predictions at 9am UTC
-crons.daily(
-  "send period predictions",
-  { hourUTC: 9, minuteUTC: 0 },
-  internal.actions.notifications.sendDailyPredictions
+// Recover missed local reminder wakeups from the indexed pending queue.
+crons.interval(
+  "reconcile local notification due work",
+  { minutes: 1 },
+  makeFunctionReference<"mutation">(
+    "internal/notificationScheduler:reconcileDueWork",
+  ),
+);
+
+// Recover missed in-app delivery wakes through bounded state and deadline pages.
+crons.interval(
+  "reconcile in-app delivery work",
+  { minutes: 1 },
+  makeFunctionReference<"mutation">(
+    "internal/notificationReconciler:reconcile",
+  ),
+  { state: "pending", cursor: null, deadlineCursor: null },
 );
 
 // Legacy compatibility path only; the mutation is a no-op while Gate 1 is enabled.

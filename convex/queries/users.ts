@@ -18,7 +18,8 @@ export const getAllPrimaryUsers = internalQuery({
     return users.map((user) => ({
       _id: user._id,
       name: user.name,
-      externalNotificationConsent: user.externalNotificationConsent ?? false,
+      // Retain the legacy field for old callers, but never grant external consent.
+      externalNotificationConsent: false,
     }));
   },
 });
@@ -27,12 +28,7 @@ export const hasExternalNotificationConsent = internalQuery({
   args: {
     userId: v.id("users"),
   },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    return (
-      user?.role === "primary" && user.externalNotificationConsent === true
-    );
-  },
+  handler: async () => false,
 });
 
 export const getMyNotificationLog = query({
@@ -54,27 +50,11 @@ export const getMyNotificationLog = query({
       .order("desc")
       .take(limit);
 
+    // The historical status is compatibility metadata, not proof of display or delivery.
     return logs.map((entry) => ({
-      _id: entry._id,
       type: entry.type,
       sentAt: entry.sentAt,
       status: entry.status,
-      errorMessage: entry.errorMessage,
-      payloadPreview: summarizeNotificationPayload(entry.payload),
     }));
   },
 });
-
-function summarizeNotificationPayload(payload: unknown) {
-  if (!payload || typeof payload !== "object") {
-    return { kind: typeof payload };
-  }
-
-  const record = payload as Record<string, unknown>;
-  const message = record.message;
-  return {
-    kind: "object",
-    keys: Object.keys(record),
-    message: typeof message === "string" ? "[redacted]" : undefined,
-  };
-}
