@@ -14,7 +14,11 @@ import {
   makeSourceAuthorityVersion,
   persistNotificationSourceAuthorityVersion,
 } from "../_helpers/notificationSourceAuthority";
-import { makeInboxSplitCursors } from "../_helpers/notificationInboxPagination";
+import {
+  decodeInboxCursor,
+  encodeInboxCursor,
+  makeInboxSplitCursors,
+} from "../_helpers/notificationInboxPagination";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple } from "../test.fixtures";
@@ -174,6 +178,181 @@ describe("notification recipient queries", () => {
         paginationOpts: { numItems: 20, cursor: null },
       }),
     ).resolves.toMatchObject({ page: [] });
+  });
+
+  test("returns a validated carry-over item before splitting the next source range", async () => {
+    enableInAppInbox();
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const now = Date.now();
+    const renderIdentity = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const { carryItemId, sourceItemIds } = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected an active partner membership");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: membership._id,
+        senderId: primaryId,
+        body: "Private source body",
+        createdAt: now,
+      });
+      const eventId = await ctx.db.insert("notificationEvents", {
+        eventType: "partner_message.v1",
+        eventVersion: 1,
+        purpose: "partner_message",
+        producerKind: "new_couple_message",
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${membership._id}`,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        recipientScope: "other_active_member",
+        privacyClass: "relationship_private_free_text_source",
+        validityRule: "while_message_and_active_link_exist",
+        idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+          messageId: String(messageId),
+          recipientId: String(partnerId),
+        }),
+        allowedChannel: "in_app",
+        sourceIdentity: {
+          eventType: "partner_message.v1",
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId: membership._id,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
+        createdAt: now,
+      });
+      await ctx.db.insert("notificationDeliveries", {
+        eventId,
+        recipientUserId: partnerId,
+        channel: "in_app",
+        stableDestinationId: String(partnerId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(eventId),
+          "in_app",
+          String(partnerId),
+        ),
+        notBefore: now,
+        state: "delivered",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 1,
+        claimGeneration: 1,
+        renderIdentity: renderIdentity.identity,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const carryItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId,
+        recipientUserId: partnerId,
+        idempotencyKey: "carry-over-item",
+        templateVersion: "g4-static-v1",
+        route: "messages",
+        state: "current",
+        createdAt: now + 1,
+      });
+      const sourceItemIds = [];
+      for (let index = 0; index < 200; index += 1) {
+        sourceItemIds.push(await ctx.db.insert("notificationInboxItems", {
+          eventId,
+          recipientUserId: partnerId,
+          idempotencyKey: `split-source-item:${index}`,
+          templateVersion: "g4-static-v1",
+          route: "messages",
+          state: "current",
+          createdAt: now - index,
+        }));
+      }
+      return { carryItemId, sourceItemIds };
+    });
+    const rawPage = await t.run((ctx) =>
+      ctx.db
+        .query("notificationInboxItems")
+        .withIndex("by_recipient_state_and_created_at", (q) =>
+          q.eq("recipientUserId", partnerId).eq("state", "current"),
+        )
+        .order("desc")
+        .paginate({ numItems: 1, cursor: null }),
+    );
+    expect(rawPage.page[0]._id).toBe(carryItemId);
+    const carryCursor = encodeInboxCursor({
+      cursor: rawPage.continueCursor,
+      bufferedItemIds: [String(carryItemId)],
+      sourceDone: false,
+    });
+    const rawSplit = await t.run((ctx) =>
+      ctx.db
+        .query("notificationInboxItems")
+        .withIndex("by_recipient_state_and_created_at", (q) =>
+          q.eq("recipientUserId", partnerId).eq("state", "current"),
+        )
+        .order("desc")
+        .paginate({
+          numItems: 200,
+          maximumRowsRead: 200,
+          cursor: rawPage.continueCursor,
+        }),
+    );
+    expect(rawSplit.pageStatus).toBe("SplitRequired");
+
+    const carryPage = await asPartner.query(api.queries.notifications.getMyInbox, {
+      paginationOpts: { numItems: 20, cursor: carryCursor },
+    });
+
+    expect(carryPage.page.map((item) => item.itemId)).toEqual([carryItemId]);
+    expect(decodeInboxCursor(carryPage.continueCursor)).toEqual({
+      cursor: rawPage.continueCursor,
+      bufferedItemIds: [],
+      sourceDone: false,
+    });
+
+    const sourceSplit = await asPartner.query(api.queries.notifications.getMyInbox, {
+      paginationOpts: { numItems: 20, cursor: carryPage.continueCursor },
+    });
+    expect(sourceSplit.page).toEqual([]);
+    if (!rawSplit.splitCursor) throw new Error("Expected a source split cursor");
+    expect(decodeInboxCursor(sourceSplit.continueCursor).cursor).toBe(
+      rawSplit.continueCursor,
+    );
+    const splitCursors = makeInboxSplitCursors(
+      rawSplit.splitCursor,
+      rawSplit.continueCursor,
+      rawSplit.isDone,
+    );
+
+    const [firstSplitHalf, secondSplitHalf] = await Promise.all([
+      asPartner.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: {
+          numItems: 20,
+          cursor: carryPage.continueCursor,
+          endCursor: splitCursors.splitCursor,
+        },
+      }),
+      asPartner.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: {
+          numItems: 20,
+          cursor: splitCursors.splitCursor,
+          endCursor: splitCursors.continueCursor,
+        },
+      }),
+    ]);
+    const splitItemIds = [
+      ...firstSplitHalf.page.map((item) => item.itemId),
+      ...secondSplitHalf.page.map((item) => item.itemId),
+    ];
+    expect(splitItemIds).toEqual(sourceItemIds);
+    expect(splitItemIds).not.toContain(carryItemId);
   });
 
   test("refills stale prefixes and preserves split and dismissal cursors", async () => {

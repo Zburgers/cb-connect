@@ -291,6 +291,18 @@ export const getMyInbox = query({
         if (sourcePage.splitCursor == null) {
           throw new Error("Notification inbox page could not be split safely");
         }
+        if (!wrappedEndCursor && joinedPage.length > 0) {
+          // Deliver validated carry-over before splitting the source range.
+          return {
+            page: joinedPage,
+            continueCursor: encodeInboxCursor({
+              cursor: sourceCursor,
+              bufferedItemIds: state.bufferedItemIds.slice(bufferedOffset),
+              sourceDone,
+            }),
+            isDone: false,
+          };
+        }
         return {
           page: [],
           ...makeInboxSplitCursors(
