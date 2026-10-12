@@ -173,7 +173,9 @@ function InboxContent() {
 
       {items.length === 0 ? (
         <p className="rounded-2xl border border-[var(--color-glass-border)] bg-[var(--color-glass)] p-5 text-sm text-foreground" role="status" aria-live="polite">
-          You're all caught up.
+          {status === "CanLoadMore" || status === "LoadingMore"
+            ? "No current notifications on this page."
+            : "You're all caught up."}
         </p>
       ) : (
         <ul aria-label="Current notifications" className="space-y-3">

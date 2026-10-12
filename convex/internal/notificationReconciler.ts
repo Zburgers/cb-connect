@@ -324,14 +324,6 @@ export const reconcile = internalMutation({
     if (!deliveryIsEnabled()) return { status: "disabled" as const, ...emptyResult };
 
     const now = Date.now();
-    const deadlinePage = args.state === "unknown"
-      ? { page: [], isDone: true, continueCursor: null }
-      : await ctx.db
-        .query("notificationDeliveries")
-        .withIndex("by_state_and_expires_at", (q) =>
-          q.eq("state", args.state).gte("expiresAt", 0).lte("expiresAt", now),
-        )
-        .paginate({ numItems: PAGE_SIZE, cursor: args.deadlineCursor });
     const workPage =
       args.state === "unknown"
         ? await ctx.db
@@ -343,9 +335,7 @@ export const reconcile = internalMutation({
         : args.state === "processing"
         ? await ctx.db
           .query("notificationDeliveries")
-          .withIndex("by_state_and_lease_until", (q) =>
-            q.eq("state", "processing").gte("leaseUntil", 0).lte("leaseUntil", now),
-          )
+          .withIndex("by_state", (q) => q.eq("state", "processing"))
           .paginate({ numItems: PAGE_SIZE, cursor: args.cursor })
         : await ctx.db
           .query("notificationDeliveries")
@@ -360,20 +350,7 @@ export const reconcile = internalMutation({
     let expired = 0;
     let exhausted = 0;
     let skipped = 0;
-    const deadlineIds = new Set<string>();
-
-    for (const delivery of deadlinePage.page) {
-      deadlineIds.add(String(delivery._id));
-      if (!isValidDelivery(delivery) || delivery.expiresAt === undefined) {
-        skipped += 1;
-      } else {
-        await expireDelivery(ctx, delivery, now);
-        expired += 1;
-      }
-    }
-
     for (const delivery of workPage.page) {
-      if (deadlineIds.has(String(delivery._id))) continue;
       if (!isValidDelivery(delivery)) {
         skipped += 1;
         continue;
@@ -385,6 +362,7 @@ export const reconcile = internalMutation({
       }
       if (args.state === "unknown") continue;
       if (args.state === "processing") {
+        if (delivery.leaseUntil === undefined || delivery.leaseUntil > now) continue;
         const result = await recoverLease(ctx, delivery, now);
         if (result.kind === "retried") {
           retried += 1;
@@ -422,9 +400,9 @@ export const reconcile = internalMutation({
       }
     }
 
-    const hasMore = !workPage.isDone || !deadlinePage.isDone;
+    const hasMore = !workPage.isDone;
     const cursor = workPage.isDone ? null : workPage.continueCursor;
-    const deadlineCursor = deadlinePage.isDone ? null : deadlinePage.continueCursor;
+    const deadlineCursor = null;
     let continuation: {
       state: ReconcileState;
       cursor: string | null;
@@ -447,7 +425,7 @@ export const reconcile = internalMutation({
     return {
       status: "reconciled" as const,
       state: args.state,
-      inspected: workPage.page.length + deadlinePage.page.length,
+      inspected: workPage.page.length,
       scheduled,
       retried,
       unknown,

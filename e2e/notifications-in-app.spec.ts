@@ -43,9 +43,10 @@ async function setMessageActivity(page: Page, enabled: boolean) {
     .getByRole("region", { name: "In-app notification preferences" })
     .getByRole("checkbox", { name: "Message activity", exact: true });
   await expect(preference).toBeVisible({ timeout: 30000 });
-  if (enabled) await preference.check();
-  else await preference.uncheck();
-  await expect(preference).toBeChecked({ checked: enabled });
+  if ((await preference.isChecked()) !== enabled) {
+    await preference.click({ timeout: 30000 });
+  }
+  await expect(preference).toBeChecked({ checked: enabled, timeout: 30000 });
 }
 
 async function sendSyntheticMessage(page: Page, body: string) {
@@ -93,7 +94,7 @@ async function resetCycleWindowPreference(page: Page) {
   );
 
   if (await cycleWindow.isChecked()) {
-    await cycleWindow.uncheck();
+    await cycleWindow.click({ timeout: 30000 });
   }
   await reminderTime.fill("");
   const saveTime = preferences.getByRole("button", {
@@ -237,21 +238,23 @@ test.describe("in-app notification preferences", () => {
       await saveTime.click();
       await expect(preferences.getByRole("status")).toContainText(
         "Notification preference saved.",
+        { timeout: 30000 },
       );
       await expect(cycleWindow).not.toBeChecked();
       await expect(cycleWindow).toBeEnabled();
 
-      await cycleWindow.check();
-      await expect(cycleWindow).toBeChecked();
+      await cycleWindow.click({ timeout: 30000 });
+      await expect(cycleWindow).toBeChecked({ timeout: 30000 });
       await reminderTime.fill("11:45");
       await saveTime.click();
       await expect(preferences.getByRole("status")).toContainText(
         "Notification preference saved.",
+        { timeout: 30000 },
       );
       await expect(cycleWindow).toBeEnabled();
 
-      await cycleWindow.uncheck();
-      await expect(cycleWindow).not.toBeChecked();
+      await cycleWindow.click({ timeout: 30000 });
+      await expect(cycleWindow).not.toBeChecked({ timeout: 30000 });
       await expect(preferences.getByRole("status")).toContainText(
         "Preference turned off.",
       );

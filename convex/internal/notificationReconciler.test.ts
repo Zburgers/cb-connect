@@ -624,7 +624,7 @@ describe("N2e durable delivery reconciliation", () => {
     });
   });
 
-  test("pages pending work past retained terminal history and independently expires deadlines", async () => {
+  test("pages pending work past retained terminal history and expires deadlines in bounded scans", async () => {
     enableDelivery();
     const now = Date.parse("2026-10-05T00:00:00.000Z");
     vi.useFakeTimers();
@@ -665,7 +665,7 @@ describe("N2e durable delivery reconciliation", () => {
       cursor: null,
       deadlineCursor: null,
     } as never);
-    expect(first).toMatchObject({ scheduled: 10, expired: 1, hasMore: true });
+    expect(first).toMatchObject({ scheduled: 10, hasMore: true });
 
     const scheduledFirst = await t.run((ctx) =>
       ctx.db.system.query("_scheduled_functions").take(100),
@@ -696,16 +696,22 @@ describe("N2e durable delivery reconciliation", () => {
       );
     });
     expect(continuation?.scheduledTime).toBeGreaterThan(now);
+    let page = first;
+    let scheduledCount = first.scheduled;
+    let expiredCount = first.expired;
+    while (page.hasMore) {
+      page = await t.mutation(reconcileRef, {
+        state: "pending",
+        cursor: page.cursor,
+        deadlineCursor: page.deadlineCursor,
+      } as never);
+      scheduledCount += page.scheduled;
+      expiredCount += page.expired;
+    }
+    expect({ scheduledCount, expiredCount }).toEqual({ scheduledCount: 12, expiredCount: 1 });
     expect(
       await t.run((ctx) => ctx.db.get(seeded.expiredPending.deliveryId)),
     ).toMatchObject({ state: "expired", eligibility: "expired", claimGeneration: 1 });
-
-    const second = await t.mutation(reconcileRef, {
-      state: "pending",
-      cursor: first.cursor,
-      deadlineCursor: first.deadlineCursor,
-    } as never);
-    expect(second).toMatchObject({ scheduled: 2, expired: 0, hasMore: false });
     const allScheduled = await t.run((ctx) =>
       ctx.db.system.query("_scheduled_functions").take(100),
     );

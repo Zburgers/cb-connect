@@ -1,21 +1,31 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
-const LEGACY_CLERK_ISSUER = "https://clerk.cb.nakshatraneuratech.dev";
+const LEGACY_CLERK_ISSUER = "https://clerk.cb.builtbynaki.tech";
+const SYNTHETIC_CLERK_ISSUER = "https://holy-clam-29.clerk.accounts.dev";
 const CONVEX_TEST_ISSUER = "https://convex.test";
+const APPROVED_TEST_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 
 export function getLegacyClerkSubject(
   identity: Awaited<ReturnType<QueryCtx["auth"]["getUserIdentity"]>>,
 ): string | null {
   if (!identity) return null;
-  if (identity.issuer !== LEGACY_CLERK_ISSUER) {
-    // Legacy rows store only a subject, so scope every lookup to the approved issuer.
-    // convex-test supplies its own issuer for existing app-level auth tests.
-    if (process.env.NODE_ENV !== "test" || identity.issuer !== CONVEX_TEST_ISSUER) {
-      return null;
-    }
+  if (identity.issuer === LEGACY_CLERK_ISSUER) return identity.subject;
+
+  // Synthetic Clerk identities are trusted only on the fixture-cleanup deployment.
+  if (
+    identity.issuer === SYNTHETIC_CLERK_ISSUER &&
+    process.env.CB_CONNECT_BACKEND_DEPLOYMENT === APPROVED_TEST_DEPLOYMENT &&
+    process.env.CB_CONNECT_FIXTURE_CLEANUP_ENABLED === "true"
+  ) {
+    return identity.subject;
   }
-  return identity.subject;
+
+  // convex-test supplies its own issuer for existing app-level auth tests.
+  if (process.env.NODE_ENV === "test" && identity.issuer === CONVEX_TEST_ISSUER) {
+    return identity.subject;
+  }
+  return null;
 }
 
 export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {

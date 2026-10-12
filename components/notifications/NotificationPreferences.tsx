@@ -266,12 +266,13 @@ export default function NotificationPreferences({
                             type="time"
                             value={reminderTime}
                             disabled={isSaving}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
                               setDraftTimes((current) => ({
                                 ...current,
-                                [option.purpose]: event.currentTarget.value,
-                              }))
-                            }
+                                [option.purpose]: value,
+                              }));
+                            }}
                             className="min-h-11 rounded-xl border border-border bg-muted px-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                           />
                         </label>

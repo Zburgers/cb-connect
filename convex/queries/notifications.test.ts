@@ -175,6 +175,119 @@ describe("notification recipient queries", () => {
     ).resolves.toMatchObject({ page: [] });
   });
 
+  test("refills across a stale prefix without skipping the next visible page", async () => {
+    enableInAppInbox();
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const now = Date.now();
+    const renderIdentity = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const entries = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected an active partner membership");
+
+      const rows = [];
+      for (let index = 0; index < 47; index += 1) {
+        const createdAt = now + index;
+        const messageId = await ctx.db.insert("coupleMessages", {
+          coupleId,
+          relationshipMembershipId: membership._id,
+          senderId: primaryId,
+          body: "Private source body",
+          createdAt,
+        });
+        const idempotencyKey = makeEventIdempotencyKey("partner_message.v1", {
+          messageId: String(messageId),
+          recipientId: String(partnerId),
+        });
+        const eventId = await ctx.db.insert("notificationEvents", {
+          eventType: "partner_message.v1",
+          eventVersion: 1,
+          purpose: "partner_message",
+          producerKind: "new_couple_message",
+          sourceReference: `message:${messageId}`,
+          sourceAuthorityVersion: `relationship-membership:${membership._id}`,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+          recipientScope: "other_active_member",
+          privacyClass: "relationship_private_free_text_source",
+          validityRule: "while_message_and_active_link_exist",
+          idempotencyKey,
+          allowedChannel: "in_app",
+          sourceIdentity: {
+            eventType: "partner_message.v1",
+            sourceId: messageId,
+            coupleId,
+            relationshipMembershipId: membership._id,
+            ownerUserId: primaryId,
+            recipientUserId: partnerId,
+          },
+          createdAt,
+        });
+        const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+          eventId,
+          recipientUserId: partnerId,
+          idempotencyKey,
+          templateVersion: "g4-static-v1",
+          route: "messages",
+          state: "current",
+          createdAt,
+        });
+        await ctx.db.insert("notificationDeliveries", {
+          eventId,
+          recipientUserId: partnerId,
+          channel: "in_app",
+          stableDestinationId: String(partnerId),
+          logicalKey: makeDeliveryIdempotencyKey(
+            String(eventId),
+            "in_app",
+            String(partnerId),
+          ),
+          notBefore: createdAt,
+          state: "delivered",
+          eligibility: "eligible",
+          providerOutcome: "none",
+          attemptCount: 1,
+          claimGeneration: 1,
+          renderIdentity: renderIdentity.identity,
+          createdAt,
+          updatedAt: createdAt,
+        });
+        rows.push({ messageId, inboxItemId });
+      }
+
+      for (const { messageId } of rows.slice(22)) {
+        await ctx.db.delete(messageId);
+      }
+      return rows;
+    });
+
+    const firstPage = await asPartner.query(api.queries.notifications.getMyInbox, {
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+    const secondPage = await asPartner.query(api.queries.notifications.getMyInbox, {
+      paginationOpts: { numItems: 20, cursor: firstPage.continueCursor },
+    });
+
+    expect(firstPage.page.map((item) => item.itemId)).toEqual(
+      entries.slice(2, 22).reverse().map(({ inboxItemId }) => inboxItemId),
+    );
+    expect(firstPage.isDone).toBe(false);
+    expect(secondPage.page.map((item) => item.itemId)).toEqual(
+      entries.slice(0, 2).reverse().map(({ inboxItemId }) => inboxItemId),
+    );
+    expect(secondPage.isDone).toBe(true);
+  });
+
   test("hides a current inbox row after its typed identity or relationship generation is revoked", async () => {
     enableInAppInbox();
     const t = convexTest(schema, modules);

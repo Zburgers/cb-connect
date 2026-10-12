@@ -661,6 +661,7 @@ export default defineSchema({
     .index("by_logical_key", ["logicalKey"])
     .index("by_event_id", ["eventId"])
     .index("by_recipient_and_state", ["recipientUserId", "state"])
+    .index("by_state", ["state"])
     .index("by_state_and_expires_at", ["state", "expiresAt"])
     .index("by_state_and_next_attempt_at", ["state", "nextAttemptAt"])
     .index("by_state_and_lease_until", ["state", "leaseUntil"])
