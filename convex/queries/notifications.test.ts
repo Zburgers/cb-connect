@@ -351,7 +351,40 @@ describe("notification recipient queries", () => {
         paginationOpts: { numItems: 20, cursor: "x".repeat(2_049) },
       }),
     ).rejects.toThrow(/cursor.*bound/i);
+    await expect(
+      asPrimary.query(api.queries.notifications.getMyInbox, {
+        paginationOpts: {
+          numItems: 20,
+          cursor: null,
+          endCursor: "x".repeat(2_049),
+        },
+      }),
+    ).rejects.toThrow(/cursor.*bound/i);
   });
+
+  test(
+    "accepts Convex paginated-query metadata while keeping read budgets server-controlled",
+    async () => {
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_INBOX_V1", "true");
+      const t = convexTest(schema, modules);
+      const { asPrimary } = await seedActiveCouple(t);
+
+      await expect(
+        asPrimary.query(api.queries.notifications.getMyInbox, {
+          paginationOpts: { numItems: 20, cursor: null, id: 1, endCursor: null },
+        }),
+      ).resolves.toMatchObject({ page: [] });
+      await expect(
+        asPrimary.query(api.queries.notifications.getMyInbox, {
+          paginationOpts: {
+            numItems: 20,
+            cursor: null,
+            maximumBytesRead: 1_000_000,
+          },
+        } as never),
+      ).rejects.toThrow();
+    },
+  );
 
   test("bounds and filters internal due-work reads", async () => {
     const t = convexTest(schema, modules);

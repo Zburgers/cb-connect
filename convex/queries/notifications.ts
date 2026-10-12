@@ -1,4 +1,4 @@
-import { paginationResultValidator } from "convex/server";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
@@ -34,7 +34,9 @@ const notificationDueWorkKindValidator = v.union(
 
 const inboxPaginationOptsValidator = v.object({
   numItems: v.number(),
-  cursor: v.union(v.string(), v.null()),
+  cursor: paginationOptsValidator.fields.cursor,
+  endCursor: paginationOptsValidator.fields.endCursor,
+  id: paginationOptsValidator.fields.id,
 });
 
 const preferenceResultValidator = v.object({
@@ -171,11 +173,10 @@ export const getMyInbox = query({
         `Notification inbox page size is outside the supported bound 1..${MAX_INBOX_PAGE_SIZE}`,
       );
     }
-    if (
-      args.paginationOpts.cursor !== null &&
-      args.paginationOpts.cursor.length > MAX_CURSOR_LENGTH
-    ) {
-      throw new Error("Notification inbox cursor exceeds its fixed bound");
+    for (const cursor of [args.paginationOpts.cursor, args.paginationOpts.endCursor]) {
+      if (cursor !== null && cursor !== undefined && cursor.length > MAX_CURSOR_LENGTH) {
+        throw new Error("Notification inbox cursor exceeds its fixed bound");
+      }
     }
     const user = await getCurrentUser(ctx);
     const page = await ctx.db

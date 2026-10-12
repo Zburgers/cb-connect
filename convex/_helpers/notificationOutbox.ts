@@ -536,18 +536,34 @@ export async function cancelSource(
   sourceRef: string,
   reason: SourceCancellationReason,
   now: number = Date.now(),
+  sourceAuthorityVersion?: string,
 ): Promise<void> {
   assertNow(now);
   if (sourceRef.length === 0 || sourceRef.length > 1_024) {
     throw new Error("Notification source reference is outside its fixed bound");
   }
+  if (
+    sourceAuthorityVersion !== undefined &&
+    (sourceAuthorityVersion.length === 0 || sourceAuthorityVersion.length > 1_024)
+  ) {
+    throw new Error("Notification source authority version is outside its fixed bound");
+  }
 
-  const events = await ctx.db
-    .query("notificationEvents")
-    .withIndex("by_source_reference_and_authority", (q) =>
-      q.eq("sourceReference", sourceRef),
-    )
-    .take(MAX_SOURCE_EVENTS + 1);
+  const events = sourceAuthorityVersion === undefined
+    ? await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q.eq("sourceReference", sourceRef),
+        )
+        .take(MAX_SOURCE_EVENTS + 1)
+    : await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q
+            .eq("sourceReference", sourceRef)
+            .eq("sourceAuthorityVersion", sourceAuthorityVersion),
+        )
+        .take(MAX_SOURCE_EVENTS + 1);
   if (events.length > MAX_SOURCE_EVENTS) {
     throw new Error("Notification source has too many event generations to cancel atomically");
   }

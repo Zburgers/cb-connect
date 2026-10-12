@@ -35,6 +35,10 @@ function requestSourceReference(requestId: Id<"painReminderRequests">): string {
   return String(requestId);
 }
 
+function requestSourceAuthorityVersion(requestVersion: number): string {
+  return `pain-reminder-request:v${requestVersion}`;
+}
+
 function sameSourceIdentity(
   existing: NotificationSourceIdentity | undefined,
   expected: NotificationSourceIdentity,
@@ -86,7 +90,7 @@ async function ensurePainReminderEvent(
     purpose: definition.purpose,
     producerKind: definition.producer,
     sourceReference,
-    sourceAuthorityVersion: `pain-reminder-request:v${requestVersion}`,
+    sourceAuthorityVersion: requestSourceAuthorityVersion(request.requestVersion),
     ownerUserId: request.ownerUserId,
     recipientUserId: request.ownerUserId,
     recipientScope: "primary" as const,
@@ -207,6 +211,7 @@ export const setMyPainReminder = mutation({
         requestSourceReference(latestRequest._id),
         "source_changed",
         now,
+        requestSourceAuthorityVersion(latestRequest.requestVersion),
       );
       await ctx.db.patch(latestRequest._id, {
         selectedLocalDay: args.selectedLocalDay,
@@ -268,7 +273,13 @@ async function deactivateMyPainReminder(
   if (request.state === "cancelled") return null;
 
   const now = Date.now();
-  await cancelSource(ctx, requestSourceReference(request._id), reason, now);
+  await cancelSource(
+    ctx,
+    requestSourceReference(request._id),
+    reason,
+    now,
+    requestSourceAuthorityVersion(request.requestVersion),
+  );
   await ctx.db.patch(request._id, { state: "cancelled", updatedAt: now });
   return null;
 }

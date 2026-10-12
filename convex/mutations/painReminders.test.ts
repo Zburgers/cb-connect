@@ -464,6 +464,40 @@ describe("user-requested pain reminders", () => {
     });
   });
 
+  test("revokes the current request after 256 retained date edits", async () => {
+    enableOutbox();
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const painLogId = await seedPainLog(t, primaryId);
+    const firstDay = addCalendarDays(todayUtc(), 1);
+    const secondDay = addCalendarDays(firstDay, 1);
+    await asPrimary.mutation(setMyPainReminder, { painLogId, selectedLocalDay: firstDay });
+
+    for (let edit = 0; edit < 256; edit += 1) {
+      await asPrimary.mutation(setMyPainReminder, {
+        painLogId,
+        selectedLocalDay: edit % 2 === 0 ? secondDay : firstDay,
+      });
+    }
+
+    await asPrimary.mutation(revokeMyPainReminder, { painLogId });
+    await t.run(async (ctx) => {
+      const request = await latestRequest(ctx, painLogId);
+      if (!request) throw new Error("Expected the retained pain reminder request");
+      const events = await ctx.db
+        .query("notificationEvents")
+        .withIndex("by_source_reference_and_authority", (q) =>
+          q.eq("sourceReference", String(request._id)),
+        )
+        .take(258);
+      expect(request).toMatchObject({ requestVersion: 257, state: "cancelled" });
+      expect(events).toHaveLength(257);
+      expect(
+        events.some((event) => event.sourceAuthorityVersion === "pain-reminder-request:v257"),
+      ).toBe(true);
+    });
+  });
+
   test("keeps request records but creates no event while the outbox flag is absent", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, primaryId } = await seedActiveCouple(t);
