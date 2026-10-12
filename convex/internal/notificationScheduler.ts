@@ -124,6 +124,57 @@ type SchedulePageProgress = {
   claimedLateCursor: string | null;
   claimedLateDone: boolean;
 };
+type ScheduleWorkStream =
+  | {
+      kind: "prediction_window";
+      state: "pending";
+      cursorKey: "pendingPredictionCursor";
+      doneKey: "pendingPredictionDone";
+    }
+  | {
+      kind: "prediction_window";
+      state: "claimed";
+      cursorKey: "claimedPredictionCursor";
+      doneKey: "claimedPredictionDone";
+    }
+  | {
+      kind: "late_boundary";
+      state: "pending";
+      cursorKey: "pendingLateCursor";
+      doneKey: "pendingLateDone";
+    }
+  | {
+      kind: "late_boundary";
+      state: "claimed";
+      cursorKey: "claimedLateCursor";
+      doneKey: "claimedLateDone";
+    };
+const scheduleWorkStreams: readonly ScheduleWorkStream[] = [
+  {
+    kind: "prediction_window",
+    state: "pending",
+    cursorKey: "pendingPredictionCursor",
+    doneKey: "pendingPredictionDone",
+  },
+  {
+    kind: "prediction_window",
+    state: "claimed",
+    cursorKey: "claimedPredictionCursor",
+    doneKey: "claimedPredictionDone",
+  },
+  {
+    kind: "late_boundary",
+    state: "pending",
+    cursorKey: "pendingLateCursor",
+    doneKey: "pendingLateDone",
+  },
+  {
+    kind: "late_boundary",
+    state: "claimed",
+    cursorKey: "claimedLateCursor",
+    doneKey: "claimedLateDone",
+  },
+];
 
 function schedulerEnabled(): boolean {
   return process.env[SCHEDULER_FLAG] === "true";
@@ -456,6 +507,75 @@ async function readScheduleWorkPage(
     .paginate({ numItems: OWNER_PENDING_PAGE_SIZE, cursor });
 }
 
+async function readScheduleWorkPrefix(
+  ctx: Pick<MutationCtx, "db">,
+  userId: Id<"users">,
+  kind: ScheduleKind,
+  state: "pending" | "claimed",
+) {
+  return await ctx.db
+    .query("notificationDueWork")
+    .withIndex(
+      "by_owner_kind_state_due_gen_src_auth_ver_reminder_window_ver",
+      (q) => q.eq("ownerUserId", userId).eq("kind", kind).eq("state", state),
+    )
+    .take(OWNER_PENDING_PAGE_SIZE);
+}
+
+async function readNextScheduleWorkPage(
+  ctx: Pick<MutationCtx, "db">,
+  userId: Id<"users">,
+  progress: SchedulePageProgress,
+) {
+  const stream = scheduleWorkStreams.find(({ doneKey }) => !progress[doneKey]);
+  if (!stream) return { pages: [], progress };
+  let nextProgress = progress;
+  const pages = [];
+  for (const candidate of scheduleWorkStreams) {
+    if (progress[candidate.doneKey]) continue;
+    if (candidate === stream) {
+      const result = await readScheduleWorkPage(
+        ctx,
+        userId,
+        candidate.kind,
+        candidate.state,
+        progress[candidate.cursorKey],
+      );
+      if (!result.isDone && result.continueCursor === null) {
+        throw new Error(
+          "Schedule work page must provide a continuation cursor",
+        );
+      }
+      pages.push({ stream: candidate, rows: result.page });
+      nextProgress = {
+        ...nextProgress,
+        [candidate.cursorKey]: result.isDone ? null : result.continueCursor,
+        [candidate.doneKey]: result.isDone,
+      } as SchedulePageProgress;
+    } else {
+      if (progress[candidate.cursorKey] !== null) continue;
+      const rows = await readScheduleWorkPrefix(
+        ctx,
+        userId,
+        candidate.kind,
+        candidate.state,
+      );
+      pages.push({ stream: candidate, rows });
+      if (rows.length < OWNER_PENDING_PAGE_SIZE) {
+        nextProgress = {
+          ...nextProgress,
+          [candidate.cursorKey]: null,
+          [candidate.doneKey]: true,
+        } as SchedulePageProgress;
+      }
+    }
+  }
+  return {
+    pages,
+    progress: nextProgress,
+  };
+}
+
 async function cancelActiveKind(
   ctx: MutationCtx,
   rows: readonly Doc<"notificationDueWork">[],
@@ -561,7 +681,11 @@ async function reconcileKind(
         .first(),
     ),
   );
-  if (pendingAtFence || claimedAtFence) return;
+  if (pendingAtFence) {
+    await scheduleWake(ctx, pendingAtFence, dueAt, args.now);
+    return;
+  }
+  if (claimedAtFence) return;
 
   const workId = await createNotificationDueWork(ctx, {
     ownerUserId: args.userId,
@@ -605,91 +729,26 @@ async function cancelUnavailableSchedulePage(
   now: number,
   progress: SchedulePageProgress,
 ) {
-  const [pendingPrediction, claimedPrediction, pendingLate, claimedLate] =
-    await Promise.all([
-    progress.pendingPredictionDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          userId,
-          "prediction_window",
-          "pending",
-          progress.pendingPredictionCursor,
-        ),
-    progress.claimedPredictionDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          userId,
-          "prediction_window",
-          "claimed",
-          progress.claimedPredictionCursor,
-        ),
-    progress.pendingLateDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          userId,
-          "late_boundary",
-          "pending",
-          progress.pendingLateCursor,
-        ),
-    progress.claimedLateDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          userId,
-          "late_boundary",
-          "claimed",
-          progress.claimedLateCursor,
-        ),
-  ]);
-  await cancelActiveKind(ctx, pendingPrediction?.page ?? [], "prediction_window", now);
-  await cancelActiveKind(ctx, claimedPrediction?.page ?? [], "prediction_window", now);
-  await cancelActiveKind(ctx, pendingLate?.page ?? [], "late_boundary", now);
-  await cancelActiveKind(ctx, claimedLate?.page ?? [], "late_boundary", now);
-
-  const nextProgress = {
-    pendingPredictionCursor: pendingPrediction?.isDone
-      ? null
-      : (pendingPrediction?.continueCursor ?? progress.pendingPredictionCursor),
-    pendingPredictionDone:
-      progress.pendingPredictionDone || (pendingPrediction?.isDone ?? false),
-    claimedPredictionCursor: claimedPrediction?.isDone
-      ? null
-      : (claimedPrediction?.continueCursor ?? progress.claimedPredictionCursor),
-    claimedPredictionDone:
-      progress.claimedPredictionDone || (claimedPrediction?.isDone ?? false),
-    pendingLateCursor: pendingLate?.isDone
-      ? null
-      : (pendingLate?.continueCursor ?? progress.pendingLateCursor),
-    pendingLateDone: progress.pendingLateDone || (pendingLate?.isDone ?? false),
-    claimedLateCursor: claimedLate?.isDone
-      ? null
-      : (claimedLate?.continueCursor ?? progress.claimedLateCursor),
-    claimedLateDone: progress.claimedLateDone || (claimedLate?.isDone ?? false),
-  };
+  const next = await readNextScheduleWorkPage(ctx, userId, progress);
+  for (const { stream, rows } of next.pages) {
+    await cancelActiveKind(ctx, rows, stream.kind, now);
+  }
+  const nextProgress = next.progress;
   if (
     !nextProgress.pendingPredictionDone ||
     !nextProgress.claimedPredictionDone ||
     !nextProgress.pendingLateDone ||
     !nextProgress.claimedLateDone
   ) {
-    if (
-      (!nextProgress.pendingPredictionDone &&
-        nextProgress.pendingPredictionCursor === null) ||
-      (!nextProgress.claimedPredictionDone &&
-        nextProgress.claimedPredictionCursor === null) ||
-      (!nextProgress.pendingLateDone && nextProgress.pendingLateCursor === null) ||
-      (!nextProgress.claimedLateDone && nextProgress.claimedLateCursor === null)
-    ) {
-      throw new Error("Active schedule work page must provide a continuation cursor");
-    }
-    await ctx.scheduler.runAfter(0, continueUnavailableScheduleCancellationRef, {
-      phase: "unavailable",
-      userId,
-      ...nextProgress,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      continueUnavailableScheduleCancellationRef,
+      {
+        phase: "unavailable",
+        userId,
+        ...nextProgress,
+      },
+    );
   }
 }
 
@@ -726,51 +785,62 @@ async function cancelClaimedScheduleWork(
   const current = await readCurrentServedSnapshot(ctx, userId);
   if (current.status === "current") return;
 
-  const [predictionPage, latePage] = await Promise.all([
-    progress.predictionDone
+  const scanPrediction = !progress.predictionDone;
+  const scanLate = !progress.lateDone;
+  const kind = scanPrediction ? "prediction_window" : "late_boundary";
+  const page =
+    !scanPrediction && !scanLate
       ? null
-      : readScheduleWorkPage(
+      : await readScheduleWorkPage(
           ctx,
           userId,
-          "prediction_window",
+          kind,
           "claimed",
-          progress.predictionCursor,
-        ),
-    progress.lateDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          userId,
-          "late_boundary",
-          "claimed",
-          progress.lateCursor,
-        ),
-  ]);
-  for (const row of [
-    ...(predictionPage?.page ?? []),
-    ...(latePage?.page ?? []),
-  ]) {
+          scanPrediction ? progress.predictionCursor : progress.lateCursor,
+        );
+  if (page && !page.isDone && page.continueCursor === null) {
+    throw new Error(
+      "Claimed schedule work page must provide a continuation cursor",
+    );
+  }
+  const otherKind = scanPrediction ? "late_boundary" : "prediction_window";
+  const otherDone = scanPrediction
+    ? progress.lateDone
+    : progress.predictionDone;
+  const otherCursor = scanPrediction
+    ? progress.lateCursor
+    : progress.predictionCursor;
+  const otherRows =
+    otherDone || otherCursor !== null
+      ? []
+      : await readScheduleWorkPrefix(ctx, userId, otherKind, "claimed");
+  for (const row of [...(page?.page ?? []), ...otherRows]) {
     await ctx.db.patch(row._id, { state: "cancelled", updatedAt: now });
   }
+  const otherComplete =
+    otherDone ||
+    (otherCursor === null && otherRows.length < OWNER_PENDING_PAGE_SIZE);
   const nextProgress = {
-    predictionCursor: predictionPage?.isDone
-      ? null
-      : (predictionPage?.continueCursor ?? progress.predictionCursor),
-    predictionDone: progress.predictionDone || (predictionPage?.isDone ?? false),
-    lateCursor: latePage?.isDone
-      ? null
-      : (latePage?.continueCursor ?? progress.lateCursor),
-    lateDone: progress.lateDone || (latePage?.isDone ?? false),
+    predictionCursor: scanPrediction
+      ? page?.isDone === false
+        ? page.continueCursor
+        : null
+      : progress.predictionCursor,
+    predictionDone:
+      progress.predictionDone ||
+      (scanPrediction && (page?.isDone ?? false)) ||
+      (!scanPrediction && otherComplete),
+    lateCursor: scanLate
+      ? page?.isDone === false
+        ? page.continueCursor
+        : null
+      : progress.lateCursor,
+    lateDone:
+      progress.lateDone ||
+      (scanLate && (page?.isDone ?? false)) ||
+      (!scanLate && otherComplete),
   };
   if (!nextProgress.predictionDone || !nextProgress.lateDone) {
-    if (
-      (!nextProgress.predictionDone && nextProgress.predictionCursor === null) ||
-      (!nextProgress.lateDone && nextProgress.lateCursor === null)
-    ) {
-      throw new Error(
-        "Claimed schedule work page must provide a continuation cursor",
-      );
-    }
     await ctx.scheduler.runAfter(0, continueIndeterminateClaimCancellationRef, {
       userId,
       ...nextProgress,
@@ -953,126 +1023,70 @@ async function reconcileCurrentSchedulePage(
     return;
   }
 
-  const [
-    pendingPrediction,
-    claimedPrediction,
-    pendingLate,
-    claimedLate,
-  ] = await Promise.all([
-    args.progress.pendingPredictionDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          args.userId,
-          "prediction_window",
-          "pending",
-          args.progress.pendingPredictionCursor,
-        ),
-    args.progress.claimedPredictionDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          args.userId,
-          "prediction_window",
-          "claimed",
-          args.progress.claimedPredictionCursor,
-        ),
-    args.progress.pendingLateDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          args.userId,
-          "late_boundary",
-          "pending",
-          args.progress.pendingLateCursor,
-        ),
-    args.progress.claimedLateDone
-      ? null
-      : readScheduleWorkPage(
-          ctx,
-          args.userId,
-          "late_boundary",
-          "claimed",
-          args.progress.claimedLateCursor,
-        ),
-  ]);
+  const next = await readNextScheduleWorkPage(ctx, args.userId, args.progress);
   const reminderWindowVersion = {
     prediction_window: predictionWindow?.reminderWindowVersion,
     late_boundary: lateStatus?.reminderWindowVersion,
   };
-  await inspectSchedulePage(ctx, pendingPrediction?.page ?? [], "pending", {
-    candidates: args.candidates,
-    expectedDueAt: dueAt,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    reminderWindowVersion,
-    now,
-  });
-  await inspectSchedulePage(ctx, claimedPrediction?.page ?? [], "claimed", {
-    candidates: args.candidates,
-    expectedDueAt: dueAt,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    reminderWindowVersion,
-    now,
-  });
-  await inspectSchedulePage(ctx, pendingLate?.page ?? [], "pending", {
-    candidates: args.candidates,
-    expectedDueAt: dueAt,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    reminderWindowVersion,
-    now,
-  });
-  await inspectSchedulePage(ctx, claimedLate?.page ?? [], "claimed", {
-    candidates: args.candidates,
-    expectedDueAt: dueAt,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    reminderWindowVersion,
-    now,
-  });
-
-  const progress = {
-    pendingPredictionCursor: pendingPrediction?.isDone
-      ? null
-      : (pendingPrediction?.continueCursor ?? args.progress.pendingPredictionCursor),
-    pendingPredictionDone:
-      args.progress.pendingPredictionDone ||
-      (pendingPrediction?.isDone ?? false),
-    claimedPredictionCursor: claimedPrediction?.isDone
-      ? null
-      : (claimedPrediction?.continueCursor ?? args.progress.claimedPredictionCursor),
-    claimedPredictionDone:
-      args.progress.claimedPredictionDone ||
-      (claimedPrediction?.isDone ?? false),
-    pendingLateCursor: pendingLate?.isDone
-      ? null
-      : (pendingLate?.continueCursor ?? args.progress.pendingLateCursor),
-    pendingLateDone:
-      args.progress.pendingLateDone || (pendingLate?.isDone ?? false),
-    claimedLateCursor: claimedLate?.isDone
-      ? null
-      : (claimedLate?.continueCursor ?? args.progress.claimedLateCursor),
-    claimedLateDone:
-      args.progress.claimedLateDone || (claimedLate?.isDone ?? false),
-  };
+  for (const { stream, rows } of next.pages) {
+    await inspectSchedulePage(ctx, rows, stream.state, {
+      candidates: args.candidates,
+      expectedDueAt: dueAt,
+      generation,
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      reminderWindowVersion,
+      now,
+    });
+  }
+  const progress = next.progress;
+  if (schedulerEnabled()) {
+    const predictionCandidates = await activeCandidates(
+      ctx,
+      args.candidates.pendingPredictionId,
+      args.candidates.claimedPredictionId,
+    );
+    await reconcileKind(ctx, {
+      userId: args.userId,
+      kind: "prediction_window",
+      enabled:
+        predictionWindow?.inAppEnabled === true &&
+        current.latestEligibleStartEventId !== undefined,
+      localReminderTime: predictionWindow?.localReminderTime,
+      reminderWindowVersion: predictionWindow?.reminderWindowVersion,
+      snapshot: current.snapshot,
+      generation,
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      timeZone,
+      pending: predictionCandidates.pending,
+      claimed: predictionCandidates.claimed,
+      now,
+    });
+    const lateCandidates = await activeCandidates(
+      ctx,
+      args.candidates.pendingLateId,
+      args.candidates.claimedLateId,
+    );
+    await reconcileKind(ctx, {
+      userId: args.userId,
+      kind: "late_boundary",
+      enabled: lateStatus?.inAppEnabled === true,
+      localReminderTime: lateStatus?.localReminderTime,
+      reminderWindowVersion: lateStatus?.reminderWindowVersion,
+      snapshot: current.snapshot,
+      generation,
+      sourceAuthorityVersion: current.sourceAuthorityVersion,
+      timeZone,
+      pending: lateCandidates.pending,
+      claimed: lateCandidates.claimed,
+      now,
+    });
+  }
   if (
     !progress.pendingPredictionDone ||
     !progress.claimedPredictionDone ||
     !progress.pendingLateDone ||
     !progress.claimedLateDone
   ) {
-    if (
-      (!progress.pendingPredictionDone &&
-        progress.pendingPredictionCursor === null) ||
-      (!progress.claimedPredictionDone &&
-        progress.claimedPredictionCursor === null) ||
-      (!progress.pendingLateDone && progress.pendingLateCursor === null) ||
-      (!progress.claimedLateDone && progress.claimedLateCursor === null)
-    ) {
-      throw new Error("Schedule work page must provide a continuation cursor");
-    }
     await ctx.scheduler.runAfter(0, continueScheduleReconciliationRef, {
       phase: "current",
       userId: args.userId,
@@ -1082,48 +1096,6 @@ async function reconcileCurrentSchedulePage(
     });
     return;
   }
-
-  if (!schedulerEnabled()) return;
-  const predictionCandidates = await activeCandidates(
-    ctx,
-    args.candidates.pendingPredictionId,
-    args.candidates.claimedPredictionId,
-  );
-  await reconcileKind(ctx, {
-    userId: args.userId,
-    kind: "prediction_window",
-    enabled:
-      predictionWindow?.inAppEnabled === true &&
-      current.latestEligibleStartEventId !== undefined,
-    localReminderTime: predictionWindow?.localReminderTime,
-    reminderWindowVersion: predictionWindow?.reminderWindowVersion,
-    snapshot: current.snapshot,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    timeZone,
-    pending: predictionCandidates.pending,
-    claimed: predictionCandidates.claimed,
-    now,
-  });
-  const lateCandidates = await activeCandidates(
-    ctx,
-    args.candidates.pendingLateId,
-    args.candidates.claimedLateId,
-  );
-  await reconcileKind(ctx, {
-    userId: args.userId,
-    kind: "late_boundary",
-    enabled: lateStatus?.inAppEnabled === true,
-    localReminderTime: lateStatus?.localReminderTime,
-    reminderWindowVersion: lateStatus?.reminderWindowVersion,
-    snapshot: current.snapshot,
-    generation,
-    sourceAuthorityVersion: current.sourceAuthorityVersion,
-    timeZone,
-    pending: lateCandidates.pending,
-    claimed: lateCandidates.claimed,
-    now,
-  });
 }
 
 export const continueScheduleReconciliation = internalMutation({
