@@ -2,73 +2,60 @@
 
 ## Current candidate — 2026-10-13
 
-**Status: exact-SHA deterministic and authenticated synthetic inbox qualification pass; release readiness remains blocked by production operations evidence and owner-gated decisions.** The final candidate is `0027a0ac2ccc781e0fd4ba153142fe7561af4b37` on `gate-4/final-candidate-20261012`. The report edit is documentation-only and separate from this tested candidate SHA.
+**Status: implementation, deterministic checks, and authenticated synthetic populated-inbox qualification pass on the tested source SHA. Production release readiness remains blocked by the separate promotion/rollback failure and owner-gated decisions.** The tested source candidate is f1a3db50bb9a9579a31c46860336b10b31ba5cd4 on gate-4/final-candidate-20261012. This report update is documentation-only.
 
 ### Exact-SHA deterministic evidence
 
-The following checks ran against candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`:
+The following checks ran against source SHA f1a3db50bb9a9579a31c46860336b10b31ba5cd4:
 
 | Check | Result |
 |---|---|
-| `npm run test:unit -- --run` | Pass: 78 files, 900 tests |
-| Focused notifications and scheduler tests | Pass: 2 files, 65 tests |
-| `npm run typecheck` | Pass after the production build completed |
-| `npm run build` | Pass with inert synthetic Clerk/Convex build values; no production deployment |
-| `npm audit --omit=dev` | Pass: 0 vulnerabilities |
-| CI, cycle-facts, Convex safe-exec/command, and fixture-evidence policy scripts | Pass; safe-exec negative cases emitted their expected rejection output |
+| npm run test:unit -- --run | Pass: 78 files, 900 tests |
+| Focused inbox pagination regression | Pass: 9 tests |
+| npm run typecheck | Pass |
+| npm run build | Pass with inert synthetic Clerk and Convex values; no deployment |
+| npm audit --omit=dev | Pass: 0 vulnerabilities |
+| CI workflow, cycle-facts, Convex safe-exec/command, and fixture-evidence policy scripts | Pass; safe-exec negative cases emitted expected rejection output |
 | Auth-fixture, release-smoke, deploy-workflow, Convex-env-reconciliation, and prediction-runner policy scripts | Pass |
-| Golden cycle benchmark | Pass; source commit is `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`, source tree clean, verdict `synthetic_not_evidence` |
-| `git diff --check` | Pass |
+| Golden cycle benchmark | Pass; source commit is f1a3db50bb9a9579a31c46860336b10b31ba5cd4, source tree clean, verdict synthetic_not_evidence |
+| git diff --check | Pass |
 
-The build used inert synthetic Clerk and Convex values. The golden benchmark is synthetic evidence only and does not qualify promotion.
+GitHub CI run [38302974654](https://github.com/Zburgers/cb-connect/actions/runs/38302974654) passed deterministic qualification on this exact SHA. Its authenticated release smoke and production-configured immutable-release jobs were skipped by the workflow's current scope; the local authenticated E2E below is separate evidence.
+
+The build used inert synthetic Clerk and Convex values. The benchmark is synthetic evidence only and does not qualify promotion.
 
 ### Review findings and remediation
 
-The GitHub review on PR #63 identified a P2 false-empty inbox page when a page of newest rows contains stale or revoked items. `getMyInbox` now makes at most one Convex paginated read per request, scans at most 200 indexed inbox rows, buffers only bounded item IDs in its cursor, and revalidates each buffered item before returning it. The regression creates 25 stale rows ahead of 22 valid older messages and verifies a full first page followed by the remaining two items without skips.
+The targeted review on prior head 30f357d found two P2 pagination defects: a dismissed buffered inbox item could reappear, and Convex split pagination could discard buffered overflow. Commit 93f269f1f27001d44df1cb3f47a38da1f39cb8f8 fixes both in the shared query/helper path. Revalidation now requires the item to remain current and owned by the viewer. Split cursors are wrapped and validated; bounded split subqueries preserve overflow, and source reads are capped at 200 rows. The regressions cover a dismissed buffered item and a split range with 21 valid items on one side and one on the other. Generated Convex API declarations were synchronized in f1a3db50bb9a9579a31c46860336b10b31ba5cd4.
 
-The one targeted read-only re-review of the prior qualified candidate found two additional issues: a repeated inbox `.paginate()` call that could fail at Convex runtime, and a scheduler prefix reread that could cancel the same current claim on a continuation. The inbox query now calls `.paginate()` only once, with its bounded cursor carrying buffered results. Scheduler candidate inspection treats a repeated same-ID claim as idempotent while still cancelling different stale candidates. New regressions cover both findings. This targeted review was against the prior SHA; final review of `0027a0a` is pending after the updated PR checks.
+No issuer verification, cross-tenant isolation, or fixture boundary was weakened. One final targeted review of the qualified candidate will be requested after this report and PR update; no clean approval is claimed until its result arrives.
 
 ### Issuer handling and authenticated populated-inbox E2E
 
-The authenticated test issuer `https://holy-clam-29.clerk.accounts.dev` is accepted only when both the exact isolated deployment `dev:hallowed-hummingbird-284` and fixture cleanup are enabled. The production issuer remains the exact `https://clerk.cb.builtbynaki.tech`; foreign issuers remain rejected. `loadAuthEnvironment` also enforces the approved Clerk test host, test keys, Convex deployment, and Convex URL. No issuer verification, tenant isolation, or fixture boundary was weakened.
+The approved test Clerk environment is holy clerk, with issuer https://holy-clam-29.clerk.accounts.dev. The test issuer is accepted only with the exact isolated backend dev:hallowed-hummingbird-284 and the approved fixture cleanup path. The production issuer remains exactly https://clerk.cb.builtbynaki.tech; foreign issuers remain rejected. loadAuthEnvironment continues to enforce the approved test host, test keys, Convex deployment, and Convex URL. Authenticated sign-in and fixture setup succeeded under those checks; no Clerk issuer mismatch occurred on the final runs.
 
-The exact candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37` was deployed only to `dev:hallowed-hummingbird-284`. Backend identity reported compatibility `v1` and deploy time `2026-10-12T19:32:57.833Z`. `e2e/notifications-in-app.spec.ts` passed on that SHA:
+Source SHA f1a3db50bb9a9579a31c46860336b10b31ba5cd4 was deployed only to dev:hallowed-hummingbird-284. Backend identity reported compatibility v1, deployment dev:hallowed-hummingbird-284, and deployed-at 2026-10-12T20:19:15.000Z. e2e/notifications-in-app.spec.ts passed:
 
 | Project | Result |
 |---|---|
-| `release-desktop` | 3 passed, 0 failed, 0 skipped |
-| `release-mobile` | 3 passed, 0 failed, 0 skipped |
+| release-desktop | 3 passed, 0 failed, 0 skipped |
+| release-mobile | 3 passed, 0 failed, 0 skipped |
 
-Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, revocation, and primary/partner preferences. Each local teardown proof records `remaining=false` and zero rows in the approved fixture tables. The generated proofs are kept untracked under `e2e/.evidence/local-g4-0027a0ac-desktop/` and `e2e/.evidence/local-g4-0027a0ac-mobile/` per the fixture-evidence boundary. Private Playwright artifacts remain under `/tmp/cb-connect-g4-0027a0ac-e2e.KFyewU`.
+Both projects exercised populated partner delivery, sender inbox isolation, read/dismiss, revocation, and primary/partner preferences. The unique run evidence is under e2e/.evidence/local-g4-f1a3db5-qualified-20261012T203228Z/. Both teardown proofs report remaining=false and zero rows in every approved fixture table. All five notification flags were enabled only on the isolated test deployment for the run, restored by an exit trap, and verified false afterward.
 
-An older local `.last-run.json` records the pre-fix preference helper failure: Playwright `.check()` was called when “Message activity” was already checked, so the click did not change state. The fixture helper now checks the current state before toggling; the final desktop and mobile reruns pass. The five notification flags were `false` before the run, enabled only on the isolated test backend, restored in an exit trap, and verified `false` afterward. No production flags were changed.
+The first local attempt exposed a machine-level browser mismatch: the installed Playwright 1.59.1 expected Chromium 147.0.7727.15, but that revision was absent. Its installer stalled after downloading the archive, so it was stopped without replacing other cached browsers. The authenticated E2E then passed using the existing Chrome for Testing 151.0.7922.34 via the explicit Playwright executable path. A separate mobile retry initially reused the desktop fixture run ID and was correctly rejected by the fixture guard; the final desktop and mobile runs used distinct run IDs. The pinned Playwright browser revision remains unverified.
 
-### Final targeted review
-
-One targeted final re-review of `0027a0ac` will be requested after this evidence and the complete CI result are published to PR #63. No additional review loop is planned.
-
-### Existing source PRs
-
-PRs #57-#60 were open drafts based on gate-4/contract-and-integration, with no submitted reviews. Their latest observed heads and exact deterministic failures before supersession were:
-
-| PR | Head | Failure | Other checks |
-|---|---|---|---|
-| #57 | c5d2f52 | Dependency audit reported three production dependency vulnerabilities, including the sharp/librsvg advisory | Authenticated release smoke and production-configured checks skipped |
-| #58 | 50384b3 | Same dependency-audit failure on its older base | Authenticated release smoke and production-configured checks skipped |
-| #59 | a177e70 | Unit test failed because event idempotency lacked relationshipMembershipId; the integrated candidate includes it | Authenticated release smoke and production-configured checks skipped |
-| #60 | 1456ed6 | Same dependency-audit failure as #57/#58 | Authenticated release smoke and production-configured checks skipped |
-
-The candidate audit reports zero production dependency vulnerabilities and its full unit suite passes. After PR #63 was opened against main, all four source PRs were closed as superseded with provenance comments pointing to #63. Their remote branches and original SHAs were preserved.
+An older .last-run.json records the pre-fix preference helper failure: Playwright check was called when “Message activity” was already checked. The helper now checks state before toggling; final desktop and mobile preference cases pass.
 
 ### Production promotion and rollback
 
-Main deployment run 38132266518 at e08a2a1 failed both Verify qualified release promotion and Restore prior verified release after failed promotion. PM2 reported online, but release verification failed. scripts/verify-release.sh reported only that its /api/health curl failed, so the workflow log does not expose the exact HTTP, TLS, or connection cause. A successful promotion or rollback recheck has not been recorded. This remains a release-operations blocker.
+Main deployment run 38132266518 at e08a2a1 failed both Verify qualified release promotion and Restore prior verified release after failed promotion. PM2 reported online, but release verification failed. scripts/verify-release.sh reported only that its /api/health curl failed, so the workflow log does not expose the exact HTTP, TLS, or connection cause. No successful promotion or rollback recheck has been recorded. This remains a release blocker.
 
 ### Release boundaries
 
-D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. The exact candidate was deployed only to the approved isolated test backend; all five notification flags were restored to `false` after E2E. No production flags were changed, no production deployment or merge to main was performed, and no destructive retention changes were made. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
+D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. The exact candidate was deployed only to the approved isolated test backend; all five notification flags were restored to false after E2E. No production flags were changed, no production deployment or merge to main was performed, and no destructive retention changes were made. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
 
-**Conclusion:** implementation, deterministic checks, and authenticated synthetic populated-inbox qualification pass on candidate SHA `0027a0ac2ccc781e0fd4ba153142fe7561af4b37`. Gate 4 is not release-qualified: production promotion and rollback verification failed in run [38132266518](https://github.com/Zburgers/cb-connect/actions/runs/38132266518), and owner-gated decisions and production operations evidence remain outstanding. One targeted final re-review of this candidate is pending; no clean approval is claimed. No production deployment, merge, or production flag change was performed.
+**Conclusion:** implementation, deterministic checks, and authenticated synthetic populated-inbox qualification pass on source SHA f1a3db50bb9a9579a31c46860336b10b31ba5cd4. Gate 4 is not production release-qualified: run [38132266518](https://github.com/Zburgers/cb-connect/actions/runs/38132266518) left production promotion and rollback verification failed, and owner-gated decisions remain outstanding. Final targeted review is pending. The pinned Playwright browser build was not verified; authenticated desktop/mobile E2E passed on Chrome 151. No production deployment, merge, or production flag change was performed.
 
 ## Historical checkpoint (retained; not current evidence)
 
