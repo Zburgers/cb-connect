@@ -41,7 +41,7 @@ A prior isolated test-target deployment and flag attestation applied to code SHA
 
 ### Existing source PRs
 
-All four source PRs remain open drafts based on gate-4/contract-and-integration. The latest observed heads had no submitted reviews. Their exact deterministic failures were:
+PRs #57-#60 were open drafts based on gate-4/contract-and-integration, with no submitted reviews. Their latest observed heads and exact deterministic failures before supersession were:
 
 | PR | Head | Failure | Other checks |
 |---|---|---|---|
@@ -50,7 +50,7 @@ All four source PRs remain open drafts based on gate-4/contract-and-integration.
 | #59 | a177e70 | Unit test failed because event idempotency lacked relationshipMembershipId; the integrated candidate includes it | Authenticated release smoke and production-configured checks skipped |
 | #60 | 1456ed6 | Same dependency-audit failure as #57/#58 | Authenticated release smoke and production-configured checks skipped |
 
-The candidate audit reports zero production dependency vulnerabilities and its full unit suite passes. These source PRs will be marked superseded only after the consolidated PR against main exists; their source branches will be preserved.
+The candidate audit reports zero production dependency vulnerabilities and its full unit suite passes. After PR #63 was opened against main, all four source PRs were closed as superseded with provenance comments pointing to #63. Their remote branches and original SHAs were preserved.
 
 ### Production promotion and rollback
 
@@ -58,7 +58,7 @@ Main deployment run 38132266518 at e08a2a1 failed both Verify qualified release 
 
 ### Release boundaries
 
-D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. No production flags, destructive retention changes, deployment, or merge to main were authorized or performed. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
+D-011, D-012, D-013, and D-015 remain in force. Notification behavior remains default-off and in-app-only; no external provider or POST path was enabled. No production flags were changed, no production deployment or merge to main was performed, and no destructive retention changes were made. Code SHA 9df43926bac8e51ae6e5266b51f9fd8310f52c51 was not deployed; the earlier test-target deployment at d946a9181a1f5298b58e77c33c43d76434495df9 is recorded above. The outdated-prediction-snapshot rule remains intact: dependent notification work stays suppressed until a current authoritative snapshot exists.
 
 **Conclusion:** the integrated implementation has passing exact-SHA deterministic evidence and a clean architecture review. Authenticated inbox qualification, exact-candidate environment attestation, and production promotion/rollback evidence are still outstanding. This candidate is not release-qualified.
 
