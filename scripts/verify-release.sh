@@ -37,10 +37,21 @@ evidence_dir="$(mktemp -d "${TMPDIR:-/tmp}/cb-connect-release-verify.XXXXXX")"
 health_file="$evidence_dir/health.json"
 ready_file="$evidence_dir/ready.json"
 
-if ! curl -fsS --max-time "$timeout_seconds" "$base_url/api/health" >"$health_file" 2>/dev/null; then
-  echo "release health check failed" >&2
-  exit 1
-fi
+request_endpoint() {
+  local endpoint="$1" url="$2" response_file="$3" metrics curl_exit http_status connect_seconds total_seconds
+  if metrics="$(curl -fsS --retry 4 --retry-connrefused --retry-delay 1 --max-time "$timeout_seconds" \
+    --output "$response_file" --write-out '%{http_code} %{time_connect} %{time_total}' "$url" 2>/dev/null)"; then
+    return 0
+  else
+    curl_exit=$?
+  fi
+  read -r http_status connect_seconds total_seconds <<<"$metrics"
+  printf 'release %s check failed (curl_exit=%s http_status=%s connect_seconds=%s total_seconds=%s)\n' \
+    "$endpoint" "$curl_exit" "${http_status:-000}" "${connect_seconds:-unknown}" "${total_seconds:-unknown}" >&2
+  return 1
+}
+
+request_endpoint health "$base_url/api/health" "$health_file"
 if ! node - "$health_file" >/dev/null 2>&1 <<'NODE'
 const fs = require('node:fs');
 const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -54,10 +65,7 @@ then
   exit 1
 fi
 
-if ! curl -fsS --max-time "$timeout_seconds" "$base_url/api/ready" >"$ready_file" 2>/dev/null; then
-  echo "release readiness check failed" >&2
-  exit 1
-fi
+request_endpoint readiness "$base_url/api/ready" "$ready_file"
 if ! node - "$ready_file" "$manifest_path" "$expected_backend_deployment" "$expected_compatibility" >/dev/null 2>&1 <<'NODE'
 const fs = require('node:fs');
 const ready = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));

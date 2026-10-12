@@ -71,6 +71,12 @@ run_expect_fail() {
   fi
 }
 
+kill "$server_pid" 2>/dev/null || true
+wait "$server_pid" 2>/dev/null || true
+(sleep 1; node "$root/server.cjs" valid "$port" "$manifest") >"$root/server.log" 2>&1 &
+server_pid=$!
+bash scripts/verify-release.sh "$manifest" "http://127.0.0.1:$port" dev:hallowed-hummingbird-284 v1
+
 for mode in wrong-commit mismatch; do
   kill "$server_pid" 2>/dev/null || true
   wait "$server_pid" 2>/dev/null || true
@@ -89,7 +95,15 @@ run_expect_fail env RELEASE_VERIFY_TIMEOUT_SECONDS=1 bash scripts/verify-release
 
 kill "$server_pid" 2>/dev/null || true
 wait "$server_pid" 2>/dev/null || true
-run_expect_fail bash scripts/verify-release.sh "$manifest" "http://127.0.0.1:6399" dev:hallowed-hummingbird-284 v1
+if bash scripts/verify-release.sh "$manifest" "http://127.0.0.1:6399" dev:hallowed-hummingbird-284 v1 >"$root/failure.log" 2>&1; then
+  echo "expected connection failure did not occur" >&2
+  exit 1
+fi
+grep -q 'curl_exit=7 http_status=000' "$root/failure.log"
+if grep -q '127\.0\.0\.1:6399' "$root/failure.log"; then
+  echo "failure diagnostics exposed the verification URL" >&2
+  exit 1
+fi
 run_expect_fail bash scripts/verify-release.sh "$manifest" "https://127.0.0.1:$port" dev:hallowed-hummingbird-284 v1
 
 kill "$server_pid" 2>/dev/null || true
