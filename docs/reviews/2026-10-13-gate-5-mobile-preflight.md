@@ -100,6 +100,10 @@ M3 must generate only its routing host/stubs and interfaces, not create placehol
 
 ### D-014 — owner direction clarified 2026-10-14: Android first; optional iPhone
 
+
+**Decision subsequently frozen by the sole owner:** [2026-10-14 mobile client and distribution decision](../decisions/2026-10-14-gate-5-mobile-client-distribution-freeze.md). The single Expo/RN client, Android APK/GitHub Releases distribution and optional SideStore proof are now the chosen direction. **SwiftUI, experimental native SwiftUI components, a separate iOS client, and xtool are deferred long-term ideas, not Gate 5 tasks.** A macOS-CI unsigned/sideload-signable IPA route is **not yet demonstrated**; do not describe iOS installation as guaranteed or block the signed Android release on it. The current [Gate 5 plan](../plans/2026-08-01-06-mobile-internal-beta.md) and D-014 decision register entry have been synchronized in this docs-only PR.
+
+
 **Owner-stated product/distribution intent (not proof of external account authority):**
 - **Android must work.** Distribute owner-controlled, signed, versioned **APK** assets directly from GitHub Releases and via a public **CB Connect `/download` page**. Do not require Play Console for first-party APK sideloading. Google Play publication is optional/later and must not block this lane.
 - **iPhone is a best-effort second platform.** Investigate and retain a supported native beta route without promising unrestricted third-party IPA sideloading. Owner proposes [xtool](https://github.com/xtool-org/xtool) for Swift builds/signing from Linux. This is a real *SwiftPM/SwiftUI toolchain option*, not a demonstrated RN/Expo build or App Store submission route.
