@@ -37,7 +37,8 @@ evidence_dir="$(mktemp -d "${TMPDIR:-/tmp}/cb-connect-release-verify.XXXXXX")"
 health_file="$evidence_dir/health.json"
 ready_file="$evidence_dir/ready.json"
 
-if ! curl -fsS --max-time "$timeout_seconds" "$base_url/api/health" >"$health_file" 2>/dev/null; then
+source "$(dirname "${BASH_SOURCE[0]}")/release-http-probe.sh"
+if ! probe_release_http health "$base_url" /api/health "$health_file" "$timeout_seconds"; then
   echo "release health check failed" >&2
   exit 1
 fi
@@ -54,7 +55,7 @@ then
   exit 1
 fi
 
-if ! curl -fsS --max-time "$timeout_seconds" "$base_url/api/ready" >"$ready_file" 2>/dev/null; then
+if ! probe_release_http readiness "$base_url" /api/ready "$ready_file" "$timeout_seconds"; then
   echo "release readiness check failed" >&2
   exit 1
 fi
