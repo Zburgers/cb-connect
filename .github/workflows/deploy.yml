@@ -194,6 +194,33 @@ jobs:
       - name: Validate PM2 promotion contract
         run: bash scripts/tests/pm2-config.test.sh
 
+      - name: Verify existing public route before production mutation
+        if: steps.rollback_candidate.outputs.available == 'true'
+        env:
+          CB_CONNECT_PRODUCTION_BASE_URL: ${{ secrets.CB_CONNECT_PRODUCTION_BASE_URL }}
+        run: |
+          set -euo pipefail
+          base_url="${CB_CONNECT_PRODUCTION_BASE_URL%/}"
+          if [[ ! "$base_url" =~ ^https://[^/]+(/[^/]*)?$ ]]; then
+            echo '::error::Production preflight requires an HTTPS base URL' >&2
+            exit 1
+          fi
+          source scripts/release-http-probe.sh
+          health_file="$(mktemp)"
+          trap 'rm -f "$health_file"' EXIT
+          if ! probe_release_http existing-route "$base_url" /api/health "$health_file" 5; then
+            echo '::error::Production HTTPS route is not healthy; aborting before Convex or PM2 mutation.' >&2
+            exit 1
+          fi
+          node - "$health_file" <<'NODE'
+          const fs = require('node:fs');
+          const response = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (response.status !== 'ok' || response.service !== 'cb-connect' ||
+              typeof response.timestamp !== 'string' || Number.isNaN(Date.parse(response.timestamp))) {
+            throw new Error('Existing production health contract is invalid');
+          }
+          NODE
+
       - name: Validate Convex deploy key preflight
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

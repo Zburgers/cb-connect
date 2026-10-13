@@ -63,6 +63,7 @@ jobs:
         run: |
           bash scripts/tests/ci-workflow.test.sh
           bash scripts/tests/deploy-workflow.test.sh
+          bash scripts/tests/release-http-probe.test.sh
           bash scripts/tests/release-smoke-workflow.test.sh
 
       - name: Dependency policy
