@@ -33,6 +33,9 @@ required_patterns=(
   'CB_CONNECT_RELEASE_ROOT is not a durable safe path'
   'mkdir -p "\$CB_CONNECT_RELEASE_ROOT"'
   'Materialize durable immutable release'
+  'Verify existing public route before production mutation'
+  'probe_release_http existing-route'
+  'Production HTTPS route is not healthy; aborting before Convex or PM2 mutation'
   'release_dir="\$releases_dir/\$release_id"'
   'tar --no-same-owner -xzf'
   'CB_CONNECT_DURABLE_MANIFEST'
@@ -67,10 +70,11 @@ line_for() {
   grep -nF "$1" "$workflow" | head -n 1 | cut -d: -f1
 }
 artifact_identity_line="$(line_for 'Verify qualified artifact identity and checksum')"
+route_preflight_line="$(line_for 'Verify existing public route before production mutation')"
 reconcile_line="$(line_for 'run: bash scripts/reconcile-convex-env.sh production')"
 convex_deploy_line="$(line_for 'Deploy explicit Convex compatibility release')"
-if ! (( artifact_identity_line < reconcile_line && reconcile_line < convex_deploy_line )); then
-  echo "production mutation must follow exact qualified artifact verification" >&2
+if ! (( artifact_identity_line < route_preflight_line && route_preflight_line < reconcile_line && reconcile_line < convex_deploy_line )); then
+  echo "production mutation must follow exact qualified artifact verification and existing-route preflight" >&2
   exit 1
 fi
 
