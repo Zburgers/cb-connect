@@ -21,9 +21,28 @@ import type { CycleFactCertainty } from "../_helpers/cycleFactSemantics";
 import { isCycleFactsV1Enabled } from "../_helpers/cycleFactsFlag";
 import { resolveCycleFactCorrection } from "../_helpers/cycleFactCorrections";
 import { isPeriodPredictionV2Enabled } from "../_helpers/periodPredictionFlag";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
+import {
+  cancelCurrentLateStatusSource,
+  cancelSource,
+  ensureAssistedPeriodEvent,
+} from "../_helpers/notificationOutbox";
 import { appendCorrectionAssessments } from "../internal/predictionSnapshots";
 
 const MAX_PERIOD_OVERLAP_CANDIDATES = 256;
+
+async function advanceAndInvalidateLateStatus(
+  ctx: MutationCtx,
+  primaryId: Id<"users">,
+  now?: number,
+  reconcile = true,
+) {
+  await cancelCurrentLateStatusSource(ctx, primaryId, "source_changed", now);
+  const source = await advanceNotificationSourceAuthority(ctx, primaryId, now);
+  if (source && reconcile) await reconcileUserSchedule(ctx, primaryId);
+  return source;
+}
 
 const cycleFactCertaintyValidator = v.union(
   v.literal("exact"),
@@ -97,6 +116,24 @@ function hasPredictionStartChange(
   const nextPeriod = { ...period, ...next };
   return (
     period.startDate !== next.startDate ||
+    isStartAnchorEligible(period) !== isStartAnchorEligible(nextPeriod)
+  );
+}
+
+function hasNotificationSourceChange(
+  period: Doc<"periodEvents">,
+  next: Pick<
+    Doc<"periodEvents">,
+    "startDate" | "endDate" | "startCertainty" | "endCertainty" | "confirmationStatus"
+  >,
+): boolean {
+  const nextPeriod = { ...period, ...next };
+  return (
+    period.startDate !== next.startDate ||
+    period.endDate !== next.endDate ||
+    storedStartCertainty(period) !== storedStartCertainty(nextPeriod) ||
+    storedEndCertainty(period) !== storedEndCertainty(nextPeriod) ||
+    period.confirmationStatus !== next.confirmationStatus ||
     isStartAnchorEligible(period) !== isStartAnchorEligible(nextPeriod)
   );
 }
@@ -296,9 +333,8 @@ export const logPeriodStart = mutation({
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
-    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
 
     if (!isCycleFactsV1Enabled()) {
@@ -312,6 +348,8 @@ export const logPeriodStart = mutation({
           updatedByUserId: user._id,
           updatedAt: Date.now(),
         });
+        await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
+        await advanceAndInvalidateLateStatus(ctx, user._id);
       }
 
       const eventId = await ctx.db.insert("periodEvents", {
@@ -325,6 +363,7 @@ export const logPeriodStart = mutation({
         updatedAt: Date.now(),
       });
       await schedulePredictionRefresh(ctx, user._id, eventId);
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       return { eventId };
     }
 
@@ -348,6 +387,7 @@ export const logPeriodStart = mutation({
       updatedAt: Date.now(),
     });
     await schedulePredictionRefresh(ctx, user._id, eventId);
+    await advanceAndInvalidateLateStatus(ctx, user._id);
 
     return { eventId };
   },
@@ -365,9 +405,8 @@ export const logPeriodEnd = mutation({
     const user = await getCurrentUser(ctx);
     requirePrimaryUser(user);
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
-    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
 
     if (!isCycleFactsV1Enabled()) {
@@ -383,6 +422,8 @@ export const logPeriodEnd = mutation({
         updatedByUserId: user._id,
         updatedAt: Date.now(),
       });
+      await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       return { eventId: ongoingPeriod._id };
     }
 
@@ -421,6 +462,8 @@ export const logPeriodEnd = mutation({
       authorityVersion: authorityVersion + 1,
       updatedAt: Date.now(),
     });
+    await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed");
+    await advanceAndInvalidateLateStatus(ctx, user._id);
 
     return { eventId: ongoingPeriod._id };
   },
@@ -454,6 +497,8 @@ export const assistLogPeriodStart = mutation({
           updatedByUserId: partner._id,
           updatedAt: now,
         });
+        await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
+        await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
       }
       const eventId = await ctx.db.insert("periodEvents", {
         userId: primaryMembership.userId,
@@ -466,16 +511,8 @@ export const assistLogPeriodStart = mutation({
         updatedAt: now,
       });
       await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
-      await ctx.db.insert("notificationLog", {
-        userId: primaryMembership.userId,
-        type: "partner_assisted_period_start",
-        payload: {
-          startDate: args.startDate,
-          partnerName: partner.preferredName || partner.name,
-        },
-        sentAt: now,
-        status: "sent",
-      });
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
+      await ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", eventId, now);
       return { eventId };
     }
 
@@ -502,17 +539,8 @@ export const assistLogPeriodStart = mutation({
       updatedAt: now,
     });
     await schedulePredictionRefresh(ctx, primaryMembership.userId, eventId);
-
-    await ctx.db.insert("notificationLog", {
-      userId: primaryMembership.userId,
-      type: "partner_assisted_period_start",
-      payload: {
-        startDate: args.startDate,
-        partnerName: partner.preferredName || partner.name,
-      },
-      sentAt: now,
-      status: "sent",
-    });
+    await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
+    await ensureAssistedPeriodEvent(ctx, "assisted_period_start.v1", eventId, now);
 
     return { eventId };
   },
@@ -550,16 +578,9 @@ export const assistLogPeriodEnd = mutation({
         updatedByUserId: partner._id,
         updatedAt: now,
       });
-      await ctx.db.insert("notificationLog", {
-        userId: primaryMembership.userId,
-        type: "partner_assisted_period_end",
-        payload: {
-          endDate: args.endDate,
-          partnerName: partner.preferredName || partner.name,
-        },
-        sentAt: now,
-        status: "sent",
-      });
+      await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
+      await ensureAssistedPeriodEvent(ctx, "assisted_period_end.v1", ongoingPeriod._id, now);
       return { eventId: ongoingPeriod._id };
     }
 
@@ -595,16 +616,9 @@ export const assistLogPeriodEnd = mutation({
       authorityVersion: authorityVersion + 1,
       updatedAt: now,
     });
-    await ctx.db.insert("notificationLog", {
-      userId: primaryMembership.userId,
-      type: "partner_assisted_period_end",
-      payload: {
-        endDate: args.endDate,
-        partnerName: partner.preferredName || partner.name,
-      },
-      sentAt: now,
-      status: "sent",
-    });
+    await cancelSource(ctx, `period:${ongoingPeriod._id}`, "source_changed", now);
+    await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId, now);
+    await ensureAssistedPeriodEvent(ctx, "assisted_period_end.v1", ongoingPeriod._id, now);
 
     return { eventId: ongoingPeriod._id };
   },
@@ -698,6 +712,13 @@ export const correctAssistedPeriodEvent = mutation({
       startCertainty,
       legacyReason,
     });
+    const sourceChanged = hasNotificationSourceChange(period, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      startCertainty,
+      endCertainty,
+      confirmationStatus: "confirmed",
+    });
     await ctx.db.patch(period._id, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -711,6 +732,10 @@ export const correctAssistedPeriodEvent = mutation({
         : {}),
       updatedAt: Date.now(),
     });
+    await cancelSource(ctx, `period:${period._id}`, "source_changed");
+    if (sourceChanged) {
+      await advanceAndInvalidateLateStatus(ctx, primaryMembership.userId);
+    }
     if (startOutcomeChanged) {
       await appendCorrectionAssessments(ctx, {
         userId: primaryMembership.userId,
@@ -748,9 +773,8 @@ export const updatePeriodEvent = mutation({
     }
 
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
-    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
-      await ctx.db.patch(user._id, { timeZone });
-    }
+    const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
+    if (timeZoneChanged) await ctx.db.patch(user._id, { timeZone });
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
       requirePastOrTodayCalendarDate(args.endDate, "End date", timeZone);
@@ -765,6 +789,13 @@ export const updatePeriodEvent = mutation({
         startCertainty: period.startCertainty,
         legacyReason: period.legacyReason,
       });
+      const sourceChanged = hasNotificationSourceChange(period, {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        startCertainty: period.startCertainty,
+        endCertainty: period.endCertainty,
+        confirmationStatus: "confirmed",
+      });
       await ctx.db.patch(args.periodEventId, {
         startDate: args.startDate,
         endDate: args.endDate,
@@ -775,6 +806,12 @@ export const updatePeriodEvent = mutation({
           : {}),
         updatedAt: Date.now(),
       });
+      if (sourceChanged || timeZoneChanged) {
+        if (sourceChanged) {
+          await cancelSource(ctx, `period:${period._id}`, "source_changed");
+        }
+        await advanceAndInvalidateLateStatus(ctx, user._id);
+      }
       if (startOutcomeChanged) {
         await appendCorrectionAssessments(ctx, {
           userId: user._id,
@@ -810,6 +847,13 @@ export const updatePeriodEvent = mutation({
       startCertainty,
       legacyReason,
     });
+    const sourceChanged = hasNotificationSourceChange(period, {
+      startDate: args.startDate,
+      endDate: args.endDate,
+      startCertainty,
+      endCertainty,
+      confirmationStatus: "confirmed",
+    });
     await requireAllowedPeriodEventWrite(ctx, user._id, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -837,6 +881,10 @@ export const updatePeriodEvent = mutation({
         : {}),
       updatedAt: Date.now(),
     });
+    await cancelSource(ctx, `period:${period._id}`, "source_changed");
+    if (sourceChanged || timeZoneChanged) {
+      await advanceAndInvalidateLateStatus(ctx, user._id);
+    }
     if (startOutcomeChanged) {
       await appendCorrectionAssessments(ctx, {
         userId: user._id,
@@ -867,6 +915,8 @@ export const deletePeriodEvent = mutation({
 
     if (!isCycleFactsV1Enabled()) {
       await ctx.db.delete("periodEvents", args.periodEventId);
+      await cancelSource(ctx, `period:${period._id}`, "authority_revoked");
+      await advanceAndInvalidateLateStatus(ctx, user._id);
       await appendCorrectionAssessments(ctx, {
         userId: user._id,
         periodEventId: args.periodEventId,
@@ -893,6 +943,8 @@ export const deletePeriodEvent = mutation({
       primaryCorrectionVersion: nextPrimaryCorrectionVersion(period),
       updatedAt: tombstoneAt,
     });
+    await cancelSource(ctx, `period:${period._id}`, "authority_revoked", tombstoneAt);
+    await advanceAndInvalidateLateStatus(ctx, user._id, tombstoneAt);
     await appendCorrectionAssessments(ctx, {
       userId: user._id,
       periodEventId: args.periodEventId,
@@ -915,6 +967,7 @@ export const autoEndPeriods = internalMutation({
       .collect();
 
     let endedCount = 0;
+    const usersToReconcile = new Set<Id<"users">>();
     for (const period of openPeriods) {
       const settings = await ctx.db
         .query("cycleSettings")
@@ -925,13 +978,26 @@ export const autoEndPeriods = internalMutation({
       const today = toCalendarDateString();
 
       if (expectedEndDate < today) {
+        const now = Date.now();
         await ctx.db.patch(period._id, {
           endDate: expectedEndDate,
           ...(period.source === undefined && { source: "system" as const }),
-          updatedAt: Date.now(),
+          updatedAt: now,
         });
+        await cancelSource(ctx, `period:${period._id}`, "source_changed", now);
+        const source = await advanceAndInvalidateLateStatus(
+          ctx,
+          period.userId,
+          now,
+          false,
+        );
+        if (source) usersToReconcile.add(period.userId);
         endedCount++;
       }
+    }
+
+    for (const userId of usersToReconcile) {
+      await reconcileUserSchedule(ctx, userId);
     }
 
     console.log(`autoEndPeriods: closed ${endedCount} open period(s)`);
@@ -969,6 +1035,13 @@ export const updateCycleSettings = mutation({
       .query("cycleSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
+    const sourceChanged =
+      (args.cycleLength !== undefined &&
+        args.cycleLength !== (existing?.cycleLength ?? 28)) ||
+      (args.periodLength !== undefined &&
+        args.periodLength !== (existing?.periodLength ?? 5)) ||
+      (args.predictionPaused !== undefined &&
+        args.predictionPaused !== (existing?.predictionPaused ?? false));
 
     const pauseStartedAt =
       args.predictionPaused === true
@@ -1023,6 +1096,10 @@ export const updateCycleSettings = mutation({
       } else {
         await ctx.db.insert("cycleSettings", baseSettings);
       }
+    }
+
+    if (sourceChanged) {
+      await advanceAndInvalidateLateStatus(ctx, user._id);
     }
   },
 });

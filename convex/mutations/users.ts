@@ -1,21 +1,19 @@
 import { v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
-import { resolveCalendarTimeZone } from "../_helpers/calendarDates";
+import { getCurrentUser, getLegacyClerkSubject } from "../_helpers/auth";
+import {
+  DEFAULT_TIME_ZONE,
+  resolveCalendarTimeZone,
+} from "../_helpers/calendarDates";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 
 export const updateUserRole = mutation({
   args: {
     role: v.union(v.literal("primary"), v.literal("partner")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     if (user.role !== undefined && user.role !== args.role) {
       throw new Error("Role can only be selected during onboarding");
@@ -60,20 +58,16 @@ export const updateUserPreferences = mutation({
     timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     const timeZone =
       args.timeZone === undefined
         ? undefined
         : resolveCalendarTimeZone(args.timeZone);
+    const timeZoneChanged =
+      user.role === "primary" &&
+      timeZone !== undefined &&
+      isTimeZoneChange(user.timeZone, timeZone);
 
     await ctx.db.patch(user._id, {
       ...(args.preferredName !== undefined && {
@@ -87,6 +81,11 @@ export const updateUserPreferences = mutation({
       ...(timeZone !== undefined && { timeZone }),
     });
 
+    if (timeZoneChanged) {
+      await advanceNotificationSourceAuthority(ctx, user._id);
+      await reconcileUserSchedule(ctx, user._id);
+    }
+
     return user._id;
   },
 });
@@ -94,19 +93,19 @@ export const updateUserPreferences = mutation({
 export const updateUserTimeZone = mutation({
   args: { timeZone: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUser(ctx);
 
     const timeZone = resolveCalendarTimeZone(args.timeZone);
+    const timeZoneChanged =
+      user.role === "primary" &&
+      isTimeZoneChange(user.timeZone, timeZone);
     if (user.timeZone !== timeZone) {
       await ctx.db.patch(user._id, { timeZone });
+    }
+
+    if (timeZoneChanged) {
+      await advanceNotificationSourceAuthority(ctx, user._id);
+      await reconcileUserSchedule(ctx, user._id);
     }
 
     return user._id;
@@ -119,6 +118,15 @@ function sanitizePreferredName(preferredName: string) {
     throw new Error("Preferred name must be 40 characters or fewer");
   }
   return normalized || undefined;
+}
+
+function isTimeZoneChange(currentTimeZone: string | undefined, nextTimeZone: string) {
+  if (currentTimeZone === undefined) return nextTimeZone !== DEFAULT_TIME_ZONE;
+  try {
+    return resolveCalendarTimeZone(currentTimeZone) !== nextTimeZone;
+  } catch {
+    return true;
+  }
 }
 
 export const syncUser = internalMutation({
@@ -164,10 +172,12 @@ export const ensureUser = mutation({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
+    const clerkSubject = getLegacyClerkSubject(identity);
+    if (!clerkSubject) throw new Error("User not found in database");
 
     const existing = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkSubject))
       .unique();
 
     if (existing) {
@@ -184,7 +194,7 @@ export const ensureUser = mutation({
       "User";
 
     return await ctx.db.insert("users", {
-      clerkId: identity.subject,
+      clerkId: clerkSubject,
       email: identity.email ?? "",
       name,
       ...(identity.pictureUrl !== undefined && { imageUrl: identity.pictureUrl }),

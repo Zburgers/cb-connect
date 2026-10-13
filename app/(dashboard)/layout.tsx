@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ThemeToggle from "@/components/common/ThemeToggle";
 import SanctuaryShell from "@/components/common/SanctuaryShell";
 import PartnerChat from "@/components/partner/PartnerChat";
-import { Home, PenTool, Heart, Settings } from "lucide-react";
+import { Home, PenTool, Heart, Settings, Bell } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { HEARTBEAT_INTERVAL_MS } from "@/lib/presence.mjs";
 import { usePartnerPresence } from "@/lib/usePartnerPresence";
@@ -20,6 +20,7 @@ const navItems = [
   { href: "/dashboard",          label: "Home",     icon: Home    },
   { href: "/dashboard/log",      label: "Log",      icon: PenTool },
   { href: "/dashboard/partner",  label: "Partner",  icon: Heart   },
+  { href: "/dashboard/notifications", label: "Inbox", icon: Bell },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
@@ -145,8 +146,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         aria-label="Bottom navigation"
       >
         <div
-          className="mx-auto mb-4 flex max-w-sm items-center justify-around rounded-[2rem] px-2 py-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl"
-          style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5), 0 8px 32px rgba(0,0,0,0.14)" }}
+          className="mx-auto mb-4 flex max-w-sm items-center justify-around rounded-[2rem] border border-[var(--color-glass-border)] bg-[var(--color-glass)] px-2 py-2 backdrop-blur-2xl"
+          style={{ boxShadow: "inset 0 1px 0 var(--color-glass-border), 0 8px 32px rgba(0,0,0,0.14)" }}
         >
           {navItems.map((item) => {
             const isActive = pathname === item.href;
@@ -155,7 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link
                 key={item.href}
                 href={item.href}
-                className="relative flex flex-col items-center py-2 px-4 no-tap-highlight"
+                className="relative flex flex-col items-center py-2 px-1.5 sm:px-2 no-tap-highlight"
                 aria-current={isActive ? "page" : undefined}
               >
                 <motion.div

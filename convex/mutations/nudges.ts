@@ -1,7 +1,19 @@
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { mutation, type MutationCtx } from "../_generated/server";
 import { getCurrentUserOrNull, getCoupleForUser } from "../_helpers/auth";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
+import { cancelSource, scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  assertValidNotificationEventWrite,
+  notificationEventDefinitions,
+  type NotificationEventWrite,
+  type NotificationSourceIdentity,
+} from "../_helpers/notificationTypes";
+
+const NUDGE_EVENT_TYPE = "partner_nudge.v1" as const;
+const OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 
 const NUDGE_MESSAGES: Record<string, string> = {
   "💗": "Thinking of you",
@@ -11,6 +23,82 @@ const NUDGE_MESSAGES: Record<string, string> = {
   "✨": "You have my attention",
   "🫶": "I am here with you",
 };
+
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing) return false;
+  const actualFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  return (
+    Object.keys(actualFields).length === Object.keys(expectedFields).length &&
+    Object.entries(expectedFields).every(([field, value]) => actualFields[field] === value)
+  );
+}
+
+export async function ensureNudgeEvent(
+  ctx: MutationCtx,
+  nudgeId: Id<"nudges">,
+): Promise<void> {
+  if (process.env[OUTBOX_ENABLED_ENV] !== "true") return;
+
+  const nudge = await ctx.db.get(nudgeId);
+  if (!nudge?.relationshipMembershipId) {
+    throw new Error("Nudge notification source has no relationship generation");
+  }
+  const definition = notificationEventDefinitions[NUDGE_EVENT_TYPE];
+  const envelope: NotificationEventWrite = {
+    eventType: NUDGE_EVENT_TYPE,
+    eventVersion: definition.version,
+    purpose: definition.purpose,
+    producerKind: definition.producer,
+    sourceReference: `nudge:${nudgeId}`,
+    sourceAuthorityVersion: `relationship-membership:${nudge.relationshipMembershipId}`,
+    ownerUserId: nudge.senderId,
+    recipientUserId: nudge.receiverId,
+    recipientScope: "nudge_receiver" as const,
+    privacyClass: definition.privacyClass,
+    validityRule: definition.validity,
+    idempotencyKey: makeEventIdempotencyKey(NUDGE_EVENT_TYPE, {
+      nudgeId: String(nudgeId),
+      receiverId: String(nudge.receiverId),
+    }),
+    allowedChannel: "in_app" as const,
+    sourceIdentity: {
+      eventType: NUDGE_EVENT_TYPE,
+      sourceId: nudge._id,
+      coupleId: nudge.coupleId,
+      relationshipMembershipId: nudge.relationshipMembershipId,
+      ownerUserId: nudge.senderId,
+      recipientUserId: nudge.receiverId,
+    },
+  };
+  assertValidNotificationEventWrite(ctx, envelope);
+
+  const existing = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_idempotency_key", (q) =>
+      q.eq("idempotencyKey", envelope.idempotencyKey),
+    )
+    .unique();
+  if (existing) {
+    const matchesEnvelope = Object.entries(envelope).every(
+      ([field, value]) =>
+        field === "sourceIdentity"
+          ? sameSourceIdentity(existing.sourceIdentity, value as NotificationSourceIdentity)
+          : existing[field as keyof typeof envelope] === value,
+    );
+    if (!matchesEnvelope) {
+      throw new Error("Nudge notification event key conflicts with its source");
+    }
+    await scheduleNotificationEventProjection(ctx, existing._id);
+    return;
+  }
+
+  const eventId = await ctx.db.insert("notificationEvents", { ...envelope, createdAt: nudge.createdAt });
+  await scheduleNotificationEventProjection(ctx, eventId);
+}
 
 export const send = mutation({
   args: {
@@ -50,7 +138,7 @@ export const send = mutation({
       membership.role === "partner" ? membership._id : partnerMembership._id;
 
     const now = Date.now();
-    return await ctx.db.insert("nudges", {
+    const nudgeId = await ctx.db.insert("nudges", {
       coupleId: membership.coupleId,
       relationshipMembershipId,
       senderId: user._id,
@@ -59,6 +147,8 @@ export const send = mutation({
       message,
       createdAt: now,
     });
+    await ensureNudgeEvent(ctx, nudgeId);
+    return nudgeId;
   },
 });
 
@@ -83,6 +173,10 @@ export const markSeen = mutation({
       return;
     }
 
-    await ctx.db.patch(args.nudgeId, { seenAt: Date.now() });
+    if (nudge.seenAt === undefined) {
+      const now = Date.now();
+      await ctx.db.patch(args.nudgeId, { seenAt: now });
+      await cancelSource(ctx, `nudge:${nudge._id}`, "source_changed", now);
+    }
   },
 });

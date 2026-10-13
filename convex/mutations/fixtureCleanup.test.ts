@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { fixtureEmail } from "../../lib/fixtureEmail";
 import schema from "../schema";
 import { modules } from "../test.setup";
@@ -153,7 +154,7 @@ async function seedFixture(t: ReturnType<typeof convexTest>) {
       status: "eligible",
       recordedAt: Date.now(),
     });
-    await ctx.db.insert("painLogs", {
+    const painLogId = await ctx.db.insert("painLogs", {
       userId: primaryId,
       date: "2026-08-04",
       painScore: 1,
@@ -206,7 +207,151 @@ async function seedFixture(t: ReturnType<typeof convexTest>) {
       unreadCount: 1,
     });
 
-    return { primaryId, partnerId, coupleId, nutritionTipId };
+    return { primaryId, partnerId, coupleId, nutritionTipId, painLogId };
+  });
+}
+
+async function seedNotificationRows(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<"users">,
+  painLogId: Id<"painLogs">,
+  key: string,
+) {
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    const requestId = await ctx.db.insert("painReminderRequests", {
+      ownerUserId: userId,
+      painLogId,
+      selectedLocalDay: "2026-08-04",
+      requestVersion: 1,
+      state: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const eventId = await ctx.db.insert("notificationEvents", {
+      eventType: "pain_check_in.v1",
+      eventVersion: 1,
+      purpose: "pain_check_in",
+      producerKind: "explicit_primary_request",
+      sourceReference: String(requestId),
+      sourceAuthorityVersion: `${key}-authority-v1`,
+      ownerUserId: userId,
+      recipientUserId: userId,
+      recipientScope: "primary",
+      privacyClass: "primary_private_health",
+      validityRule: "selected_local_day_while_request_is_active",
+      idempotencyKey: `${key}-event-v1`,
+      allowedChannel: "in_app",
+      createdAt: now,
+    });
+    const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+      eventId,
+      recipientUserId: userId,
+      idempotencyKey: `${key}-event-v1`,
+      templateVersion: "g4-template-v1",
+      route: "pain",
+      state: "current",
+      createdAt: now,
+    });
+    const deliveryId = await ctx.db.insert("notificationDeliveries", {
+      eventId,
+      recipientUserId: userId,
+      channel: "in_app",
+      stableDestinationId: "fixture-in-app",
+      logicalKey: `${key}-delivery-v1`,
+      notBefore: now,
+      state: "pending",
+      eligibility: "eligible",
+      providerOutcome: "none",
+      attemptCount: 0,
+      claimGeneration: 0,
+      renderIdentity: {
+        templateVersion: "g4-template-v1",
+        locale: "en",
+        variableSchemaVersion: "v1",
+        payloadHash: "a".repeat(64),
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const attemptId = await ctx.db.insert("notificationDeliveryAttempts", {
+      deliveryId,
+      attemptOrdinal: 1,
+      claimGeneration: 1,
+      startedAt: now,
+      completedAt: now,
+      result: { kind: "in_app_persisted" },
+    });
+    const dueWorkId = await ctx.db.insert("notificationDueWork", {
+      ownerUserId: userId,
+      kind: "pain_reminder",
+      state: "pending",
+      dueAt: now,
+      generation: 1,
+      eventId,
+      deliveryId,
+      painReminderRequestId: requestId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const preferenceId = await ctx.db.insert("notificationPreferences", {
+      userId,
+      purpose: "pain_check_in",
+      inAppEnabled: true,
+      reminderWindowVersion: 1,
+      updatedAt: now,
+    });
+    const scheduleStateId = await ctx.db.insert("notificationScheduleState", {
+      userId,
+      sourceRevision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      requestId,
+      eventId,
+      inboxItemId,
+      deliveryId,
+      attemptId,
+      dueWorkId,
+      preferenceId,
+      scheduleStateId,
+    };
+  });
+}
+
+async function seedUnattestedPartner(
+  t: ReturnType<typeof convexTest>,
+  runId: string,
+  partnerClerkId: string,
+) {
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.insert("users", {
+      clerkId: fixtureArgs.primaryClerkId,
+      email: fixtureEmail(runId, "primary"),
+      name: "Fixture Primary",
+      role: "primary",
+      createdAt: now,
+      lastActiveAt: now,
+    });
+    const partnerId = await ctx.db.insert("users", {
+      clerkId: partnerClerkId,
+      email: "",
+      name: "Unrelated Empty Email User",
+      role: "partner",
+      createdAt: now,
+      lastActiveAt: now,
+    });
+    const preferenceId = await ctx.db.insert("notificationPreferences", {
+      userId: partnerId,
+      purpose: "pain_check_in",
+      inAppEnabled: true,
+      reminderWindowVersion: 1,
+      updatedAt: now,
+    });
+    return { partnerId, preferenceId };
   });
 }
 
@@ -215,6 +360,112 @@ afterEach(() => {
 });
 
 describe("bounded fixture cleanup", () => {
+  test("rejects a same-subject identity from a different issuer", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    await seedFixture(t);
+    const foreignIssuer = "https://other.clerk.example";
+
+    await expect(
+      t
+        .withIdentity({
+          subject: fixtureArgs.primaryClerkId,
+          issuer: foreignIssuer,
+        })
+        .mutation(api.mutations.fixtureCleanup.cleanupFixture, fixtureArgs),
+    ).rejects.toThrow("fixture_cleanup_unauthenticated");
+    await expect(
+      t
+        .withIdentity({
+          subject: fixtureArgs.primaryClerkId,
+          issuer: foreignIssuer,
+        })
+        .mutation(api.mutations.fixtureCleanup.beginFixtureRun, {
+          ...fixtureArgs,
+          runId: "qa-n2b-foreign-issuer",
+        }),
+    ).rejects.toThrow("fixture_cleanup_unauthenticated");
+
+    const remaining = await t.run(async (ctx) => ({
+      users: await ctx.db.query("users").collect(),
+      run: await ctx.db
+        .query("fixtureRuns")
+        .withIndex("by_run_id", (q) => q.eq("runId", "qa-n2b-foreign-issuer"))
+        .unique(),
+    }));
+    expect(remaining.users).toHaveLength(2);
+    expect(remaining.run).toBeNull();
+  });
+
+  test("does not delete an unrelated empty-email partner or its rows", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const runId = "qa-n2b-unattested-partner-cleanup";
+    const partnerClerkId = "unrelated-empty-email-clerk";
+    const seeded = await seedUnattestedPartner(t, runId, partnerClerkId);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("fixtureRuns", {
+        runId,
+        primaryClerkId: fixtureArgs.primaryClerkId,
+        partnerClerkId,
+        createdAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t
+        .withIdentity({ subject: fixtureArgs.primaryClerkId })
+        .mutation(api.mutations.fixtureCleanup.cleanupFixture, {
+          ...fixtureArgs,
+          runId,
+          partnerClerkId,
+        }),
+    ).rejects.toThrow("fixture_cleanup_identity_mismatch");
+
+    const remaining = await t.run(async (ctx) => ({
+      partner: await ctx.db.get("users", seeded.partnerId),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        seeded.preferenceId,
+      ),
+    }));
+    expect(remaining.partner).not.toBeNull();
+    expect(remaining.preference).not.toBeNull();
+  });
+
+  test("does not let the fixture primary begin a run with an unattested partner ID", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const runId = "qa-n2b-unattested-partner-begin";
+    const partnerClerkId = "unrelated-empty-email-clerk";
+    const seeded = await seedUnattestedPartner(t, runId, partnerClerkId);
+
+    await expect(
+      t
+        .withIdentity({ subject: fixtureArgs.primaryClerkId })
+        .mutation(api.mutations.fixtureCleanup.beginFixtureRun, {
+          ...fixtureArgs,
+          runId,
+          partnerClerkId,
+        }),
+    ).rejects.toThrow("fixture_cleanup_identity_mismatch");
+
+    const remaining = await t.run(async (ctx) => ({
+      run: await ctx.db
+        .query("fixtureRuns")
+        .withIndex("by_run_id", (q) => q.eq("runId", runId))
+        .unique(),
+      partner: await ctx.db.get("users", seeded.partnerId),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        seeded.preferenceId,
+      ),
+    }));
+    expect(remaining.run).toBeNull();
+    expect(remaining.partner).not.toBeNull();
+    expect(remaining.preference).not.toBeNull();
+  });
+
   test("registers an authenticated fixture and fills a missing identity email", async () => {
     enableFixtureCleanup();
     const t = convexTest(schema, modules);
@@ -398,6 +649,141 @@ describe("bounded fixture cleanup", () => {
         ctx.db.get("nutritionTips", seeded.nutritionTipId),
       ),
     ).not.toBeNull();
+  });
+
+  test("cleans Gate 4 notification rows only for the attested fixture users", async () => {
+    enableFixtureCleanup();
+    const t = convexTest(schema, modules);
+    const fixture = await seedFixture(t);
+    const fixtureNotifications = await seedNotificationRows(
+      t,
+      fixture.primaryId,
+      fixture.painLogId,
+      "fixture-notifications",
+    );
+    const unrelated = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        clerkId: "unrelated-clerk",
+        email: "unrelated@example.test",
+        name: "Unrelated User",
+        role: "primary",
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
+      const painLogId = await ctx.db.insert("painLogs", {
+        userId,
+        date: "2026-08-04",
+        painScore: 1,
+        tags: ["other"],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const controlId = await ctx.db.insert("notificationControls", {
+        scope: "global",
+        key: "fixture-test-control",
+        version: 1,
+        operatorReference: "synthetic-fixture-cleanup-test",
+        updatedAt: Date.now(),
+      });
+      return { userId, painLogId, controlId };
+    });
+    const unrelatedNotifications = await seedNotificationRows(
+      t,
+      unrelated.userId,
+      unrelated.painLogId,
+      "unrelated-notifications",
+    );
+
+    const result = await t
+      .withIdentity({ subject: fixtureArgs.primaryClerkId })
+      .mutation(api.mutations.fixtureCleanup.cleanupFixture, fixtureArgs);
+
+    expect(result.deleted).toEqual(
+      expect.objectContaining({
+        notificationEvents: 1,
+        notificationInboxItems: 1,
+        notificationDeliveries: 1,
+        notificationDeliveryAttempts: 1,
+        notificationDueWork: 1,
+        notificationPreferences: 1,
+        notificationScheduleState: 1,
+        painReminderRequests: 1,
+      }),
+    );
+    const fixtureRows = await t.run(async (ctx) => ({
+      event: await ctx.db.get("notificationEvents", fixtureNotifications.eventId),
+      inboxItem: await ctx.db.get(
+        "notificationInboxItems",
+        fixtureNotifications.inboxItemId,
+      ),
+      delivery: await ctx.db.get(
+        "notificationDeliveries",
+        fixtureNotifications.deliveryId,
+      ),
+      attempt: await ctx.db.get(
+        "notificationDeliveryAttempts",
+        fixtureNotifications.attemptId,
+      ),
+      dueWork: await ctx.db.get("notificationDueWork", fixtureNotifications.dueWorkId),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        fixtureNotifications.preferenceId,
+      ),
+      scheduleState: await ctx.db.get(
+        "notificationScheduleState",
+        fixtureNotifications.scheduleStateId,
+      ),
+      request: await ctx.db.get(
+        "painReminderRequests",
+        fixtureNotifications.requestId,
+      ),
+    }));
+    expect(fixtureRows).toEqual({
+      event: null,
+      inboxItem: null,
+      delivery: null,
+      attempt: null,
+      dueWork: null,
+      preference: null,
+      scheduleState: null,
+      request: null,
+    });
+
+    const unrelatedRows = await t.run(async (ctx) => ({
+      user: await ctx.db.get("users", unrelated.userId),
+      painLog: await ctx.db.get("painLogs", unrelated.painLogId),
+      event: await ctx.db.get("notificationEvents", unrelatedNotifications.eventId),
+      inboxItem: await ctx.db.get(
+        "notificationInboxItems",
+        unrelatedNotifications.inboxItemId,
+      ),
+      delivery: await ctx.db.get(
+        "notificationDeliveries",
+        unrelatedNotifications.deliveryId,
+      ),
+      attempt: await ctx.db.get(
+        "notificationDeliveryAttempts",
+        unrelatedNotifications.attemptId,
+      ),
+      dueWork: await ctx.db.get(
+        "notificationDueWork",
+        unrelatedNotifications.dueWorkId,
+      ),
+      preference: await ctx.db.get(
+        "notificationPreferences",
+        unrelatedNotifications.preferenceId,
+      ),
+      scheduleState: await ctx.db.get(
+        "notificationScheduleState",
+        unrelatedNotifications.scheduleStateId,
+      ),
+      request: await ctx.db.get(
+        "painReminderRequests",
+        unrelatedNotifications.requestId,
+      ),
+      control: await ctx.db.get("notificationControls", unrelated.controlId),
+    }));
+    expect(Object.values(unrelatedRows).every((row) => row !== null)).toBe(true);
   });
 
   test("cleans revoked partner membership history after a relink", async () => {

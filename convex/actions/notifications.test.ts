@@ -1,10 +1,22 @@
-import { expect, test } from "vitest";
+import { convexTest } from "convex-test";
+import { afterEach, expect, test, vi } from "vitest";
 
+import { internal } from "../_generated/api";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
+import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
 import type { PeriodPredictionV2 } from "../_helpers/periodPrediction";
 import {
   getDailyPredictionNotificationMessage,
   projectPeriodPredictionForNotification,
 } from "../_helpers/notificationPrediction";
+import schema from "../schema";
+import { modules } from "../test.setup";
+import { seedUser } from "../test.fixtures";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const activePrediction: PeriodPredictionV2 = {
   version: 2,
@@ -108,4 +120,60 @@ test("keeps V2 alerts generic and preserves legacy wording when disabled", () =>
       },
     }),
   ).toBe("Your period is predicted to start in 3 days (2026-09-21).");
+});
+
+test("daily prediction cron cannot POST or write a legacy log with a stale webhook", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+  const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  vi.stubGlobal("fetch", fetchStub);
+
+  const t = convexTest(schema, modules);
+  const userId = await seedUser(t, {
+    clerkId: "legacy-discord-cron-primary",
+    name: "Primary",
+    role: "primary",
+  });
+  const today = toCalendarDateInTimeZone(new Date(), "UTC");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(userId, { externalNotificationConsent: true });
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: addCalendarDays(today, -25),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+
+  await t.action(internal.actions.notifications.sendDailyPredictions, {});
+
+  expect(fetchStub).not.toHaveBeenCalled();
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
+});
+
+test("a previously scheduled Discord action is inert when its webhook secret remains", async () => {
+  vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
+  const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  vi.stubGlobal("fetch", fetchStub);
+
+  const t = convexTest(schema, modules);
+  const userId = await seedUser(t, {
+    clerkId: "legacy-discord-stale-action-primary",
+    name: "Primary",
+    role: "primary",
+  });
+
+  await t.action(internal.actions.discord.sendDiscordNotification, {
+    userId,
+    type: "high_pain_logged",
+    message: "Sensitive legacy payload",
+  });
+
+  expect(fetchStub).not.toHaveBeenCalled();
+  await expect(
+    t.run(async (ctx) => ctx.db.query("notificationLog").collect()),
+  ).resolves.toEqual([]);
 });

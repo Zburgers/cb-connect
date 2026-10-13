@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
 import schema from "../schema";
 import { modules } from "../test.setup";
 import { seedActiveCouple, seedUser } from "../test.fixtures";
@@ -27,6 +28,21 @@ async function setPrimaryTimeZone(t: TestBackend) {
     }
     await ctx.db.patch(primary._id, { timeZone: "UTC" });
   });
+}
+
+async function seedNotificationSourceRevision(
+  t: TestBackend,
+  primaryId: Id<"users">,
+  sourceRevision = 0,
+) {
+  await t.run((ctx) =>
+    ctx.db.insert("notificationScheduleState", {
+      userId: primaryId,
+      sourceRevision,
+      createdAt: 1,
+      updatedAt: 1,
+    }),
+  );
 }
 
 async function seedAssistedPeriodEvent(
@@ -156,17 +172,219 @@ describe("partner-assisted period logging", () => {
       authorityVersion: 1,
     });
 
-    const notification = await t.run(async (ctx) => {
-      return await ctx.db.query("notificationLog").first();
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
     });
-    expect(notification).toMatchObject({
-      userId: primaryId,
-      type: "partner_assisted_period_start",
-      payload: {
+  });
+
+  test("creates a primary-only outbox event and advances existing source authority", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const result = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-06-20", startCertainty: "exact" },
+    );
+    const event = await t.run(async (ctx) =>
+      ctx.db.query("notificationEvents").unique(),
+    );
+
+    expect(event).toMatchObject({
+      eventType: "assisted_period_start.v1",
+      eventVersion: 1,
+      purpose: "assisted_period_start",
+      producerKind: "accepted_period_start",
+      sourceReference: `period:${result.eventId}`,
+      sourceAuthorityVersion: "period-authority:1",
+      ownerUserId: primaryId,
+      recipientUserId: primaryId,
+      recipientScope: "primary",
+      privacyClass: "primary_private_health",
+      validityRule: "while_authority_is_current_and_primary_has_access",
+      idempotencyKey: makeEventIdempotencyKey("assisted_period_start.v1", {
+        periodEventId: String(result.eventId),
+        authorityVersion: "1",
+        primaryId: String(primaryId),
+      }),
+      allowedChannel: "in_app",
+    });
+    expect(event).not.toHaveProperty("startDate");
+    expect(event).not.toHaveProperty("payload");
+    expect(event?.recipientUserId).not.toBe(partnerId);
+    await t.run(async (ctx) => {
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 1 });
+      expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+    });
+  });
+
+  test("writes assisted end events at the incremented authority version", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId, 5);
+    const periodEventId = await t.run((ctx) =>
+      ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: partnerId,
+        updatedByUserId: partnerId,
+        source: "partner_assist",
+        confirmationStatus: "confirmed",
         startDate: "2026-06-20",
-        partnerName: "Partner Person",
-      },
-      status: "sent",
+        startCertainty: "exact",
+        authorityVersion: 8,
+        createdAt: 10,
+        updatedAt: 10,
+      }),
+    );
+
+    await asPartner.mutation(api.mutations.periods.assistLogPeriodEnd, {
+      periodEventId,
+      endDate: "2026-06-24",
+      endCertainty: "approximate",
+      expectedAuthorityVersion: 8,
+    });
+
+    await t.run(async (ctx) => {
+      const event = await ctx.db.query("notificationEvents").unique();
+      expect(event).toMatchObject({
+        eventType: "assisted_period_end.v1",
+        sourceReference: `period:${periodEventId}`,
+        sourceAuthorityVersion: "period-authority:9",
+        idempotencyKey: makeEventIdempotencyKey("assisted_period_end.v1", {
+          periodEventId: String(periodEventId),
+          authorityVersion: "9",
+          primaryId: String(primaryId),
+        }),
+        recipientUserId: primaryId,
+        allowedChannel: "in_app",
+      });
+      expect(await ctx.db.query("notificationLog").collect()).toHaveLength(0);
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 6 });
+    });
+  });
+
+  test("advances source authority for accepted primary facts and changed settings only", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const { eventId } = await asPrimary.mutation(
+      api.mutations.periods.logPeriodStart,
+      { startDate: "2026-07-01", startCertainty: "exact", timeZone: "UTC" },
+    );
+    const readRevision = async () =>
+      await t.run(async (ctx) => {
+        const state = await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique();
+        return state?.sourceRevision;
+      });
+    expect(await readRevision()).toBe(1);
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+        periodEventId: eventId,
+        endDate: "2026-07-05",
+        endCertainty: "exact",
+        expectedAuthorityVersion: 0,
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("STALE_AUTHORITY_VERSION");
+    expect(await readRevision()).toBe(1);
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 30,
+    });
+    expect(await readRevision()).toBe(2);
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 30,
+    });
+    expect(await readRevision()).toBe(2);
+
+    await asPrimary.mutation(api.mutations.periods.logPeriodEnd, {
+      periodEventId: eventId,
+      endDate: "2026-07-05",
+      endCertainty: "exact",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    expect(await readRevision()).toBe(3);
+  });
+
+  test("correction and tombstone supersede assisted events without deleting them", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPartner, asPrimary, primaryId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    await seedNotificationSourceRevision(t, primaryId);
+
+    const { eventId } = await asPartner.mutation(
+      api.mutations.periods.assistLogPeriodStart,
+      { startDate: "2026-06-20", startCertainty: "exact" },
+    );
+    const notificationEventId = await t.run(async (ctx) =>
+      (await ctx.db.query("notificationEvents").unique())?._id,
+    );
+    expect(notificationEventId).toBeDefined();
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: eventId,
+      startDate: "2026-06-21",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(notificationEventId!)).not.toBeNull();
+      expect(await ctx.db.get(eventId)).toMatchObject({ authorityVersion: 2 });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 2 });
+    });
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: eventId,
+      expectedAuthorityVersion: 2,
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(notificationEventId!)).not.toBeNull();
+      expect(await ctx.db.get(eventId)).toMatchObject({ tombstoneAuthorityVersion: 3 });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 3 });
     });
   });
 
@@ -1739,5 +1957,572 @@ describe("derived period endings", () => {
     expect(periodsSource).toContain("isCycleFactsV1Enabled");
     expect(cronsSource).toContain("auto end periods");
     expect(cronsSource).toContain("autoEndPeriods");
+  });
+});
+
+describe("period timezone scheduler reconciliation", () => {
+  test("advances source authority and cancels stale due work with an accepted timezone change", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await setPrimaryTimeZone(t);
+    const now = Date.now();
+    const { periodEventId, workId } = await t.run(async (ctx) => {
+      const periodEventId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-06-20",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 4,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const workId = await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now,
+        generation: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { periodEventId, workId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId,
+      startDate: "2026-06-20",
+      expectedAuthorityVersion: 1,
+      timeZone: "America/Los_Angeles",
+    });
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(primaryId)).toMatchObject({
+        timeZone: "America/Los_Angeles",
+      });
+      expect(await ctx.db.get(workId)).toMatchObject({ state: "cancelled" });
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 5 });
+    });
+  });
+});
+
+describe("served Late-state period invalidation", () => {
+  test(
+    "keeps daily Late history bounded and allows a later pause to invalidate the current intent",
+    async () => {
+      vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+      vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+      vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+      const t = convexTest(schema, modules);
+      const { asPrimary, primaryId } = await seedActiveCouple(t);
+      const { internal } = await import("../_generated/api");
+      const { makeDeliveryIdempotencyKey } = await import(
+        "../_helpers/notificationDelivery"
+      );
+      const { ensureCurrentLateStatusEvent } = await import(
+        "../_helpers/notificationOutbox"
+      );
+      const { addCalendarDays } = await import("../_helpers/cycleCalculations");
+      const linkEvent = async (eventId: Id<"notificationEvents">) =>
+        await t.run(async (ctx) => {
+          const event = await ctx.db.get(eventId);
+          if (!event) throw new Error("Expected a retained Late event");
+          const deliveryId = await ctx.db.insert("notificationDeliveries", {
+            eventId,
+            recipientUserId: primaryId,
+            channel: "in_app",
+            stableDestinationId: String(primaryId),
+            logicalKey: makeDeliveryIdempotencyKey(
+              String(eventId),
+              "in_app",
+              String(primaryId),
+            ),
+            notBefore: Date.now(),
+            state: "pending",
+            eligibility: "eligible",
+            providerOutcome: "none",
+            attemptCount: 0,
+            claimGeneration: 1,
+            renderIdentity: {
+              templateVersion: "g4-static-v1",
+              locale: "en",
+              variableSchemaVersion: "g4-v1",
+              payloadHash: "safe-static-test-payload-v1",
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+            eventId,
+            recipientUserId: primaryId,
+            idempotencyKey: `inbox:${eventId}`,
+            templateVersion: "g4-static-v1",
+            route: "periods",
+            state: "current",
+            createdAt: Date.now(),
+          });
+          return { deliveryId, inboxItemId };
+        });
+
+      await t.run(async (ctx) => {
+        await ctx.db.insert("periodEvents", {
+          userId: primaryId,
+          createdByUserId: primaryId,
+          updatedByUserId: primaryId,
+          source: "self",
+          confirmationStatus: "confirmed",
+          startDate: "2026-03-01",
+          startCertainty: "exact",
+          authorityVersion: 1,
+          createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+          updatedAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        });
+        await ctx.db.insert("cyclePredictionSegments", {
+          userId: primaryId,
+          startDate: "2026-03-01",
+          status: "active",
+          createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        });
+        await ctx.db.insert("notificationScheduleState", {
+          userId: primaryId,
+          sourceRevision: 10,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("notificationPreferences", {
+          userId: primaryId,
+          purpose: "late_status",
+          inAppEnabled: true,
+          localReminderTime: "09:00",
+          reminderWindowVersion: 4,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const snapshotId = await t.mutation(
+        internal.internal.predictionSnapshots.ensureCurrentForUser,
+        { userId: primaryId },
+      );
+      if (snapshotId === null) throw new Error("Expected a served V2 snapshot");
+      const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+      if (!snapshot) throw new Error("Expected a served V2 snapshot");
+
+      const firstLocalDay = addCalendarDays(snapshot.latestDate, 1);
+      let currentEventId: Id<"notificationEvents"> | null = null;
+      let firstLink: Awaited<ReturnType<typeof linkEvent>> | null = null;
+      const retainedDays = 258;
+      for (let offset = 0; offset < retainedDays; offset += 1) {
+        const localDay = addCalendarDays(firstLocalDay, offset);
+        const now = Date.parse(`${localDay}T20:00:00.000Z`);
+        vi.setSystemTime(now);
+        currentEventId = await t.run((ctx) =>
+          ensureCurrentLateStatusEvent(ctx, primaryId, now),
+        );
+        if (currentEventId === null) {
+          throw new Error(`Expected a current Late event for ${localDay}`);
+        }
+        if (offset === 0) firstLink = await linkEvent(currentEventId);
+      }
+
+      const currentLink = await linkEvent(currentEventId!);
+      if (!firstLink) throw new Error("Expected the first daily Late intent link");
+
+      await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        predictionPaused: true,
+      });
+
+      await t.run(async (ctx) => {
+        const events = await ctx.db.query("notificationEvents").take(retainedDays + 1);
+        expect(events).toHaveLength(retainedDays);
+        expect(new Set(events.map((event) => event.sourceReference)).size).toBe(
+          retainedDays,
+        );
+        expect(await ctx.db.get(currentLink.deliveryId)).toMatchObject({
+          state: "cancelled",
+          eligibility: "cancelled",
+          cancellationReason: "source_changed",
+        });
+        expect(await ctx.db.get(currentLink.inboxItemId)).toMatchObject({
+          state: "hidden",
+        });
+        expect(await ctx.db.get(firstLink!.deliveryId)).toMatchObject({
+          state: "cancelled",
+          eligibility: "cancelled",
+          cancellationReason: "source_changed",
+        });
+        expect(await ctx.db.get(firstLink!.inboxItemId)).toMatchObject({
+          state: "hidden",
+        });
+        expect(
+          await ctx.db
+            .query("notificationScheduleState")
+            .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+            .unique(),
+        ).toMatchObject({ sourceRevision: 11 });
+      });
+    },
+    30_000,
+  );
+
+  test("same-day correction and tombstone supersede the Late key and invalidate its projection", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-03-07T20:00:00.000Z"));
+
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const { internal } = await import("../_generated/api");
+    const { makeDeliveryIdempotencyKey } = await import(
+      "../_helpers/notificationDelivery"
+    );
+    const { ensureCurrentLateStatusEvent } = await import(
+      "../_helpers/notificationOutbox"
+    );
+    const { addCalendarDays } = await import("../_helpers/cycleCalculations");
+
+    const recentEventId = await t.run(async (ctx) => {
+      await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-01-01",
+        endDate: "2026-01-05",
+        startCertainty: "exact",
+        endCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
+        updatedAt: Date.parse("2026-01-01T00:00:00.000Z"),
+      });
+      const recentId = await ctx.db.insert("periodEvents", {
+        userId: primaryId,
+        createdByUserId: primaryId,
+        updatedByUserId: primaryId,
+        source: "self",
+        confirmationStatus: "confirmed",
+        startDate: "2026-03-01",
+        startCertainty: "exact",
+        authorityVersion: 1,
+        createdAt: Date.parse("2026-03-01T00:00:00.000Z"),
+        updatedAt: Date.parse("2026-03-01T00:00:00.000Z"),
+      });
+      await ctx.db.insert("cyclePredictionSegments", {
+        userId: primaryId,
+        startDate: "2026-01-01",
+        status: "active",
+        createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
+      });
+      await ctx.db.insert("notificationScheduleState", {
+        userId: primaryId,
+        sourceRevision: 10,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId: primaryId,
+        purpose: "late_status",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+        reminderWindowVersion: 4,
+        updatedAt: Date.now(),
+      });
+      return recentId;
+    });
+
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (snapshotId === null) throw new Error("Expected a served V2 snapshot");
+    const originalSnapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+    if (!originalSnapshot) throw new Error("Expected a served V2 snapshot");
+    const localDay = addCalendarDays(originalSnapshot.latestDate, 1);
+    const lateInstant = Date.parse(`${localDay}T20:00:00.000Z`);
+    vi.setSystemTime(lateInstant);
+
+    const firstEventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (firstEventId === null) throw new Error("Expected the current Late event");
+    const firstLinked = await t.run(async (ctx) => {
+      const event = await ctx.db.get(firstEventId);
+      if (!event) throw new Error("Expected the current Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: firstEventId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(firstEventId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: firstEventId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${firstEventId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updatePeriodEvent, {
+      periodEventId: recentEventId,
+      startDate: "2026-03-01",
+      endDate: "2026-03-05",
+      endCertainty: "exact",
+      expectedAuthorityVersion: 1,
+      timeZone: "UTC",
+    });
+    const correctedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (correctedSnapshotId === null) {
+      throw new Error("Expected the corrected served V2 snapshot");
+    }
+    const correctedSnapshot = await t.run((ctx) =>
+      ctx.db.get(correctedSnapshotId),
+    );
+    expect(correctedSnapshot?.latestDate).toBe(originalSnapshot.latestDate);
+    const correctedEventId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (correctedEventId === null) {
+      throw new Error("Expected a Late replacement after correction");
+    }
+    expect(correctedEventId).not.toBe(firstEventId);
+
+    const correctedLink = await t.run(async (ctx) => {
+      const event = await ctx.db.get(correctedEventId);
+      if (!event) throw new Error("Expected corrected Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: correctedEventId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(correctedEventId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: correctedEventId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${correctedEventId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: recentEventId,
+      expectedAuthorityVersion: 2,
+    });
+    const tombstonedSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (tombstonedSnapshotId === null) {
+      throw new Error("Expected the tombstoned served V2 snapshot");
+    }
+    const tombstonedSnapshot = await t.run((ctx) =>
+      ctx.db.get(tombstonedSnapshotId),
+    );
+    expect(tombstonedSnapshot?.latestDate).not.toBe(originalSnapshot.latestDate);
+    const tombstoneReplacementId = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, lateInstant),
+    );
+    if (tombstoneReplacementId === null) {
+      throw new Error("Expected a Late replacement after tombstone");
+    }
+    expect(tombstoneReplacementId).not.toBe(correctedEventId);
+
+    const tombstoneLink = await t.run(async (ctx) => {
+      const event = await ctx.db.get(tombstoneReplacementId);
+      if (!event) throw new Error("Expected tombstone Late event row");
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: tombstoneReplacementId,
+        recipientUserId: primaryId,
+        channel: "in_app",
+        stableDestinationId: String(primaryId),
+        logicalKey: makeDeliveryIdempotencyKey(
+          String(tombstoneReplacementId),
+          "in_app",
+          String(primaryId),
+        ),
+        notBefore: lateInstant,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 1,
+        renderIdentity: {
+          templateVersion: "g4-static-v1",
+          locale: "en",
+          variableSchemaVersion: "g4-v1",
+          payloadHash: "safe-static-test-payload-v1",
+        },
+        createdAt: lateInstant,
+        updatedAt: lateInstant,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: tombstoneReplacementId,
+        recipientUserId: primaryId,
+        idempotencyKey: `inbox:${tombstoneReplacementId}`,
+        templateVersion: "g4-static-v1",
+        route: "periods",
+        state: "current",
+        createdAt: lateInstant,
+      });
+      return { event, deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: true,
+    });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(tombstoneLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(tombstoneLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+    });
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      predictionPaused: false,
+    });
+
+    vi.setSystemTime(lateInstant + 3_000);
+    await asPrimary.mutation(api.mutations.periods.logPeriodStart, {
+      startDate: localDay,
+      timeZone: "UTC",
+      startCertainty: "exact",
+    });
+    const afterNewStartSnapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    if (afterNewStartSnapshotId === null) {
+      throw new Error("Expected the new-start served V2 snapshot");
+    }
+    const { readCurrentNotificationCycleState } = await import(
+      "../_helpers/notificationCycleState"
+    );
+    const afterNewStartState = await t.run((ctx) =>
+      readCurrentNotificationCycleState(ctx, primaryId, Date.now()),
+    );
+    expect(afterNewStartState?.state.status).toBe("recorded_period");
+    const afterNewStartEvent = await t.run((ctx) =>
+      ensureCurrentLateStatusEvent(ctx, primaryId, Date.now()),
+    );
+    expect(afterNewStartEvent).toBeNull();
+
+    await t.run(async (ctx) => {
+      const firstEvent = await ctx.db.get(firstEventId);
+      const correctedEvent = await ctx.db.get(correctedEventId);
+      const tombstoneReplacement = await ctx.db.get(tombstoneReplacementId);
+      expect(firstEvent?.idempotencyKey).not.toBe(correctedEvent?.idempotencyKey);
+      expect(correctedEvent?.idempotencyKey).not.toBe(
+        tombstoneReplacement?.idempotencyKey,
+      );
+      expect(firstEvent?.idempotencyKey).not.toBe(tombstoneReplacement?.idempotencyKey);
+      expect(firstEvent?.sourceAuthorityVersion).toContain('g4-source-v1:[10,"cycle-read-model-v1"');
+      expect(correctedEvent?.sourceAuthorityVersion).toContain('g4-source-v1:[11,"cycle-read-model-v1"');
+      expect(tombstoneReplacement?.sourceAuthorityVersion).toContain('g4-source-v1:[12,"cycle-read-model-v1"');
+      expect(await ctx.db.get(recentEventId)).toMatchObject({ tombstoneAuthorityVersion: 3 });
+      expect(await ctx.db.get(firstLinked.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(firstLinked.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.get(correctedLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(correctedLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.get(tombstoneLink.deliveryId)).toMatchObject({
+        state: "cancelled",
+        eligibility: "cancelled",
+        cancellationReason: "source_changed",
+      });
+      expect(await ctx.db.get(tombstoneLink.inboxItemId)).toMatchObject({
+        state: "hidden",
+      });
+      expect(await ctx.db.query("notificationEvents").take(10)).toHaveLength(3);
+      expect(await ctx.db.query("notificationInboxItems").take(10)).toHaveLength(3);
+      expect(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+          .unique(),
+      ).toMatchObject({ sourceRevision: 15 });
+    });
   });
 });

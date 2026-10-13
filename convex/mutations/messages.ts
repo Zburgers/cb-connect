@@ -1,10 +1,153 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
+import { scheduleNotificationEventProjection } from "../_helpers/notificationOutbox";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import {
+  assertValidNotificationEventWrite,
+  type NotificationEventWrite,
+  type NotificationSourceIdentity,
+} from "../_helpers/notificationTypes";
+
+const NOTIFICATION_OUTBOX_ENABLED_ENV = "CB_CONNECT_NOTIFICATION_OUTBOX_V1";
 
 const MAX_MESSAGE_LENGTH = 500;
 const ALLOWED_REACTIONS = new Set(["💗", "✨", "🫶", "😂", "🥺", "🌙"]);
+
+function sameSourceIdentity(
+  existing: NotificationSourceIdentity | undefined,
+  expected: NotificationSourceIdentity,
+): boolean {
+  if (!existing) return false;
+  const actualFields = existing as unknown as Record<string, unknown>;
+  const expectedFields = expected as unknown as Record<string, unknown>;
+  return (
+    Object.keys(actualFields).length === Object.keys(expectedFields).length &&
+    Object.entries(expectedFields).every(([field, value]) => actualFields[field] === value)
+  );
+}
+
+export async function ensurePartnerMessageEvent(
+  ctx: MutationCtx,
+  args: {
+    messageId: Id<"coupleMessages">;
+    recipientId: Id<"users">;
+  },
+): Promise<Id<"notificationEvents"> | null> {
+  if (process.env[NOTIFICATION_OUTBOX_ENABLED_ENV] !== "true") return null;
+  const message = await ctx.db.get(args.messageId);
+  if (!message?.relationshipMembershipId) {
+    throw new Error("Message notification source has no relationship generation");
+  }
+  const eventType = "partner_message.v1" as const;
+  const envelope: NotificationEventWrite = {
+    eventType,
+    eventVersion: 1 as const,
+    purpose: "partner_message" as const,
+    producerKind: "new_couple_message" as const,
+    sourceReference: `message:${args.messageId}`,
+    sourceAuthorityVersion: `relationship-membership:${message.relationshipMembershipId}`,
+    ownerUserId: message.senderId,
+    recipientUserId: args.recipientId,
+    recipientScope: "other_active_member" as const,
+    privacyClass: "relationship_private_free_text_source" as const,
+    validityRule: "while_message_and_active_link_exist" as const,
+    idempotencyKey: makeEventIdempotencyKey(eventType, {
+      messageId: String(args.messageId),
+      recipientId: String(args.recipientId),
+    }),
+    allowedChannel: "in_app" as const,
+    sourceIdentity: {
+      eventType,
+      sourceId: message._id,
+      coupleId: message.coupleId,
+      relationshipMembershipId: message.relationshipMembershipId,
+      ownerUserId: message.senderId,
+      recipientUserId: args.recipientId,
+    },
+  };
+  return await ensureNotificationEvent(ctx, envelope, message.createdAt);
+}
+
+async function ensurePartnerChatClearedEvent(
+  ctx: MutationCtx,
+  args: {
+    coupleId: Id<"couples">;
+    ownerUserId: Id<"users">;
+    recipientUserId: Id<"users">;
+    relationshipMembershipId: Id<"coupleMembers">;
+    clearedAt: number;
+  },
+): Promise<Id<"notificationEvents"> | null> {
+  const eventType = "partner_chat_cleared.v1" as const;
+  const clearOperationId = `chat-clear:${args.clearedAt}`;
+  const envelope: NotificationEventWrite = {
+    eventType,
+    eventVersion: 1,
+    purpose: "partner_chat_cleared",
+    producerKind: "explicit_chat_clear_transition",
+    sourceReference: `couple-chat:${args.coupleId}`,
+    sourceAuthorityVersion: clearOperationId,
+    ownerUserId: args.ownerUserId,
+    recipientUserId: args.recipientUserId,
+    recipientScope: "other_active_member",
+    privacyClass: "account_relationship_sensitive",
+    validityRule: "until_newer_chat_state_or_link_revocation",
+    idempotencyKey: makeEventIdempotencyKey(eventType, {
+      coupleId: String(args.coupleId),
+      clearOperationId,
+      relationshipMembershipId: String(args.relationshipMembershipId),
+      recipientId: String(args.recipientUserId),
+    }),
+    allowedChannel: "in_app",
+    sourceIdentity: {
+      eventType,
+      sourceId: args.coupleId,
+      coupleId: args.coupleId,
+      relationshipMembershipId: args.relationshipMembershipId,
+      ownerUserId: args.ownerUserId,
+      recipientUserId: args.recipientUserId,
+      clearOperationVersion: args.clearedAt,
+    },
+  };
+  return await ensureNotificationEvent(ctx, envelope, args.clearedAt);
+}
+
+async function ensureNotificationEvent(
+  ctx: MutationCtx,
+  envelope: NotificationEventWrite,
+  createdAt: number,
+): Promise<Id<"notificationEvents"> | null> {
+  if (process.env[NOTIFICATION_OUTBOX_ENABLED_ENV] !== "true") return null;
+  assertValidNotificationEventWrite(ctx, envelope);
+
+  const existing = await ctx.db
+    .query("notificationEvents")
+    .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", envelope.idempotencyKey))
+    .unique();
+  if (existing) {
+    const matchesEnvelope = Object.entries(envelope).every(
+      ([field, value]) =>
+        field === "sourceIdentity"
+          ? sameSourceIdentity(existing.sourceIdentity, value as NotificationSourceIdentity)
+          : existing[field as keyof typeof envelope] === value,
+    );
+    if (!matchesEnvelope) {
+      throw new Error("Notification event key conflicts with its message source");
+    }
+    await scheduleNotificationEventProjection(ctx, existing._id);
+    return existing._id;
+  }
+
+  const eventId = await ctx.db.insert("notificationEvents", {
+    ...envelope,
+    createdAt,
+  });
+  await scheduleNotificationEventProjection(ctx, eventId);
+  return eventId;
+}
 
 function sanitizeMessage(body: string) {
   const normalized = body.replace(/\s+/g, " ").trim();
@@ -70,16 +213,9 @@ export const send = mutation({
       });
     }
 
-    await ctx.db.insert("notificationLog", {
-      userId: partnerMembership.userId,
-      type: "partner_message",
-      payload: {
-        messageId,
-        senderName: user.preferredName || user.name,
-        preview: body.slice(0, 96),
-      },
-      sentAt: now,
-      status: "sent",
+    await ensurePartnerMessageEvent(ctx, {
+      messageId,
+      recipientId: partnerMembership.userId,
     });
 
     return messageId;
@@ -283,10 +419,10 @@ export const react = mutation({
 export const clear = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user, couple, membership, partnerMembership } =
+    const { user, couple, membership, partnerMembership, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
     const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
-    await ctx.db.patch(couple._id, { chatClearedAt: now });
+    await ctx.db.patch(couple._id, { chatClearedAt: now, chatClearedBy: user._id });
     const states = await Promise.all(
       [user._id, partnerMembership.userId].map((userId) =>
         ctx.db
@@ -309,14 +445,12 @@ export const clear = mutation({
       }
     }
 
-    await ctx.db.insert("notificationLog", {
-      userId: partnerMembership.userId,
-      type: "partner_chat_cleared",
-      payload: {
-        clearedBy: user.preferredName || user.name,
-      },
-      sentAt: now,
-      status: "sent",
+    await ensurePartnerChatClearedEvent(ctx, {
+      coupleId: membership.coupleId,
+      ownerUserId: user._id,
+      recipientUserId: partnerMembership.userId,
+      relationshipMembershipId,
+      clearedAt: now,
     });
 
     return { clearedAt: now };

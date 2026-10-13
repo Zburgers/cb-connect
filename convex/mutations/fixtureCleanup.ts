@@ -7,6 +7,7 @@ import {
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { fixtureEmail } from "../../lib/fixtureEmail";
+import { getLegacyClerkSubject } from "../_helpers/auth";
 
 const APPROVED_DEV_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 const MAX_RECORDS_PER_SCOPE = 500;
@@ -47,6 +48,15 @@ type FixtureRecords = {
   painLogs: Doc<"painLogs">[];
   cycleSettings: Doc<"cycleSettings">[];
   hiddenNutrition: Doc<"hiddenNutrition">[];
+  notificationEvents: Doc<"notificationEvents">[];
+  notificationInboxItems: Doc<"notificationInboxItems">[];
+  notificationDeliveries: Doc<"notificationDeliveries">[];
+  notificationDeliveryAttempts: Doc<"notificationDeliveryAttempts">[];
+  notificationDueWork: Doc<"notificationDueWork">[];
+  notificationPreferences: Doc<"notificationPreferences">[];
+  notificationScheduleState: Doc<"notificationScheduleState">[];
+  painReminderRequests: Doc<"painReminderRequests">[];
+  // Global operator controls have no fixture owner and are never fixture-cleaned.
   notificationLog: Doc<"notificationLog">[];
   presence: Doc<"presence">[];
   nudges: Doc<"nudges">[];
@@ -106,6 +116,24 @@ async function getFixtureRun(
   return fixtureRun;
 }
 
+function assertFixtureUserMatchesRun(
+  user: Doc<"users">,
+  runId: string,
+  role: "primary" | "partner",
+): void {
+  const expectedEmail = fixtureEmail(runId, role);
+  const hasRunMarker = user.fixtureRunId === runId;
+  const hasExpectedEmail = user.email === expectedEmail;
+
+  if (
+    (user.fixtureRunId !== undefined && !hasRunMarker) ||
+    (user.email !== "" && !hasExpectedEmail) ||
+    (role === "partner" && !hasRunMarker && !hasExpectedEmail)
+  ) {
+    throw new Error("fixture_cleanup_identity_mismatch");
+  }
+}
+
 async function assertAuthenticatedFixturePrimary(
   ctx: ReadCtx,
   args: {
@@ -115,7 +143,7 @@ async function assertAuthenticatedFixturePrimary(
   },
 ): Promise<void> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity || identity.subject !== args.primaryClerkId) {
+  if (getLegacyClerkSubject(identity) !== args.primaryClerkId) {
     throw new Error("fixture_cleanup_unauthenticated");
   }
   await getFixtureRun(ctx, args);
@@ -190,9 +218,90 @@ async function rowsByUser<T extends keyof FixtureRecords>(
           .take(MAX_RECORDS_PER_SCOPE + 1),
         table,
       ) as FixtureRecords[T];
+    case "notificationEvents":
+      return bounded(
+        await ctx.db
+          .query("notificationEvents")
+          .withIndex("by_recipient_and_created_at", (q) =>
+            q.eq("recipientUserId", userId),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "notificationInboxItems":
+      return bounded(
+        await ctx.db
+          .query("notificationInboxItems")
+          .withIndex("by_recipient_and_created_at", (q) =>
+            q.eq("recipientUserId", userId),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "notificationDeliveries":
+      return bounded(
+        await ctx.db
+          .query("notificationDeliveries")
+          .withIndex("by_recipient_and_state", (q) =>
+            q.eq("recipientUserId", userId),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "notificationDueWork":
+      return bounded(
+        await ctx.db
+          .query("notificationDueWork")
+          .withIndex("by_owner_and_state_and_due_at", (q) =>
+            q.eq("ownerUserId", userId),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "notificationPreferences":
+      return bounded(
+        await ctx.db
+          .query("notificationPreferences")
+          .withIndex("by_user", (q) => q.eq("userId", userId))
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "notificationScheduleState":
+      return bounded(
+        await ctx.db
+          .query("notificationScheduleState")
+          .withIndex("by_user_id", (q) => q.eq("userId", userId))
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
+    case "painReminderRequests":
+      return bounded(
+        await ctx.db
+          .query("painReminderRequests")
+          .withIndex("by_owner_and_state", (q) =>
+            q.eq("ownerUserId", userId),
+          )
+          .take(MAX_RECORDS_PER_SCOPE + 1),
+        table,
+      ) as FixtureRecords[T];
     default:
       throw new Error(`fixture_cleanup_unknown_user_table:${String(table)}`);
   }
+}
+
+async function rowsByDelivery(
+  ctx: ReadCtx,
+  deliveryId: Id<"notificationDeliveries">,
+): Promise<Doc<"notificationDeliveryAttempts">[]> {
+  return bounded(
+    await ctx.db
+      .query("notificationDeliveryAttempts")
+      .withIndex("by_delivery_and_ordinal", (q) =>
+        q.eq("deliveryId", deliveryId),
+      )
+      .take(MAX_RECORDS_PER_SCOPE + 1),
+    "notificationDeliveryAttempts",
+  );
 }
 
 async function rowsByCouple<T extends keyof FixtureRecords>(
@@ -286,17 +395,11 @@ async function loadFixtureRecords(
       .unique();
     if (!user) continue;
 
-    const expectedEmail = fixtureEmail(args.runId, requested.role);
     // A durable run is claimed before either account visits the dashboard.
-    // During a failed onboarding/linking interval the application user may not
-    // yet carry fixtureRunId or a role, but the exact run-owned Clerk ID and
-    // deterministic email still make it safe to recover.
-    if (
-      (user.fixtureRunId !== undefined && user.fixtureRunId !== args.runId) ||
-      (user.email !== "" && user.email !== expectedEmail)
-    ) {
-      throw new Error("fixture_cleanup_identity_mismatch");
-    }
+    // The authenticated primary may still have an empty email before its
+    // registration mutation. A partner must have either the run marker or the
+    // deterministic fixture email; the primary cannot attest an arbitrary ID.
+    assertFixtureUserMatchesRun(user, args.runId, requested.role);
     users.push(user);
   }
 
@@ -382,6 +485,14 @@ async function loadFixtureRecords(
   const painLogs: Doc<"painLogs">[] = [];
   const cycleSettings: Doc<"cycleSettings">[] = [];
   const hiddenNutrition: Doc<"hiddenNutrition">[] = [];
+  const notificationEvents: Doc<"notificationEvents">[] = [];
+  const notificationInboxItems: Doc<"notificationInboxItems">[] = [];
+  const notificationDeliveries: Doc<"notificationDeliveries">[] = [];
+  const notificationDeliveryAttempts: Doc<"notificationDeliveryAttempts">[] = [];
+  const notificationDueWork: Doc<"notificationDueWork">[] = [];
+  const notificationPreferences: Doc<"notificationPreferences">[] = [];
+  const notificationScheduleState: Doc<"notificationScheduleState">[] = [];
+  const painReminderRequests: Doc<"painReminderRequests">[] = [];
   const notificationLog: Doc<"notificationLog">[] = [];
   const cyclePredictionSegments: Doc<"cyclePredictionSegments">[] = [];
   const predictionSnapshots: Doc<"predictionSnapshots">[] = [];
@@ -396,6 +507,27 @@ async function loadFixtureRecords(
     painLogs.push(...(await rowsByUser(ctx, "painLogs", userId)));
     cycleSettings.push(...(await rowsByUser(ctx, "cycleSettings", userId)));
     hiddenNutrition.push(...(await rowsByUser(ctx, "hiddenNutrition", userId)));
+    notificationEvents.push(
+      ...(await rowsByUser(ctx, "notificationEvents", userId)),
+    );
+    notificationInboxItems.push(
+      ...(await rowsByUser(ctx, "notificationInboxItems", userId)),
+    );
+    notificationDeliveries.push(
+      ...(await rowsByUser(ctx, "notificationDeliveries", userId)),
+    );
+    notificationDueWork.push(
+      ...(await rowsByUser(ctx, "notificationDueWork", userId)),
+    );
+    notificationPreferences.push(
+      ...(await rowsByUser(ctx, "notificationPreferences", userId)),
+    );
+    notificationScheduleState.push(
+      ...(await rowsByUser(ctx, "notificationScheduleState", userId)),
+    );
+    painReminderRequests.push(
+      ...(await rowsByUser(ctx, "painReminderRequests", userId)),
+    );
     notificationLog.push(...(await rowsByUser(ctx, "notificationLog", userId)));
     for (const status of ["active", "superseded"] as const) {
       cyclePredictionSegments.push(
@@ -422,6 +554,20 @@ async function loadFixtureRecords(
   }
   bounded(cyclePredictionSegments, "cyclePredictionSegments");
   bounded(predictionSnapshots, "predictionSnapshots");
+  bounded(notificationEvents, "notificationEvents");
+  bounded(notificationInboxItems, "notificationInboxItems");
+  bounded(notificationDeliveries, "notificationDeliveries");
+  bounded(notificationDueWork, "notificationDueWork");
+  bounded(notificationPreferences, "notificationPreferences");
+  bounded(notificationScheduleState, "notificationScheduleState");
+  bounded(painReminderRequests, "painReminderRequests");
+
+  for (const delivery of notificationDeliveries) {
+    notificationDeliveryAttempts.push(
+      ...(await rowsByDelivery(ctx, delivery._id)),
+    );
+    bounded(notificationDeliveryAttempts, "notificationDeliveryAttempts");
+  }
 
   for (const snapshot of predictionSnapshots) {
     for (const type of ["outcome", "superseded"] as const) {
@@ -509,6 +655,16 @@ async function loadFixtureRecords(
   }
   const fixtureSnapshotIds = new Set(predictionSnapshots.map((row) => row._id));
   const fixturePeriodEventIds = new Set(periodEvents.map((row) => row._id));
+  const fixtureNotificationEventIds = new Set(
+    notificationEvents.map((row) => row._id),
+  );
+  const fixtureNotificationDeliveryIds = new Set(
+    notificationDeliveries.map((row) => row._id),
+  );
+  const fixturePainReminderRequestIds = new Set(
+    painReminderRequests.map((row) => row._id),
+  );
+  const fixturePainLogIds = new Set(painLogs.map((row) => row._id));
   for (const segment of cyclePredictionSegments) {
     if (!allFixtureUserIds.has(segment.userId)) {
       throw new Error("fixture_cleanup_identity_mismatch");
@@ -532,6 +688,66 @@ async function loadFixtureRecords(
       throw new Error("fixture_cleanup_identity_mismatch");
     }
   }
+  for (const event of notificationEvents) {
+    if (
+      !allFixtureUserIds.has(event.ownerUserId) ||
+      !allFixtureUserIds.has(event.recipientUserId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const inboxItem of notificationInboxItems) {
+    if (
+      !allFixtureUserIds.has(inboxItem.recipientUserId) ||
+      !fixtureNotificationEventIds.has(inboxItem.eventId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const delivery of notificationDeliveries) {
+    if (
+      !allFixtureUserIds.has(delivery.recipientUserId) ||
+      !fixtureNotificationEventIds.has(delivery.eventId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const attempt of notificationDeliveryAttempts) {
+    if (!fixtureNotificationDeliveryIds.has(attempt.deliveryId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const work of notificationDueWork) {
+    if (
+      !allFixtureUserIds.has(work.ownerUserId) ||
+      (work.eventId !== undefined &&
+        !fixtureNotificationEventIds.has(work.eventId)) ||
+      (work.deliveryId !== undefined &&
+        !fixtureNotificationDeliveryIds.has(work.deliveryId)) ||
+      (work.painReminderRequestId !== undefined &&
+        !fixturePainReminderRequestIds.has(work.painReminderRequestId))
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const preference of notificationPreferences) {
+    if (!allFixtureUserIds.has(preference.userId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const scheduleState of notificationScheduleState) {
+    if (!allFixtureUserIds.has(scheduleState.userId)) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
+  for (const request of painReminderRequests) {
+    if (
+      !allFixtureUserIds.has(request.ownerUserId) ||
+      !fixturePainLogIds.has(request.painLogId)
+    ) {
+      throw new Error("fixture_cleanup_identity_mismatch");
+    }
+  }
 
   return {
     users,
@@ -547,6 +763,14 @@ async function loadFixtureRecords(
     painLogs,
     cycleSettings,
     hiddenNutrition,
+    notificationEvents,
+    notificationInboxItems,
+    notificationDeliveries,
+    notificationDeliveryAttempts,
+    notificationDueWork,
+    notificationPreferences,
+    notificationScheduleState,
+    painReminderRequests,
     notificationLog,
     presence,
     nudges,
@@ -573,8 +797,16 @@ export const beginFixtureRun = mutation({
     assertFixtureScopeAllowed();
     assertFixtureArgs(args);
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || identity.subject !== args.primaryClerkId) {
+    if (getLegacyClerkSubject(identity) !== args.primaryClerkId) {
       throw new Error("fixture_cleanup_unauthenticated");
+    }
+
+    const partner = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.partnerClerkId))
+      .unique();
+    if (partner) {
+      assertFixtureUserMatchesRun(partner, args.runId, "partner");
     }
 
     const existing = await ctx.db
@@ -629,7 +861,7 @@ export const registerFixtureUser = mutation({
       .unique();
 
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || identity.subject !== args.clerkId) {
+    if (getLegacyClerkSubject(identity) !== args.clerkId) {
       throw new Error(
         user
           ? "fixture_cleanup_authenticated_subject_mismatch_target_present"
@@ -791,6 +1023,22 @@ export const cleanupFixture = mutation({
     for (const row of records.predictionSnapshotAssessments)
       await ctx.db.delete(row._id);
     for (const row of records.predictionSnapshotOutcomeCandidates)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationDueWork)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationDeliveryAttempts)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationInboxItems)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationDeliveries)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationEvents)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationPreferences)
+      await ctx.db.delete(row._id);
+    for (const row of records.notificationScheduleState)
+      await ctx.db.delete(row._id);
+    for (const row of records.painReminderRequests)
       await ctx.db.delete(row._id);
     for (const row of records.predictionSnapshots) await ctx.db.delete(row._id);
     for (const row of records.cyclePredictionSegments) await ctx.db.delete(row._id);

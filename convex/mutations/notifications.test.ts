@@ -1,0 +1,1106 @@
+import { convexTest, type TestConvex } from "convex-test";
+import { makeFunctionReference } from "convex/server";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { addCalendarDays } from "../_helpers/cycleCalculations";
+import { makeEventIdempotencyKey } from "../_helpers/notificationDelivery";
+import { renderFrozen } from "../_helpers/notificationTemplates";
+import { resolveLocalReminderInstant } from "../internal/notificationScheduler";
+import schema from "../schema";
+import {
+  notificationControlValidator,
+  notificationDueWorkValidator,
+  notificationInAppAttemptValidator,
+  notificationInAppDeliveryValidator,
+  painReminderRequestValidator,
+  notificationScheduleStateValidator,
+} from "../schema";
+import { modules } from "../test.setup";
+import { seedActiveCouple } from "../test.fixtures";
+
+const wakeDueWorkRef = makeFunctionReference<"mutation">(
+  "internal/notificationScheduler:wakeDueWork",
+);
+const resumePreferenceReconciliationRef = makeFunctionReference<"mutation">(
+  "mutations/notifications:resumePreferenceReconciliation",
+);
+
+type TestBackend = TestConvex<typeof schema>;
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+function enableOutboxProjection() {
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_PROJECTION_V1", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_INBOX_V1", "true");
+}
+
+function indexDefinitions(table: unknown) {
+  return (table as unknown as {
+    indexes: Array<{ indexDescriptor: string; fields: string[] }>;
+  }).indexes;
+}
+
+function enableScheduleInputs() {
+  vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+  vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_SCHEDULER_V1", "true");
+}
+
+async function seedPredictionInputs(
+  t: TestBackend,
+  userId: Id<"users">,
+  sourceRevision = 7,
+) {
+  await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.patch(userId, { timeZone: "UTC" });
+    await ctx.db.insert("periodEvents", {
+      userId,
+      startDate: "2026-03-01",
+      startCertainty: "exact",
+      authorityVersion: 1,
+      createdAt: Date.UTC(2026, 2, 1),
+      updatedAt: Date.UTC(2026, 2, 1),
+    });
+    await ctx.db.insert("cyclePredictionSegments", {
+      userId,
+      startDate: "2026-03-01",
+      status: "active",
+      createdAt: Date.UTC(2026, 2, 1),
+    });
+    await ctx.db.insert("notificationScheduleState", {
+      userId,
+      sourceRevision,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}
+
+async function seedCurrentPrediction(
+  t: TestBackend,
+  userId: Id<"users">,
+  sourceRevision = 7,
+) {
+  await seedPredictionInputs(t, userId, sourceRevision);
+  const snapshotId = await t.mutation(
+    internal.internal.predictionSnapshots.ensureCurrentForUser,
+    { userId },
+  );
+  if (snapshotId === null) throw new Error("Expected a current V2 snapshot");
+  const snapshot = await t.run((ctx) => ctx.db.get(snapshotId));
+  if (!snapshot) throw new Error("Expected a stored V2 snapshot");
+  return snapshot;
+}
+
+async function readPreferenceScheduleState(t: TestBackend, userId: Id<"users">) {
+  return await t.run(async (ctx) => ({
+    preference: await ctx.db
+      .query("notificationPreferences")
+      .withIndex("by_user_and_purpose", (q) =>
+        q.eq("userId", userId).eq("purpose", "period_window_approaching"),
+      )
+      .unique(),
+    source: await ctx.db
+      .query("notificationScheduleState")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique(),
+    snapshots: await ctx.db
+      .query("predictionSnapshots")
+      .withIndex("by_user_and_generated_at", (q) => q.eq("userId", userId))
+      .take(10),
+    work: await ctx.db
+      .query("notificationDueWork")
+      .withIndex("by_owner_and_state_and_due_at", (q) =>
+        q.eq("ownerUserId", userId),
+      )
+      .take(100),
+    scheduled: await ctx.db.system.query("_scheduled_functions").take(50),
+    events: await ctx.db.query("notificationEvents").take(50),
+  }));
+}
+
+describe("notification persistence", () => {
+  test("deduplicates an in-app event, delivery, and inbox item under concurrent writes", async () => {
+    enableOutboxProjection();
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await asPartner.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "partner_message",
+      inAppEnabled: true,
+    });
+
+    const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: partnerMembership._id,
+        senderId: primaryId,
+        body: "Private message body must not be copied",
+        createdAt: 1_800_000_000_000,
+      });
+      return { messageId, relationshipMembershipId: partnerMembership._id };
+    });
+    const event = {
+      eventType: "partner_message.v1" as const,
+      eventVersion: 1 as const,
+      purpose: "partner_message" as const,
+      producerKind: "new_couple_message" as const,
+      sourceReference: `message:${messageId}`,
+      sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
+      ownerUserId: primaryId,
+      recipientUserId: partnerId,
+      recipientScope: "other_active_member" as const,
+      privacyClass: "relationship_private_free_text_source" as const,
+      validityRule: "while_message_and_active_link_exist" as const,
+      idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+        messageId: String(messageId),
+        recipientId: String(partnerId),
+      }),
+      allowedChannel: "in_app" as const,
+      sourceIdentity: {
+        eventType: "partner_message.v1" as const,
+        sourceId: messageId,
+        coupleId,
+        relationshipMembershipId,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+      },
+    };
+    const rendered = await renderFrozen({
+      eventType: event.eventType,
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const args = {
+      envelope: event,
+      route: rendered.payload.route,
+      templateVersion: "g4-static-v1",
+      renderIdentity: rendered.identity,
+      createdAt: 1_800_000_000_000,
+      notBefore: 1_800_000_000_000,
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        t.mutation(internal.mutations.notifications.ensureInAppRecords, args),
+      ),
+    );
+
+    expect(new Set(results.map((result) => result.eventId)).size).toBe(1);
+    expect(new Set(results.map((result) => result.deliveryId)).size).toBe(1);
+    expect(results.map((result) => result.status)).toEqual(
+      Array(8).fill("delivery_ready"),
+    );
+    expect(results.every((result) => result.inboxItemId === null)).toBe(true);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(1);
+      expect(await ctx.db.query("notificationDeliveries").collect()).toMatchObject([
+        { channel: "in_app", state: "pending", providerOutcome: "none" },
+      ]);
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationDeliveryAttempts").collect()).toHaveLength(0);
+    });
+
+    const otherMessageId = await t.run((ctx) =>
+      ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId,
+        senderId: primaryId,
+        body: "second source identity",
+        createdAt: 1_800_000_000_001,
+      }),
+    );
+    await expect(
+      t.mutation(internal.mutations.notifications.ensureInAppRecords, {
+        ...args,
+        envelope: {
+          ...event,
+          sourceIdentity: {
+            ...event.sourceIdentity,
+            sourceId: otherMessageId,
+          },
+        },
+      }),
+    ).rejects.toThrow(/conflict|identity/i);
+
+    await t.run(async (ctx) => {
+      const delivery = await ctx.db.query("notificationDeliveries").first();
+      if (!delivery) throw new Error("Expected the private in-app delivery");
+
+      await ctx.db.patch(delivery._id, {
+        state: "retry_wait",
+        nextAttemptAt: 1_800_000_000_100,
+        updatedAt: 1_800_000_000_100,
+      });
+      await ctx.db.patch(delivery._id, {
+        state: "failed_permanent",
+        errorCode: "attempts_exhausted",
+        nextAttemptAt: undefined,
+        updatedAt: 1_800_000_000_200,
+      });
+    });
+  });
+
+  test("rejects fractional and unsafe event timestamps before persistence", async () => {
+    enableOutboxProjection();
+    const t = convexTest(schema, modules);
+    const { asPartner, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    await asPartner.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "partner_message",
+      inAppEnabled: true,
+    });
+    const { messageId, relationshipMembershipId } = await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!membership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: membership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: Date.now(),
+      });
+      return { messageId, relationshipMembershipId: membership._id };
+    });
+    const rendered = await renderFrozen({
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      locale: "en",
+      variableSchemaVersion: "g4-no-variables-v1",
+    });
+    const args = {
+      envelope: {
+        eventType: "partner_message.v1" as const,
+        eventVersion: 1 as const,
+        purpose: "partner_message" as const,
+        producerKind: "new_couple_message" as const,
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        recipientScope: "other_active_member" as const,
+        privacyClass: "relationship_private_free_text_source" as const,
+        validityRule: "while_message_and_active_link_exist" as const,
+        idempotencyKey: makeEventIdempotencyKey("partner_message.v1", {
+          messageId: String(messageId),
+          recipientId: String(partnerId),
+        }),
+        allowedChannel: "in_app" as const,
+        sourceIdentity: {
+          eventType: "partner_message.v1" as const,
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
+      },
+      route: "messages" as const,
+      templateVersion: "g4-static-v1",
+      renderIdentity: rendered.identity,
+      createdAt: 100,
+      notBefore: 100,
+    };
+
+    for (const createdAt of [
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      await expect(
+        t.mutation(internal.mutations.notifications.ensureInAppRecords, {
+          ...args,
+          createdAt,
+        }),
+      ).rejects.toThrow(/timestamp|createdAt/i);
+    }
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
+    });
+  });
+
+  test("does not create new storage while the absent outbox flag is off", async () => {
+    const t = convexTest(schema, modules);
+    const { coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const { relationshipMembershipId, messageId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: partnerMembership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: 1,
+      });
+      return { relationshipMembershipId: partnerMembership._id, messageId };
+    });
+    const result = await t.mutation(
+      internal.mutations.notifications.ensureInAppRecords,
+      {
+        envelope: {
+          eventType: "partner_message.v1",
+          eventVersion: 1,
+          purpose: "partner_message",
+          producerKind: "new_couple_message",
+          sourceReference: "message:opaque",
+          sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+          recipientScope: "other_active_member",
+          privacyClass: "relationship_private_free_text_source",
+          validityRule: "while_message_and_active_link_exist",
+          idempotencyKey: "event:v1:opaque",
+          allowedChannel: "in_app",
+          sourceIdentity: {
+            eventType: "partner_message.v1",
+            sourceId: messageId,
+            coupleId,
+            relationshipMembershipId,
+            ownerUserId: primaryId,
+            recipientUserId: partnerId,
+          },
+        },
+          route: "messages",
+          templateVersion: "g4-static-v1",
+          renderIdentity: {
+            templateVersion: "g4-static-v1",
+            locale: "en",
+            variableSchemaVersion: "g4-no-variables-v1",
+            payloadHash: "test-static-message-v1",
+          },
+          createdAt: 1_800_000_000_000,
+        notBefore: 1_800_000_000_000,
+      },
+    );
+
+    expect(result).toMatchObject({ status: "disabled" });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationEvents").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationDeliveries").collect()).toHaveLength(0);
+      expect(await ctx.db.query("notificationInboxItems").collect()).toHaveLength(0);
+    });
+  });
+
+  test("advances only the changed purpose schedule version and clears local time explicitly", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const write = (localReminderTime?: string | null) =>
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "pain_check_in",
+        inAppEnabled: true,
+        ...(localReminderTime === undefined ? {} : { localReminderTime }),
+      });
+
+    await write();
+    await write();
+    let row = await t.run((ctx) =>
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "pain_check_in"),
+        )
+        .unique(),
+    );
+    expect(row?.reminderWindowVersion).toBe(1);
+
+    await write("09:30");
+    await write(null);
+    row = await t.run((ctx) =>
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "pain_check_in"),
+        )
+        .unique(),
+    );
+    expect(row?.reminderWindowVersion).toBe(3);
+    expect(row?.localReminderTime).toBeUndefined();
+    await t.run(async (ctx) => {
+      const unrelated = await ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_user_and_purpose", (q) =>
+          q.eq("userId", primaryId).eq("purpose", "partner_message"),
+        )
+        .unique();
+      expect(unrelated).toBeNull();
+    });
+  });
+
+  test("preference API enables, moves, and disables work without refreshing its source snapshot", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const snapshot = await seedCurrentPrediction(t, primaryId);
+    const before = await readPreferenceScheduleState(t, primaryId);
+
+    expect(before.source?.sourceRevision).toBe(7);
+    expect(before.snapshots.map(({ _id }) => _id)).toEqual([snapshot._id]);
+    expect(before.work).toHaveLength(0);
+    expect(before.scheduled).toHaveLength(0);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const enabled = await readPreferenceScheduleState(t, primaryId);
+    const firstWork = enabled.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(enabled.preference?.reminderWindowVersion).toBe(1);
+    expect(firstWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(snapshot.pointDate, -3),
+        "09:00",
+        "UTC",
+      ),
+    );
+    expect(enabled.scheduled.map(({ scheduledTime }) => scheduledTime)).toContain(
+      firstWork?.dueAt,
+    );
+    expect(enabled.source?._id).toBe(before.source?._id);
+    expect(enabled.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(enabled.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    if (!firstWork) throw new Error("Expected enabled prediction-window work");
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "11:30",
+    });
+    const edited = await readPreferenceScheduleState(t, primaryId);
+    const editedWork = edited.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(edited.preference?.reminderWindowVersion).toBe(2);
+    expect(edited.work.find(({ _id }) => _id === firstWork._id)?.state).toBe("cancelled");
+    expect(editedWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(snapshot.pointDate, -3),
+        "11:30",
+        "UTC",
+      ),
+    );
+    expect(edited.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(edited.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: firstWork._id,
+        generation: firstWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+    if (!editedWork) throw new Error("Expected moved prediction-window work");
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: false,
+      localReminderTime: "11:30",
+    });
+    const disabled = await readPreferenceScheduleState(t, primaryId);
+    expect(disabled.preference?.inAppEnabled).toBe(false);
+    expect(disabled.preference?.reminderWindowVersion).toBe(3);
+    expect(disabled.work.find(({ _id }) => _id === editedWork._id)?.state).toBe(
+      "cancelled",
+    );
+    expect(disabled.source?.sourceRevision).toBe(before.source?.sourceRevision);
+    expect(disabled.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt }))).toEqual(
+      before.snapshots.map(({ _id, generatedAt }) => ({ _id, generatedAt })),
+    );
+    expect(disabled.events).toEqual([]);
+    await expect(
+      t.mutation(wakeDueWorkRef, {
+        workId: editedWork._id,
+        generation: editedWork.generation,
+      }),
+    ).resolves.toEqual({ status: "stale" });
+  });
+
+  test("refreshes a stale served snapshot through a generation-bound preference continuation", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const oldSnapshot = await seedCurrentPrediction(t, primaryId);
+    const oldWorkId = await t.run(async (ctx) => {
+      const workId = await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "prediction_window",
+        state: "pending",
+        dueAt: now + 60_000,
+        generation: 7,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.scheduler.runAt(now + 300_000, wakeDueWorkRef, {
+        workId,
+        generation: 7,
+      });
+      return workId;
+    });
+
+    vi.setSystemTime(now + 60_000);
+    await t.run(async (ctx) => {
+      const event = await ctx.db
+        .query("periodEvents")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .first();
+      const scheduleState = await ctx.db
+        .query("notificationScheduleState")
+        .withIndex("by_user_id", (q) => q.eq("userId", primaryId))
+        .unique();
+      if (!event || !scheduleState) throw new Error("Expected seeded schedule inputs");
+      await ctx.db.patch(event._id, {
+        startDate: "2026-03-02",
+        authorityVersion: 2,
+        updatedAt: now + 60_000,
+      });
+      await ctx.db.patch(scheduleState._id, {
+        sourceRevision: 8,
+        updatedAt: now + 60_000,
+      });
+    });
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const firstWrite = await readPreferenceScheduleState(t, primaryId);
+    const firstContinuation = firstWrite.scheduled.find(
+      ({ name }) =>
+        name === "mutations/notifications:resumePreferenceReconciliation",
+    );
+    expect(firstContinuation).toBeDefined();
+    const firstArgs = firstContinuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    expect(firstArgs).toMatchObject({
+      userId: primaryId,
+      purpose: "period_window_approaching",
+      reminderWindowVersion: 1,
+      sourceRevision: 8,
+    });
+    expect(firstWrite.preference?.inAppEnabled).toBe(true);
+    expect(firstWrite.snapshots.map(({ _id }) => _id)).toEqual([oldSnapshot._id]);
+    expect(firstWrite.work.find(({ _id }) => _id === oldWorkId)?.state).toBe(
+      "cancelled",
+    );
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "11:30",
+    });
+    const latestWrite = await readPreferenceScheduleState(t, primaryId);
+    const latestContinuation = latestWrite.scheduled.find(
+      ({ name, args }) =>
+        name === "mutations/notifications:resumePreferenceReconciliation" &&
+        (args?.[0] as { reminderWindowVersion?: number } | undefined)
+          ?.reminderWindowVersion === 2,
+    );
+    expect(latestContinuation).toBeDefined();
+    const latestArgs = latestContinuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    if (!firstArgs || !latestArgs) {
+      throw new Error("Expected generation-bound preference continuations");
+    }
+
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, firstArgs),
+    ).resolves.toBe("stale");
+    await expect(
+      t.mutation(wakeDueWorkRef, { workId: oldWorkId, generation: 7 }),
+    ).resolves.toEqual({ status: "stale" });
+    expect((await readPreferenceScheduleState(t, primaryId)).snapshots).toHaveLength(
+      1,
+    );
+
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, latestArgs),
+    ).resolves.toBe("refreshed");
+    const refreshed = await readPreferenceScheduleState(t, primaryId);
+    const freshSnapshot = refreshed.snapshots.find(
+      ({ _id }) => _id !== oldSnapshot._id,
+    );
+    const freshWork = refreshed.work.find(
+      ({ kind, state }) => kind === "prediction_window" && state === "pending",
+    );
+    expect(freshSnapshot).toBeDefined();
+    expect(freshWork?.generation).toBe(8);
+    expect(freshWork?.dueAt).toBe(
+      resolveLocalReminderInstant(
+        addCalendarDays(freshSnapshot!.pointDate, -3),
+        "11:30",
+        "UTC",
+      ),
+    );
+    expect(refreshed.preference?.reminderWindowVersion).toBe(2);
+    expect(refreshed.work.find(({ _id }) => _id === oldWorkId)?.state).toBe(
+      "cancelled",
+    );
+    expect(refreshed.events).toEqual([]);
+    const periodEvents = await t.run((ctx) =>
+      ctx.db
+        .query("periodEvents")
+        .withIndex("by_user", (q) => q.eq("userId", primaryId))
+        .take(10),
+    );
+    expect(periodEvents).toHaveLength(1);
+    expect(periodEvents[0]).toMatchObject({
+      startDate: "2026-03-02",
+      authorityVersion: 2,
+    });
+  });
+
+  test("an unavailable snapshot continuation waits for the next fresh-snapshot event without polling", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await seedPredictionInputs(t, primaryId);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+    const waiting = await readPreferenceScheduleState(t, primaryId);
+    const continuation = waiting.scheduled.find(
+      ({ name }) => name === "mutations/notifications:resumePreferenceReconciliation",
+    );
+    const continuationArgs = continuation?.args?.[0] as
+      | {
+          userId: Id<"users">;
+          purpose: "period_window_approaching";
+          reminderWindowVersion: number;
+          sourceRevision: number;
+        }
+      | undefined;
+    expect(waiting.snapshots).toEqual([]);
+    expect(waiting.work).toEqual([]);
+    expect(continuationArgs).toMatchObject({
+      userId: primaryId,
+      purpose: "period_window_approaching",
+      reminderWindowVersion: 1,
+      sourceRevision: 7,
+    });
+    if (!continuationArgs) throw new Error("Expected a preference continuation");
+
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    await expect(
+      t.mutation(resumePreferenceReconciliationRef, continuationArgs),
+    ).resolves.toBe("unavailable");
+    const unavailable = await readPreferenceScheduleState(t, primaryId);
+    expect(unavailable.snapshots).toEqual([]);
+    expect(unavailable.work).toEqual([]);
+    expect(
+      unavailable.scheduled.filter(
+        ({ name }) => name === "mutations/notifications:resumePreferenceReconciliation",
+      ),
+    ).toHaveLength(1);
+
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
+    const snapshotId = await t.mutation(
+      internal.internal.predictionSnapshots.ensureCurrentForUser,
+      { userId: primaryId },
+    );
+    expect(snapshotId).not.toBeNull();
+    const refreshed = await readPreferenceScheduleState(t, primaryId);
+    expect(refreshed.snapshots.map(({ _id }) => _id)).toContain(snapshotId);
+    expect(
+      refreshed.work.some(
+        ({ kind, state, generation }) =>
+          kind === "prediction_window" && state === "pending" && generation === 7,
+      ),
+    ).toBe(true);
+    expect(refreshed.events).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("periodEvents").take(10))).toHaveLength(
+      1,
+    );
+  });
+
+  test("identical scheduling preference writes dedupe revisions and wakeups", async () => {
+    enableScheduleInputs();
+    const now = Date.parse("2026-03-07T20:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    await seedCurrentPrediction(t, primaryId);
+    const write = () =>
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+      });
+
+    await write();
+    const first = await readPreferenceScheduleState(t, primaryId);
+    vi.setSystemTime(now + 60_000);
+    await write();
+    const repeated = await readPreferenceScheduleState(t, primaryId);
+
+    expect(repeated.preference?.reminderWindowVersion).toBe(
+      first.preference?.reminderWindowVersion,
+    );
+    expect(repeated.preference?.updatedAt).toBe(first.preference?.updatedAt);
+    expect(repeated.work.map(({ _id, state, dueAt }) => ({ _id, state, dueAt }))).toEqual(
+      first.work.map(({ _id, state, dueAt }) => ({ _id, state, dueAt })),
+    );
+    expect(repeated.scheduled.map(({ _id, scheduledTime }) => ({ _id, scheduledTime }))).toEqual(
+      first.scheduled.map(({ _id, scheduledTime }) => ({ _id, scheduledTime })),
+    );
+  });
+
+  test("invalid-time and wrong-recipient preference writes leave no records or work", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, primaryId, partnerId } = await seedActiveCouple(t);
+
+    await expect(
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "24:00",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPartner.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "period_window_approaching",
+        inAppEnabled: true,
+        localReminderTime: "09:00",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      asPartner.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "partner_message",
+        inAppEnabled: true,
+        userId: primaryId,
+      } as never),
+    ).rejects.toThrow();
+
+    const after = await t.run(async (ctx) => ({
+      preferences: await ctx.db.query("notificationPreferences").take(10),
+      source: await ctx.db.query("notificationScheduleState").take(10),
+      work: await ctx.db.query("notificationDueWork").take(10),
+      scheduled: await ctx.db.system.query("_scheduled_functions").take(10),
+      primary: await ctx.db.get(primaryId),
+      partner: await ctx.db.get(partnerId),
+    }));
+    expect(after.preferences).toEqual([]);
+    expect(after.source).toEqual([]);
+    expect(after.work).toEqual([]);
+    expect(after.scheduled).toEqual([]);
+    expect(after.primary?.externalNotificationConsent).toBeUndefined();
+    expect(after.partner?.externalNotificationConsent).toBeUndefined();
+  });
+
+  test("absent scheduler flag stores consent without source rows, due work, or wakeups", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+
+    const after = await readPreferenceScheduleState(t, primaryId);
+    expect(after.preference).toMatchObject({
+      inAppEnabled: true,
+      reminderWindowVersion: 1,
+      localReminderTime: "09:00",
+    });
+    expect(after.source).toBeNull();
+    expect(after.work).toEqual([]);
+    expect(after.scheduled).toEqual([]);
+  });
+
+  test("does not catch up an enabled reminder after its local validity day", async () => {
+    enableScheduleInputs();
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-04-15T12:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const { asPrimary, primaryId } = await seedActiveCouple(t);
+    const snapshot = await seedCurrentPrediction(t, primaryId);
+
+    await asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+      purpose: "period_window_approaching",
+      inAppEnabled: true,
+      localReminderTime: "09:00",
+    });
+
+    const after = await readPreferenceScheduleState(t, primaryId);
+    expect(snapshot.pointDate < "2026-04-15").toBe(true);
+    expect(after.preference?.inAppEnabled).toBe(true);
+    expect(after.source?.sourceRevision).toBe(7);
+    expect(after.snapshots.map(({ _id }) => _id)).toEqual([snapshot._id]);
+    expect(after.work).toEqual([]);
+    expect(after.scheduled.map(({ name }) => name)).toEqual([
+      "mutations/notifications:resumePreferenceReconciliation",
+    ]);
+  });
+
+  test("rejects external-channel fields on new preference and persistence paths", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, coupleId, primaryId, partnerId } = await seedActiveCouple(t);
+    const { relationshipMembershipId, messageId } = await t.run(async (ctx) => {
+      const partnerMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined),
+        )
+        .unique();
+      if (!partnerMembership) throw new Error("Expected the active relationship generation");
+      const messageId = await ctx.db.insert("coupleMessages", {
+        coupleId,
+        relationshipMembershipId: partnerMembership._id,
+        senderId: primaryId,
+        body: "fixture",
+        createdAt: Date.now(),
+      });
+      return { relationshipMembershipId: partnerMembership._id, messageId };
+    });
+    const args = {
+      envelope: {
+        eventType: "partner_message.v1" as const,
+        eventVersion: 1 as const,
+        purpose: "partner_message" as const,
+        producerKind: "new_couple_message" as const,
+        sourceReference: `message:${messageId}`,
+        sourceAuthorityVersion: `relationship-membership:${relationshipMembershipId}`,
+        ownerUserId: primaryId,
+        recipientUserId: partnerId,
+        recipientScope: "other_active_member" as const,
+        privacyClass: "relationship_private_free_text_source" as const,
+        validityRule: "while_message_and_active_link_exist" as const,
+        idempotencyKey: "event:v1:opaque",
+        allowedChannel: "in_app" as const,
+        sourceIdentity: {
+          eventType: "partner_message.v1" as const,
+          sourceId: messageId,
+          coupleId,
+          relationshipMembershipId,
+          ownerUserId: primaryId,
+          recipientUserId: partnerId,
+        },
+      },
+      route: "messages" as const,
+      templateVersion: "g4-static-v1",
+      renderIdentity: {
+        templateVersion: "g4-static-v1",
+        locale: "en",
+        variableSchemaVersion: "g4-no-variables-v1",
+        payloadHash: "test-static-message-v1",
+      },
+      createdAt: 1_800_000_000_000,
+      notBefore: 1_800_000_000_000,
+    };
+
+    await expect(
+      t.mutation(internal.mutations.notifications.ensureInAppRecords, {
+        ...args,
+        channel: "discord",
+      } as never),
+    ).rejects.toThrow();
+    await expect(
+      asPrimary.mutation(api.mutations.notifications.setMyPreference, {
+        purpose: "partner_message",
+        inAppEnabled: true,
+        channel: "discord",
+      } as never),
+    ).rejects.toThrow();
+  });
+
+  test("bounds due-work reads to pending rows at or before the supplied time", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "source_reconcile",
+        state: "pending",
+        dueAt: 10,
+        generation: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "source_reconcile",
+        state: "pending",
+        dueAt: 20,
+        generation: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("notificationDueWork", {
+        ownerUserId: primaryId,
+        kind: "source_reconcile",
+        state: "completed",
+        dueAt: 5,
+        generation: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const rows = await t.query(internal.queries.notifications.getDueWork, {
+      now: 10,
+      limit: 10,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dueAt).toBe(10);
+  });
+
+  test("accepts scheduled prediction and Late boundary work kinds", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    const kinds = ["prediction_window", "late_boundary"] as const;
+
+    await t.run(async (ctx) => {
+      for (const kind of kinds) {
+        await ctx.db.insert("notificationDueWork", {
+          ownerUserId: primaryId,
+          kind,
+          state: "pending",
+          dueAt: 10,
+          generation: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+    });
+
+    await t.run(async (ctx) => {
+      const rows = await ctx.db.query("notificationDueWork").collect();
+      expect(rows.map((row) => row.kind)).toEqual(kinds);
+    });
+  });
+
+  test("keeps pain requests minimal and schedule authority unbackfilled", async () => {
+    const t = convexTest(schema, modules);
+    const { primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("notificationScheduleState").collect()).toHaveLength(0);
+    });
+  });
+
+  test("freezes strict in-app, deny-only, content-free storage shapes", () => {
+    expect(Object.keys(notificationInAppDeliveryValidator.fields)).not.toContain(
+      "providerMessageId",
+    );
+    expect(
+      Object.keys(notificationInAppAttemptValidator.fields.result.fields),
+    ).toEqual(["kind"]);
+    expect(Object.keys(notificationControlValidator.fields).sort()).toEqual([
+      "key",
+      "operatorReference",
+      "scope",
+      "updatedAt",
+      "version",
+    ]);
+    expect(Object.keys(painReminderRequestValidator.fields).sort()).toEqual([
+      "createdAt",
+      "ownerUserId",
+      "painLogId",
+      "requestVersion",
+      "selectedLocalDay",
+      "state",
+      "updatedAt",
+    ]);
+    expect(indexDefinitions(schema.tables.notificationDueWork)).toContainEqual({
+      indexDescriptor: "by_state_and_due_at",
+      fields: ["state", "dueAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDueWork)).toContainEqual({
+      indexDescriptor: "by_kind_and_state_and_due_at",
+      fields: ["kind", "state", "dueAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDueWork)).toContainEqual({
+      indexDescriptor: "by_owner_kind_state_due_gen_src_auth_ver_reminder_window_ver",
+      fields: [
+        "ownerUserId",
+        "kind",
+        "state",
+        "dueAt",
+        "generation",
+        "sourceAuthorityVersion",
+        "reminderWindowVersion",
+      ],
+    });
+    expect(Object.keys(notificationScheduleStateValidator.fields).sort()).toEqual([
+      "createdAt",
+      "sourceAuthorityVersion",
+      "sourceRevision",
+      "updatedAt",
+      "userId",
+    ]);
+    expect(Object.keys(notificationDueWorkValidator.fields)).toEqual(
+      expect.arrayContaining(["sourceAuthorityVersion", "reminderWindowVersion"]),
+    );
+    expect(indexDefinitions(schema.tables.notificationScheduleState)).toContainEqual({
+      indexDescriptor: "by_user_id",
+      fields: ["userId"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDeliveries)).toContainEqual({
+      indexDescriptor: "by_state_and_expires_at",
+      fields: ["state", "expiresAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDeliveries)).toContainEqual({
+      indexDescriptor: "by_state_and_next_receipt_check_at",
+      fields: ["state", "nextReceiptCheckAt"],
+    });
+    expect(indexDefinitions(schema.tables.notificationDeliveries)).not.toContainEqual({
+      indexDescriptor: "by_state_and_receipt_check_at",
+      fields: ["state", "nextReceiptCheckAt"],
+    });
+  });
+});

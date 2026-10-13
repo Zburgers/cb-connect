@@ -1,11 +1,12 @@
 import { v } from "convex/values";
 import { mutation } from "../_generated/server";
 import { getCurrentUser } from "../_helpers/auth";
-import { internal } from "../_generated/api";
+import { advanceNotificationSourceAuthority } from "../_helpers/notificationSourceAuthority";
 import {
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
 } from "../_helpers/calendarDates";
+import { reconcileUserSchedule } from "../internal/notificationScheduler";
 
 export const createOrUpdatePainLog = mutation({
   args: {
@@ -26,7 +27,8 @@ export const createOrUpdatePainLog = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     const timeZone = resolveCalendarTimeZone(args.timeZone ?? user.timeZone);
-    if (args.timeZone !== undefined && args.timeZone !== user.timeZone) {
+    const timeZoneChanged = args.timeZone !== undefined && args.timeZone !== user.timeZone;
+    if (timeZoneChanged) {
       await ctx.db.patch(user._id, { timeZone });
     }
     requirePastOrTodayCalendarDate(args.date, "Pain log date", timeZone);
@@ -54,12 +56,9 @@ export const createOrUpdatePainLog = mutation({
         updatedAt: Date.now(),
       });
 
-      if (args.painScore >= 7 && user.externalNotificationConsent) {
-        await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-          userId: user._id,
-          type: "high_pain_logged",
-          message: `High pain check-in logged on ${args.date}.`,
-        });
+      if (timeZoneChanged && user.role === "primary") {
+        const source = await advanceNotificationSourceAuthority(ctx, user._id);
+        if (source) await reconcileUserSchedule(ctx, user._id);
       }
 
       return { logId: existing._id, created: false };
@@ -75,12 +74,9 @@ export const createOrUpdatePainLog = mutation({
       updatedAt: Date.now(),
     });
 
-    if (args.painScore >= 7 && user.externalNotificationConsent) {
-      await ctx.scheduler.runAfter(0, internal.actions.discord.sendDiscordNotification, {
-        userId: user._id,
-        type: "high_pain_logged",
-        message: `High pain check-in logged on ${args.date}.`,
-      });
+    if (timeZoneChanged && user.role === "primary") {
+      const source = await advanceNotificationSourceAuthority(ctx, user._id);
+      if (source) await reconcileUserSchedule(ctx, user._id);
     }
 
     return { logId, created: true };
