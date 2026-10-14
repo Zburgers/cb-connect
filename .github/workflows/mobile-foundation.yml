@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.16.0
+      - name: Pin isolated npm 11 resolver (web Node20 unaffected)
+        run: npm install --global npm@11.6.2 && npm --version
       - name: Confirm separate web/npm boundary and mobile toolchain
         run: |
           test "$(node -p 'process.versions.node')" = 22.16.0
@@ -30,7 +32,11 @@ jobs:
       - name: Generate isolated lock probe; install dependency tree
         working-directory: apps/mobile
         run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --loglevel=warn || {
+            echo "::error::M1 isolated dependency resolution failed";
+            find "$HOME/.npm/_logs" -name '*debug-0.log' -mmin -15 -exec sh -c 'tail -80 "$1" | sed -E "s#(https?://)[^ @]+:[^ @]+@#\\1[REDACTED]@#g"' _ {} \\; | tail -120;
+            exit 1;
+          }
           npm ci --no-audit --no-fund
           npm ls react react-native expo expo-router --depth=0
       - name: Test native TypeScript contract and export resolution
