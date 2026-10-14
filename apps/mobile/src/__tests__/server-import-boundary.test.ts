@@ -12,6 +12,7 @@ const sourceFiles = [
 ];
 const privateServerModule =
   /(?:^|\/)convex\/(?:_helpers\/|schema(?:\.|\/|$)|queries\/|mutations\/|actions\/|crons(?:\.|\/|$)|http(?:\.|\/|$)|_generated\/(?:server|dataModel|internal)(?:\.|\/|$))/;
+const convexServerRuntimeModule = /(?:^|\/)convex\/server$/;
 
 function importedModule(statement: ts.Statement): string | undefined {
   if (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) {
@@ -22,12 +23,42 @@ function importedModule(statement: ts.Statement): string | undefined {
   return undefined;
 }
 
+function isRuntimeImport(statement: ts.Statement): boolean {
+  if (ts.isImportDeclaration(statement)) {
+    const clause = statement.importClause;
+    if (!clause) return true;
+    if (clause.isTypeOnly) return false;
+    if (clause.name) return true;
+    if (!clause.namedBindings) return false;
+    if (ts.isNamespaceImport(clause.namedBindings)) return true;
+    return (
+      ts.isNamedImports(clause.namedBindings) &&
+      clause.namedBindings.elements.some((element) => !element.isTypeOnly)
+    );
+  }
+  if (ts.isExportDeclaration(statement)) {
+    if (statement.isTypeOnly) return false;
+    return !(
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause) &&
+      statement.exportClause.elements.length > 0 &&
+      statement.exportClause.elements.every((element) => element.isTypeOnly)
+    );
+  }
+  return false;
+}
+
 function serverImportViolations(text: string, fileName: string): string[] {
   const violations: string[] = [];
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
   const visit = (node: ts.Node) => {
     const specifier = ts.isStatement(node) ? importedModule(node) : undefined;
-    if (specifier && privateServerModule.test(specifier)) {
+    if (
+      specifier &&
+      ts.isStatement(node) &&
+      isRuntimeImport(node) &&
+      (privateServerModule.test(specifier) || convexServerRuntimeModule.test(specifier))
+    ) {
       violations.push(`${fileName}: ${specifier}`);
     }
     if (
@@ -47,7 +78,8 @@ function serverImportViolations(text: string, fileName: string): string[] {
         (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
       node.arguments[0] &&
       ts.isStringLiteral(node.arguments[0]) &&
-      privateServerModule.test(node.arguments[0].text)
+      (privateServerModule.test(node.arguments[0].text) ||
+        convexServerRuntimeModule.test(node.arguments[0].text))
     ) {
       violations.push(`${fileName}: ${node.arguments[0].text}`);
     }
@@ -74,6 +106,22 @@ describe("native public Convex import boundary", () => {
     expect(
       serverImportViolations('import { api } from "../../../convex/_generated/api";', "fixture.ts"),
     ).toEqual([]);
+    expect(
+      serverImportViolations('import { query } from "convex/server";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(serverImportViolations('import "convex/server";', "fixture.ts")).toHaveLength(1);
+    expect(
+      serverImportViolations('import type { QueryBuilder } from "convex/server";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import { type QueryBuilder } from "convex/server";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('void import("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const server = require("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
   });
 
   it("keeps server implementation modules out of the client source", () => {
