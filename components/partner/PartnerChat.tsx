@@ -17,12 +17,14 @@ const QUICK_LINES = [
 interface PartnerChatProps {
   partnerName?: string | null;
   partnerImageUrl?: string | null;
+  relationshipGeneration: string;
   showLauncher?: boolean;
 }
 
 export default function PartnerChat({
   partnerName,
   partnerImageUrl,
+  relationshipGeneration,
   showLauncher = true,
 }: PartnerChatProps) {
   const messages = useQuery(api.queries.messages.listForCouple, { limit: 80 });
@@ -96,7 +98,7 @@ export default function PartnerChat({
     if (!confirm("Clear this couple chat for both partners?")) return;
     setError("");
     try {
-      await clearChat();
+      await clearChat({ relationshipGeneration });
       setMenuOpen(false);
     } catch (err: any) {
       setError(err?.message ?? "Could not clear chat.");

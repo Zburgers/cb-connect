@@ -64,6 +64,7 @@ jobs:
 
       - name: Workflow security and release policy
         run: |
+          bash scripts/tests/pm2-config.test.sh
           bash scripts/tests/ci-workflow.test.sh
           bash scripts/tests/deploy-workflow.test.sh
           bash scripts/tests/release-http-probe.test.sh

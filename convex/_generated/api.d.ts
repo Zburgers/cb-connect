@@ -74,6 +74,7 @@ import type * as queries_couples from "../queries/couples.js";
 import type * as queries_dashboard from "../queries/dashboard.js";
 import type * as queries_history from "../queries/history.js";
 import type * as queries_messages from "../queries/messages.js";
+import type * as queries_mobileAccess from "../queries/mobileAccess.js";
 import type * as queries_notifications from "../queries/notifications.js";
 import type * as queries_nudges from "../queries/nudges.js";
 import type * as queries_presence from "../queries/presence.js";
@@ -154,6 +155,7 @@ declare const fullApi: ApiFromModules<{
   "queries/dashboard": typeof queries_dashboard;
   "queries/history": typeof queries_history;
   "queries/messages": typeof queries_messages;
+  "queries/mobileAccess": typeof queries_mobileAccess;
   "queries/notifications": typeof queries_notifications;
   "queries/nudges": typeof queries_nudges;
   "queries/presence": typeof queries_presence;

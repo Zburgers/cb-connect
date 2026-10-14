@@ -662,6 +662,34 @@ describe("partner-assisted period logging", () => {
 });
 
 describe("prediction pause cycle settings", () => {
+  test("rejects a stale expected cycle settings snapshot atomically", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    const original = await asPrimary.query(api.queries.history.getCycleSettings, {});
+
+    await asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+      cycleLength: 31,
+      expectedCurrent: {
+        cycleLength: original.cycleLength,
+        periodLength: original.periodLength,
+      },
+    });
+
+    await expect(
+      asPrimary.mutation(api.mutations.periods.updateCycleSettings, {
+        cycleLength: 32,
+        expectedCurrent: {
+          cycleLength: original.cycleLength,
+          periodLength: original.periodLength,
+        },
+      }),
+    ).rejects.toMatchObject({ data: { code: "STALE_CYCLE_SETTINGS" } });
+
+    await expect(
+      asPrimary.query(api.queries.history.getCycleSettings, {}),
+    ).resolves.toMatchObject({ cycleLength: 31, periodLength: original.periodLength });
+  });
+
   test("rejects non-finite cycle lengths", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary } = await seedActiveCouple(t);

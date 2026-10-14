@@ -416,11 +416,23 @@ export const react = mutation({
   },
 });
 
+/**
+ * Clear the active couple's chat, checking the generation when supplied.
+ *
+ * @param args.relationshipGeneration The active generation from `getCoupleStatus`; optional for older clients.
+ * @returns The server timestamp for the clear transition.
+ * @throws If the caller is not an active couple member or a supplied generation changed.
+ * @example `clear({ relationshipGeneration: couple.relationshipGeneration })` or legacy `clear({})`.
+ */
 export const clear = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { relationshipGeneration: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     const { user, couple, membership, partnerMembership, relationshipMembershipId } =
       await getActiveCoupleSpace(ctx);
+    if (args.relationshipGeneration !== undefined &&
+        args.relationshipGeneration !== String(relationshipMembershipId)) {
+      throw new Error("Relationship changed; refresh chat");
+    }
     const now = Math.max(Date.now(), (couple.chatClearedAt ?? 0) + 1);
     await ctx.db.patch(couple._id, { chatClearedAt: now, chatClearedBy: user._id });
     const states = await Promise.all(

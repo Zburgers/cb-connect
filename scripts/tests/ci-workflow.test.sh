@@ -16,6 +16,7 @@ required_patterns=(
   'run: npm run build'
   'run: npm run typecheck'
   'run: npm run test:unit -- --run'
+  'bash scripts/tests/pm2-config.test.sh'
   'run: npm audit --omit=dev'
   '^  release-artifact:'
   'needs: \[qualify, authenticated-smoke\]'
