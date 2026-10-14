@@ -128,6 +128,23 @@ function isModuleRequire(expression: ts.Expression): boolean {
   );
 }
 
+function isDirectLoaderCall(expression: ts.Expression): boolean {
+  return ts.isCallExpression(expression.parent) && expression.parent.expression === expression;
+}
+
+function isRequireLoaderReference(node: ts.Node): boolean {
+  if (ts.isIdentifier(node) && node.text === "require") {
+    const modulePropertyName =
+      ts.isPropertyAccessExpression(node.parent) && node.parent.name === node;
+    return !modulePropertyName && !isDirectLoaderCall(node);
+  }
+  return (
+    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+    isModuleRequire(node) &&
+    !isDirectLoaderCall(node)
+  );
+}
+
 function isDynamicModuleLoad(node: ts.Node): node is ts.CallExpression {
   return (
     ts.isCallExpression(node) &&
@@ -158,13 +175,8 @@ function serverImportViolations(text: string, fileName: string): string[] {
     ) {
       violations.push(`${fileName}: internal Convex references are server-only`);
     }
-    if (
-      ts.isVariableDeclaration(node) &&
-      node.initializer &&
-      ((ts.isIdentifier(node.initializer) && node.initializer.text === "require") ||
-        isModuleRequire(node.initializer))
-    ) {
-      violations.push(`${fileName}: require loader aliases are not allowed`);
+    if (isRequireLoaderReference(node)) {
+      violations.push(`${fileName}: require loader references must be direct calls`);
     }
     if (isDynamicModuleLoad(node)) {
       const target = node.arguments[0] && staticModuleSpecifier(node.arguments[0]);
@@ -270,6 +282,12 @@ describe("native public Convex import boundary", () => {
     ).toHaveLength(1);
     expect(
       serverImportViolations('const load = module.require; load("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const load = require.bind(module); load("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const load = module.require.bind(module); load("convex/server");', "fixture.ts"),
     ).toHaveLength(1);
     expect(
       serverImportViolations('void import(`../../../convex/_generated/api`);', "fixture.ts"),
