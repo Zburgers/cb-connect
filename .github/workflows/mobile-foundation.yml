@@ -29,20 +29,11 @@ jobs:
           test "$(node -p 'process.versions.node')" = 22.16.0
           node -e 'const p=require("./package.json"); if (p.workspaces || p.scripts["mobile:build:android"]) process.exit(1)'
           test -s apps/mobile/package-lock.json # M1 isolated lockfile must be committed
-      - name: Resolve Expo-recommended mobile patch versions (one-time lock refresh)
-        working-directory: apps/mobile
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Reproducible isolated mobile installation
         working-directory: apps/mobile
         run: |
           npm ci --no-audit --no-fund
           npm ls react react-native expo expo-router --depth=0
-      - name: Export non-secret mobile lockfile for exact Git commit (one-time)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/gate5/atlas-foundation'
-        run: |
-          echo G5_LOCK_BEGIN
-          base64 -w 160 apps/mobile/package-lock.json | sed 's/^/G5LOCK:/'
-          echo G5_LOCK_END
       - name: Test native TypeScript contract and export resolution
         working-directory: apps/mobile
         run: |
