@@ -5,10 +5,23 @@ const mobileRoot = ts.sys.getCurrentDirectory().endsWith("/apps/mobile")
   ? ts.sys.getCurrentDirectory()
   : `${ts.sys.getCurrentDirectory()}/apps/mobile`;
 const repositoryRoot = mobileRoot.slice(0, -"/apps/mobile".length);
+const sourceExtensions = [
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".mjs",
+  ".cjs",
+  ".mts",
+  ".cts",
+];
+const appConfigExtensions = [".js", ".ts", ".mjs", ".cjs", ".mts", ".cts"];
 const sourceFiles = [
-  ...ts.sys.readDirectory(`${mobileRoot}/src`, [".ts", ".tsx"]),
-  ...ts.sys.readDirectory(`${repositoryRoot}/packages/contracts/src`, [".ts", ".tsx"]),
-  `${mobileRoot}/app.config.ts`,
+  ...ts.sys.readDirectory(`${mobileRoot}/src`, sourceExtensions),
+  ...ts.sys.readDirectory(`${repositoryRoot}/packages/contracts/src`, sourceExtensions),
+  ...appConfigExtensions
+    .map((extension) => `${mobileRoot}/app.config${extension}`)
+    .filter((file) => ts.sys.fileExists(file)),
 ];
 const privateServerModule =
   /(?:^|\/)convex\/(?:_helpers\/|schema(?:\.|\/|$)|queries\/|mutations\/|actions\/|crons(?:\.|\/|$)|http(?:\.|\/|$)|_generated\/(?:server|dataModel|internal)(?:\.|\/|$))/;
@@ -98,11 +111,27 @@ function importsGeneratedInternalApi(statement: ts.Statement): boolean {
   return false;
 }
 
+function isModuleRequire(expression: ts.Expression): boolean {
+  return (
+    (ts.isPropertyAccessExpression(expression) &&
+      ts.isIdentifier(expression.expression) &&
+      expression.expression.text === "module" &&
+      expression.name.text === "require") ||
+    (ts.isElementAccessExpression(expression) &&
+      ts.isIdentifier(expression.expression) &&
+      expression.expression.text === "module" &&
+      expression.argumentExpression !== undefined &&
+      ts.isStringLiteral(expression.argumentExpression) &&
+      expression.argumentExpression.text === "require")
+  );
+}
+
 function isDynamicModuleLoad(node: ts.Node): node is ts.CallExpression {
   return (
     ts.isCallExpression(node) &&
     (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-      (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+      (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
+      isModuleRequire(node.expression))
   );
 }
 
@@ -126,6 +155,14 @@ function serverImportViolations(text: string, fileName: string): string[] {
       importsGeneratedInternalApi(node)
     ) {
       violations.push(`${fileName}: internal Convex references are server-only`);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      ((ts.isIdentifier(node.initializer) && node.initializer.text === "require") ||
+        isModuleRequire(node.initializer))
+    ) {
+      violations.push(`${fileName}: require loader aliases are not allowed`);
     }
     if (isDynamicModuleLoad(node)) {
       const target = node.arguments[0] && staticModuleSpecifier(node.arguments[0]);
@@ -213,6 +250,18 @@ describe("native public Convex import boundary", () => {
     ).toHaveLength(1);
     expect(
       serverImportViolations('const server = require(`convex/server`);', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const server = module.require("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const server = module["require"]("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const load = require; load("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const load = module.require; load("convex/server");', "fixture.ts"),
     ).toHaveLength(1);
     expect(
       serverImportViolations('void import(`../../../convex/_generated/api`);', "fixture.ts"),
