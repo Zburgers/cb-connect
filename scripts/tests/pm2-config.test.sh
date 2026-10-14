@@ -47,11 +47,6 @@ if ! rg -q 'pm2 start pm2\.config\.js --update-env' "$promotion_script"; then
   exit 1
 fi
 
-if ! rg -q "exec_mode:[[:space:]]*['\"]cluster_mode['\"]" "$pm2_config"; then
-  echo "PM2 config must retain the compiled cluster-mode contract" >&2
-  exit 1
-fi
-
 if ! rg -q "log_date_format:[[:space:]]*['\"]YYYY-MM-DDTHH:mm:ss\.SSSZ['\"]" "$pm2_config"; then
   echo "PM2 config must emit RFC3339 timestamps on both log streams" >&2
   exit 1

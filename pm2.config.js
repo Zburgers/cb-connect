@@ -12,7 +12,6 @@ module.exports = {
       ...(releaseDir ? {} : { args: 'run start' }),
       cwd: releaseDir || process.cwd(),
       instances: 1,
-      exec_mode: 'cluster_mode',
       log_date_format: 'YYYY-MM-DDTHH:mm:ss.SSSZ',
       out_file: path.join(pm2Home, 'logs', 'cb-connect-out.log'),
       error_file: path.join(pm2Home, 'logs', 'cb-connect-error.log'),

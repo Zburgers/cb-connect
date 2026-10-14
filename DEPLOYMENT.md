@@ -35,8 +35,8 @@ promotion. Promotions are serialized. On failure, it restores the last
 checksum-verified compatible candidate. The first verified release establishes
 the rollback chain.
 
-The PM2 ecosystem keeps one cluster-mode instance and prefixes both output
-streams with RFC3339 timestamps. After promotion and rollback, the shared helper
+The PM2 ecosystem preserves the configured execution mode and prefixes both
+output streams with RFC3339 timestamps. After promotion and rollback, the shared helper
 removes group/world write permission from the PM2 log directory and the two
 fixed CB Connect log files. It fails closed if the PM2 log root or an existing
 CB Connect log file is a symlink, has an unexpected type, or is not owned by
