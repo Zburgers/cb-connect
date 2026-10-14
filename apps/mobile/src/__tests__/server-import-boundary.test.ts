@@ -27,7 +27,7 @@ const sourceFiles = [
 const privateServerModule =
   /(?:^|\/)convex\/(?:_helpers\/|schema(?:\.|\/|$)|queries\/|mutations\/|actions\/|crons(?:\.|\/|$)|http(?:\.|\/|$)|_generated\/(?:server|dataModel|internal)(?:\.|\/|$))/;
 const convexServerRuntimeModule = /(?:^|\/)convex\/server$/;
-const generatedPublicApiModule = /(?:^|\/)convex\/_generated\/api$/;
+const generatedPublicApiModule = /(?:^|\/)convex\/_generated\/api(?:\.[^/]+)?$/;
 
 function staticModuleSpecifier(expression: ts.Expression): string | undefined {
   if (!ts.isStringLiteral(expression) && !ts.isNoSubstitutionTemplateLiteral(expression)) {
@@ -238,6 +238,12 @@ describe("native public Convex import boundary", () => {
     ).toHaveLength(1);
     expect(
       serverImportViolations('import { api } from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import { internal } from "../../../convex/_generated/api.js";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('import { api } from "../../../convex/_generated/api.js";', "fixture.ts"),
     ).toEqual([]);
     expect(
       serverImportViolations('import type { internal } from "../../../convex/_generated/api";', "fixture.ts"),
