@@ -13,12 +13,26 @@ const sourceFiles = [
 const privateServerModule =
   /(?:^|\/)convex\/(?:_helpers\/|schema(?:\.|\/|$)|queries\/|mutations\/|actions\/|crons(?:\.|\/|$)|http(?:\.|\/|$)|_generated\/(?:server|dataModel|internal)(?:\.|\/|$))/;
 const convexServerRuntimeModule = /(?:^|\/)convex\/server$/;
+const generatedPublicApiModule = /(?:^|\/)convex\/_generated\/api$/;
+
+function staticModuleSpecifier(expression: ts.Expression): string | undefined {
+  return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)
+    ? expression.text
+    : undefined;
+}
 
 function importedModule(statement: ts.Statement): string | undefined {
   if (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) {
-    return statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
-      ? statement.moduleSpecifier.text
+    return statement.moduleSpecifier
+      ? staticModuleSpecifier(statement.moduleSpecifier)
       : undefined;
+  }
+  if (
+    ts.isImportEqualsDeclaration(statement) &&
+    ts.isExternalModuleReference(statement.moduleReference)
+  ) {
+    const expression = statement.moduleReference.expression;
+    return expression ? staticModuleSpecifier(expression) : undefined;
   }
   return undefined;
 }
@@ -33,7 +47,8 @@ function isRuntimeImport(statement: ts.Statement): boolean {
     if (ts.isNamespaceImport(clause.namedBindings)) return true;
     return (
       ts.isNamedImports(clause.namedBindings) &&
-      clause.namedBindings.elements.some((element) => !element.isTypeOnly)
+      (clause.namedBindings.elements.length === 0 ||
+        clause.namedBindings.elements.some((element) => !element.isTypeOnly))
     );
   }
   if (ts.isExportDeclaration(statement)) {
@@ -45,7 +60,50 @@ function isRuntimeImport(statement: ts.Statement): boolean {
       statement.exportClause.elements.every((element) => element.isTypeOnly)
     );
   }
+  if (ts.isImportEqualsDeclaration(statement)) {
+    return !statement.isTypeOnly && ts.isExternalModuleReference(statement.moduleReference);
+  }
   return false;
+}
+
+function importsGeneratedInternalApi(statement: ts.Statement): boolean {
+  if (!isRuntimeImport(statement)) return false;
+  if (ts.isImportEqualsDeclaration(statement)) return true;
+  if (ts.isImportDeclaration(statement)) {
+    const clause = statement.importClause;
+    if (!clause || clause.name || !clause.namedBindings) return true;
+    if (ts.isNamespaceImport(clause.namedBindings)) return true;
+    const elements = clause.namedBindings.elements;
+    return (
+      elements.length === 0 ||
+      elements.some(
+        (element) =>
+          !element.isTypeOnly &&
+          (element.propertyName?.text ?? element.name.text) !== "api",
+      )
+    );
+  }
+  if (ts.isExportDeclaration(statement)) {
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) return true;
+    const elements = statement.exportClause.elements;
+    return (
+      elements.length === 0 ||
+      elements.some(
+        (element) =>
+          !element.isTypeOnly &&
+          (element.propertyName?.text ?? element.name.text) !== "api",
+      )
+    );
+  }
+  return false;
+}
+
+function isDynamicModuleLoad(node: ts.Node): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) &&
+    (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+      (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+  );
 }
 
 function serverImportViolations(text: string, fileName: string): string[] {
@@ -62,26 +120,24 @@ function serverImportViolations(text: string, fileName: string): string[] {
       violations.push(`${fileName}: ${specifier}`);
     }
     if (
-      ts.isImportDeclaration(node) &&
-      /(?:^|\/)convex\/_generated\/api$/.test(specifier ?? "") &&
-      node.importClause?.namedBindings &&
-      ts.isNamedImports(node.importClause.namedBindings) &&
-      node.importClause.namedBindings.elements.some(
-        (element) => element.name.text === "internal" || element.propertyName?.text === "internal",
-      )
+      specifier &&
+      ts.isStatement(node) &&
+      generatedPublicApiModule.test(specifier) &&
+      importsGeneratedInternalApi(node)
     ) {
       violations.push(`${fileName}: internal Convex references are server-only`);
     }
-    if (
-      ts.isCallExpression(node) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
-      node.arguments[0] &&
-      ts.isStringLiteral(node.arguments[0]) &&
-      (privateServerModule.test(node.arguments[0].text) ||
-        convexServerRuntimeModule.test(node.arguments[0].text))
-    ) {
-      violations.push(`${fileName}: ${node.arguments[0].text}`);
+    if (isDynamicModuleLoad(node)) {
+      const target = node.arguments[0] && staticModuleSpecifier(node.arguments[0]);
+      if (!target) {
+        violations.push(`${fileName}: dynamic module targets must be static`);
+      } else if (
+        privateServerModule.test(target) ||
+        convexServerRuntimeModule.test(target) ||
+        generatedPublicApiModule.test(target)
+      ) {
+        violations.push(`${fileName}: ${target}`);
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -107,6 +163,27 @@ describe("native public Convex import boundary", () => {
       serverImportViolations('import { api } from "../../../convex/_generated/api";', "fixture.ts"),
     ).toEqual([]);
     expect(
+      serverImportViolations('import type { internal } from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import { api as internal } from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import * as convexApi from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('export * from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('export type { internal } from "../../../convex/_generated/api";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import {} from "convex/server";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('export * from "convex/server";', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
       serverImportViolations('import { query } from "convex/server";', "fixture.ts"),
     ).toHaveLength(1);
     expect(serverImportViolations('import "convex/server";', "fixture.ts")).toHaveLength(1);
@@ -117,10 +194,31 @@ describe("native public Convex import boundary", () => {
       serverImportViolations('import { type QueryBuilder } from "convex/server";', "fixture.ts"),
     ).toEqual([]);
     expect(
+      serverImportViolations('export type { QueryBuilder } from "convex/server";', "fixture.ts"),
+    ).toEqual([]);
+    expect(
+      serverImportViolations('import server = require("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('import type ServerTypes = require("convex/server");', "fixture.ts"),
+    ).toEqual([]);
+    expect(
       serverImportViolations('void import("convex/server");', "fixture.ts"),
     ).toHaveLength(1);
     expect(
       serverImportViolations('const server = require("convex/server");', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('void import(`convex/server`);', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('const server = require(`convex/server`);', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('void import(`../../../convex/_generated/api`);', "fixture.ts"),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations('void import(modulePath);', "fixture.ts"),
     ).toHaveLength(1);
   });
 
