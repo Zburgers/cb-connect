@@ -7,17 +7,17 @@ workflow=".github/workflows/deploy.yml"
 promotion_script="scripts/promote-pm2.sh"
 package_json="package.json"
 
-if rg -n '(SECRET|DEPLOY_KEY|CONVEX_DEPLOYMENT|NEXT_PUBLIC_[A-Z_]*URL|https?://)' "$pm2_config"; then
+if grep -En '(SECRET|DEPLOY_KEY|CONVEX_DEPLOYMENT|NEXT_PUBLIC_[A-Z_]*URL|https?://)' "$pm2_config"; then
   echo "pm2 config must not contain secret, deployment, URL or key identifiers" >&2
   exit 1
 fi
 
-if rg -n "(^|[[:space:]])(SECRET|TOKEN|PASSWORD|KEY|URL)[A-Z_]*[[:space:]]*[:=][[:space:]]*[\"'][[:space:]]*[\"']" "$pm2_config"; then
+if grep -En "(^|[[:space:]])(SECRET|TOKEN|PASSWORD|KEY|URL)[A-Z_]*[[:space:]]*[:=][[:space:]]*[\"'][[:space:]]*[\"']" "$pm2_config"; then
   echo "pm2 config must not contain blank secret placeholders" >&2
   exit 1
 fi
 
-if rg -n 'sed[[:space:]]+-i|pm2[[:space:]]+delete' "$workflow"; then
+if grep -En 'sed[[:space:]]+-i|pm2[[:space:]]+delete' "$workflow"; then
   echo "deploy workflow must not mutate source or delete the healthy process" >&2
   exit 1
 fi
@@ -27,63 +27,63 @@ if [[ ! -f "$promotion_script" ]]; then
   exit 1
 fi
 
-if ! rg -q 'scripts/promote-pm2\.sh' "$workflow"; then
+if ! grep -Eq 'scripts/promote-pm2\.sh' "$workflow"; then
   echo "deploy workflow must use the shared PM2 promotion helper" >&2
   exit 1
 fi
 
-if ! rg -q 'pm2 startOrReload pm2\.config\.js --update-env' "$promotion_script"; then
+if ! grep -Eq 'pm2 startOrReload pm2\.config\.js --update-env' "$promotion_script"; then
   echo "PM2 promotion helper must use non-destructive startOrReload for an already immutable process" >&2
   exit 1
 fi
 
-if ! rg -q 'pm2 delete "\$process_name"' "$promotion_script"; then
+if ! grep -Eq 'pm2 delete "\$process_name"' "$promotion_script"; then
   echo "PM2 promotion helper must replace a stale process definition" >&2
   exit 1
 fi
 
-if ! rg -q 'pm2 start pm2\.config\.js --update-env' "$promotion_script"; then
+if ! grep -Eq 'pm2 start pm2\.config\.js --update-env' "$promotion_script"; then
   echo "PM2 promotion helper must start the configured immutable release" >&2
   exit 1
 fi
 
-if ! rg -q "log_date_format:[[:space:]]*['\"]YYYY-MM-DDTHH:mm:ss\.SSSZ['\"]" "$pm2_config"; then
+if ! grep -Eq "log_date_format:[[:space:]]*['\"]YYYY-MM-DDTHH:mm:ss\.SSSZ['\"]" "$pm2_config"; then
   echo "PM2 config must emit RFC3339 timestamps on both log streams" >&2
   exit 1
 fi
 
-if ! rg -q 'merge_logs:[[:space:]]*true' "$pm2_config"; then
+if ! grep -Eq 'merge_logs:[[:space:]]*true' "$pm2_config"; then
   echo "PM2 config must preserve the fixed log filenames without process ID suffixes" >&2
   exit 1
 fi
 
-if ! rg -q "out_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-out\.log['\"]\)" "$pm2_config" ||
-   ! rg -q "error_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-error\.log['\"]\)" "$pm2_config"; then
+if ! grep -Eq "out_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-out\.log['\"]\)" "$pm2_config" ||
+   ! grep -Eq "error_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-error\.log['\"]\)" "$pm2_config"; then
   echo "PM2 config must write only to the reviewed CB Connect log source paths" >&2
   exit 1
 fi
 
-if [[ $(rg -c 'secure-pm2-logs' "$promotion_script") -ne 2 ]]; then
+if [[ $(grep -Ec 'secure-pm2-logs' "$promotion_script") -ne 2 ]]; then
   echo "PM2 promotion must secure existing and newly created CB Connect log files" >&2
   exit 1
 fi
 
-if ! rg -q 'cwd:[[:space:]]*releaseDir[[:space:]]*\|\|[[:space:]]*process\.cwd\(\)' "$pm2_config"; then
+if ! grep -Eq 'cwd:[[:space:]]*releaseDir[[:space:]]*\|\|[[:space:]]*process\.cwd\(\)' "$pm2_config"; then
   echo "pm2 config must run from the immutable release directory when supplied" >&2
   exit 1
 fi
 
-if ! rg -q "path\.join\(releaseDir,[[:space:]]*['\"]server\.js['\"]\)" "$pm2_config"; then
+if ! grep -Eq "path\.join\(releaseDir,[[:space:]]*['\"]server\.js['\"]\)" "$pm2_config"; then
   echo "pm2 config must promote the packaged standalone server when supplied" >&2
   exit 1
 fi
 
-if ! rg -q "args:[[:space:]]*[\"']run start[\"']" "$pm2_config"; then
+if ! grep -Eq "args:[[:space:]]*[\"']run start[\"']" "$pm2_config"; then
   echo "pm2 config must use the package start command" >&2
   exit 1
 fi
 
-if ! rg -q '"start":[[:space:]]*"next start -p 6050"' "$package_json"; then
+if ! grep -Eq '"start":[[:space:]]*"next start -p 6050"' "$package_json"; then
   echo "pm2 must retain the approved 6050 listener contract" >&2
   exit 1
 fi
