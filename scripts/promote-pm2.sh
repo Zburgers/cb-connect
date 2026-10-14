@@ -10,7 +10,7 @@ if [[ ! -f "$expected_script" ]]; then
   exit 1
 fi
 
-bash scripts/secure-pm2-logs.sh
+python3 scripts/secure-pm2-logs.py
 
 current_script="$(
   pm2 jlist | node -e '
@@ -47,4 +47,4 @@ pm2 jlist | node -e '
   }
 ' "$process_name" "$expected_script"
 
-bash scripts/secure-pm2-logs.sh
+python3 scripts/secure-pm2-logs.py

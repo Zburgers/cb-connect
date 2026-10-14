@@ -52,13 +52,18 @@ if ! rg -q "log_date_format:[[:space:]]*['\"]YYYY-MM-DDTHH:mm:ss\.SSSZ['\"]" "$p
   exit 1
 fi
 
+if ! rg -q 'merge_logs:[[:space:]]*true' "$pm2_config"; then
+  echo "PM2 config must preserve the fixed log filenames without process ID suffixes" >&2
+  exit 1
+fi
+
 if ! rg -q "out_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-out\.log['\"]\)" "$pm2_config" ||
    ! rg -q "error_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-error\.log['\"]\)" "$pm2_config"; then
   echo "PM2 config must write only to the reviewed CB Connect log source paths" >&2
   exit 1
 fi
 
-if [[ $(rg -c 'scripts/secure-pm2-logs\.sh' "$promotion_script") -ne 2 ]]; then
+if [[ $(rg -c 'secure-pm2-logs' "$promotion_script") -ne 2 ]]; then
   echo "PM2 promotion must secure existing and newly created CB Connect log files" >&2
   exit 1
 fi
