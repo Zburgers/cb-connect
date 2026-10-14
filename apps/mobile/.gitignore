@@ -1,2 +1,4 @@
 .expo/
 dist-mobile-ci/
+android/
+ios/
