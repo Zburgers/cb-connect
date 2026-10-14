@@ -34,8 +34,9 @@ jobs:
         run: |
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund --loglevel=warn || {
             echo "::error::M1 isolated dependency resolution failed";
-            find "$HOME/.npm/_logs" -name '*debug-0.log' -mmin -15 -exec sh -c 'tail -80 "$1" | sed -E "s#(https?://)[^ @]+:[^ @]+@#\\1[REDACTED]@#g"' _ {} \\; | tail -120;
-            exit 1;
+            log_file="$(ls -t "$HOME"/.npm/_logs/*debug-0.log 2>/dev/null | head -1 || true)"
+            if [[ -n "$log_file" ]]; then tail -70 "$log_file" | sed -E 's#(https?://)[^ @]+:[^ @]+@#\\1[REDACTED]@#g'; fi
+            exit 1
           }
           npm ci --no-audit --no-fund
           npm ls react react-native expo expo-router --depth=0
