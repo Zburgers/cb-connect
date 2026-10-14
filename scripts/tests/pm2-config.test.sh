@@ -47,6 +47,27 @@ if ! rg -q 'pm2 start pm2\.config\.js --update-env' "$promotion_script"; then
   exit 1
 fi
 
+if ! rg -q "exec_mode:[[:space:]]*['\"]cluster_mode['\"]" "$pm2_config"; then
+  echo "PM2 config must retain the compiled cluster-mode contract" >&2
+  exit 1
+fi
+
+if ! rg -q "log_date_format:[[:space:]]*['\"]YYYY-MM-DDTHH:mm:ss\.SSSZ['\"]" "$pm2_config"; then
+  echo "PM2 config must emit RFC3339 timestamps on both log streams" >&2
+  exit 1
+fi
+
+if ! rg -q "out_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-out\.log['\"]\)" "$pm2_config" ||
+   ! rg -q "error_file:[[:space:]]*path\.join\(pm2Home,[[:space:]]*['\"]logs['\"],[[:space:]]*['\"]cb-connect-error\.log['\"]\)" "$pm2_config"; then
+  echo "PM2 config must write only to the reviewed CB Connect log source paths" >&2
+  exit 1
+fi
+
+if [[ $(rg -c 'scripts/secure-pm2-logs\.sh' "$promotion_script") -ne 2 ]]; then
+  echo "PM2 promotion must secure existing and newly created CB Connect log files" >&2
+  exit 1
+fi
+
 if ! rg -q 'cwd:[[:space:]]*releaseDir[[:space:]]*\|\|[[:space:]]*process\.cwd\(\)' "$pm2_config"; then
   echo "pm2 config must run from the immutable release directory when supplied" >&2
   exit 1
@@ -68,3 +89,4 @@ if ! rg -q '"start":[[:space:]]*"next start -p 6050"' "$package_json"; then
 fi
 
 echo "pm2 environment-neutral configuration and non-destructive promotion: PASS"
+bash scripts/tests/pm2-log-permissions.test.sh

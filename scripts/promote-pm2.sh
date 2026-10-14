@@ -10,6 +10,8 @@ if [[ ! -f "$expected_script" ]]; then
   exit 1
 fi
 
+bash scripts/secure-pm2-logs.sh
+
 current_script="$(
   pm2 jlist | node -e '
     const processName = process.argv[1];
@@ -44,3 +46,5 @@ pm2 jlist | node -e '
     throw new Error("PM2 did not start the expected immutable release");
   }
 ' "$process_name" "$expected_script"
+
+bash scripts/secure-pm2-logs.sh

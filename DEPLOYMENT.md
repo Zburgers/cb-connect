@@ -35,6 +35,14 @@ promotion. Promotions are serialized. On failure, it restores the last
 checksum-verified compatible candidate. The first verified release establishes
 the rollback chain.
 
+The PM2 ecosystem keeps one cluster-mode instance and prefixes both output
+streams with RFC3339 timestamps. After promotion and rollback, the shared helper
+removes group/world write permission from the PM2 log directory and the two
+fixed CB Connect log files. It fails closed if the PM2 log root or an existing
+CB Connect log file is a symlink, has an unexpected type, or is not owned by
+the deployment user. This prepares a bounded diagnostic source; it does not
+replace read-only Razorctl acceptance or authorize raw log access.
+
 Convex deployment requires a non-empty protected `CONVEX_DEPLOY_KEY`, deploys
 the qualified commit, and never rebuilds the frontend. Schema and function
 changes must remain backward-compatible because frontend rollback does not
