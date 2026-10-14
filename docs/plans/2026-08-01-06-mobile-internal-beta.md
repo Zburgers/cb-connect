@@ -2,13 +2,15 @@
 
 > **Codex/Shipyard execution:** This gate-level plan requires current native-runtime/account decisions and a dated execution plan after Gate 4 evidence exists.
 
-**Goal:** Deliver an invited iOS and Android CB Connect beta that consumes the proven reliability, cycle and notification contracts without duplicating domain logic.
+**Goal:** Deliver an Android-first internal CB Connect beta with a **parallel, non-blocking personal-iPhone installation feasibility lane**, consuming existing reliability, cycle and notification contracts without duplicating domain logic.
 
 **Architecture:** Add an Expo Router workspace under `apps/mobile`. Clerk Expo authenticates and supplies Convex tokens; Convex remains the authorization, realtime and prediction source. A small contracts package shares pure validators/types/design tokens. Sensitive domain data is not persistently cached in the first beta, and health/chat writes fail truthfully offline rather than being ambiguously queued.
 
-**Tech Stack:** Expo/React Native, Expo Router, TypeScript, Clerk Expo, Convex React client, Expo SecureStore, EAS Build, Maestro, React Native Testing Library.
+**Tech Stack:** Expo/React Native, Expo Router, TypeScript, Clerk Expo, Convex React client, Expo SecureStore, Android Gradle signing, GitHub Releases/Actions, Maestro, React Native Testing Library. macOS Xcode unsigned-IPA/SideStore is an **unproven iOS feasibility experiment**; EAS is optional, not a required account.
 
 ---
+
+**Frozen product direction (2026-10-14):** [Single Expo client; Android APK first; optional personal-iPhone SideStore experiment; SwiftUI/xtool deferred](../decisions/2026-10-14-gate-5-mobile-client-distribution-freeze.md). This is a product/architecture decision, **not** approval to start code or expose real users.
 
 **Depends on:** [Notification platform](2026-08-01-05-notification-platform.md)
 
@@ -16,7 +18,7 @@
 
 **Next gate:** [Push and stores](2026-08-01-07-push-and-store-qualification.md)
 
-**Planning status:** Gate-level work packages only. Resolve D-014 runtime/account/device decisions and D-015 beta cohort/staffing after Gate 4 evidence; recheck current Expo, Clerk and Convex native support when writing the dated execution plan.
+**Planning status:** Gate-level work packages only. Owner has settled D-014's architecture/distribution direction; Android signing custody, auth isolation, test-device evidence and any iPhone personal-account authorization remain task-specific operational gates. D-015 beta cohort/staffing is separate. Recheck current Expo, Clerk and Convex native support in the dated execution plan.
 
 **Required task order:** M1 workspace/contracts -> M2 providers/auth -> M3 protected shell -> M4 backend-rendered dashboard -> M5 factual logging -> M6 couple/chat controls -> M7 inbox/settings -> M8 privacy/security closure -> M9 automated builds and physical-device beta. Native clients never introduce alternate domain authorization or prediction logic.
 
@@ -29,7 +31,7 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
 ## Entry criteria
 
 - Gates 0–4 have approved versioned contracts and no unresolved applicable P0/P1.
-- Apple and Google developer/EAS ownership is identified for internal builds.
+- For Android APK release: engineering provisions an owner-controlled, backed-up signing keystore; no Google Play, paid Apple Developer or EAS subscription/account is an entry prerequisite. For iPhone experimental signing, obtain owner authorization at that task and never collect Apple credentials in repo/CI.
 - Clerk Native API/redirect/deep-link configuration and separate beta environment are approved.
 - Mobile privacy threat model and local-storage policy are reviewed.
 
@@ -40,7 +42,6 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
   <files>
     <create>apps/mobile/package.json</create>
     <create>apps/mobile/app.config.ts</create>
-    <create>apps/mobile/eas.json</create>
     <create>apps/mobile/tsconfig.json</create>
     <create>apps/mobile/src/app/_layout.tsx</create>
     <create>packages/contracts/package.json</create>
@@ -51,7 +52,7 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
     <step>Add a failing workspace typecheck importing the versioned cycle/notification contracts.</step>
     <step>Use the current supported Expo SDK chosen at implementation time through `create-expo-app`; pin versions and record the runtime policy.</step>
     <step>Export only pure types/validators/reason codes/tokens from `packages/contracts`; keep Convex business rules server-side.</step>
-    <step>Add root scripts for mobile start, typecheck, test, doctor and EAS build.</step>
+    <step>Add root scripts for mobile start, typecheck, test, doctor and native Android build; add EAS support only if subsequently chosen.</step>
   </steps>
   <verification>
     <command>npm run mobile:doctor &amp;&amp; npm run mobile:typecheck</command>
@@ -125,7 +126,7 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
 </task>
 
 <task id="M5" name="Implement factual logging and history">
-  <description>Add period/pain input, approximate certainty, open/end confirmation, correction/deletion and pending partner-assist confirmation.</description>
+  <description>Add period/pain input, approximate certainty, open/end confirmation and correction/deletion. Per D-009, partner assistance is immediately accepted; primary correction/deletion remains authoritative.</description>
   <files>
     <create>apps/mobile/src/app/(app)/log.tsx</create>
     <create>apps/mobile/src/features/logging/PeriodForm.tsx</create>
@@ -155,7 +156,7 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
     <create>apps/mobile/src/features/chat/chat.test.tsx</create>
   </files>
   <steps>
-    <step>Write primary/partner/unlinked/revoked/no-share tests and bounded chat pagination tests.</step>
+    <step>Write primary/partner/unlinked/revoked/no-share tests and bounded-recent-chat-window tests; the current server chat API is bounded to 120, not paginated.</step>
     <step>Use server-derived membership/sharing; UI hiding is not authorization.</step>
     <step>Clear partner cycle/chat views immediately on revocation/sign-out.</step>
     <step>Handle app foreground/background presence honestly without claiming constant online state.</step>
@@ -209,32 +210,33 @@ Excluded: push, email/SMS, public stores, fertility/contraception claims, health
 </task>
 
 <task id="M9" name="Automate builds and critical native journeys">
-  <description>Create internal iOS/Android builds and Maestro flows for auth, dashboard, logging, linking/revocation, chat and inbox.</description>
+  <description>Qualify signed Android APKs and critical native journeys; independently investigate an unsigned/sideload-signable iOS build and personal installation without blocking Android.</description>
   <files>
     <create>apps/mobile/.maestro/auth-dashboard.yaml</create>
     <create>apps/mobile/.maestro/cycle-logging.yaml</create>
     <create>apps/mobile/.maestro/couple-revocation.yaml</create>
-    <create>apps/mobile/.eas/workflows/e2e-ios.yml</create>
-    <create>apps/mobile/.eas/workflows/e2e-android.yml</create>
-    <modify>apps/mobile/eas.json</modify>
+    <create>.github/workflows/mobile-android.yml</create>
+    <create>.github/workflows/mobile-ios-feasibility.yml</create>
+    <create>scripts/mobile/release-manifest.ts</create>
   </files>
   <steps>
-    <step>Build simulator/emulator profiles with isolated beta credentials.</step>
-    <step>Run deterministic Maestro flows on both platforms and retain screenshots/recordings as restricted artifacts.</step>
-    <step>Build internal physical-device variants with managed, owned signing credentials.</step>
-    <step>Require build fingerprint, commit and backend compatibility version in beta diagnostics.</step>
+    <step>Build/test Android emulator and physical-device profiles with isolated beta credentials; run deterministic Maestro journeys with redacted/restricted artifacts.</step>
+    <step>Provision a protected, recoverable Android keystore; sign installable/upgradeable APKs, verify checksums and publish only approved versioned GitHub Releases.</step>
+    <step>Separately test macOS-CI Expo/RN device IPA export and personal-device SideStore signing/install/refresh. Record actual proof or a blocker; do not assume that unsigned IPA packaging succeeds.</step>
+    <step>Require build fingerprint, commit and backend compatibility version; stage a Next.js /download page for qualified APK artifacts. Test production URLs after authorization.</step>
   </steps>
   <verification>
-    <command>cd apps/mobile &amp;&amp; eas workflow:run .eas/workflows/e2e-android.yml</command>
-    <expected>Android workflow passes; equivalent iOS workflow passes before beta promotion.</expected>
+    <command>npm run mobile:build:android &amp;&amp; npm run mobile:test</command>
+    <expected>Signed Android APK and relevant tests pass with real-device qualification recorded; iOS physical-install feasibility has an independent pass/blocked/fail evidence record and does not block Android delivery.</expected>
   </verification>
 </task>
 
 ## Hard success criteria
 
-- Installable internal builds run on at least two physical iOS and two physical Android devices spanning one current and one prior supported OS major per platform.
+- **Required Android:** Installable, upgradeable signed APKs on at least two physical Android devices spanning one current and one prior supported OS major where available; document device coverage gaps before invitations.
+- **Separate iOS feasibility, not Android release blocker:** Reproducible signed-on-device installation and refresh on at least one physical iPhone using a free Apple account, if the unsigned/sideload-signable IPA route proves viable. Do not claim iOS qualified unless this passes.
 - Auth survives app restart, expires safely and clears secure state on sign-out/revocation: 100% acceptance cases.
-- Critical Maestro journeys pass on iOS and Android with zero conditional skips.
+- Critical Maestro journeys pass on supported Android physical/emulated devices with zero conditional skips; iOS simulator/native-device coverage is reported separately and may not be represented as complete until actually run.
 - Cross-couple/post-revocation disclosure: 0; stop-beta.
 - Client-side cycle/prediction implementation outside pure display formatting: 0.
 - Sensitive domain values in device logs, crash metadata, insecure storage, screenshots/artifacts or app-switcher preview: 0 in the approved test matrix.
@@ -249,4 +251,4 @@ Use a separate development build, then staff internal build, then invited beta. 
 
 ## Exit evidence
 
-Store build fingerprints, EAS/commit/backend identities, unit/Maestro reports, physical-device matrix, MASVS/privacy review, accessibility report, crash-free/session data, authorization/revocation smoke and pilot error-budget report under `docs/evidence/mobile-gate-5/`.
+Store build fingerprints, Android signing provenance, any iOS/EAS evidence, commit/backend identities, unit/Maestro reports, physical-device matrix, MASVS/privacy review, accessibility report, crash-free/session data, authorization/revocation smoke and pilot error-budget report under `docs/evidence/mobile-gate-5/`.
