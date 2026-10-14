@@ -28,5 +28,5 @@ export type PartnerCycleSummary = Readonly<{
 
 /** Input-format check only. Server remains authoritative about calendar validity. */
 export function isLocalDateInput(value: string): boolean {
-  return /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+  return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value);
 }
