@@ -48,6 +48,12 @@ jobs:
           npx expo install --check
           npm run doctor
           npm run bundle:android
+      - name: Export public npm lockfile for reviewed M1 commit (one-time)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/gate5/atlas-foundation'
+        run: |
+          echo G5_LOCK_BEGIN
+          base64 -w 160 apps/mobile/package-lock.json | sed 's/^/G5LOCK:/'
+          echo G5_LOCK_END
       - name: Keep resolver output for lockfile review
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
