@@ -1,0 +1,50 @@
+name: Gate 5 mobile foundation qualification (isolated)
+
+on:
+  push:
+    branches: [gate5/atlas-foundation]
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/contracts/**'
+      - 'tsconfig.json'
+      - '.github/workflows/mobile-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  m1-mobile-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.16.0
+      - name: Confirm separate web/npm boundary and mobile toolchain
+        run: |
+          test "$(node -p 'process.versions.node')" = 22.16.0
+          node -e 'const p=require("./package.json"); if (p.workspaces || p.scripts["mobile:build:android"]) process.exit(1)'
+          test ! -e apps/mobile/package-lock.json # probe generates lock artifact; not M1-qualified until committed
+      - name: Generate isolated lock probe; install dependency tree
+        working-directory: apps/mobile
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --no-audit --no-fund
+          npm ls react react-native expo expo-router --depth=0
+      - name: Test native TypeScript contract and export resolution
+        working-directory: apps/mobile
+        run: |
+          npm run typecheck
+          npm run test
+          npx expo install --check
+          npm run doctor
+          npm run bundle:android
+      - name: Keep resolver output for lockfile review
+        if: always()
+        uses: actions/upload-artifact@b7c62b31e4e0a9a9741c8c889d4dc9094d0a0f15 # v4.6.2
+        with:
+          name: gate5-m1-resolved-lockfile
+          path: apps/mobile/package-lock.json
+          retention-days: 3
