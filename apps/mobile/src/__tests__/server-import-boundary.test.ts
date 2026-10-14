@@ -1,3 +1,4 @@
+import { posix as path } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -29,9 +30,10 @@ const convexServerRuntimeModule = /(?:^|\/)convex\/server$/;
 const generatedPublicApiModule = /(?:^|\/)convex\/_generated\/api$/;
 
 function staticModuleSpecifier(expression: ts.Expression): string | undefined {
-  return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)
-    ? expression.text
-    : undefined;
+  if (!ts.isStringLiteral(expression) && !ts.isNoSubstitutionTemplateLiteral(expression)) {
+    return undefined;
+  }
+  return path.normalize(expression.text.replace(/\\/g, "/"));
 }
 
 function importedModule(statement: ts.Statement): string | undefined {
@@ -187,6 +189,12 @@ describe("native public Convex import boundary", () => {
     expect(
       serverImportViolations(
         'import { getCurrentUser } from "../../../convex/_helpers/getCurrentUser";',
+        "fixture.ts",
+      ),
+    ).toHaveLength(1);
+    expect(
+      serverImportViolations(
+        'import { getCurrentUser } from "../../../../convex/./_helpers/getCurrentUser";',
         "fixture.ts",
       ),
     ).toHaveLength(1);
