@@ -7,7 +7,7 @@ const config: ExpoConfig = {
   scheme: "cbconnectbeta",
   version: "0.0.1",
   orientation: "portrait",
-  plugins: ["expo-router"],
+  plugins: ["expo-router", "expo-secure-store", "@clerk/expo"],
   ios: { bundleIdentifier: "tech.builtbynaki.cbconnect.beta" },
   android: { package: "tech.builtbynaki.cbconnect.beta" },
   extra: { mobileEnvironment: "isolated-development-only" },

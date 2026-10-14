@@ -1,6 +1,10 @@
 import { Stack } from "expo-router";
+import { AppProviders } from "../providers/AppProviders";
 
-// M1 routing-only shell. Clerk/Convex providers are added in approved M2.
 export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <AppProviders>
+      <Stack screenOptions={{ headerShown: false }} />
+    </AppProviders>
+  );
 }
