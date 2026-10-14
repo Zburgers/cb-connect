@@ -128,6 +128,23 @@ function isModuleRequire(expression: ts.Expression): boolean {
   );
 }
 
+function isModuleObjectAlias(node: ts.Node): boolean {
+  if (!ts.isIdentifier(node) || node.text !== "module") return false;
+  const parent = node.parent;
+  if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+    return !["exports", "require"].includes(parent.name.text);
+  }
+  if (
+    ts.isElementAccessExpression(parent) &&
+    parent.expression === node &&
+    parent.argumentExpression &&
+    ts.isStringLiteral(parent.argumentExpression)
+  ) {
+    return !["exports", "require"].includes(parent.argumentExpression.text);
+  }
+  return true;
+}
+
 function isDirectLoaderCall(expression: ts.Expression): boolean {
   return ts.isCallExpression(expression.parent) && expression.parent.expression === expression;
 }
@@ -177,6 +194,9 @@ function serverImportViolations(text: string, fileName: string): string[] {
     }
     if (isRequireLoaderReference(node)) {
       violations.push(`${fileName}: require loader references must be direct calls`);
+    }
+    if (isModuleObjectAlias(node)) {
+      violations.push(`${fileName}: module object aliases are not allowed`);
     }
     if (isDynamicModuleLoad(node)) {
       const target = node.arguments[0] && staticModuleSpecifier(node.arguments[0]);
@@ -285,10 +305,17 @@ describe("native public Convex import boundary", () => {
     ).toHaveLength(1);
     expect(
       serverImportViolations('const load = require.bind(module); load("convex/server");', "fixture.ts"),
-    ).toHaveLength(1);
+    ).toContain("fixture.ts: require loader references must be direct calls");
     expect(
       serverImportViolations('const load = module.require.bind(module); load("convex/server");', "fixture.ts"),
-    ).toHaveLength(1);
+    ).toContain("fixture.ts: require loader references must be direct calls");
+    expect(
+      serverImportViolations(
+        'const ref = module; const load = ref.require.bind(ref); load("convex/server");',
+        "fixture.ts",
+      ),
+    ).toContain("fixture.ts: module object aliases are not allowed");
+    expect(serverImportViolations('module.exports = {};', "fixture.ts")).toEqual([]);
     expect(
       serverImportViolations('void import(`../../../convex/_generated/api`);', "fixture.ts"),
     ).toHaveLength(1);
