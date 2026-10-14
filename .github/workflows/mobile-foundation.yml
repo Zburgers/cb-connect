@@ -43,7 +43,7 @@ jobs:
           npm run bundle:android
       - name: Keep resolver output for lockfile review
         if: always()
-        uses: actions/upload-artifact@b7c62b31e4e0a9a9741c8c889d4dc9094d0a0f15 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: gate5-m1-resolved-lockfile
           path: apps/mobile/package-lock.json
