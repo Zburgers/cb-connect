@@ -28,16 +28,10 @@ jobs:
         run: |
           test "$(node -p 'process.versions.node')" = 22.16.0
           node -e 'const p=require("./package.json"); if (p.workspaces || p.scripts["mobile:build:android"]) process.exit(1)'
-          test ! -e apps/mobile/package-lock.json # probe generates lock artifact; not M1-qualified until committed
-      - name: Generate isolated lock probe; install dependency tree
+          test -s apps/mobile/package-lock.json # M1 isolated lockfile must be committed
+      - name: Reproducible isolated mobile installation
         working-directory: apps/mobile
         run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --loglevel=warn || {
-            echo "::error::M1 isolated dependency resolution failed";
-            log_file="$(ls -t "$HOME"/.npm/_logs/*debug-0.log 2>/dev/null | head -1 || true)"
-            if [[ -n "$log_file" ]]; then tail -70 "$log_file" | sed -E 's#(https?://)[^ @]+:[^ @]+@#\\1[REDACTED]@#g'; fi
-            exit 1
-          }
           npm ci --no-audit --no-fund
           npm ls react react-native expo expo-router --depth=0
       - name: Test native TypeScript contract and export resolution
@@ -48,16 +42,3 @@ jobs:
           npx expo install --check
           npm run doctor
           npm run bundle:android
-      - name: Export public npm lockfile for reviewed M1 commit (one-time)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/gate5/atlas-foundation'
-        run: |
-          echo G5_LOCK_BEGIN
-          base64 -w 160 apps/mobile/package-lock.json | sed 's/^/G5LOCK:/'
-          echo G5_LOCK_END
-      - name: Keep resolver output for lockfile review
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: gate5-m1-resolved-lockfile
-          path: apps/mobile/package-lock.json
-          retention-days: 3
