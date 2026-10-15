@@ -7,11 +7,12 @@ import {
   View,
 } from "react-native";
 import { Link } from "expo-router";
-import { useAuth, useClerk } from "@clerk/expo";
+import { useAuth } from "@clerk/expo";
+import { useHostedAuth } from "@clerk/expo/hosted-auth";
 
 export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX.Element {
   const { isLoaded, isSignedIn, signOut } = useAuth();
-  const clerk = useClerk();
+  const { startHostedAuth } = useHostedAuth();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSignIn = mode === "sign-in";
@@ -37,8 +38,7 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
     setIsSubmitting(true);
     try {
       if (isSignedIn) await signOut();
-      if (isSignIn) clerk.openSignIn({});
-      else clerk.openSignUp({});
+      await startHostedAuth({ mode: isSignIn ? "sign-in" : "sign-up" });
     } catch {
       setError(`Unable to complete ${action}. Please try again.`);
     } finally {
