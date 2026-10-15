@@ -195,6 +195,14 @@ export type CycleCapabilities = Readonly<{
   partnerPredictionV2: boolean;
 }>;
 
+export type MobileGuardRole = "primary" | "partner";
+export type MobileAccessContextDTO =
+  | Readonly<{ user: null; couple: null }>
+  | Readonly<{
+      user: Readonly<{ role: MobileGuardRole | null }>;
+      couple: Readonly<{ isLinked: boolean; role: MobileGuardRole | null }>;
+    }>;
+
 export type CalendarDate = string;
 export type IanaTimeZone = string;
 export type CycleFactCertainty = "exact" | "approximate" | "legacy_unknown";

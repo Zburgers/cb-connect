@@ -1,15 +1,11 @@
-export type BackendRole = "primary" | "partner";
+import type { MobileAccessContextDTO, MobileGuardRole } from "@cb-connect/contracts";
 
 export interface AccessStateInputs {
   /** AuthGate lifecycle; backend queries are never trusted before Convex auth. */
   auth: "pending" | "signed_out" | "convex_pending" | "rejected" | "authenticated";
   online: boolean;
-  user: { role?: BackendRole } | null | undefined;
-  couple:
-    | { isLinked: boolean; role?: BackendRole }
-    | null
-    | undefined;
-  capabilities: object | null | undefined;
+  user: MobileAccessContextDTO["user"] | undefined;
+  couple: MobileAccessContextDTO["couple"] | undefined;
   /** False while loading, disconnected, or waiting for post-reconnect refresh. */
   backendCurrent: boolean;
 }
@@ -29,7 +25,7 @@ export type AccessState =
 export interface AccessResolution {
   state: AccessState;
   canRenderProtectedContent: boolean;
-  role?: BackendRole;
+  role?: MobileGuardRole;
 }
 
 /** Resolve route access using only authenticated, current Convex query results. */
@@ -49,8 +45,7 @@ export function resolveAccessState(inputs: AccessStateInputs): AccessResolution 
   if (
     !inputs.backendCurrent ||
     inputs.user === undefined ||
-    inputs.couple === undefined ||
-    !inputs.capabilities
+    inputs.couple === undefined
   ) {
     return { state: "backend_pending", canRenderProtectedContent: false };
   }
