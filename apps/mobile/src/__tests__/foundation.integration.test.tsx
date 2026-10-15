@@ -18,9 +18,10 @@ describe("mobile foundation route boundary", () => {
     expect(layout).toContain("<Stack.Protected guard={access.canRenderProtectedContent}>");
     expect(layout).toContain("<Stack.Protected guard={!access.canRenderProtectedContent}>");
     expect(metro).toContain("config.watchFolders = [path.resolve(repositoryRoot, \"convex\")]");
-    expect(metro.indexOf("projectRoot, \"node_modules\"")).toBeLessThan(
-      metro.indexOf("repositoryRoot, \"node_modules\""),
+    expect(metro).toMatch(
+      /config\.resolver\.nodeModulesPaths\s*=\s*\[\s*path\.resolve\(projectRoot,\s*"node_modules"\)\s*\]/,
     );
+    expect(metro).not.toContain('path.resolve(repositoryRoot, "node_modules")');
   });
 
   it("keeps status copy generic and renders no cycle or partner data", () => {
