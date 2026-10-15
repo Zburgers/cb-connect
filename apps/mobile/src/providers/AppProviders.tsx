@@ -9,6 +9,7 @@ import { tokenCache } from "../auth/tokenCache";
 type ClientEntry = {
   accountKey: string;
   client: ConvexReactClient;
+  generation: number;
 };
 
 export function AppProviders({ children }: PropsWithChildren) {
@@ -67,19 +68,30 @@ function AccountConvexProvider({
   convexUrl,
 }: PropsWithChildren<{ accountKey: string; convexUrl: string }>) {
   const [entry, setEntry] = useState<ClientEntry | null>(null);
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     const client = new ConvexReactClient(convexUrl);
-    setEntry({ accountKey, client });
+    setEntry({ accountKey, client, generation });
+    let reconnectHandled = false;
+    const unsubscribe = client.subscribeToConnectionState(({ connectionCount }) => {
+      if (connectionCount > 1 && !reconnectHandled) {
+        reconnectHandled = true;
+        setGeneration((current) => current + 1);
+      }
+    });
     return () => {
+      unsubscribe();
       // Let ConvexProviderWithClerk clear auth in its child effect before closing.
       setTimeout(() => {
         void client.close();
       }, 0);
     };
-  }, [accountKey, convexUrl]);
+  }, [accountKey, convexUrl, generation]);
 
-  if (!entry || entry.accountKey !== accountKey) return <AuthLoading />;
+  if (!entry || entry.accountKey !== accountKey || entry.generation !== generation) {
+    return <AuthLoading />;
+  }
   return (
     <ConvexProviderWithClerk client={entry.client} useAuth={useAuth}>
       {children}

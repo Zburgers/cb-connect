@@ -23,10 +23,17 @@ describe("mobile provider boundary", () => {
     expect(source).toMatch(/setTimeout\(\(\) => \{\s*void client\.close\(\);\s*\}, 0\)/);
   });
 
+  it("disposes the previous query cache after a backend reconnect", () => {
+    expect(source).toContain("client.subscribeToConnectionState");
+    expect(source).toContain("if (connectionCount > 1 && !reconnectHandled) {");
+    expect(source).toContain("entry.generation !== generation");
+    expect(source).toContain("unsubscribe();");
+  });
+
   it("shows accessible loading while auth or the account client is pending", () => {
     expect(source).toContain("if (!isLoaded) return <AuthLoading />;");
     expect(source).toContain(
-      "if (!entry || entry.accountKey !== accountKey) return <AuthLoading />;",
+      "if (!entry || entry.accountKey !== accountKey || entry.generation !== generation)",
     );
     expect(source).toContain('accessibilityRole="progressbar"');
     expect(source).toContain('accessibilityLabel="Loading"');

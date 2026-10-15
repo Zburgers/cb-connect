@@ -1,11 +1,7 @@
-import { View, Text } from "react-native";
+import { Redirect } from "expo-router";
+import { useAuth } from "@clerk/expo";
 
-// Public placeholder only: no user identity, health state or partner data.
 export default function MobileFoundationHome() {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <Text accessibilityRole="header">CB Connect</Text>
-      <Text>Mobile foundation — isolated development build</Text>
-    </View>
-  );
+  const { isSignedIn } = useAuth();
+  return <Redirect href={isSignedIn ? "/(app)" : "/(auth)/sign-in"} />;
 }
