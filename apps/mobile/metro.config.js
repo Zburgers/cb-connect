@@ -7,9 +7,6 @@ const config = getDefaultConfig(projectRoot);
 
 // Mobile installs its own dependencies; expose only the generated public API source.
 config.watchFolders = [path.resolve(repositoryRoot, "convex")];
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, "node_modules"),
-  path.resolve(repositoryRoot, "node_modules"),
-];
+config.resolver.nodeModulesPaths = [path.resolve(projectRoot, "node_modules")];
 
 module.exports = config;
