@@ -8,8 +8,10 @@ describe("native hosted auth entry point", () => {
     expect(source).toContain('import { useHostedAuth } from "@clerk/expo/hosted-auth";');
     expect(source).toContain("const { startHostedAuth } = useHostedAuth();");
     expect(source).toContain(
-      'await startHostedAuth({ mode: isSignIn ? "sign-in" : "sign-up" });',
+      'mode: isSignIn ? "sign-in" : "sign-up"',
     );
+    expect(source).toContain("if (!createdSessionId)");
+    expect(source).toContain('setError(`Unable to complete ${action}. Please try again.`)');
     expect(source).not.toMatch(/clerk\.openSign(?:In|Up)/);
   });
 });

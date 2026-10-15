@@ -20,7 +20,7 @@ describe("mobile provider boundary", () => {
       source.indexOf("new ConvexReactClient(convexUrl)"),
     );
     expect(source).toContain("JSON.stringify([userId, sessionId, orgId])");
-    expect(source).toMatch(/void client\.close\(\)/);
+    expect(source).toMatch(/setTimeout\(\(\) => \{\s*void client\.close\(\);\s*\}, 0\)/);
   });
 
   it("shows accessible loading while auth or the account client is pending", () => {

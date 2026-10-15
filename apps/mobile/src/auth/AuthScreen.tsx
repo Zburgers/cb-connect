@@ -38,7 +38,12 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
     setIsSubmitting(true);
     try {
       if (isSignedIn) await signOut();
-      await startHostedAuth({ mode: isSignIn ? "sign-in" : "sign-up" });
+      const { createdSessionId } = await startHostedAuth({
+        mode: isSignIn ? "sign-in" : "sign-up",
+      });
+      if (!createdSessionId) {
+        setError(`Unable to complete ${action}. Please try again.`);
+      }
     } catch {
       setError(`Unable to complete ${action}. Please try again.`);
     } finally {

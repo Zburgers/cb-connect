@@ -72,7 +72,10 @@ function AccountConvexProvider({
     const client = new ConvexReactClient(convexUrl);
     setEntry({ accountKey, client });
     return () => {
-      void client.close();
+      // Let ConvexProviderWithClerk clear auth in its child effect before closing.
+      setTimeout(() => {
+        void client.close();
+      }, 0);
     };
   }, [accountKey, convexUrl]);
 
