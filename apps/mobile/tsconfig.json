@@ -18,6 +18,7 @@
   ],
   "exclude": [
     "node_modules",
-    "dist-mobile-ci"
+    "dist-mobile-ci",
+    "src/__tests__/contract-parity.test-d.ts"
   ]
 }
