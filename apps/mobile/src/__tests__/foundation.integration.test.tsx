@@ -13,9 +13,8 @@ describe("mobile foundation route boundary", () => {
 
   it("places Clerk and Convex auth before backend role and relationship checks", () => {
     expect(layout).toContain("<AuthGate>");
-    expect(layout).toContain("api.queries.users.getMe");
-    expect(layout).toContain("api.queries.couples.getCoupleStatus");
-    expect(layout).toContain("api.queries.capabilities.getCapabilities");
+    expect(layout).toContain("api.queries.mobileAccess.getGuardState");
+    expect(layout).not.toMatch(/getMe|getCoupleStatus|getCapabilities/);
     expect(layout).toContain("<Stack.Protected guard={access.canRenderProtectedContent}>");
     expect(layout).toContain("<Stack.Protected guard={!access.canRenderProtectedContent}>");
     expect(metro).toContain("config.watchFolders = [path.resolve(repositoryRoot, \"convex\")]");

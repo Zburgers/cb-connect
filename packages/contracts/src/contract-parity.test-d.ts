@@ -8,6 +8,7 @@ import type {
   CoupleChatMessageDTO,
   CycleCapabilities,
   CycleFactHistoryDTO,
+  MobileAccessContextDTO,
   CycleStateV1,
   NotificationInboxPageDTO,
   NotificationPurpose,
@@ -28,6 +29,17 @@ type _capabilities = Assert<IsAssignable<
   FunctionReturnType<typeof api.queries.capabilities.getCapabilities>,
   CycleCapabilities
 >>;
+type _mobileAccessServerToDTO = Assert<IsAssignable<
+  FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>,
+  MobileAccessContextDTO
+>>;
+type _mobileAccessDTOToServer = Assert<
+  MobileAccessContextDTO extends FunctionReturnType<
+    typeof api.queries.mobileAccess.getGuardState
+  >
+    ? true
+    : false
+>;
 type _cycleState = Assert<IsAssignable<
   NonNullable<Dashboard["cycleStateV1"]>,
   CycleStateV1
