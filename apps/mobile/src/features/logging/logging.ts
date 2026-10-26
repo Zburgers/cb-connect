@@ -1,6 +1,8 @@
 export function loggingErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (message === "START_SAVED_END_FAILED") return "The start was saved as open, but its end was not saved. Review history before retrying.";
+  if (message === "DATE_CONTEXT_UNAVAILABLE") return "Account timezone or history is not ready. Wait for it to load before saving.";
+  if (message === "DATE_SELECTION_REQUIRED") return "Select the date in the primary user’s calendar before saving.";
   if (/DUPLICATE_EXACT_START|EXACT_INTERVAL_OVERLAP|PERIOD_HISTORY_TOO_DENSE/.test(message)) {
     return "This period overlaps another recorded period. Review your history and try a corrected date.";
   }
@@ -21,7 +23,17 @@ export function periodSuccessMessage(hasOpenPeriod: boolean, hasEndDate: boolean
   return hasEndDate ? "Period start and end saved." : "Period start saved as open.";
 }
 
-export function localDate(date = new Date(), timeZone = "UTC"): string {
+export function isValidTimeZone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== "string" || timeZone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function localDate(date: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -32,7 +44,7 @@ export function localDate(date = new Date(), timeZone = "UTC"): string {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-export function dateDaysAgo(days: number, from = new Date(), timeZone = "UTC"): string {
+export function dateDaysAgo(days: number, from: Date, timeZone: string): string {
   const [year, month, day] = localDate(from, timeZone).split("-").map(Number);
-  return localDate(new Date(Date.UTC(year, month - 1, day - days)), "UTC");
+  return new Date(Date.UTC(year, month - 1, day - days)).toISOString().slice(0, 10);
 }
