@@ -176,3 +176,38 @@ Convex agent skills for common tasks can be installed by running
 - Keep Shipyard compatibility changes project-local unless the user explicitly asks to modify the global Codex installation or upstream plugin. Never edit the cached plugin as a workaround.
 
 <!-- shipyard-codex-compatibility-end -->
+
+## Shared local toolchains
+
+Verified on the shared Linux host on 2026-10-27. Check these user-wide installs before downloading or installing another copy; separate agents and worktrees on this host can reuse them.
+
+### Node and npm
+
+- Root CI uses Node `20.19.1` / npm `10.8.2`.
+- Mobile CI uses Node 22 / npm 11. This host has Node `22.23.1` / npm `11.21.1` installed in the shared `nvm` directory.
+- Activate the existing versions from the repository root or mobile directory as appropriate:
+
+  ```sh
+  source /home/naki/.nvm/nvm.sh
+  nvm use --delete-prefix 20.19.1 --silent # root
+  nvm use --delete-prefix 22.23.1 --silent # apps/mobile
+  ```
+
+- `--delete-prefix` avoids this host's npm prefix/globalconfig warning in the active shell; do not rewrite the user's npm config to work around it.
+- npm's shared cache is `/home/naki/.npm` (5.2 GB at the 2026-10-27 check). Run `npm ci` against each lockfile for reproducible installs. Keep each worktree's `node_modules` isolated; do not globally install app dependencies or share a `node_modules` directory between worktrees. Preserve the shared cache for download reuse; inspect for active npm/npx processes before pruning it.
+- Gradle's shared cache is `/home/naki/.gradle/caches` (3.6 GB at the 2026-10-27 check). Preserve it for other builds; check for active Gradle work before pruning.
+
+### Android and Java
+
+- Android SDK: `/home/naki/Android/Sdk`. Installed components include platforms 36 and 37.0, build-tools 35.0.0 and 36.0.0, command-line tools, platform-tools, emulator, and NDK 27.1.12297006. `sdkmanager` is at `/home/naki/Android/Sdk/cmdline-tools/latest/bin/sdkmanager`. On this host its inventory command bootstrapped `/home/naki/.android/bin/android-cli`; avoid invoking the legacy wrapper just to inspect packages.
+- `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and `JAVA_HOME` are not set by default. For this app's Android build, the existing Gradle-provisioned JDK 17 at `/home/naki/.gradle/jdks/eclipse_adoptium-17-amd64-linux.2` passed `assembleDebug` for the Pixel 7 emulator (`x86_64`, SDK 36, Build Tools 36.0.0, NDK 27.1.12297006) on 2026-10-27. Reuse it in the task shell:
+
+  ```sh
+  export ANDROID_HOME=/home/naki/Android/Sdk
+  export ANDROID_SDK_ROOT="$ANDROID_HOME"
+  export JAVA_HOME=/home/naki/.gradle/jdks/eclipse_adoptium-17-amd64-linux.2
+  export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+  ```
+
+- The remaining Homebrew JDK is OpenJDK `27` at `/home/linuxbrew/.linuxbrew/opt/openjdk`; Homebrew `gradle` and `apktool` depend on it, so keep it. OpenJDK `21` was removed on 2026-10-27 after confirming no Homebrew dependents or running processes used it. System Java `25` is RPM-managed and has no `javac`; do not remove it as a project JDK. Check current React Native/Gradle requirements before selecting a JDK for other projects or installing another copy.
+- The available `Pixel_7` is an Android emulator, not a physical device. Emulator presence alone is not device qualification.
