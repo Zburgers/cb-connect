@@ -155,6 +155,7 @@ function dataFor(
     cycleStateV1Exposed: true,
     partnerPredictionV2: role === "partner" ? partnerPrediction : undefined,
     partnerPredictionV2Exposed: role === "partner",
+    partnerPredictionV2CanEnsureSnapshot: role === "partner",
     periodPredictionV2: role === "primary" ? v2Prediction : undefined,
   };
 }
@@ -268,10 +269,44 @@ describe("mobile cycle dashboard", () => {
     ).toBe(true);
     expect(
       shouldEnsureCyclePredictionSnapshot(
-        { ...dataFor("partner", states.partner[1]), partnerPredictionV2: undefined },
+        {
+          ...dataFor("partner", states.partner[1]),
+          partnerPredictionV2: undefined,
+          partnerPredictionV2Exposed: false,
+        },
         capabilities,
       ),
     ).toBe(true);
+    for (const status of ["paused", "unavailable"] as const) {
+      expect(
+        shouldEnsureCyclePredictionSnapshot(
+          {
+            ...dataFor("partner", states.partner[1]),
+            partnerPredictionV2: {
+              ...partnerPrediction,
+              status,
+              timingStatus:
+                status === "paused" ? "prediction_paused" : "insufficient_data",
+              pointDate: null,
+              earliestDate: null,
+              latestDate: null,
+            },
+          },
+          capabilities,
+        ),
+      ).toBe(false);
+    }
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        {
+          ...dataFor("partner", states.partner[1]),
+          partnerPredictionV2: undefined,
+          partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
+        },
+        capabilities,
+      ),
+    ).toBe(false);
     expect(
       shouldEnsureCyclePredictionSnapshot(
         dataFor("partner", states.partner[1]),

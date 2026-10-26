@@ -15,6 +15,7 @@ export type CycleDashboardData = {
   periodPredictionV2?: PrimaryPredictionV2;
   partnerPredictionV2?: PartnerPredictionV2;
   partnerPredictionV2Exposed: boolean;
+  partnerPredictionV2CanEnsureSnapshot: boolean;
 };
 
 export type CycleCard = {
@@ -39,7 +40,9 @@ export function shouldEnsureCyclePredictionSnapshot(
   return data.isPartnerView
     ? capabilities.periodPredictionV2 &&
         capabilities.partnerPredictionV2 &&
-        data.partnerPredictionV2?.status !== "estimated"
+        data.partnerPredictionV2CanEnsureSnapshot &&
+        !data.partnerPredictionV2Exposed &&
+        data.partnerPredictionV2 === undefined
     : capabilities.periodPredictionV2 && data.periodPredictionV2 == null;
 }
 
