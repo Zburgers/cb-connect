@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({
   access: "primary" as string,
   connection: true,
+  account: { timeZone: "UTC" } as { timeZone?: string },
   periods: [] as unknown[],
   pain: [] as unknown[],
   queries: [] as unknown[],
@@ -58,7 +59,7 @@ const savePain = vi.fn().mockResolvedValue({ logId: "pain-log", created: true })
 
 function render() {
   runtime.cursor = 0;
-  runtime.queries = [runtime.periods, runtime.pain];
+  runtime.queries = [runtime.account, runtime.periods, runtime.pain];
   runtime.mutations = [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain];
   return LoggingScreen();
 }
@@ -110,6 +111,7 @@ describe("LoggingScreen actions", () => {
   beforeEach(() => {
     runtime.access = "primary";
     runtime.connection = true;
+    runtime.account = { timeZone: "UTC" };
     runtime.periods = [];
     runtime.pain = [];
     runtime.queries = [runtime.periods, runtime.pain];
@@ -120,7 +122,7 @@ describe("LoggingScreen actions", () => {
     }
   });
 
-  it("reports end confirmation and omits the device timezone when closing a saved open period", async () => {
+  it("reports end confirmation and omits timezone changes when closing a saved open period", async () => {
     runtime.periods = openPeriod;
     runtime.queries = [runtime.periods, []];
     const tree = render();
@@ -153,6 +155,7 @@ describe("LoggingScreen actions", () => {
     try {
       expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("Pacific/Kiritimati");
       const savedAccountTimeZone = "America/Los_Angeles";
+      runtime.account = { timeZone: savedAccountTimeZone };
       expect(savedAccountTimeZone).not.toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
       const tree = render();

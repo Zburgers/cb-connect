@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAccessState, type AccessStateInputs } from "./accessResolver";
+import { accessStatusRedirect, canRenderPartnerRoute, resolveAccessState, type AccessStateInputs } from "./accessResolver";
 
 const ready: AccessStateInputs = {
   auth: "authenticated",
@@ -37,5 +37,19 @@ describe("resolveAccessState", () => {
       couple: { isLinked: true, role },
     });
     expect(result).toEqual({ state: role, canRenderProtectedContent: true, role });
+    expect(canRenderPartnerRoute(result)).toBe(true);
+  });
+
+  it("routes role-incomplete accounts to onboarding and role-complete unlinked accounts to pairing", () => {
+    const onboarding = resolveAccessState({ ...ready, user: null });
+    const unlinked = resolveAccessState({ ...ready, user: { role: "partner" }, couple: { isLinked: false, role: null } });
+    const offline = resolveAccessState({ ...ready, online: false, user: { role: "partner" }, couple: { isLinked: false, role: null } });
+
+    expect(accessStatusRedirect(onboarding.state)).toBe("/onboarding");
+    expect(accessStatusRedirect(unlinked.state)).toBe("/(app)/partner");
+    expect(canRenderPartnerRoute(unlinked)).toBe(true);
+    expect(canRenderPartnerRoute(offline)).toBe(false);
+    expect(accessStatusRedirect(offline.state)).toBeNull();
+    expect(canRenderPartnerRoute(onboarding)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePaginatedQuery, useMutation, useConvexConnectionState } from "convex/react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { api } from "../../convex/partnerApi";
+import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
 

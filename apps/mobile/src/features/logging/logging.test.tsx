@@ -32,12 +32,14 @@ describe("mobile logging safety", () => {
     expect(source).toContain("accessibilityRole=\"alert\"");
   });
 
-  it("uses device-local calendar dates without serializing private notes into history UI", () => {
-    const now = new Date(2026, 9, 26, 23, 30);
-    expect(localDate(now)).toBe("2026-10-26");
-    expect(dateDaysAgo(1, now)).toBe("2026-10-25");
+  it("uses saved account timezone dates without sending timezone changes on writes", () => {
+    const now = new Date("2026-10-26T06:30:00.000Z");
+    expect(localDate(now, "Asia/Kolkata")).toBe("2026-10-26");
+    expect(localDate(now, "America/Los_Angeles")).toBe("2026-10-25");
+    expect(dateDaysAgo(1, now, "America/Los_Angeles")).toBe("2026-10-24");
     expect(source).not.toContain("pain.note");
-    expect(source).not.toContain("timeZone");
+    expect(source).toContain("account?.timeZone");
+    expect(source).not.toContain("timeZone:");
   });
 
   it("confirms the action that actually completed and reports partial starts and stale corrections", () => {

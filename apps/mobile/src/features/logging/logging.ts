@@ -21,11 +21,18 @@ export function periodSuccessMessage(hasOpenPeriod: boolean, hasEndDate: boolean
   return hasEndDate ? "Period start and end saved." : "Period start saved as open.";
 }
 
-export function localDate(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+export function localDate(date = new Date(), timeZone = "UTC"): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-export function dateDaysAgo(days: number, from = new Date()): string {
-  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() - days);
-  return localDate(date);
+export function dateDaysAgo(days: number, from = new Date(), timeZone = "UTC"): string {
+  const [year, month, day] = localDate(from, timeZone).split("-").map(Number);
+  return localDate(new Date(Date.UTC(year, month - 1, day - days)), "UTC");
 }

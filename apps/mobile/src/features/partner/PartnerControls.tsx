@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AppState, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { api } from "../../convex/partnerApi";
+import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
