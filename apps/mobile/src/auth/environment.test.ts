@@ -28,6 +28,7 @@ describe("mobile auth environment boundary", () => {
     ["live key", "pk_live_private-looking-value", APPROVED_CONVEX_URL],
     ["malformed test key", "pk_test_not-a-key", APPROVED_CONVEX_URL],
     ["different dev Clerk issuer", testKeyForIssuer("another.clerk.accounts.dev"), APPROVED_CONVEX_URL],
+    ["production Clerk issuer", testKeyForIssuer("clerk.cb.builtbynaki.tech"), APPROVED_CONVEX_URL],
     ["wrong Convex target", testPublishableKey, "https://other.convex.cloud"],
     ["missing Convex URL", testPublishableKey, undefined],
   ])("fails closed for %s without echoing config", (_case, key, url) => {
