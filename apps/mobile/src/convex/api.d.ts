@@ -1,9 +1,9 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from "convex/server";
-import type { DashboardData } from "../../../../convex/queries/dashboard";
+import type { CycleState } from "../../../../convex/_helpers/cycleState";
+import type { PartnerCycleProjection } from "../../../../convex/_helpers/partnerCycleProjection";
 import type {
   CycleCapabilities,
   CycleFactCertainty,
-  CycleStateV1,
   MobileAccessContextDTO,
   NotificationInboxItemDTO,
   NotificationPurpose,
@@ -15,6 +15,52 @@ type InboxPaginationArgs = { paginationOpts: PaginationOptions };
 type InboxPage = PaginationResult<NotificationInboxItemDTO>;
 type PeriodMutationCertainty = "exact" | "approximate";
 type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
+type CycleDashboardData = {
+  hasData: boolean;
+  isPartnerView: boolean;
+  message?: string;
+  cycleStateV1: CycleState | PartnerCycleProjection | null;
+  cycleStateV1Exposed: boolean;
+  periodPredictionV2?: PrimaryPredictionV2;
+  partnerPredictionV2?: PartnerPredictionV2;
+  partnerPredictionV2Exposed: boolean;
+  partnerPredictionV2CanEnsureSnapshot: boolean;
+  cycleInfo?: {
+    phase: "menstruation" | "follicular" | "ovulation" | "luteal";
+    cycleDay: number;
+    daysUntilNextPeriod: number;
+    predictedNextPeriodStart: string;
+    predictedNextPeriodEnd: string;
+    phaseDescription: string;
+  } | null;
+  nutritionTipsPhase: "menstruation" | "follicular" | "ovulation" | "luteal" | null;
+  painData?: {
+    score: number;
+    severity: "none" | "mild" | "moderate" | "severe";
+    tags?: readonly ("cramps" | "headache" | "back" | "fatigue" | "other")[];
+    note?: string;
+  } | null;
+  painTip?: {
+    _id: string;
+    _creationTime: number;
+    phase: "menstruation" | "follicular" | "ovulation" | "luteal";
+    painSeverity: "none" | "mild" | "moderate" | "severe";
+    title: string;
+    suggestions: string[];
+    safetyNote: string;
+    isActive: boolean;
+    priority: number;
+  } | null;
+  nutritionTips?: readonly {
+    _id: string;
+    _creationTime: number;
+    phase: "menstruation" | "follicular" | "ovulation" | "luteal";
+    foodItem: string;
+    reasoning: string;
+    isActive: boolean;
+    priority: number;
+  }[];
+};
 type PeriodHistory = Readonly<{
   _id?: string;
   authorityVersion?: number;
@@ -118,7 +164,7 @@ type CoupleStatus = {
 export declare const api: {
   readonly queries: {
     readonly dashboard: {
-      readonly getDashboardData: FunctionReference<"query", "public", { todayDate?: string }, DashboardData>;
+      readonly getDashboardData: FunctionReference<"query", "public", { todayDate?: string }, CycleDashboardData>;
     };
     readonly capabilities: {
       readonly getCapabilities: FunctionReference<"query", "public", Record<string, never>, CycleCapabilities>;
