@@ -303,6 +303,20 @@ describe("mobile cycle dashboard", () => {
     );
   });
 
+  it("shows missing-date partner timing once", () => {
+    const model = getCycleDashboardPresentation(
+      {
+        ...dataFor("partner", states.partner[1]),
+        partnerPredictionV2: { ...partnerPrediction, pointDate: null },
+      },
+      capabilities,
+    );
+    expect(model?.prediction?.title).toBe("Cycle timing is estimated.");
+    expect(model?.prediction?.details).not.toContain(
+      "Cycle timing is estimated.",
+    );
+  });
+
   it("uses the reduced partner projection and never renders primary prediction details", () => {
     const data = {
       ...dataFor("partner", states.partner[1]),

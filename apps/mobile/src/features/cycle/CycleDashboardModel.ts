@@ -256,7 +256,7 @@ function partnerPredictionCard(prediction: PartnerPredictionV2): CycleCard {
     }[prediction.status],
     title: point ? `Estimated around ${point}` : timing,
     details: [
-      timing,
+      ...(point ? [timing] : []),
       ...(range ? [`Estimated window: ${range}`] : []),
       `Estimate quality: ${qualityLabels[prediction.quality]}`,
       prediction.basisBand === "broader"
