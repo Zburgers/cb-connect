@@ -6,6 +6,7 @@ import { resolveAuthState } from "./authResolver";
 const hooks = vi.hoisted(() => ({
   useAuth: vi.fn(),
   useConvexAuth: vi.fn(),
+  useColorScheme: vi.fn(),
 }));
 
 vi.mock("@clerk/expo", () => ({ useAuth: hooks.useAuth }));
@@ -16,6 +17,7 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
   StyleSheet: { create: (styles: object) => styles },
   Text: "Text",
+  useColorScheme: hooks.useColorScheme,
   View: "View",
 }));
 
@@ -159,6 +161,19 @@ describe("AuthGate pure lifecycle state resolver", () => {
 });
 
 describe("AuthGate rendering boundary", () => {
+  it("uses accessible colors for dark-mode authentication states", () => {
+    hooks.useColorScheme.mockReturnValue("dark");
+    hooks.useAuth.mockReturnValue({ isLoaded: true, isSignedIn: true, signOut: vi.fn() });
+    hooks.useConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: false });
+
+    const rejected = AuthGate({ children: React.createElement("PrivateContent") });
+    expect(rejected.props.style).toContainEqual(expect.objectContaining({ backgroundColor: "#111827" }));
+    const rejectedTitle = findElement(rejected, "Text");
+    const rejectedTitleStyle = (rejectedTitle?.props as { style?: unknown[] } | undefined)?.style;
+    expect(rejectedTitleStyle).toContainEqual(expect.objectContaining({ color: "#F9FAFB" }));
+    hooks.useColorScheme.mockReturnValue("light");
+  });
+
   it("keeps protected children out until Convex confirms auth", () => {
     const child = React.createElement("PrivateContent", null, "private");
     hooks.useAuth.mockReturnValue({ isLoaded: true, isSignedIn: true, signOut: vi.fn() });
