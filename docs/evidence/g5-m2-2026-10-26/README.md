@@ -26,12 +26,13 @@ The earlier negative token check changed the `iss` claim without re-signing the 
 
 - Backend `mobileAccess.getGuardState` now has a focused Convex test covering primary and partner role responses, then partner access changing to `isLinked: false` after the primary revokes the relationship.
 - Route-state tests cover signed-out, auth pending/rejected, offline, stale backend state, incomplete onboarding, unlinked/revoked relationships, role mismatch, and backend-confirmed primary/partner access. The shell/error/offline tests assert generic accessible copy and prevent sensitive data from reaching the fallback.
-- Pixel 7 / Android 17 emulator displayed the signed-out Clerk screen. Screenshot: [android-m3-signed-out-gate.png](./android-m3-signed-out-gate.png). No credentials or fixture identity are visible.
+- Pixel 7 / Android 17 completed hosted Clerk sign-in with a run-scoped synthetic fixture and reached the protected status shell after Convex auth; without an app profile, it showed only generic onboarding-incomplete copy. Sign-out returned to the signed-out Clerk screen. Screenshots: [authenticated setup gate](./android-m3-authenticated-setup-gate.png) and [signed-out gate](./android-m3-signed-out-gate.png). They contain no fixture email, password, verification code, token, or health data.
+- Both run-scoped Clerk fixture users were deleted and verified absent by readback; no Convex app records were created and the temporary credential file was removed.
 - Local validation after these changes: root unit tests 79 files / 905 tests; mobile tests 12 files / 57 tests; mobile and root typechecks; contract parity; Expo Doctor 21/21; Android Metro export (1,497 modules); CI workflow, fixture boundary and Convex command policy checks; root production build with the repository's inert qualification environment; root `npm audit --omit=dev` reports zero vulnerabilities.
-- This is local unit, backend-test, and signed-out emulator evidence. No authenticated M3 route-shell interaction was performed on the emulator in this pass, and an iOS simulator is unavailable on this host.
+- Primary/partner role resolution, revocation, offline/stale-state denial, dynamic dark-mode contrast, and generic accessible error/offline copy pass focused tests. These states were not all exercised on-device; an iOS simulator is unavailable on this host.
 - Mobile `npm audit --omit=dev` still reports six high findings in `node-forge` and `zod` through Expo tooling; npm reports no available fix. This remains an open dependency risk for freeze review.
 
-**M3 status: implementation and local checks pass; exact-SHA independent reviews and remote CI remain pending. Foundation is not freeze-ready.**
+**M3 status: implementation, local checks, and the authenticated Android onboarding gate pass. Exact-SHA independent reviews and remote CI passed for `16db5bf`; this evidence-only update still requires exact-SHA review/CI. Foundation is not freeze-ready.**
 
 ## Audit findings
 
