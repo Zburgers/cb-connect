@@ -31,6 +31,18 @@ export type CycleDashboardPresentation = {
   prediction: CycleCard | null;
 };
 
+export function shouldEnsureCyclePredictionSnapshot(
+  data: CycleDashboardData | undefined,
+  capabilities: CycleCapabilities | undefined,
+): boolean {
+  if (!data?.hasData || !capabilities) return false;
+  return data.isPartnerView
+    ? capabilities.periodPredictionV2 &&
+        capabilities.partnerPredictionV2 &&
+        data.partnerPredictionV2?.status !== "estimated"
+    : capabilities.periodPredictionV2 && data.periodPredictionV2 == null;
+}
+
 const phaseLabels = {
   menstruation: "Menstruation",
   follicular: "Follicular",
@@ -244,6 +256,7 @@ function partnerPredictionCard(prediction: PartnerPredictionV2): CycleCard {
     }[prediction.status],
     title: point ? `Estimated around ${point}` : timing,
     details: [
+      timing,
       ...(range ? [`Estimated window: ${range}`] : []),
       `Estimate quality: ${qualityLabels[prediction.quality]}`,
       prediction.basisBand === "broader"

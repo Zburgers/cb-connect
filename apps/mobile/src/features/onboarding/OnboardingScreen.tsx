@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { mobileColors } from "../../theme/tokens";
-import { api } from "../../../../../convex/_generated/api";
+import { api } from "../../convex/api";
 import {
   getDeviceTimeZone,
   isMobileRole,

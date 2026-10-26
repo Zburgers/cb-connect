@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getCycleDashboardPresentation,
   formatCycleCalendarDate,
+  shouldEnsureCyclePredictionSnapshot,
   type CycleDashboardData,
 } from "./CycleDashboardModel";
 import type { CycleCapabilities, CycleStateV1 } from "@cb-connect/contracts";
@@ -249,6 +250,56 @@ describe("mobile cycle dashboard", () => {
     );
     expect(mismatched?.prediction?.details.join(" ")).not.toContain(
       "80% likely",
+    );
+  });
+
+  it("ensures enabled snapshots for both roles only when needed", () => {
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        dataFor("primary", states.primary[1]),
+        capabilities,
+      ),
+    ).toBe(false);
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        { ...dataFor("primary", states.primary[1]), periodPredictionV2: undefined },
+        capabilities,
+      ),
+    ).toBe(true);
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        { ...dataFor("partner", states.partner[1]), partnerPredictionV2: undefined },
+        capabilities,
+      ),
+    ).toBe(true);
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        dataFor("partner", states.partner[1]),
+        { ...capabilities, partnerPredictionV2: false },
+      ),
+    ).toBe(false);
+    expect(
+      shouldEnsureCyclePredictionSnapshot(
+        { ...dataFor("primary", states.primary[1]), hasData: false },
+        capabilities,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a late timing explanation with a partner estimate date", () => {
+    const model = getCycleDashboardPresentation(
+      {
+        ...dataFor("partner", states.partner[1]),
+        partnerPredictionV2: {
+          ...partnerPrediction,
+          timingStatus: "late_or_uncertain",
+        },
+      },
+      capabilities,
+    );
+    expect(model?.prediction?.title).toBe("Estimated around Mar 8, 2026");
+    expect(model?.prediction?.details).toContain(
+      "Timing is later than the current estimate.",
     );
   });
 

@@ -1,5 +1,5 @@
-import React from "react";
-import { useQuery } from "convex/react";
+import React, { useEffect } from "react";
+import { useMutation, useQuery } from "convex/react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -9,19 +9,29 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { api } from "../../../../../convex/_generated/api";
+import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import {
   getCycleDashboardPresentation,
+  shouldEnsureCyclePredictionSnapshot,
   type CycleDashboardPresentation,
 } from "./CycleDashboardModel";
 
 export function CycleDashboard(): React.JSX.Element {
   const data = useQuery(api.queries.dashboard.getDashboardData, {});
   const capabilities = useQuery(api.queries.capabilities.getCapabilities, {});
+  const ensurePredictionSnapshot = useMutation(
+    api.mutations.predictionSnapshots.ensureForViewer,
+  );
   const model = getCycleDashboardPresentation(data, capabilities);
   const palette =
     useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+
+  useEffect(() => {
+    if (shouldEnsureCyclePredictionSnapshot(data, capabilities)) {
+      ensurePredictionSnapshot().catch(() => {});
+    }
+  }, [capabilities, data, ensurePredictionSnapshot]);
 
   if (!model) {
     return (
