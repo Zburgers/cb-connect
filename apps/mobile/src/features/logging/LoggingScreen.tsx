@@ -4,7 +4,7 @@ import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/api";
 import { loggingApi } from "./loggingApi";
 import { AccessContext } from "../../navigation/accessContext";
-import { dateDaysAgo, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
+import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 function Action({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
@@ -16,10 +16,14 @@ export function LoggingScreen() {
   const online = useConvexConnectionState().isWebSocketConnected;
   const account = useQuery(api.queries.users.getMe, online ? {} : "skip");
   const palette = useColorScheme() === "dark" ? { bg: "#111827", fg: "#F9FAFB", muted: "#D1D5DB" } : { bg: "#FFFFFF", fg: "#111827", muted: "#374151" };
-  const timeZone = account?.timeZone ?? "UTC";
-  const today = localDate(new Date(), timeZone);
+  const timeZone = account?.timeZone;
+  const now = new Date();
+  const today = online && isValidTimeZone(timeZone) ? localDate(now, timeZone) : null;
+  const dateContextReady = today !== null;
   const periodHistory = useQuery(loggingApi.history.getPeriodHistory, online ? {} : "skip");
-  const painHistory = useQuery(loggingApi.history.getPainHistory, online ? { startDate: dateDaysAgo(365, new Date(), timeZone), endDate: today } : "skip");
+  const painHistory = useQuery(loggingApi.history.getPainHistory, online && role === "primary" && today && timeZone
+    ? { startDate: dateDaysAgo(365, now, timeZone), endDate: today }
+    : "skip");
   const startSelf = useMutation(loggingApi.periods.logPeriodStart);
   const endSelf = useMutation(loggingApi.periods.logPeriodEnd);
   const startAssist = useMutation(loggingApi.periods.assistLogPeriodStart);
@@ -41,9 +45,12 @@ export function LoggingScreen() {
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
-  const disabled = !online || busy;
-  const selectedStartDate = startDate ?? today;
-  const selectedPainDate = painDate ?? today;
+  const periodWritesReady = dateContextReady && periodHistory !== undefined;
+  const painWritesReady = dateContextReady && painHistory !== undefined;
+  const disabledPeriod = !periodWritesReady || busy;
+  const disabledPain = !painWritesReady || busy;
+  const selectedStartDate = startDate ?? (role === "partner" ? "" : today ?? "");
+  const selectedPainDate = painDate ?? today ?? "";
 
   const run = async (work: () => Promise<unknown>, success: string) => {
     setError(""); setSaved(""); setBusy(true);
@@ -54,6 +61,8 @@ export function LoggingScreen() {
 
   const savePeriod = () => run(async () => {
     if (!online) throw new Error("offline");
+    if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
+    if (!selectedStartDate.trim()) throw new Error("DATE_SELECTION_REQUIRED");
     if (openPeriod?._id) {
       const args = { endDate: selectedStartDate, endCertainty: certainty, periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
       await (role === "partner" ? endAssist(args) : endSelf(args));
@@ -74,12 +83,14 @@ export function LoggingScreen() {
 
   const savePainEntry = () => run(async () => {
     if (!online) throw new Error("offline");
+    if (!painWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     const score = Number(painScore);
     if (!Number.isInteger(score) || score < 0 || score > 10) throw new Error("invalid pain score");
     await savePain({ date: selectedPainDate, painScore: score, tags: painTags, ...(note ? { note } : {}) });
   }, "Pain entry saved.");
 
   const correct = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
+    if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (!period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
     const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: period.authorityVersion };
     if (role === "partner") await updateAssist({ ...args, expectedAuthorityVersion: period.authorityVersion! });
@@ -90,12 +101,15 @@ export function LoggingScreen() {
   return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: palette.bg }}>
     <Text accessibilityRole="header" style={[styles.title, { color: palette.fg }]}>Log and history</Text>
     {!online ? <Text accessibilityRole="alert" style={[styles.notice, { color: palette.fg }]}>Offline. Nothing can be saved until your connection returns.</Text> : null}
+    {online && account === undefined ? <Text style={{ color: palette.muted }}>Loading account timezone…</Text> : null}
+    {online && account !== undefined && !isValidTimeZone(timeZone) ? <Text accessibilityRole="alert" style={[styles.notice, { color: palette.fg }]}>Account timezone is unavailable. Update it in Settings before logging.</Text> : null}
     <Text accessibilityRole="header" style={[styles.heading, { color: palette.fg }]}>{openPeriod ? "Confirm period end" : "Period start"}</Text>
+    {role === "partner" ? <Text style={{ color: palette.muted }}>Select the date in the primary user’s calendar.</Text> : null}
     <TextInput accessibilityLabel={openPeriod ? "Period end date, YYYY-MM-DD" : "Period start date, YYYY-MM-DD"} value={selectedStartDate} onChangeText={setStartDate} autoCapitalize="none" style={styles.input} />
     {!openPeriod ? <TextInput accessibilityLabel="Optional period end date, YYYY-MM-DD" value={endDate} onChangeText={setEndDate} placeholder="Leave blank to keep it open" style={styles.input} /> : null}
-    <View style={styles.row}><Action label="Exact date" disabled={disabled} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabled} onPress={() => setCertainty("approximate")} /></View>
+    <View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
     <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text>
-    <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabled} onPress={savePeriod} />
+    <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabledPeriod || !selectedStartDate.trim()} onPress={savePeriod} />
 
     {role === "primary" ? <>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.fg }]}>Pain log</Text>
@@ -105,7 +119,7 @@ export function LoggingScreen() {
       <Text style={{ color: palette.muted }}>Pain tags</Text>
       <View style={styles.row}>{(["cramps", "headache", "back", "fatigue", "other"] as const).map((tag) => <Pressable key={tag} accessibilityRole="button" accessibilityLabel={`${painTags.includes(tag) ? "Remove" : "Add"} ${tag} pain tag`} accessibilityState={{ selected: painTags.includes(tag) }} onPress={() => setPainTags((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])} style={[styles.button, !painTags.includes(tag) && styles.unselected]}><Text style={styles.buttonText}>{tag}</Text></Pressable>)}</View>
       <TextInput accessibilityLabel="Private pain note, optional" maxLength={140} value={note} onChangeText={setNote} placeholder="Optional note (140 characters max)" style={styles.input} />
-      <Action label="Save pain log" disabled={disabled} onPress={savePainEntry} />
+      <Action label="Save pain log" disabled={disabledPain || !selectedPainDate.trim()} onPress={savePainEntry} />
     </> : null}
 
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -120,9 +134,9 @@ export function LoggingScreen() {
       {period.canCorrect && period._id && period.authorityVersion !== undefined ? editing === period._id ? <>
         <TextInput accessibilityLabel="Corrected period start date, YYYY-MM-DD" value={editStartDate} onChangeText={setEditStartDate} style={styles.input} />
         <TextInput accessibilityLabel="Corrected period end date, YYYY-MM-DD" value={editEndDate} onChangeText={setEditEndDate} placeholder="End date (blank means open)" style={styles.input} />
-        <Action label="Save correction" disabled={disabled} onPress={() => correct(period)} />
+        <Action label="Save correction" disabled={disabledPeriod} onPress={() => correct(period)} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
-      </> : <Action label="Correct period" disabled={disabled} onPress={() => { setEditing(period._id!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}
+      </> : <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(period._id!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}
     </View>)}
     <Text accessibilityRole="header" style={[styles.heading, { color: palette.fg }]}>Pain history</Text>
     {painHistory === undefined ? <Text style={{ color: palette.muted }}>Loading pain history…</Text> : null}

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { dateDaysAgo, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
+import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 const source = readFileSync(new URL("./LoggingScreen.tsx", import.meta.url), "utf8");
 
@@ -37,8 +37,12 @@ describe("mobile logging safety", () => {
     expect(localDate(now, "Asia/Kolkata")).toBe("2026-10-26");
     expect(localDate(now, "America/Los_Angeles")).toBe("2026-10-25");
     expect(dateDaysAgo(1, now, "America/Los_Angeles")).toBe("2026-10-24");
+    expect(isValidTimeZone(undefined)).toBe(false);
+    expect(isValidTimeZone("not-a-timezone")).toBe(false);
+    expect(isValidTimeZone("Asia/Kolkata")).toBe(true);
     expect(source).not.toContain("pain.note");
     expect(source).toContain("account?.timeZone");
+    expect(source).not.toContain('account?.timeZone ?? "UTC"');
     expect(source).not.toContain("timeZone:");
   });
 

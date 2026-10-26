@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => ({
   access: "primary" as string,
   connection: true,
-  account: { timeZone: "UTC" } as { timeZone?: string },
-  periods: [] as unknown[],
-  pain: [] as unknown[],
+  account: { timeZone: "UTC" } as { timeZone?: string } | null | undefined,
+  periods: [] as unknown[] | undefined,
+  pain: [] as unknown[] | undefined,
   queries: [] as unknown[],
   mutations: [] as unknown[],
   state: [] as unknown[],
@@ -48,6 +48,7 @@ vi.mock("convex/react", () => ({
 
 import React from "react";
 import { LoggingScreen } from "./LoggingScreen";
+import { localDate } from "./logging";
 
 const startSelf = vi.fn().mockResolvedValue({ eventId: "event-new" });
 const endSelf = vi.fn().mockResolvedValue({ eventId: "event-open" });
@@ -84,10 +85,22 @@ function button(tree: React.ReactNode, label: string) {
   return (found.props as { onPress: () => Promise<void> }).onPress;
 }
 
+function buttonIsDisabled(tree: React.ReactNode, label: string) {
+  const found = find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label);
+  if (!found) throw new Error(`Missing button: ${label}`);
+  return (found.props as { disabled: boolean }).disabled;
+}
+
 function input(tree: React.ReactNode, label: string) {
   const found = find(tree, (element) => element.type === "TextInput" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label);
   if (!found) throw new Error(`Missing input: ${label}`);
   return (found.props as { onChangeText: (value: string) => void }).onChangeText;
+}
+
+function inputValue(tree: React.ReactNode, label: string) {
+  const found = find(tree, (element) => element.type === "TextInput" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label);
+  if (!found) throw new Error(`Missing input: ${label}`);
+  return (found.props as { value: string }).value;
 }
 
 function textContent(node: React.ReactNode): string {
@@ -108,13 +121,16 @@ const openPeriod = [{
 }];
 
 describe("LoggingScreen actions", () => {
+  afterEach(() => vi.useRealTimers());
+
   beforeEach(() => {
+    vi.useRealTimers();
     runtime.access = "primary";
     runtime.connection = true;
     runtime.account = { timeZone: "UTC" };
     runtime.periods = [];
     runtime.pain = [];
-    runtime.queries = [runtime.periods, runtime.pain];
+    runtime.queries = [runtime.account, runtime.periods, runtime.pain];
     runtime.state = [];
     runtime.cursor = 0;
     for (const mutation of [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain]) {
@@ -124,7 +140,6 @@ describe("LoggingScreen actions", () => {
 
   it("reports end confirmation and omits timezone changes when closing a saved open period", async () => {
     runtime.periods = openPeriod;
-    runtime.queries = [runtime.periods, []];
     const tree = render();
     await button(tree, "Confirm end")();
 
@@ -173,12 +188,73 @@ describe("LoggingScreen actions", () => {
 
   it("shows the stale correction failure and does not replace it with success", async () => {
     runtime.periods = openPeriod;
-    runtime.queries = [runtime.periods, []];
     updateSelf.mockRejectedValueOnce(new Error("STALE_AUTHORITY_VERSION"));
     await button(render(), "Correct period")();
     await button(render(), "Save correction")();
 
     expect(textContent(render())).toContain("This entry changed. Refresh history before correcting it.");
     expect(textContent(render())).not.toContain("Period correction saved.");
+  });
+
+  it("disables period, pain, and correction writes until the account timezone and required history resolve", async () => {
+    runtime.account = undefined;
+    runtime.periods = openPeriod;
+    runtime.pain = undefined;
+    const tree = render();
+
+    expect(buttonIsDisabled(tree, "Confirm end")).toBe(true);
+    expect(buttonIsDisabled(tree, "Save pain log")).toBe(true);
+    expect(buttonIsDisabled(tree, "Correct period")).toBe(true);
+    expect(inputValue(tree, "Period end date, YYYY-MM-DD")).toBe("");
+    await button(tree, "Confirm end")();
+    await button(tree, "Save pain log")();
+    expect(endSelf).not.toHaveBeenCalled();
+    expect(startSelf).not.toHaveBeenCalled();
+    expect(savePain).not.toHaveBeenCalled();
+
+    runtime.account = { timeZone: "UTC" };
+    runtime.periods = undefined;
+    runtime.pain = [];
+    const periodHistoryLoading = render();
+    expect(buttonIsDisabled(periodHistoryLoading, "Save period")).toBe(true);
+    await button(periodHistoryLoading, "Save period")();
+    expect(startSelf).not.toHaveBeenCalled();
+  });
+
+  it("disables an open correction if the account timezone becomes unresolved before save", async () => {
+    runtime.periods = openPeriod;
+    await button(render(), "Correct period")();
+    runtime.account = undefined;
+    const tree = render();
+
+    expect(buttonIsDisabled(tree, "Save correction")).toBe(true);
+    await button(tree, "Save correction")();
+    expect(updateSelf).not.toHaveBeenCalled();
+  });
+
+  it("uses the saved account calendar at a UTC date boundary", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-26T20:00:00.000Z"));
+    runtime.account = { timeZone: "Asia/Kolkata" };
+    expect(inputValue(render(), "Period start date, YYYY-MM-DD")).toBe("2026-10-27");
+  });
+
+  it("requires a partner to enter a date instead of defaulting to the partner calendar", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-26T20:00:00.000Z"));
+    runtime.access = "partner";
+    runtime.account = { timeZone: "Pacific/Kiritimati" };
+    const primaryToday = "2026-10-26";
+    expect(localDate(new Date(), "Pacific/Kiritimati")).toBe("2026-10-27");
+    expect(localDate(new Date(), "America/Los_Angeles")).toBe(primaryToday);
+
+    let tree = render();
+    expect(inputValue(tree, "Period start date, YYYY-MM-DD")).toBe("");
+    expect(buttonIsDisabled(tree, "Save period")).toBe(true);
+    input(tree, "Period start date, YYYY-MM-DD")(primaryToday);
+    tree = render();
+    await button(tree, "Save period")();
+
+    expect(startAssist).toHaveBeenCalledWith({ startDate: primaryToday, startCertainty: "exact" });
   });
 });
