@@ -8,6 +8,11 @@
     },
     "incremental": false
   },
-  "include": ["src/index.ts", "src/contract-parity.test-d.ts", "../../apps/mobile/src/convex/api.parity.test-d.ts"],
+  "include": [
+    "src/index.ts",
+    "src/contract-parity.test-d.ts",
+    "../../apps/mobile/src/convex/api.parity.test-d.ts",
+    "../../apps/mobile/src/convex/api.parity.negative.test-d.ts"
+  ],
   "exclude": []
 }

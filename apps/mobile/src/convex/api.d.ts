@@ -1,4 +1,5 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from "convex/server";
+import type { GenericId } from "convex/values";
 import type { CycleState } from "../../../../convex/_helpers/cycleState";
 import type { PartnerCycleProjection } from "../../../../convex/_helpers/partnerCycleProjection";
 import type {
@@ -12,7 +13,10 @@ import type {
 } from "@cb-connect/contracts";
 
 type InboxPaginationArgs = { paginationOpts: PaginationOptions };
-type InboxPage = PaginationResult<NotificationInboxItemDTO>;
+type MobileInboxItemDTO = Omit<NotificationInboxItemDTO, "itemId"> & {
+  itemId: GenericId<"notificationInboxItems">;
+};
+type InboxPage = PaginationResult<MobileInboxItemDTO>;
 type PeriodMutationCertainty = "exact" | "approximate";
 type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
 type CycleDashboardData = {
@@ -62,7 +66,7 @@ type CycleDashboardData = {
   }[];
 };
 type PeriodHistory = Readonly<{
-  _id?: string;
+  _id?: GenericId<"periodEvents">;
   authorityVersion?: number;
   startDate: string;
   endDate?: string;
@@ -101,17 +105,17 @@ type PeriodEndArgs = Readonly<{
   endDate: string;
   timeZone?: string;
   endCertainty?: PeriodMutationCertainty;
-  periodEventId?: string;
+  periodEventId?: GenericId<"periodEvents">;
   expectedAuthorityVersion?: number;
 }>;
 type AssistedPeriodEndArgs = Readonly<{
   endDate: string;
   endCertainty?: PeriodMutationCertainty;
-  periodEventId?: string;
+  periodEventId?: GenericId<"periodEvents">;
   expectedAuthorityVersion?: number;
 }>;
 type PeriodCorrectionArgs = Readonly<{
-  periodEventId: string;
+  periodEventId: GenericId<"periodEvents">;
   expectedAuthorityVersion?: number;
   startDate: string;
   endDate?: string;
@@ -122,7 +126,7 @@ type PeriodCorrectionArgs = Readonly<{
   promoteEndCertainty?: boolean;
 }>;
 type AssistedPeriodCorrectionArgs = Readonly<{
-  periodEventId: string;
+  periodEventId: GenericId<"periodEvents">;
   expectedAuthorityVersion: number;
   startDate: string;
   endDate?: string;
@@ -131,7 +135,7 @@ type AssistedPeriodCorrectionArgs = Readonly<{
   promoteEndCertainty?: boolean;
 }>;
 type MobileMessage = {
-  _id: string;
+  _id: GenericId<"coupleMessages">;
   body: string;
   createdAt: number;
   senderName: string;
@@ -189,7 +193,7 @@ export declare const api: {
     };
     readonly nudges: {
       readonly latestReceived: FunctionReference<"query", "public", Record<string, never>, {
-        _id: string; emoji: string; message: string; createdAt: number; senderName: string;
+        _id: GenericId<"nudges">; emoji: string; message: string; createdAt: number; senderName: string;
       } | null>;
     };
     readonly presence: {
@@ -224,8 +228,8 @@ export declare const api: {
       readonly ensureForViewer: FunctionReference<"mutation", "public", Record<string, never>, null>;
     };
     readonly notifications: {
-      readonly markMyInboxItemRead: FunctionReference<"mutation", "public", { itemId: string }, null>;
-      readonly dismissMyInboxItem: FunctionReference<"mutation", "public", { itemId: string }, null>;
+      readonly markMyInboxItemRead: FunctionReference<"mutation", "public", { itemId: GenericId<"notificationInboxItems"> }, null>;
+      readonly dismissMyInboxItem: FunctionReference<"mutation", "public", { itemId: GenericId<"notificationInboxItems"> }, null>;
       readonly setMyPreference: FunctionReference<"mutation", "public", {
         purpose: NotificationPurpose; inAppEnabled: boolean; localReminderTime?: string | null;
       }, { purpose: NotificationPurpose; inAppEnabled: boolean; localReminderTime?: string }>;
@@ -238,12 +242,12 @@ export declare const api: {
     };
     readonly periods: {
       readonly updateCycleSettings: FunctionReference<"mutation", "public", { predictionPaused?: boolean }, null>;
-      readonly logPeriodStart: FunctionReference<"mutation", "public", PeriodStartArgs, { eventId: string }>;
-      readonly assistLogPeriodStart: FunctionReference<"mutation", "public", AssistedPeriodStartArgs, { eventId: string }>;
-      readonly logPeriodEnd: FunctionReference<"mutation", "public", PeriodEndArgs, { eventId: string }>;
-      readonly assistLogPeriodEnd: FunctionReference<"mutation", "public", AssistedPeriodEndArgs, { eventId: string }>;
-      readonly updatePeriodEvent: FunctionReference<"mutation", "public", PeriodCorrectionArgs, { success: true }>;
-      readonly correctAssistedPeriodEvent: FunctionReference<"mutation", "public", AssistedPeriodCorrectionArgs, { eventId: string }>;
+      readonly logPeriodStart: FunctionReference<"mutation", "public", PeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
+      readonly assistLogPeriodStart: FunctionReference<"mutation", "public", AssistedPeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
+      readonly logPeriodEnd: FunctionReference<"mutation", "public", PeriodEndArgs, { eventId: GenericId<"periodEvents"> }>;
+      readonly assistLogPeriodEnd: FunctionReference<"mutation", "public", AssistedPeriodEndArgs, { eventId: GenericId<"periodEvents"> }>;
+      readonly updatePeriodEvent: FunctionReference<"mutation", "public", PeriodCorrectionArgs, { success: boolean }>;
+      readonly correctAssistedPeriodEvent: FunctionReference<"mutation", "public", AssistedPeriodCorrectionArgs, { eventId: GenericId<"periodEvents"> }>;
     };
     readonly cycleContext: {
       readonly createPredictionSegment: FunctionReference<"mutation", "public", { startDate: string }, { segmentId: string }>;
@@ -252,21 +256,21 @@ export declare const api: {
       readonly generatePairingCode: FunctionReference<"action", "public", Record<string, never>, { code: string; expiresAt: number }>;
       readonly linkPartnerWithCode: FunctionReference<"mutation", "public", { code: string },
         { success: true; coupleId: string } | { success: false; error: string }>;
-      readonly revokePartnerAccess: FunctionReference<"mutation", "public", Record<string, never>, { success: true }>;
+      readonly revokePartnerAccess: FunctionReference<"mutation", "public", Record<string, never>, { success: boolean }>;
       readonly updateSharingSettings: FunctionReference<"mutation", "public", {
         sharingPain?: boolean; sharingPhase?: boolean; sharingPeriodWrite?: boolean;
-      }, { success: true }>;
+      }, { success: boolean }>;
     };
     readonly messages: {
       readonly send: FunctionReference<"mutation", "public", { body: string }, string>;
-      readonly markDelivered: FunctionReference<"mutation", "public", { messageId: string }, { deliveredAt: number }>;
-      readonly markReadThrough: FunctionReference<"mutation", "public", { messageId: string }, { readAt: number }>;
-      readonly react: FunctionReference<"mutation", "public", { messageId: string; emoji: string },
-        { removed: true } | { updated: true } | { created: true }>;
+      readonly markDelivered: FunctionReference<"mutation", "public", { messageId: GenericId<"coupleMessages"> }, { deliveredAt: number }>;
+      readonly markReadThrough: FunctionReference<"mutation", "public", { messageId: GenericId<"coupleMessages"> }, { readAt: number }>;
+      readonly react: FunctionReference<"mutation", "public", { messageId: GenericId<"coupleMessages">; emoji: string },
+        { removed?: boolean; updated?: boolean; created?: boolean }>;
     };
     readonly nudges: {
       readonly send: FunctionReference<"mutation", "public", { emoji: string }, string>;
-      readonly markSeen: FunctionReference<"mutation", "public", { nudgeId: string }, null>;
+      readonly markSeen: FunctionReference<"mutation", "public", { nudgeId: GenericId<"nudges"> }, null>;
     };
     readonly presence: {
       readonly heartbeat: FunctionReference<"mutation", "public", Record<string, never>, null>;
@@ -276,7 +280,7 @@ export declare const api: {
       readonly createOrUpdatePainLog: FunctionReference<"mutation", "public", {
         date: string;
         painScore: number;
-        tags: readonly ("cramps" | "headache" | "back" | "fatigue" | "other")[];
+        tags: ("cramps" | "headache" | "back" | "fatigue" | "other")[];
         note?: string;
         timeZone?: string;
       }, { logId: string; created: boolean }>;
