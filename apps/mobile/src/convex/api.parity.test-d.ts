@@ -4,6 +4,7 @@ import type { FunctionReference } from "convex/server";
 import { mobilePublicApiInventory } from "./api.inventory";
 import type {
   AssertTrue,
+  CompatibilityByPath,
   PublicArgsCompatible,
   PublicRefCompatible,
   SameKeys,
@@ -126,7 +127,8 @@ const inventoryCoversMobileMap: AssertTrue<RefKeysMatchInventory> = true;
 const inventoryCoversServerMap: AssertTrue<ServerKeysMatchInventory> = true;
 const everyPublicArgumentsMatch: ArgumentCompatibilityByPath = mobilePublicApiInventory;
 const everyServerReturnFitsMobileDTO: ReturnCompatibilityByPath = mobilePublicApiInventory;
-void [inventoryCoversMobileMap, inventoryCoversServerMap, everyPublicArgumentsMatch, everyServerReturnFitsMobileDTO];
+const everyPublicReferenceMatches: CompatibilityByPath<MobileRefs, ServerRefs> = mobilePublicApiInventory;
+void [inventoryCoversMobileMap, inventoryCoversServerMap, everyPublicArgumentsMatch, everyServerReturnFitsMobileDTO, everyPublicReferenceMatches];
 
 type PublicRef = FunctionReference<any, "public", any, any, any>;
 type _AllSelectedRefsArePublic = AssertTrue<
