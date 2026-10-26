@@ -16,6 +16,11 @@ export function loggingErrorMessage(error: unknown): string {
   return "Could not save this entry. Check the dates and try again.";
 }
 
+export function periodSuccessMessage(hasOpenPeriod: boolean, hasEndDate: boolean): string {
+  if (hasOpenPeriod) return "Period end confirmed.";
+  return hasEndDate ? "Period start and end saved." : "Period start saved as open.";
+}
+
 export function localDate(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }

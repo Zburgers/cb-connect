@@ -1,11 +1,9 @@
 import { useContext, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
-import { api } from "../../convex/api";
+import { loggingApi } from "./loggingApi";
 import { AccessContext } from "../../navigation/accessContext";
-import { dateDaysAgo, localDate, loggingErrorMessage } from "./logging";
-
-const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+import { dateDaysAgo, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 function Action({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
@@ -17,15 +15,15 @@ export function LoggingScreen() {
   const online = useConvexConnectionState().isWebSocketConnected;
   const palette = useColorScheme() === "dark" ? { bg: "#111827", fg: "#F9FAFB", muted: "#D1D5DB" } : { bg: "#FFFFFF", fg: "#111827", muted: "#374151" };
   const today = localDate();
-  const periodHistory = useQuery(api.queries.history.getPeriodHistory, online ? {} : "skip");
-  const painHistory = useQuery(api.queries.history.getPainHistory, online ? { startDate: dateDaysAgo(365), endDate: today } : "skip");
-  const startSelf = useMutation(api.mutations.periods.logPeriodStart);
-  const endSelf = useMutation(api.mutations.periods.logPeriodEnd);
-  const startAssist = useMutation(api.mutations.periods.assistLogPeriodStart);
-  const endAssist = useMutation(api.mutations.periods.assistLogPeriodEnd);
-  const updateSelf = useMutation(api.mutations.periods.updatePeriodEvent);
-  const updateAssist = useMutation(api.mutations.periods.correctAssistedPeriodEvent);
-  const savePain = useMutation(api.mutations.painLog.createOrUpdatePainLog);
+  const periodHistory = useQuery(loggingApi.history.getPeriodHistory, online ? {} : "skip");
+  const painHistory = useQuery(loggingApi.history.getPainHistory, online ? { startDate: dateDaysAgo(365), endDate: today } : "skip");
+  const startSelf = useMutation(loggingApi.periods.logPeriodStart);
+  const endSelf = useMutation(loggingApi.periods.logPeriodEnd);
+  const startAssist = useMutation(loggingApi.periods.assistLogPeriodStart);
+  const endAssist = useMutation(loggingApi.periods.assistLogPeriodEnd);
+  const updateSelf = useMutation(loggingApi.periods.updatePeriodEvent);
+  const updateAssist = useMutation(loggingApi.periods.correctAssistedPeriodEvent);
+  const savePain = useMutation(loggingApi.painLog.createOrUpdatePainLog);
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState("");
   const [painDate, setPainDate] = useState(today);
@@ -53,34 +51,34 @@ export function LoggingScreen() {
     if (!online) throw new Error("offline");
     if (openPeriod?._id) {
       const args = { endDate: startDate, endCertainty: certainty, periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
-      await (role === "partner" ? endAssist(args) : endSelf({ ...args, timeZone }));
+      await (role === "partner" ? endAssist(args) : endSelf(args));
       return;
     }
     const started = await (role === "partner"
       ? startAssist({ startDate, startCertainty: certainty })
-      : startSelf({ startDate, startCertainty: certainty, timeZone }));
+      : startSelf({ startDate, startCertainty: certainty }));
     if (endDate) {
       try {
         const args = { endDate, endCertainty: certainty, periodEventId: started.eventId, expectedAuthorityVersion: 1 };
-        await (role === "partner" ? endAssist(args) : endSelf({ ...args, timeZone }));
+        await (role === "partner" ? endAssist(args) : endSelf(args));
       } catch {
         throw new Error("START_SAVED_END_FAILED");
       }
     }
-  }, endDate ? "Period saved." : "Period start saved as open.");
+  }, periodSuccessMessage(Boolean(openPeriod), Boolean(endDate)));
 
   const savePainEntry = () => run(async () => {
     if (!online) throw new Error("offline");
     const score = Number(painScore);
     if (!Number.isInteger(score) || score < 0 || score > 10) throw new Error("invalid pain score");
-    await savePain({ date: painDate, painScore: score, tags: painTags, ...(note ? { note } : {}), timeZone });
+    await savePain({ date: painDate, painScore: score, tags: painTags, ...(note ? { note } : {}) });
   }, "Pain entry saved.");
 
   const correct = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
     if (!period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
     const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: period.authorityVersion };
     if (role === "partner") await updateAssist({ ...args, expectedAuthorityVersion: period.authorityVersion! });
-    else await updateSelf({ ...args, timeZone });
+    else await updateSelf(args);
     setEditing(null);
   }, "Period correction saved.");
 

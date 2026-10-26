@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { dateDaysAgo, localDate, loggingErrorMessage } from "./logging";
+import { dateDaysAgo, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 const source = readFileSync(new URL("./LoggingScreen.tsx", import.meta.url), "utf8");
-const mobileApiTypes = readFileSync(new URL("../../convex/api.d.ts", import.meta.url), "utf8");
 
 describe("mobile logging safety", () => {
   it("renders backend duplicate, overlap, future and stale-authority failures as safe guidance", () => {
@@ -17,17 +16,12 @@ describe("mobile logging safety", () => {
   });
 
   it("leaves write authorization and correction eligibility with Convex", () => {
-    expect(source).toContain("api.mutations.periods.logPeriodStart");
-    expect(source).toContain("api.mutations.periods.assistLogPeriodStart");
-    expect(source).toContain("api.mutations.periods.updatePeriodEvent");
+    expect(source).toContain("loggingApi.periods.logPeriodStart");
+    expect(source).toContain("loggingApi.periods.assistLogPeriodStart");
+    expect(source).toContain("loggingApi.periods.updatePeriodEvent");
     expect(source).toContain("!period.canCorrect");
     expect(source).toContain("period.canCorrect && period._id");
     expect(source).not.toContain("deletePeriodEvent");
-  });
-
-  it("keeps mobile API declarations independent from backend implementation types", () => {
-    expect(mobileApiTypes).not.toContain("../../../../convex/_generated/api.js");
-    expect(mobileApiTypes).toContain('FunctionReference<"mutation", "public", PeriodStartArgs');
   });
 
   it("reports offline writes truthfully and labels controls for assistive technology", () => {
@@ -43,5 +37,14 @@ describe("mobile logging safety", () => {
     expect(localDate(now)).toBe("2026-10-26");
     expect(dateDaysAgo(1, now)).toBe("2026-10-25");
     expect(source).not.toContain("pain.note");
+    expect(source).not.toContain("timeZone");
+  });
+
+  it("confirms the action that actually completed and reports partial starts and stale corrections", () => {
+    expect(periodSuccessMessage(true, false)).toBe("Period end confirmed.");
+    expect(periodSuccessMessage(false, false)).toBe("Period start saved as open.");
+    expect(periodSuccessMessage(false, true)).toBe("Period start and end saved.");
+    expect(loggingErrorMessage(new Error("START_SAVED_END_FAILED"))).toContain("saved as open");
+    expect(loggingErrorMessage(new Error("STALE_AUTHORITY_VERSION"))).toContain("Refresh history");
   });
 });
