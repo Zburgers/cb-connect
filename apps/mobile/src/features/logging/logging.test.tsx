@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { dateDaysAgo, localDate, loggingErrorMessage } from "./logging";
 
 const source = readFileSync(new URL("./LoggingScreen.tsx", import.meta.url), "utf8");
+const mobileApiTypes = readFileSync(new URL("../../convex/api.d.ts", import.meta.url), "utf8");
 
 describe("mobile logging safety", () => {
   it("renders backend duplicate, overlap, future and stale-authority failures as safe guidance", () => {
@@ -22,6 +23,11 @@ describe("mobile logging safety", () => {
     expect(source).toContain("!period.canCorrect");
     expect(source).toContain("period.canCorrect && period._id");
     expect(source).not.toContain("deletePeriodEvent");
+  });
+
+  it("keeps mobile API declarations independent from backend implementation types", () => {
+    expect(mobileApiTypes).not.toContain("../../../../convex/_generated/api.js");
+    expect(mobileApiTypes).toContain('FunctionReference<"mutation", "public", PeriodStartArgs');
   });
 
   it("reports offline writes truthfully and labels controls for assistive technology", () => {
