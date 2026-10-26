@@ -194,7 +194,7 @@ Verified on the shared Linux host on 2026-10-27. Check these user-wide installs 
   ```
 
 - `--delete-prefix` avoids this host's npm prefix/globalconfig warning in the active shell; do not rewrite the user's npm config to work around it.
-- npm's shared cache is `/home/naki/.npm` (5.2 GB at the 2026-10-27 check). Run `npm ci` against each lockfile for reproducible installs. Keep each worktree's `node_modules` isolated; do not globally install app dependencies or share a `node_modules` directory between worktrees. Preserve the shared cache for download reuse; inspect for active npm/npx processes before pruning it.
+- npm's shared package-download cache is `/home/naki/.npm/_cacache` (2.4 GB after the 2026-10-27 cleanup). The transient `_npx` execution cache (4.29 GiB before cleanup) was removed after checking there were no active users; npx tools can be recreated from package cache or fetched again. Run `npm ci` against each lockfile for reproducible installs. Keep each worktree's `node_modules` isolated; do not globally install app dependencies or share a `node_modules` directory between worktrees. Inspect for active npm/npx processes before pruning shared caches.
 - Gradle's shared cache is `/home/naki/.gradle/caches` (3.6 GB at the 2026-10-27 check). Preserve it for other builds; check for active Gradle work before pruning.
 
 ### Android and Java
