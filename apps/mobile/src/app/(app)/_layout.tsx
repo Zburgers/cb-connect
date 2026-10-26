@@ -21,6 +21,7 @@ function GuardedRoutes() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={access.canRenderProtectedContent}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="log" />
         </Stack.Protected>
         <Stack.Protected guard={!access.canRenderProtectedContent}>
           <Stack.Screen name="status" />
