@@ -221,7 +221,9 @@ function PartnerCycleSummary({ role, sharingPhase, dark }: { role: CoupleRole; s
     canLoadPartnerCycleProjection("partner", role, true, sharingPhase) ? {} : "skip",
   );
   const projection = cycle?.cycleStateV1;
-  const status = projection && "status" in projection ? projection.status.replaceAll("_", " ") : null;
+  const status = projection && typeof projection.status === "string"
+    ? projection.status.replaceAll("_", " ")
+    : null;
   const phase = projection && "phase" in projection && projection.phase
     ? projection.phase
     : cycle?.cycleInfo?.phase ?? null;
