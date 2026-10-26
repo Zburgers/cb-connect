@@ -12,15 +12,24 @@ export type PublicArgsCompatible<Mobile extends PublicFunctionReference, Server 
 export type ServerReturnAssignable<Mobile extends PublicFunctionReference, Server extends PublicFunctionReference> =
   [FunctionReturnType<Server>] extends [FunctionReturnType<Mobile>] ? true : false;
 
+export type PublicKindCompatible<Mobile extends PublicFunctionReference, Server extends PublicFunctionReference> =
+  [Mobile["_type"]] extends [Server["_type"]] ? [Server["_type"]] extends [Mobile["_type"]] ? true : false : false;
+
 export type PublicRefCompatible<Mobile extends PublicFunctionReference, Server extends PublicFunctionReference> =
-  PublicArgsCompatible<Mobile, Server> extends true
-    ? ServerReturnAssignable<Mobile, Server>
+  PublicKindCompatible<Mobile, Server> extends true
+    ? PublicArgsCompatible<Mobile, Server> extends true
+      ? ServerReturnAssignable<Mobile, Server>
+      : false
     : false;
+
+export type CompatibilityByPath<Mobile extends Record<string, PublicFunctionReference>, Server extends Record<string, PublicFunctionReference>> = {
+  [Path in keyof Mobile]: Path extends keyof Server ? PublicRefCompatible<Mobile[Path], Server[Path]> : false;
+};
 
 export type InventoryCovers<Used, Inventory> = Exclude<Used, Inventory> extends never ? true : false;
 export type SameKeys<Left, Right> =
-  Exclude<keyof Left, keyof Right> extends never
-    ? Exclude<keyof Right, keyof Left> extends never
+  Exclude<Left, Right> extends never
+    ? Exclude<Right, Left> extends never
       ? true
       : false
     : false;
