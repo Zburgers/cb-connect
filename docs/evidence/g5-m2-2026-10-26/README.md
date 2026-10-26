@@ -20,7 +20,11 @@ The screenshot records the app after the second fixture signed out. It contains 
 
 ## Issuer proof limit
 
-The earlier negative token check changed the `iss` claim without re-signing the JWT. Convex rejected that tampered token, which does not prove rejection of a valid JWT signed by a foreign issuer. Clerk documents `iss` as an instance Frontend API URL claim that JWT templates cannot override. Using only `holy-clam-29` cannot mint a valid token with another issuer; Convex also canonicalized the trailing-slash variant and accepted the first-instance token. No production issuer was used. Per the owner's approved compromise, M3 proceeds with the app configuration gate, backend provider allowlist check, and verified effective test issuer. The remaining limit is explicit: **a valid foreign-signed JWT rejection was not tested against the live Convex deployment**.
+Clerk's `iss` is the instance Frontend API URL and cannot be overridden by a JWT template. Using only `holy-clam-29` cannot mint a token from another live Clerk issuer; Convex also canonicalized a trailing-slash variant and accepted the same-instance token. No production issuer was used.
+
+Per the owner's 2026-10-26 approval, the one-instance compromise uses an ephemeral RSA key generated in memory to sign a short-lived JWT with a synthetic `https://gate5-foreign-issuer.invalid` issuer. The script verifies that signature locally, sends the token to `queries/capabilities:getCapabilities` on `https://hallowed-hummingbird-284.convex.cloud`, and expects Convex `NoAuthProvider`. It creates no users or app data, persists neither key nor token, and refuses any other deployment URL. Run `scripts/test-foreign-issuer-jwt.mjs` through the existing target-bound `scripts/with-auth-test-env.ts` wrapper in the primary checkout, with the worktree's installed `tsx` loader and the worktree script's absolute path.
+
+Observed result: **PASS** — local signature self-check passed and the approved test deployment rejected the token with `NoAuthProvider`; its effective provider list was read as only `https://holy-clam-29.clerk.accounts.dev`. This verifies rejection of a signed token whose issuer is not configured. It does **not** exercise a second hosted Clerk instance's JWKS/signing behavior; that live second-issuer check remains intentionally outside this owner-approved compromise.
 
 ## M3 route-shell implementation and local evidence — 2026-10-26
 
@@ -30,9 +34,9 @@ The earlier negative token check changed the `iss` claim without re-signing the 
 - Both run-scoped Clerk fixture users were deleted and verified absent by readback; no Convex app records were created and the temporary credential file was removed.
 - Local validation after these changes: root unit tests 79 files / 905 tests; mobile tests 12 files / 57 tests; mobile and root typechecks; contract parity; Expo Doctor 21/21; Android Metro export (1,497 modules); CI workflow, fixture boundary and Convex command policy checks; root production build with the repository's inert qualification environment; root `npm audit --omit=dev` reports zero vulnerabilities.
 - Primary/partner role resolution, revocation, offline/stale-state denial, dynamic dark-mode contrast, and generic accessible error/offline copy pass focused tests. These states were not all exercised on-device; an iOS simulator is unavailable on this host.
-- Mobile `npm audit --omit=dev` still reports six high findings in `node-forge` and `zod` through Expo tooling; npm reports no available fix. This remains an open dependency risk for freeze review.
+- Mobile `npm audit --omit=dev` still reports six high findings in `node-forge` and `zod` in the installed Expo/Clerk dependency graph; npm reports no available compatible fix. An Android export with external source maps contained 1,484 modules and no `node_modules/zod/` or `node-forge` source, so these findings are not in the shipped Android JavaScript bundle. They remain a local tooling/dependency-graph risk and are recorded below rather than suppressed with an override.
 
-**M3 status: implementation, local checks, and the authenticated Android onboarding gate pass. Exact-SHA independent reviews and remote CI passed for `16db5bf`; this evidence-only update still requires exact-SHA review/CI. Foundation is not freeze-ready.**
+**M3 status: implementation, local checks, authenticated Android onboarding gate, and the approved one-instance issuer-rejection compromise pass. Exact-head architecture review passes; privacy review is conditional on documenting the compromise and resolving the mobile audit findings. Exact-head CI and final reviews are still required. Foundation is not freeze-ready.**
 
 ## Audit findings
 
@@ -40,4 +44,4 @@ The earlier negative token check changed the `iss` claim without re-signing the 
 - Mobile `npm audit --omit=dev` still reports high-severity `node-forge` and `zod` advisories through Expo tooling, with no fix available in the current dependency tree.
 - After the Next.js patch, local root validation passed: `npm run typecheck`, `npm run test:unit -- --run` (78 files / 903 tests), and the CI-style `npm run build`. These ran on Node 22.23.1; PR CI remains the required check under pinned Node 20.19.1 / npm 10.8.2.
 
-The remaining mobile audit findings require disposition before a foundation freeze. No broad `npm audit fix` was used.
+Mobile `npm audit --omit=dev` still reports six high findings: `node-forge@1.4.0` under Expo CLI and `zod@3.25.76` under Expo CLI / Clerk transitive packages. The registry reports `node-forge@1.4.0` as latest and has no `1.4.1`; Zod 4.6.6 is patched, but the current Expo CLI dependency range is Zod 3 and npm reports no compatible fix. External Android source-map inspection found neither affected package among 1,484 bundled modules. This disposes the shipped-app reachability question for this Android bundle while retaining a developer-tooling risk; no overrides or broad `npm audit fix` were applied.
