@@ -5,6 +5,7 @@ type CoupleStatus = {
   isLinked: boolean;
   status?: "pending" | "active" | "revoked";
   role?: "primary" | "partner";
+  relationshipGeneration?: string | null;
   sharingSettings?: { pain: boolean; phase: boolean; periodWrite: boolean } | null;
   partner?: { displayName?: string | null } | null;
   activePairingCode?: { code: string; expiresAt: number } | null;
@@ -40,7 +41,7 @@ export declare const api: {
     readonly mobileAccess: { readonly getGuardState: Ref<"query", Record<string, never>, MobileAccessContextDTO> };
     readonly couples: { readonly getCoupleStatus: Ref<"query", Record<string, never>, CoupleStatus> };
     readonly dashboard: { readonly getDashboardData: Ref<"query", { todayDate?: string }, DashboardData> };
-    readonly messages: { readonly listPageForMobile: Ref<"query", { paginationOpts: PaginationOptions }, PaginationResult<MobileMessage>> };
+    readonly messages: { readonly listPageForMobile: Ref<"query", { paginationOpts: PaginationOptions; relationshipGeneration: string }, PaginationResult<MobileMessage>> };
     readonly nudges: { readonly latestReceived: Ref<"query", Record<string, never>, { _id: string; senderName: string; message: string } | null> };
     readonly presence: { readonly getPartnerPresence: Ref<"query", Record<string, never>, { isPresent: boolean; lastSeen: number; expiresAt: number } | null> };
   };

@@ -133,7 +133,10 @@ export const listForCouple = query({
 });
 
 export const listPageForMobile = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    paginationOpts: paginationOptsValidator,
+    relationshipGeneration: v.string(),
+  },
   handler: async (ctx, args) => {
     const {
       user,
@@ -143,6 +146,9 @@ export const listPageForMobile = query({
       relationshipStartedAt,
       relationshipMembershipId,
     } = await getActiveCoupleSpace(ctx);
+    if (args.relationshipGeneration !== String(relationshipMembershipId)) {
+      throw new Error("Relationship changed; refresh chat");
+    }
     const page = await ctx.db
       .query("coupleMessages")
       .withIndex("by_couple_created", (q) =>

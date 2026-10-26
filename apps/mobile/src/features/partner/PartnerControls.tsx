@@ -10,6 +10,11 @@ import { CoupleChat } from "../chat/CoupleChat";
 
 type CoupleStatus = FunctionReturnType<typeof api.queries.couples.getCoupleStatus>;
 type GuardState = FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>;
+type ActiveCoupleStatus = CoupleStatus & { relationshipGeneration: string };
+
+function hasRelationshipGeneration(couple: CoupleStatus | undefined): couple is ActiveCoupleStatus {
+  return typeof couple?.relationshipGeneration === "string" && couple.relationshipGeneration.length > 0;
+}
 
 export function PartnerControls({
   access,
@@ -37,8 +42,8 @@ export function PartnerControls({
   if (revoking) {
     return <Message text="Revoking partner access…" dark={dark} />;
   }
-  if (activeView && role && couple) {
-    return <ActivePartnerView role={role} couple={couple} dark={dark} onRevokeStart={onRevokeStart} onRevokeFailure={onRevokeFailure} />;
+  if (activeView && role && hasRelationshipGeneration(couple)) {
+    return <ActivePartnerView key={couple.relationshipGeneration} role={role} couple={couple} dark={dark} onRevokeStart={onRevokeStart} onRevokeFailure={onRevokeFailure} />;
   }
   if (couple?.status === "active") {
     return <Message text="Refreshing relationship access…" dark={dark} />;
@@ -146,7 +151,7 @@ function ActivePartnerView({
   onRevokeFailure,
 }: {
   role: CoupleRole;
-  couple: CoupleStatus;
+  couple: ActiveCoupleStatus;
   dark: boolean;
   onRevokeStart: () => void;
   onRevokeFailure: () => void;
@@ -209,7 +214,7 @@ function ActivePartnerView({
       )}
       <NudgeControls dark={dark} />
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      <CoupleChat dark={dark} />
+      <CoupleChat relationshipGeneration={couple.relationshipGeneration} dark={dark} />
     </ScrollView>
   );
 }

@@ -47,5 +47,6 @@ describe("mobile private chat pagination and receipts", () => {
     expect(source).toMatch(/useLayoutEffect/);
     expect(source).toMatch(/remaining <= 2/);
     expect(source).toMatch(/!unread \|\| !isAtBottomRef\.current/);
+    expect(source).not.toMatch(/selectable/);
   });
 });

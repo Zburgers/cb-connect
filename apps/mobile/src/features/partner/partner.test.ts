@@ -48,6 +48,12 @@ describe("mobile partner access and accessibility", () => {
     expect(canLoadPartnerCycleProjection("partner", "primary", true, true)).toBe(false);
   });
 
+  test("active private partner views are keyed and gated by the server relationship generation", () => {
+    const source = readFileSync(resolve(mobileRoot, "src/features/partner/PartnerControls.tsx"), "utf8");
+    expect(source).toMatch(/activeView && role && hasRelationshipGeneration\(couple\)/);
+    expect(source).toMatch(/ActivePartnerView key=\{couple\.relationshipGeneration\}/);
+  });
+
   test.each([
     ["features/partner/PartnerControls.tsx", "partner controls"],
     ["features/chat/CoupleChat.tsx", "private chat"],

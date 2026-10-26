@@ -7,13 +7,13 @@ import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/
 
 const REACTIONS = ["💗", "✨", "🫶", "😂", "🥺", "🌙"];
 
-export function CoupleChat({ dark = false }: { dark?: boolean }): React.JSX.Element {
+export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: boolean; relationshipGeneration: string }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
   const connection = useConvexConnectionState();
   const connected = connection.isWebSocketConnected;
   const { results, status, loadMore } = usePaginatedQuery(
     api.queries.messages.listPageForMobile,
-    {},
+    { relationshipGeneration },
     { initialNumItems: 30 },
   );
   const sendMessage = useMutation(api.mutations.messages.send);
@@ -133,7 +133,7 @@ export function CoupleChat({ dark = false }: { dark?: boolean }): React.JSX.Elem
         {messages.map((message) => (
           <View key={message._id} style={styles.message}>
             <Text style={[styles.sender, { color: palette.foreground }]}>{message.senderName}</Text>
-            <Text selectable style={{ color: palette.foreground }}>{message.body}</Text>
+            <Text style={{ color: palette.foreground }}>{message.body}</Text>
             <Text style={{ color: palette.muted }}>
               {message.readAt ? "Read" : message.deliveredAt ? "Delivered" : "Sent"}
             </Text>
