@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { StyleSheet, Text, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { useAuth } from "@clerk/expo";
 import type { AccessState } from "../navigation/accessResolver";
 import { mobileColors } from "../theme/tokens";
 import { OfflineBanner } from "./OfflineBanner";
@@ -19,8 +20,22 @@ const statusCopy: Record<AccessState, string> = {
 };
 
 export function SanctuaryShell({ state }: { state: AccessState }): React.JSX.Element {
+  const { signOut } = useAuth();
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const isLoading = state === "auth_pending" || state === "backend_pending";
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState(false);
+
+  const handleSignOut = async () => {
+    setSignOutFailed(false);
+    setIsSigningOut(true);
+    try {
+      await signOut();
+    } catch {
+      setIsSigningOut(false);
+      setSignOutFailed(true);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -37,6 +52,22 @@ export function SanctuaryShell({ state }: { state: AccessState }): React.JSX.Ele
         >
           {statusCopy[state]}
         </Text>
+        {signOutFailed ? (
+          <Text accessibilityRole="alert" style={[styles.signOutError, { color: palette.foreground }]}>
+            Unable to sign out. Please try again.
+          </Text>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isSigningOut ? "Signing out" : "Sign out"}
+          disabled={isSigningOut}
+          onPress={handleSignOut}
+          style={styles.signOutButton}
+        >
+          <Text allowFontScaling style={[styles.signOutText, { color: palette.foreground }]}>
+            {isSigningOut ? "Signing out…" : "Sign out"}
+          </Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -47,4 +78,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
   message: { fontSize: 16, textAlign: "center" },
+  signOutButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 16, marginTop: 24 },
+  signOutText: { fontSize: 16, fontWeight: "600" },
+  signOutError: { fontSize: 14, textAlign: "center", marginTop: 16 },
 });
