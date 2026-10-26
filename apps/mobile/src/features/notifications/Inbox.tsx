@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { usePaginatedQuery, useMutation } from "convex/react";
+import { usePaginatedQuery, useMutation, useQuery } from "convex/react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { api } from "../../convex/api";
 import type { NotificationInboxItemDTO } from "@cb-connect/contracts";
@@ -11,10 +11,17 @@ export function Inbox() {
   const router = useRouter();
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const [actionFailed, setActionFailed] = useState(false);
-  const items = usePaginatedQuery(api.queries.notifications.getMyInbox, {}, { initialNumItems: 20 });
+  const available = useQuery(api.queries.notifications.getMyInboxAvailability, {});
+  const items = usePaginatedQuery(
+    api.queries.notifications.getMyInbox,
+    available === true ? {} : "skip",
+    { initialNumItems: 20 },
+  );
   const markRead = useMutation(api.mutations.notifications.markMyInboxItemRead);
   const dismiss = useMutation(api.mutations.notifications.dismissMyInboxItem);
-  const visibleItems = items.results.filter((item) => getInboxPresentation(item as NotificationInboxItemDTO));
+  const visibleItems = available === true
+    ? items.results.filter((item) => getInboxPresentation(item as NotificationInboxItemDTO))
+    : [];
 
   const runAction = async (action: () => Promise<unknown>) => {
     setActionFailed(false);
@@ -31,9 +38,16 @@ export function Inbox() {
       <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>
         These are private, in-app notifications. Push delivery is not available here.
       </Text>
-      {items.status === "LoadingFirstPage" ? <ActivityIndicator accessibilityLabel="Loading notifications" /> : null}
+      {available === undefined || (available && items.status === "LoadingFirstPage") ? (
+        <ActivityIndicator accessibilityLabel="Loading notifications" />
+      ) : null}
+      {available === false ? (
+        <Text allowFontScaling accessibilityRole="alert" style={[styles.description, { color: palette.muted }]}>
+          The in-app inbox is unavailable right now. Push is not available until Gate 6, and device permission and channel availability are separate.
+        </Text>
+      ) : null}
       {actionFailed ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>Unable to update this notification. Try again.</Text> : null}
-      {items.status !== "LoadingFirstPage" && visibleItems.length === 0 ? (
+      {available === true && items.status !== "LoadingFirstPage" && visibleItems.length === 0 ? (
         <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>No current notifications.</Text>
       ) : null}
       {visibleItems.map((item) => {
@@ -45,7 +59,7 @@ export function Inbox() {
             <Text allowFontScaling accessibilityRole="header" style={[styles.itemTitle, { color: palette.foreground }]}>{presentation.title}</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>{presentation.body}</Text>
             <Text allowFontScaling accessibilityLabel={`Notification section: ${presentation.route}`} style={{ color: palette.muted }}>
-              Section: {presentation.route === "settings" ? "Settings" : "Messages"}
+              Section: {presentation.route === "settings" ? "Settings" : "Messages unavailable"}
             </Text>
             <Text allowFontScaling accessibilityLabel={unread ? "Unread notification" : "Read notification"} style={{ color: palette.muted }}>
               {unread ? "Unread" : "Read"}
@@ -68,12 +82,12 @@ export function Inbox() {
           </View>
         );
       })}
-      {items.status === "CanLoadMore" ? (
+      {available === true && items.status === "CanLoadMore" ? (
         <Pressable accessibilityRole="button" accessibilityLabel="Load more notifications" onPress={() => items.loadMore(20)} style={styles.action}>
           <Text allowFontScaling style={{ color: palette.foreground }}>Load more</Text>
         </Pressable>
       ) : null}
-      {items.status === "LoadingMore" ? <ActivityIndicator accessibilityLabel="Loading more notifications" /> : null}
+      {available === true && items.status === "LoadingMore" ? <ActivityIndicator accessibilityLabel="Loading more notifications" /> : null}
     </ScrollView>
   );
 }

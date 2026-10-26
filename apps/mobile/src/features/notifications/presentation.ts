@@ -14,17 +14,17 @@ const eventPresentations: Partial<Record<NotificationEventType, EventPresentatio
   },
   "partner_message.v1": {
     title: "Message activity",
-    body: "Open messages to view current chat activity.",
+    body: "Messages are unavailable in this mobile build.",
     route: "messages",
   },
   "partner_nudge.v1": {
     title: "A nudge is ready",
-    body: "Open messages to see the nudge.",
+    body: "Messages are unavailable in this mobile build.",
     route: "messages",
   },
   "partner_chat_cleared.v1": {
     title: "Chat updated",
-    body: "Open messages to see the current chat state.",
+    body: "Messages are unavailable in this mobile build.",
     route: "messages",
   },
   "connected_since_updated.v1": {
