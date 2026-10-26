@@ -1,10 +1,81 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { Inbox } from "./Inbox";
+
+const inboxMocks = vi.hoisted(() => ({
+  available: false as boolean | undefined,
+  paginationArgs: undefined as unknown,
+  results: [] as unknown[],
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: () => inboxMocks.available,
+  usePaginatedQuery: (_query: unknown, args: unknown) => {
+    inboxMocks.paginationArgs = args;
+    return { results: inboxMocks.results, status: "Exhausted", loadMore: () => undefined };
+  },
+  useMutation: () => async () => null,
+}));
+
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: () => undefined }) }));
+
+vi.mock("react-native", async () => {
+  const { createElement } = await import("react");
+  const native = (tag: string) => ({
+    children,
+    accessibilityRole,
+    accessibilityLabel,
+  }: {
+    children?: React.ReactNode;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+  }) => createElement(tag, { role: accessibilityRole, "aria-label": accessibilityLabel }, children);
+  return {
+    ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) =>
+      createElement("span", { "aria-label": accessibilityLabel }),
+    Pressable: native("button"),
+    ScrollView: native("main"),
+    StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
+    Text: native("span"),
+    useColorScheme: () => "light",
+    View: native("div"),
+  };
+});
 
 const source = readFileSync(new URL("./Inbox.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../../app/(app)/notifications.tsx", import.meta.url), "utf8");
 
 describe("mobile notification inbox contract", () => {
+  it("skips disabled pagination and hides stale results across OFF → ON → OFF", () => {
+    inboxMocks.results = [{
+      itemId: "stale-item",
+      eventType: "partner_message.v1",
+      templateVersion: "g4-static-v1",
+      route: "messages",
+      state: "current",
+      createdAt: 1,
+    }];
+
+    inboxMocks.available = false;
+    let markup = renderToStaticMarkup(<Inbox />);
+    expect(inboxMocks.paginationArgs).toBe("skip");
+    expect(markup).toContain("The in-app inbox is unavailable right now.");
+    expect(markup).not.toContain("Message activity");
+
+    inboxMocks.available = true;
+    markup = renderToStaticMarkup(<Inbox />);
+    expect(inboxMocks.paginationArgs).toEqual({});
+    expect(markup).toContain("Message activity");
+    expect(markup).toContain("Messages unavailable");
+
+    inboxMocks.available = false;
+    markup = renderToStaticMarkup(<Inbox />);
+    expect(inboxMocks.paginationArgs).toBe("skip");
+    expect(markup).not.toContain("Message activity");
+  });
+
   it("uses bounded reactive pagination and supports read, dismiss, and continuation", () => {
     expect(source).toContain("api.queries.notifications.getMyInboxAvailability");
     expect(source).toContain('available === true ? {} : "skip"');

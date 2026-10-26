@@ -25,6 +25,8 @@ type InboxPage = {
   pageStatus?: "SplitRequired";
   splitCursor?: string;
 };
+type PeriodMutationCertainty = "exact" | "approximate";
+type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
 type CycleDashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
@@ -78,7 +80,7 @@ type PeriodHistory = Readonly<{
   endDate?: string;
   startCertainty?: CycleFactCertainty;
   endCertainty?: CycleFactCertainty;
-  certainty: string;
+  certainty: CycleFactReadLabel;
   source: "self" | "partner_assist" | "system";
   confirmationStatus: "confirmed" | "unreviewed";
   createdByName: string;
@@ -104,30 +106,30 @@ type PainHistory = Readonly<{
 type PeriodStartArgs = Readonly<{
   startDate: string;
   timeZone?: string;
-  startCertainty?: CycleFactCertainty;
+  startCertainty?: PeriodMutationCertainty;
 }>;
-type AssistedPeriodStartArgs = Readonly<{ startDate: string; startCertainty?: CycleFactCertainty }>;
+type AssistedPeriodStartArgs = Readonly<{ startDate: string; startCertainty?: PeriodMutationCertainty }>;
 type PeriodEndArgs = Readonly<{
   endDate: string;
   timeZone?: string;
-  endCertainty?: CycleFactCertainty;
+  endCertainty?: PeriodMutationCertainty;
   periodEventId?: string;
   expectedAuthorityVersion?: number;
 }>;
 type AssistedPeriodEndArgs = Readonly<{
   endDate: string;
-  endCertainty?: CycleFactCertainty;
+  endCertainty?: PeriodMutationCertainty;
   periodEventId?: string;
   expectedAuthorityVersion?: number;
 }>;
 type PeriodCorrectionArgs = Readonly<{
   periodEventId: string;
-  expectedAuthorityVersion: number;
+  expectedAuthorityVersion?: number;
   startDate: string;
   endDate?: string;
   timeZone?: string;
-  startCertainty?: CycleFactCertainty;
-  endCertainty?: CycleFactCertainty;
+  startCertainty?: PeriodMutationCertainty;
+  endCertainty?: PeriodMutationCertainty;
   promoteStartCertainty?: boolean;
   promoteEndCertainty?: boolean;
 }>;
@@ -136,7 +138,7 @@ type AssistedPeriodCorrectionArgs = Readonly<{
   expectedAuthorityVersion: number;
   startDate: string;
   endDate?: string;
-  endCertainty?: CycleFactCertainty;
+  endCertainty?: PeriodMutationCertainty;
   promoteStartCertainty?: boolean;
   promoteEndCertainty?: boolean;
 }>;
@@ -262,7 +264,7 @@ export declare const api: {
       readonly generatePairingCode: FunctionReference<"action", "public", Record<string, never>, { code: string; expiresAt: number }>;
       readonly linkPartnerWithCode: FunctionReference<"mutation", "public", { code: string },
         { success: true; coupleId: string } | { success: false; error: string }>;
-      readonly revokePartnerAccess: FunctionReference<"mutation", "public", Record<string, never>, null>;
+      readonly revokePartnerAccess: FunctionReference<"mutation", "public", Record<string, never>, { success: true }>;
       readonly updateSharingSettings: FunctionReference<"mutation", "public", {
         sharingPain?: boolean; sharingPhase?: boolean; sharingPeriodWrite?: boolean;
       }, { success: true }>;
