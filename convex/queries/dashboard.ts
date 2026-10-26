@@ -35,7 +35,7 @@ import {
 
 const MAX_CYCLE_FACT_ROWS = 100;
 
-export type DashboardData = {
+type DashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
   message?: string;
