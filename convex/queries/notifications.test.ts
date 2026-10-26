@@ -678,12 +678,19 @@ describe("notification recipient queries", () => {
     const { asPrimary } = await seedActiveCouple(t);
 
     await expect(
+      asPrimary.query(api.queries.notifications.getMyInboxAvailability, {}),
+    ).resolves.toBe(false);
+
+    await expect(
       asPrimary.query(api.queries.notifications.getMyInbox, {
         paginationOpts: { numItems: 20, cursor: null },
       }),
     ).rejects.toThrow(/disabled/i);
 
     vi.stubEnv("CB_CONNECT_NOTIFICATION_INBOX_V1", "true");
+    await expect(
+      asPrimary.query(api.queries.notifications.getMyInboxAvailability, {}),
+    ).resolves.toBe(true);
     await expect(
       asPrimary.query(api.queries.notifications.getMyInbox, {
         paginationOpts: { numItems: 51, cursor: null },
@@ -712,6 +719,11 @@ describe("notification recipient queries", () => {
         },
       }),
     ).rejects.toThrow(/cursor.*bound/i);
+
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_INBOX_V1", "false");
+    await expect(
+      asPrimary.query(api.queries.notifications.getMyInboxAvailability, {}),
+    ).resolves.toBe(false);
   });
 
   test(

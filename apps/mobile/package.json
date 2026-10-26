@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.7",
     "expo-doctor": "^1.17.11",
     "typescript": "~6.0.3",
     "vitest": "^4.1.9"
