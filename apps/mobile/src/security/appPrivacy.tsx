@@ -3,14 +3,84 @@ import { Platform, Text, View } from "react-native";
 import * as ScreenCapture from "expo-screen-capture";
 
 const SCREEN_CAPTURE_KEY = "cb-connect-sensitive-screens";
+let nextScreenCaptureKey = 0;
+let appSwitcherUsers = 0;
+let appSwitcherQueue: Promise<void> = Promise.resolve();
+
+function queueAppSwitcher(operation: () => Promise<void>): Promise<void> {
+  const pending = appSwitcherQueue.then(operation);
+  appSwitcherQueue = pending.catch(() => {});
+  return pending;
+}
+
+async function acquireAppSwitcherProtection(): Promise<() => void> {
+  await queueAppSwitcher(async () => {
+    if (appSwitcherUsers === 0) {
+      try {
+        await ScreenCapture.enableAppSwitcherProtectionAsync(1);
+      } catch (error) {
+        await ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
+        throw error;
+      }
+    }
+    appSwitcherUsers += 1;
+  });
+
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    void queueAppSwitcher(async () => {
+      appSwitcherUsers -= 1;
+      if (appSwitcherUsers === 0) await ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
+    });
+  };
+}
 
 export async function protectAppPrivacy(platform: "android" | "ios"): Promise<() => void> {
-  await ScreenCapture.preventScreenCaptureAsync(SCREEN_CAPTURE_KEY);
-  if (platform === "ios") await ScreenCapture.enableAppSwitcherProtectionAsync(1);
+  const screenCaptureKey = `${SCREEN_CAPTURE_KEY}-${++nextScreenCaptureKey}`;
+  await ScreenCapture.preventScreenCaptureAsync(screenCaptureKey);
+
+  let releaseAppSwitcher: (() => void) | undefined;
+  if (platform === "ios") {
+    try {
+      releaseAppSwitcher = await acquireAppSwitcherProtection();
+    } catch (error) {
+      await ScreenCapture.allowScreenCaptureAsync(screenCaptureKey).catch(() => {});
+      throw error;
+    }
+  }
 
   return () => {
-    void ScreenCapture.allowScreenCaptureAsync(SCREEN_CAPTURE_KEY).catch(() => {});
-    if (platform === "ios") void ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
+    void ScreenCapture.allowScreenCaptureAsync(screenCaptureKey).catch(() => {});
+    releaseAppSwitcher?.();
+  };
+}
+
+export function mountAppPrivacyShield(
+  platform: "android" | "ios",
+  onReady: () => void,
+  onFailure: () => void,
+): () => void {
+  let mounted = true;
+  let releaseProtection: (() => void) | undefined;
+
+  void protectAppPrivacy(platform)
+    .then((release) => {
+      if (!mounted) {
+        release();
+        return;
+      }
+      releaseProtection = release;
+      onReady();
+    })
+    .catch(() => {
+      if (mounted) onFailure();
+    });
+
+  return () => {
+    mounted = false;
+    releaseProtection?.();
   };
 }
 
@@ -18,29 +88,15 @@ export function AppPrivacyShield({ children }: PropsWithChildren): React.JSX.Ele
   const [protectedReady, setProtectedReady] = useState(false);
   const [protectionFailed, setProtectionFailed] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    let releaseProtection: (() => void) | undefined;
-
-    void protectAppPrivacy(Platform.OS === "ios" ? "ios" : "android")
-      .then((release) => {
-        if (!mounted) {
-          release();
-          return;
-        }
-        releaseProtection = release;
-        setProtectedReady(true);
-      })
-      .catch(() => {
-        // Keep sensitive screens hidden if the platform privacy control fails.
-        if (mounted) setProtectionFailed(true);
-      });
-
-    return () => {
-      mounted = false;
-      releaseProtection?.();
-    };
-  }, []);
+  useEffect(
+    () =>
+      mountAppPrivacyShield(
+        Platform.OS === "ios" ? "ios" : "android",
+        () => setProtectedReady(true),
+        () => setProtectionFailed(true),
+      ),
+    [],
+  );
 
   return protectedReady ? (
     <>{children}</>
