@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from "react";
 import { useQuery } from "convex/react";
 import { AccessContext } from "../../navigation/accessContext";
-import { api } from "../../convex/partnerApi";
+import { api } from "../../convex/api";
 import { PartnerControls } from "../../features/partner/PartnerControls";
 
 export default function PartnerRoute(): React.JSX.Element {
