@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -27,7 +27,7 @@ function publicReferences(source: string): string[] {
   }
   function visit(node: ts.Node): void {
     if (ts.isImportDeclaration(node)) return;
-    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require")) && node.arguments.some((arg) => ts.isStringLiteral(arg) && apiPath.test(arg.text))) throw new Error("Use a static public API import");
+    if (ts.isCallExpression(node) && node.arguments.some((arg) => (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) && apiPath.test(arg.text))) throw new Error("Use a static public API import");
     if (importsApi && ts.isIdentifier(node) && node.text === "api") {
       const group = node.parent;
       const section = group.parent;
@@ -62,12 +62,16 @@ describe("mobile public Convex API inventory", () => {
       'import { api } from "../../convex/api"; api["queries"].users.getMe;',
       'import { api } from "../../convex/api"; const { queries } = api;',
       'const { api } = require("../../convex/api"); api.queries.users.getMe;',
+      'const { api } = module.require("../../convex/api"); api.queries.users.getMe;',
+      'const { api } = require(`../../convex/api`); api.queries.users.getMe;',
       'export { api } from "../../convex/api";',
     ]) expect(() => publicReferences(source)).toThrow();
   });
   it("covers exactly every direct call and feature-adapter reference", () => {
     const used = new Set<string>();
-    for (const file of productionSources(sourceRoot)) {
+    const mobileRoot = join(sourceRoot, "..");
+    const configs = ["js", "ts", "mjs", "cjs", "mts", "cts"].map((ext) => join(mobileRoot, `app.config.${ext}`)).filter(existsSync);
+    for (const file of [...productionSources(sourceRoot), ...configs]) {
       const source = readFileSync(file, "utf8");
       for (const ref of publicReferences(source)) used.add(ref);
     }
