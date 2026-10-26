@@ -9,6 +9,8 @@
 - The app's sign-out action returned to the sign-in screen. Clerk reported the primary session revoked; signing in as the second synthetic fixture account created a different active session. That account received no primary `getMe` or guard data, and `getCapabilities` failed closed.
 - Convex fixture cleanup reported no remaining scoped records. Both Clerk fixture users were deleted, and both sessions were inactive.
 - Local checks after the sign-out and Expo patch updates: mobile tests 12 files / 55 tests passed; mobile typecheck and contracts parity passed; `expo-doctor` passed 21/21 checks.
+- A separate short-lived backend-created session in the same Clerk development instance minted a JWT with the expected `iss`, `sub`, `aud`, and expiration. Convex accepted it under the approved provider configuration. The session and synthetic Clerk user were deleted after the check.
+- A one-instance provider mismatch attempt changed the configured URL only by adding a trailing slash. Convex still accepted the JWT, so this did **not** prove issuer rejection. The exact provider URL was restored, the temporary diagnostic query was removed from the deployment, and no application data was created.
 
 The screenshot records the app after the second fixture signed out. It contains no fixture email, password, token, or verification code.
 
@@ -16,11 +18,12 @@ The screenshot records the app after the second fixture signed out. It contains 
 
 ## Remaining M2 blocker
 
-The negative token check changed the `iss` claim without re-signing the JWT. Convex rejected that tampered token, which does not prove rejection of a valid JWT signed by a foreign issuer. The approved test deployment's effective provider list contains only `holy-clam-29.clerk.accounts.dev`, but the plan requires an actual cross-issuer synthetic integration check as well. The local worktree scan found no second test Clerk issuer; the only other configured issuer belongs to production and was not used. M2.3 remains blocked. No M3 implementation has started, and no M3 qualification is claimed.
+The earlier negative token check changed the `iss` claim without re-signing the JWT. Convex rejected that tampered token, which does not prove rejection of a valid JWT signed by a foreign issuer. Clerk documents `iss` as an instance Frontend API URL claim that JWT templates cannot override. Using only `holy-clam-29` therefore cannot mint a valid token with another issuer; Convex also canonicalized the trailing-slash variant and accepted the first-instance token. No production issuer was used. M2's foreign-issuer negative check remains blocked, so no M3 implementation or qualification is claimed.
 
 ## Audit findings
 
-- Root `npm audit --omit=dev` failed on a critical Next.js advisory; the locked web dependency was not changed in this M2 run.
-- Mobile `npm audit --omit=dev` reported high-severity `node-forge` and `zod` advisories through Expo tooling, with no fix available in the current dependency tree.
+- Root `npm audit --omit=dev` initially found critical/high Next.js advisories at 15.5.27. The web dependency is now pinned by the lockfile to patched Next.js 15.5.28; local audit reports zero vulnerabilities.
+- Mobile `npm audit --omit=dev` still reports high-severity `node-forge` and `zod` advisories through Expo tooling, with no fix available in the current dependency tree.
+- After the Next.js patch, local root validation passed: `npm run typecheck`, `npm run test:unit -- --run` (78 files / 903 tests), and the CI-style `npm run build`. These ran on Node 22.23.1; PR CI remains the required check under pinned Node 20.19.1 / npm 10.8.2.
 
-These audit failures require disposition before a foundation freeze. No `npm audit fix` was run.
+The remaining mobile audit findings require disposition before a foundation freeze. No broad `npm audit fix` was used.
