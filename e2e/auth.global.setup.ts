@@ -247,11 +247,16 @@ export default async function globalSetup(_config: FullConfig) {
     setupReason = "fixture_run_begin_failed";
     const token = await convexAuthToken(primaryPage);
     primaryConvexAuthToken = token;
+    let fixtureRunStarted = false;
     services.cleanupApplicationData = async (fixturePair) => {
-      await beginConvexFixtureRun(environment, fixturePair, token);
+      if (!fixtureRunStarted) {
+        await beginConvexFixtureRun(environment, fixturePair, token);
+        fixtureRunStarted = true;
+      }
       await cleanupConvexFixturePair(environment, fixturePair, token);
     };
     await beginConvexFixtureRun(environment, pair!, token);
+    fixtureRunStarted = true;
     // The durable run exists before the dashboard can call ensureUser.
     // From this point every failure can clean partially-created app data.
 
