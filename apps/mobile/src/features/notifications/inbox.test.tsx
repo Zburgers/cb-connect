@@ -61,7 +61,8 @@ describe("mobile notification inbox contract", () => {
     inboxMocks.available = false;
     let markup = renderToStaticMarkup(<Inbox />);
     expect(inboxMocks.paginationArgs).toBe("skip");
-    expect(markup).toContain("Your inbox is unavailable right now.");
+    expect(markup).toContain("In-app inbox access is unavailable for this account right now.");
+    expect(markup).toContain("does not reflect device notification permission or push channel availability");
     expect(markup).not.toContain("Message activity");
 
     inboxMocks.available = true;

@@ -40,14 +40,14 @@ export function Inbox() {
     <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: "transparent" }}>
       <Text allowFontScaling accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Inbox</Text>
       <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>
-        Updates addressed to your account appear here.
+        Private in-app updates appear here. Push delivery is not available in this build.
       </Text>
       {available === undefined || (available && items.status === "LoadingFirstPage") ? (
         <ActivityIndicator accessibilityLabel="Loading notifications" />
       ) : null}
       {available === false ? (
         <Text allowFontScaling accessibilityRole="alert" style={[styles.description, { color: palette.muted }]}>
-          Your inbox is unavailable right now. Try again later.
+          In-app inbox access is unavailable for this account right now. This does not reflect device notification permission or push channel availability.
         </Text>
       ) : null}
       {actionFailed ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>Unable to update this notification. Try again.</Text> : null}

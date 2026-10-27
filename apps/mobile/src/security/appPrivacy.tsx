@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from "react";
-import { Platform, Text, View } from "react-native";
+import { AppState, Platform, Text, View, type AppStateStatus } from "react-native";
 import * as ScreenCapture from "expo-screen-capture";
 
 const SCREEN_CAPTURE_KEY = "cb-connect-sensitive-screens";
@@ -61,9 +61,13 @@ export function mountAppPrivacyShield(
   platform: "android" | "ios",
   onReady: () => void,
   onFailure: () => void,
+  onAppActiveChange: (active: boolean) => void = () => {},
 ): () => void {
   let mounted = true;
   let releaseProtection: (() => void) | undefined;
+  const appStateSubscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+    onAppActiveChange(state === "active");
+  });
 
   void protectAppPrivacy(platform)
     .then((release) => {
@@ -80,6 +84,7 @@ export function mountAppPrivacyShield(
 
   return () => {
     mounted = false;
+    appStateSubscription.remove();
     releaseProtection?.();
   };
 }
@@ -87,6 +92,7 @@ export function mountAppPrivacyShield(
 export function AppPrivacyShield({ children }: PropsWithChildren): React.JSX.Element {
   const [protectedReady, setProtectedReady] = useState(false);
   const [protectionFailed, setProtectionFailed] = useState(false);
+  const [appIsActive, setAppIsActive] = useState(AppState.currentState === "active");
 
   useEffect(
     () =>
@@ -94,11 +100,12 @@ export function AppPrivacyShield({ children }: PropsWithChildren): React.JSX.Ele
         Platform.OS === "ios" ? "ios" : "android",
         () => setProtectedReady(true),
         () => setProtectionFailed(true),
+        setAppIsActive,
       ),
     [],
   );
 
-  return protectedReady ? (
+  return protectedReady && appIsActive ? (
     <>{children}</>
   ) : (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#000" }}>

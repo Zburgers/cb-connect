@@ -19,7 +19,7 @@ describe("mobile settings privacy and accessibility", () => {
     expect(source).toContain("getVisibleNotificationPurposes");
     expect(source).toContain('accessibilityRole="switch"');
     expect(source).toContain('accessibilityRole="button"');
-    expect(source).toContain("Push notifications are not available yet.");
+    expect(source).toContain("Push delivery is not available in this build; device permission and push channel availability are separate.");
     expect(source).not.toContain("Gate 6");
   });
 
