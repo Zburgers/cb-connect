@@ -396,7 +396,7 @@ describe("mobile cycle dashboard", () => {
     expect(formatCycleCalendarDate("2026-02-30")).toBeNull();
   });
 
-  it("uses scalable, semantic text in a scrollable layout for compact and large screens", () => {
+  it("uses scalable text and flattened link styles in a scrollable layout", () => {
     const screen = readFileSync(
       new URL("./CycleDashboard.tsx", import.meta.url),
       "utf8",
@@ -406,6 +406,7 @@ describe("mobile cycle dashboard", () => {
     expect(screen).toContain("allowFontScaling");
     expect(screen).toContain('accessibilityRole="header"');
     expect(screen).toContain('accessibilityRole="summary"');
+    expect(screen).toContain("StyleSheet.flatten([styles.quickAction");
     expect(screen).toContain("maxWidth: 560");
     expect(screen).toContain("useColorScheme");
     expect(screen).not.toMatch(/\bheight:\s*\d/);
