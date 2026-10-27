@@ -38,6 +38,7 @@ const signIn = vi.fn();
 const clerkSetup = vi.fn();
 const close = vi.fn();
 const navigationEvents: string[] = [];
+let pageGotoFailure: ((name: string, url: string) => boolean) | undefined;
 
 function locator() {
   return {
@@ -52,6 +53,7 @@ function page(token: string, name: string) {
   return {
     goto: vi.fn(async (url: string) => {
       navigationEvents.push(`${name}:${url}`);
+      if (pageGotoFailure?.(name, url)) throw new Error("synthetic_navigation_failure");
     }),
     waitForURL: vi.fn(),
     evaluate: vi.fn().mockResolvedValue(token),
@@ -109,7 +111,10 @@ vi.mock("./support/authEnvironment", () => ({
 describe("authenticated fixture global setup", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    signIn.mockReset();
+    cleanupFixturePair.mockReset();
     navigationEvents.length = 0;
+    pageGotoFailure = undefined;
   });
 
   test("accepts the generated 12-character Crockford pairing code", () => {
@@ -171,11 +176,80 @@ describe("authenticated fixture global setup", () => {
     expect(deleteUser).toHaveBeenCalledWith(fixturePair.primary.clerkId);
   });
 
-  test("preserves fixture accounts and reports cleanup/readback failure", async () => {
-    cleanupFixturePair.mockResolvedValue({
-      ok: false,
-      errors: ["application_cleanup_failed"],
+  test("does not begin the durable run again after partner onboarding when pairing fails", async () => {
+    beginConvexFixtureRun.mockResolvedValue(undefined);
+    cleanupConvexFixturePair.mockResolvedValue(undefined);
+    cleanupFixturePair.mockImplementation(async (pair, services) => {
+      await services.cleanupApplicationData?.(pair);
+      await services.deleteUser(pair.partner.clerkId);
+      await services.deleteUser(pair.primary.clerkId);
+      return { ok: true, errors: [] };
     });
+    signIn.mockResolvedValue(undefined);
+    clerkSetup.mockResolvedValue(undefined);
+    close.mockResolvedValue(undefined);
+    pageGotoFailure = (name, url) => name === "primary" && url === "/dashboard/partner";
+
+    const setup = (await import("./auth.global.setup")).default;
+    await expect(setup({} as never)).rejects.toThrow("authenticated_fixture_setup_failed");
+    expect(navigationEvents).toContain("partner:/onboarding");
+    expect(navigationEvents).toContain("primary:/dashboard/partner");
+    expect(registerConvexFixtureUser).not.toHaveBeenCalled();
+    expect(beginConvexFixtureRun).toHaveBeenCalledTimes(1);
+    expect(cleanupConvexFixturePair).toHaveBeenCalledTimes(1);
+    expect(deleteUser.mock.invocationCallOrder[0]).toBeGreaterThan(
+      cleanupConvexFixturePair.mock.invocationCallOrder[0],
+    );
+  });
+
+  test("retries an ambiguous initial durable-run begin during scoped cleanup", async () => {
+    beginConvexFixtureRun
+      .mockRejectedValueOnce(new Error("ambiguous transport failure"))
+      .mockResolvedValueOnce(undefined);
+    cleanupConvexFixturePair.mockResolvedValue(undefined);
+    cleanupFixturePair.mockImplementation(async (pair, services) => {
+      await services.cleanupApplicationData?.(pair);
+      await services.deleteUser(pair.partner.clerkId);
+      await services.deleteUser(pair.primary.clerkId);
+      return { ok: true, errors: [] };
+    });
+    signIn
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("partner_sign_in_failed"));
+    clerkSetup.mockResolvedValue(undefined);
+    close.mockResolvedValue(undefined);
+
+    const setup = (await import("./auth.global.setup")).default;
+    await expect(setup({} as never)).rejects.toThrow("authenticated_fixture_setup_failed");
+
+    expect(beginConvexFixtureRun).toHaveBeenCalledTimes(2);
+    expect(beginConvexFixtureRun).toHaveBeenNthCalledWith(
+      1,
+      environment,
+      fixturePair,
+      "primary-convex-token",
+    );
+    expect(beginConvexFixtureRun).toHaveBeenNthCalledWith(
+      2,
+      environment,
+      fixturePair,
+      "primary-convex-token",
+    );
+    expect(cleanupConvexFixturePair).toHaveBeenCalledOnce();
+  });
+
+  test("preserves fixture accounts and reports cleanup/readback failure", async () => {
+    cleanupConvexFixturePair.mockRejectedValue(
+      Object.assign(new Error("fixture_application_cleanup_incomplete"), {
+        status: 503,
+      }),
+    );
+    const authEnvironment = await vi.importActual<
+      typeof import("./support/authEnvironment")
+    >("./support/authEnvironment");
+    cleanupFixturePair.mockImplementation((pair, services, options) =>
+      authEnvironment.cleanupFixturePair(pair, services, options),
+    );
     beginConvexFixtureRun.mockResolvedValue(undefined);
     signIn
       .mockResolvedValueOnce(undefined)
@@ -190,11 +264,17 @@ describe("authenticated fixture global setup", () => {
       "authenticated_fixture_setup_failed",
     );
 
-    expect(cleanupFixturePair).toHaveBeenCalledWith(
-      fixturePair,
-      expect.objectContaining({ cleanupApplicationData: expect.any(Function) }),
-      { maxAttempts: 3 },
+    expect(cleanupFixturePair).toHaveBeenCalledTimes(1);
+    expect(cleanupFixturePair.mock.calls[0]?.[2]).toEqual({ maxAttempts: 3 });
+    expect(cleanupConvexFixturePair).toHaveBeenCalledTimes(3);
+    expect(cleanupConvexFixturePair.mock.calls).toEqual(
+      Array.from({ length: 3 }, () => [
+        environment,
+        fixturePair,
+        "primary-convex-token",
+      ]),
     );
+    expect(beginConvexFixtureRun).toHaveBeenCalledTimes(1);
     expect(deleteUser).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalledWith(
       "authenticated_fixture_cleanup_errors:application_cleanup_failed",

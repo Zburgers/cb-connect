@@ -47,6 +47,24 @@ describe("mobile privacy protection", () => {
     expect(capture.allowScreenCaptureAsync).not.toHaveBeenCalled();
   });
 
+  it("opens the privacy shield only after Android capture protection is ready", async () => {
+    let enableProtection!: () => void;
+    capture.preventScreenCaptureAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { enableProtection = resolve; }),
+    );
+    const onReady = vi.fn();
+    const onFailure = vi.fn();
+
+    mountAppPrivacyShield("android", onReady, onFailure);
+    await vi.waitFor(() => expect(capture.preventScreenCaptureAsync).toHaveBeenCalledOnce());
+    expect(onReady).not.toHaveBeenCalled();
+    expect(onFailure).not.toHaveBeenCalled();
+
+    enableProtection();
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
   it("releases partially enabled iOS protection when switcher setup fails", async () => {
     capture.enableAppSwitcherProtectionAsync.mockRejectedValueOnce(new Error("switcher control unavailable"));
 
