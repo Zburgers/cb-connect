@@ -10,7 +10,7 @@ Update with Github issues on the parent repo
 ### Mobile UX candidate cannot be inspected on the available emulators
 **Program gate:** Mobile Gate 5
 **Status:** Active; candidate native UI and journeys not qualified.
-**Evidence:** On 2026-10-27 the `gate5/mobile-ux-v1` Android debug build succeeded. Installation on `emulator-5554` failed with `DEVICE_IN_USE` because another device session owned it; a separate `Pixel_7` device-open attempt failed to boot (`adb getprop` returned `error: closed`). The older installed binary showed a blank screen after loading the candidate Metro bundle. No synthetic screenshots or authenticated candidate journeys were obtained.
+**Evidence:** On 2026-10-27 the `gate5/mobile-ux-v1` Android debug build succeeded. Installation on `emulator-5554` first failed with `DEVICE_IN_USE` because another device session owned it; a separate `Pixel_7` device-open attempt failed to boot (`adb getprop` returned `error: closed`). On 2026-10-28, with the owner session, the self-contained release APK installed and launched. The native accessibility tree exposed the signed-out Clerk controls, but both device screenshot paths returned black app pixels while `AppPrivacyShield` was mounted. This reproduces the recorded capture issue; it is not evidence that the UI itself rendered blank. No authenticated candidate journey or usable screenshots of the new screens were obtained. Keep screenshot/recording privacy unqualified; do not bypass the shield or claim security acceptance as part of this UI sprint.
 **Exit evidence:** Install the candidate on an available emulator, inspect light and dark screens and complete synthetic account journeys with redacted evidence. Retain the separate capture-privacy blocker below.
 
 --
