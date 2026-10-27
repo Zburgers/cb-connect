@@ -328,6 +328,14 @@ describe("dashboard cycle state read model", () => {
       }
     });
 
+    const missingSnapshot = await asPartner.query(
+      api.queries.dashboard.getDashboardData,
+      { todayDate: "2026-08-25" },
+    );
+    expect(missingSnapshot.partnerPredictionV2CanEnsureSnapshot).toBe(true);
+    expect(missingSnapshot.partnerPredictionV2Exposed).toBe(false);
+    expect(missingSnapshot).not.toHaveProperty("partnerPredictionV2");
+
     expect(
       await asPartner.mutation(
         api.mutations.predictionSnapshots.ensureForViewer,
@@ -340,6 +348,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(true);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(true);
     expect(result.partnerPredictionV2).toMatchObject({
       version: 2,
       status: "estimated",
@@ -397,6 +406,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");
     expect(result.cycleStateV1).toMatchObject({
@@ -493,6 +503,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(false);
     expect(result.hasData).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");

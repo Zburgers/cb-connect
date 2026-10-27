@@ -20,6 +20,7 @@
     "expo-crypto": "~57.0.4",
     "expo-linking": "~57.0.13",
     "expo-router": "~57.0.29",
+    "expo-screen-capture": "~57.0.4",
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-web-browser": "~57.0.3",
@@ -34,9 +35,10 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.7",
     "expo-doctor": "^1.17.11",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "decode-uri-component": "0.5.0"
