@@ -12,6 +12,7 @@ import { clerk, clerkSetup } from "@clerk/testing/playwright";
 import {
   beginConvexFixtureRun,
   cleanupConvexFixturePair,
+  cleanupFixturePair,
   createClerkFixtureServices,
   loadAuthEnvironment,
   provisionFixturePair,
@@ -246,11 +247,18 @@ export default async function globalSetup(_config: FullConfig) {
     setupReason = "fixture_run_begin_failed";
     const token = await convexAuthToken(primaryPage);
     primaryConvexAuthToken = token;
+    let fixtureRunStarted = false;
+    services.cleanupApplicationData = async (fixturePair) => {
+      if (!fixtureRunStarted) {
+        await beginConvexFixtureRun(environment, fixturePair, token);
+        fixtureRunStarted = true;
+      }
+      await cleanupConvexFixturePair(environment, fixturePair, token);
+    };
     await beginConvexFixtureRun(environment, pair!, token);
+    fixtureRunStarted = true;
     // The durable run exists before the dashboard can call ensureUser.
     // From this point every failure can clean partially-created app data.
-    services.cleanupApplicationData = (fixturePair) =>
-      cleanupConvexFixturePair(environment, fixturePair, token);
 
     setupStage = "primary-onboarding";
     setupReason = "primary_onboarding_failed";
@@ -331,9 +339,25 @@ export default async function globalSetup(_config: FullConfig) {
     console.error(`authenticated_fixture_setup_stage:${setupStage}`);
     console.error(`authenticated_fixture_setup_reason:${setupReason}`);
     if (pair) {
-      await services.cleanupApplicationData?.(pair).catch(() => undefined);
-      await clerkServices.deleteUser(pair.partner.clerkId).catch(() => undefined);
-      await clerkServices.deleteUser(pair.primary.clerkId).catch(() => undefined);
+      try {
+        const cleanup = await cleanupFixturePair(
+          pair,
+          {
+            ...clerkServices,
+            ...(services.cleanupApplicationData
+              ? { cleanupApplicationData: services.cleanupApplicationData }
+              : {}),
+          },
+          { maxAttempts: 3 },
+        );
+        if (!cleanup.ok) {
+          console.error(
+            `authenticated_fixture_cleanup_errors:${cleanup.errors.join(",") || "unknown"}`,
+          );
+        }
+      } catch {
+        console.error("authenticated_fixture_cleanup_failed");
+      }
     }
     if (browser) {
       await browser.close().catch(() => undefined);

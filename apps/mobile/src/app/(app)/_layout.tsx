@@ -2,7 +2,7 @@ import { Stack } from "expo-router";
 import { useConvexConnectionState, useQuery } from "convex/react";
 import { api } from "../../convex/api";
 import { AuthGate } from "../../auth/AuthGate";
-import { resolveAccessState } from "../../navigation/accessResolver";
+import { canRenderPartnerRoute, resolveAccessState } from "../../navigation/accessResolver";
 import { AccessContext } from "../../navigation/accessContext";
 
 function GuardedRoutes() {
@@ -21,8 +21,14 @@ function GuardedRoutes() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={access.canRenderProtectedContent}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="log" />
+          <Stack.Screen name="notifications" />
+          <Stack.Screen name="settings" />
         </Stack.Protected>
-        <Stack.Protected guard={!access.canRenderProtectedContent}>
+        <Stack.Protected guard={canRenderPartnerRoute(access)}>
+          <Stack.Screen name="partner" />
+        </Stack.Protected>
+        <Stack.Protected guard={!access.canRenderProtectedContent && access.state !== "unlinked"}>
           <Stack.Screen name="status" />
         </Stack.Protected>
       </Stack>

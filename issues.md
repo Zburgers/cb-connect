@@ -9,6 +9,13 @@ Update with Github issues on the parent repo
 
 --
 
+### Gate 5 native integration qualification is blocked
+**Program gate:** Mobile Gate 5
+**Status:** Active; protected test API parity passes; native qualification is incomplete with a screenshot/recording privacy failure
+**Evidence:** On 2026-10-27 the isolated PR #75 worktree used the approved target-bound procedure to deploy only `dev:hallowed-hummingbird-284`. Exact function-spec comparison found all 44/44 mobile references public with matching kinds. Two disposable synthetic users completed native onboarding, pairing, period/pain logging, and default-off inbox verification, then scoped application cleanup and Clerk deletion both passed zero-residue/404 readback. A redundant post-onboarding `beginFixtureRun` call reproduced `fixture_cleanup_identity_mismatch` because the existing partner row was not yet registered; removing that redundant call allowed primary-then-partner registration to pass with all identity assertions and cleanup fences intact. The Pixel 7 installed APK hash matches the debug build (`84ab0679…`). Authenticated capture evidence was inconsistent: a Pixel `agent-device screenshot` and second-emulator recording returned non-black pixels; raw media was removed. Same-device account switching stopped at hosted sign-in; chat send/readback, revocation, replacement-partner isolation, Recents preview, interruption, and physical-device qualification remain open. Six high dependency advisory entries and D-018 remain explicit unresolved gates. See `docs/security/2026-10-27-gate-5-android-qualification.md`.
+**Exit evidence:** Resolve authenticated capture inconsistency and complete remaining native journeys with redacted evidence; obtain exact-head independent SHIELD M8.2 assessment; resolve six advisories and D-018 before their dependent gates. Keep PR #75 draft/unmerged; no production exposure or APK publication.
+--
+
 ### Couple DM message-state and reaction UX
 **Program gate:** Continuous remediation; must close before Mobile Gate 5
 **Status:** Implemented and deployed; authenticated production verification and race-safety remediation pending

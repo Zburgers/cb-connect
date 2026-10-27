@@ -28,6 +28,16 @@ export interface AccessResolution {
   role?: MobileGuardRole;
 }
 
+export function canRenderPartnerRoute(access: AccessResolution): boolean {
+  return access.canRenderProtectedContent || access.state === "unlinked";
+}
+
+export function accessStatusRedirect(state: AccessState): "/onboarding" | "/(app)/partner" | null {
+  if (state === "onboarding_incomplete") return "/onboarding";
+  if (state === "unlinked") return "/(app)/partner";
+  return null;
+}
+
 /** Resolve route access using only authenticated, current Convex query results. */
 export function resolveAccessState(inputs: AccessStateInputs): AccessResolution {
   if (inputs.auth === "pending" || inputs.auth === "convex_pending") {
