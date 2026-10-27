@@ -7,7 +7,7 @@ const config: ExpoConfig = {
   scheme: "cbconnectbeta",
   version: "0.0.1",
   orientation: "portrait",
-  plugins: ["expo-router", "expo-secure-store", "@clerk/expo", "expo-font"],
+  plugins: ["expo-router", "expo-secure-store", "@clerk/expo", "expo-font", "@react-native-community/datetimepicker"],
   ios: { bundleIdentifier: "tech.builtbynaki.cbconnect.beta" },
   android: { package: "tech.builtbynaki.cbconnect.beta" },
   extra: { mobileEnvironment: "isolated-development-only" },
