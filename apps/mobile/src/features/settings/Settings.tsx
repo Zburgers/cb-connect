@@ -107,7 +107,7 @@ export function Settings() {
 
       <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>In-app notifications</Text>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>These preferences control notifications shown in the app. Push notifications are not available yet.</Text>
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>These preferences control in-app notifications only. Push delivery is not available in this build; device permission and push channel availability are separate.</Text>
         {visiblePurposes.map((purpose: NotificationPurpose) => {
           const preference = preferenceMap.get(purpose);
           if (!preference) return null;

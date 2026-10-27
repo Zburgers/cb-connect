@@ -8,12 +8,12 @@ import { StatusBar } from "expo-status-bar";
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <AppProviders>
-        <StatusBar style="auto" />
-        <AppPrivacyShield>
+      <AppPrivacyShield>
+        <AppProviders>
+          <StatusBar style="auto" />
           <AuthenticatedStack />
-        </AppPrivacyShield>
-      </AppProviders>
+        </AppProviders>
+      </AppPrivacyShield>
     </ErrorBoundary>
   );
 }

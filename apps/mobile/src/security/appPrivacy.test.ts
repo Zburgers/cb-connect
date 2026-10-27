@@ -6,9 +6,20 @@ const capture = vi.hoisted(() => ({
   allowScreenCaptureAsync: vi.fn().mockResolvedValue(undefined),
   disableAppSwitcherProtectionAsync: vi.fn().mockResolvedValue(undefined),
 }));
+const lifecycle = vi.hoisted(() => ({
+  listener: undefined as ((state: "active" | "background" | "inactive") => void) | undefined,
+  remove: vi.fn(),
+}));
 
 vi.mock("expo-screen-capture", () => capture);
 vi.mock("react-native", () => ({
+  AppState: {
+    currentState: "active",
+    addEventListener: vi.fn((_event: string, listener: typeof lifecycle.listener) => {
+      lifecycle.listener = listener;
+      return { remove: lifecycle.remove };
+    }),
+  },
   Platform: { OS: "android" },
   View: () => null,
 }));
@@ -63,6 +74,18 @@ describe("mobile privacy protection", () => {
     enableProtection();
     await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
     expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it("tracks inactive and background states for the privacy curtain", () => {
+    const onAppActiveChange = vi.fn();
+    const unmount = mountAppPrivacyShield("android", vi.fn(), vi.fn(), onAppActiveChange);
+    lifecycle.listener?.("background");
+    lifecycle.listener?.("inactive");
+    lifecycle.listener?.("active");
+
+    expect(onAppActiveChange.mock.calls).toEqual([[false], [false], [true]]);
+    unmount();
+    expect(lifecycle.remove).toHaveBeenCalledOnce();
   });
 
   it("releases partially enabled iOS protection when switcher setup fails", async () => {
