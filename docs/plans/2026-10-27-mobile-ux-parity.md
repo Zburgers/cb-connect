@@ -18,7 +18,7 @@ Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. The matrix records source-
 - **PASS:** Android 17 emulator sign-in with the persistent synthetic primary and partner accounts; role onboarding; primary-to-partner pairing; same-device account switching.
 - **PASS:** Native partner chat send followed by partner-session readback (`Read` confirmation). The message appears in the evidence screenshots.
 - **PASS:** Period logging screen, partner sharing controls, and settings navigation render on the device.
-- **PASS:** Android's native date picker opens, constrains future dates, and applies the selected period date; this check did not submit a write.
+- **PASS:** Android's native date picker opens and applies a selected date. Partner-assisted date limits are left to the primary calendar's server validation rather than the partner's local date; this check did not submit a write.
 - **BLOCKED by test backend availability:** Home receives no cycle-state presentation for either role, and Inbox says access is unavailable. Mobile shows the safe empty state and does not synthesize health predictions.
 - **NOT RUN:** Physical-device and screen-capture privacy qualification. Both are explicitly outside this PR's scope.
 

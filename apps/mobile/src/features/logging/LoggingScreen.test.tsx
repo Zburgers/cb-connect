@@ -111,7 +111,7 @@ function inputValue(tree: React.ReactNode, label: string) {
 function dateField(tree: React.ReactNode, label: string) {
   const found = find(tree, (element) => element.type === DateField && (element.props as { label?: string }).label === label);
   if (!found) throw new Error(`Missing date field: ${label}`);
-  return found.props as { value: string; onChange: (value: string) => void; palette: { surface: string; foreground: string } };
+  return found.props as { value: string; onChange: (value: string) => void; palette: { surface: string; foreground: string }; maximumDate?: string };
 }
 
 function textContent(node: React.ReactNode): string {
@@ -305,5 +305,29 @@ describe("LoggingScreen actions", () => {
     await button(tree, "Save period")();
 
     expect(startAssist).toHaveBeenCalledWith({ startDate: primaryToday, startCertainty: "exact" });
+  });
+
+  it("leaves partner-assisted picker bounds to the primary calendar while keeping primary bounds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-26T20:00:00.000Z"));
+    runtime.access = "partner";
+    runtime.account = { timeZone: "America/Los_Angeles" };
+
+    let tree = render();
+    expect(dateField(tree, "Period start date").maximumDate).toBeUndefined();
+    expect(dateField(tree, "Optional period end date").maximumDate).toBeUndefined();
+
+    runtime.periods = openPeriod;
+    await button(render(), "Correct period")();
+    tree = render();
+    expect(dateField(tree, "Corrected period start date").maximumDate).toBeUndefined();
+    expect(dateField(tree, "Corrected period end date").maximumDate).toBeUndefined();
+
+    runtime.access = "primary";
+    runtime.account = { timeZone: "Asia/Kolkata" };
+    runtime.periods = [];
+    tree = render();
+    expect(dateField(tree, "Period start date").maximumDate).toBe("2026-10-27");
+    expect(dateField(tree, "Optional period end date").maximumDate).toBe("2026-10-27");
   });
 });
