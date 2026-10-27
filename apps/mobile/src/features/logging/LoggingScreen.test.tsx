@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({
   access: "primary" as string,
   connection: true,
+  scheme: "light",
   account: { timeZone: "UTC" } as { timeZone?: string } | null | undefined,
   periods: [] as unknown[] | undefined,
   pain: [] as unknown[] | undefined,
@@ -37,7 +38,7 @@ vi.mock("react-native", () => ({
   Text: "Text",
   TextInput: "TextInput",
   View: "View",
-  useColorScheme: () => "light",
+  useColorScheme: () => runtime.scheme,
 }));
 
 vi.mock("convex/react", () => ({
@@ -127,6 +128,7 @@ describe("LoggingScreen actions", () => {
     vi.useRealTimers();
     runtime.access = "primary";
     runtime.connection = true;
+    runtime.scheme = "light";
     runtime.account = { timeZone: "UTC" };
     runtime.periods = [];
     runtime.pain = [];
@@ -135,6 +137,42 @@ describe("LoggingScreen actions", () => {
     runtime.cursor = 0;
     for (const mutation of [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain]) {
       mutation.mockReset().mockResolvedValue({ eventId: "event" });
+    }
+  });
+
+  it("offers local-date shortcuts only to the primary user", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
+    let tree = render();
+    await button(tree, "Yesterday")();
+    tree = render();
+    expect(inputValue(tree, "Period start date, YYYY-MM-DD")).toBe("2026-10-26");
+    runtime.access = "partner";
+    tree = render();
+    expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Yesterday")).toBeUndefined();
+    expect(textContent(tree)).not.toContain("Loading pain history");
+  });
+
+  it("steps pain within the valid range", async () => {
+    let tree = render();
+    expect(buttonIsDisabled(tree, "Less pain")).toBe(true);
+    await button(tree, "More pain")();
+    tree = render();
+    expect(inputValue(tree, "Pain score from 0 to 10")).toBe("1");
+    input(tree, "Pain score from 0 to 10")("10");
+    tree = render();
+    expect(buttonIsDisabled(tree, "More pain")).toBe(true);
+  });
+
+  it("uses readable theme surfaces for inputs and history cards in both color schemes", () => {
+    for (const [scheme, background, foreground] of [["light", "#FFFAF7", "#161729"], ["dark", "#222333", "#F6EEE8"]]) {
+      runtime.scheme = scheme;
+      runtime.periods = openPeriod;
+      const tree = render();
+      const dateInput = find(tree, (element) => element.type === "TextInput" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Period end date, YYYY-MM-DD");
+      const historyCard = find(tree, (element) => element.type === "View" && Array.isArray((element.props as { style?: unknown }).style) && ((element.props as { style: unknown[] }).style).some((style) => Boolean(style && typeof style === "object" && "backgroundColor" in style)));
+      expect((dateInput?.props as { style: unknown[] }).style).toContainEqual(expect.objectContaining({ backgroundColor: background, color: foreground }));
+      expect((historyCard?.props as { style: unknown[] }).style).toContainEqual(expect.objectContaining({ backgroundColor: background }));
     }
   });
 

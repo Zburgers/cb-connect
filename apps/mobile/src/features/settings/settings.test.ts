@@ -19,8 +19,8 @@ describe("mobile settings privacy and accessibility", () => {
     expect(source).toContain("getVisibleNotificationPurposes");
     expect(source).toContain('accessibilityRole="switch"');
     expect(source).toContain('accessibilityRole="button"');
-    expect(source).toContain("Push is unavailable until Gate 6");
-    expect(source).toContain("device permission and notification channel availability are separate");
+    expect(source).toContain("Push notifications are not available yet.");
+    expect(source).not.toContain("Gate 6");
   });
 
   it("does not offer account erasure while D-012 is unresolved or expose mutation errors", () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { useAuth } from "@clerk/expo";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
@@ -66,6 +67,7 @@ function PairingControls({
   dark: boolean;
 }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
+  const { signOut } = useAuth();
   const generateCode = useAction(api.mutations.couples.generatePairingCode);
   const linkWithCode = useMutation(api.mutations.couples.linkPartnerWithCode);
   const [code, setCode] = useState("");
@@ -102,7 +104,7 @@ function PairingControls({
 
   const pairingCode = generatedCode ?? couple.activePairingCode?.code;
   return (
-    <ScrollView contentContainerStyle={styles.page} style={{ backgroundColor: palette.background }}>
+    <ScrollView contentContainerStyle={styles.page} style={{ backgroundColor: "transparent" }}>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Partner connection</Text>
       {role === "primary" ? (
         <>
@@ -139,6 +141,11 @@ function PairingControls({
         </>
       )}
       {message ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{message}</Text> : null}
+      <Button label={busy ? "Please wait" : "Sign out"} disabled={busy} onPress={() => {
+        setBusy(true);
+        setMessage(null);
+        void signOut().catch(() => setMessage("Unable to sign out. Try again.")).finally(() => setBusy(false));
+      }} dark={dark} />
     </ScrollView>
   );
 }
@@ -195,7 +202,7 @@ function ActivePartnerView({
   }
 
   return (
-    <ScrollView style={{ backgroundColor: palette.background }} contentContainerStyle={styles.page}>
+    <ScrollView style={{ backgroundColor: "transparent" }} contentContainerStyle={styles.page}>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Partner connection</Text>
       <Text style={{ color: palette.muted }}>
         {couple.partner?.displayName ? `Connected with ${couple.partner.displayName}.` : "Your partner is connected."}
@@ -203,10 +210,14 @@ function ActivePartnerView({
       <PresenceStatus dark={dark} />
       {role === "primary" ? (
         <>
-          <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Sharing controls</Text>
-          <Toggle label="Cycle phase" value={settings.phase} onChange={(value) => void setSharing("sharingPhase", value)} dark={dark} disabled={sharingBusy} />
-          <Toggle label="Pain details" value={settings.pain} onChange={(value) => void setSharing("sharingPain", value)} dark={dark} disabled={sharingBusy} />
-          <Toggle label="Partner period logging" value={settings.periodWrite} onChange={(value) => void setSharing("sharingPeriodWrite", value)} dark={dark} disabled={sharingBusy} />
+          <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+            <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Sharing controls</Text>
+            <Text style={{ color: palette.muted }}>Choose what your partner can see or add. Changes take effect when saved.</Text>
+            <Toggle label="Cycle phase" value={settings.phase} onChange={(value) => void setSharing("sharingPhase", value)} dark={dark} disabled={sharingBusy} />
+            <Toggle label="Pain details" value={settings.pain} onChange={(value) => void setSharing("sharingPain", value)} dark={dark} disabled={sharingBusy} />
+            <Toggle label="Partner period logging" value={settings.periodWrite} onChange={(value) => void setSharing("sharingPeriodWrite", value)} dark={dark} disabled={sharingBusy} />
+            {sharingBusy ? <Text accessibilityRole="progressbar" style={{ color: palette.muted }}>Saving sharing setting…</Text> : null}
+          </View>
           <Button label="Revoke partner access" onPress={confirmRevoke} dark={dark} destructive />
         </>
       ) : (
@@ -338,10 +349,12 @@ function Toggle({ label, value, onChange, dark, disabled = false }: { label: str
       accessibilityState={{ checked: value, disabled }}
       disabled={disabled}
       onPress={() => onChange(!value)}
-      style={styles.toggle}
+      style={[styles.toggle, { borderBottomColor: palette.border }]}
     >
       <Text style={{ color: palette.foreground }}>{label}</Text>
-      <Text style={{ color: palette.foreground }}>{value ? "On" : "Off"}</Text>
+      <View style={[styles.statePill, { backgroundColor: value ? palette.highlight : palette.background }]}>
+        <Text style={{ color: value ? palette.accent : palette.muted, fontWeight: "700" }}>{value ? "On" : "Off"}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -355,9 +368,9 @@ function Button({ label, onPress, disabled = false, dark, destructive = false }:
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.actionButton, { borderColor: destructive ? "#B91C1C" : palette.muted, opacity: disabled ? 0.5 : 1 }]}
+      style={[styles.actionButton, { borderColor: destructive ? palette.accent : palette.muted, opacity: disabled ? 0.5 : 1 }]}
     >
-      <Text style={{ color: destructive ? "#B91C1C" : palette.foreground }}>{label}</Text>
+      <Text style={{ color: destructive ? palette.accent : palette.foreground }}>{label}</Text>
     </Pressable>
   );
 }
@@ -374,7 +387,9 @@ const styles = StyleSheet.create({
   code: { fontSize: 24, fontWeight: "700", letterSpacing: 3, paddingVertical: 8 },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 },
   actionButton: { minHeight: 48, justifyContent: "center", alignItems: "center", borderWidth: 1, borderRadius: 8, paddingHorizontal: 12 },
-  toggle: { minHeight: 48, flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 8 },
+  toggle: { minHeight: 52, flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  statePill: { minWidth: 48, alignItems: "center", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
+  card: { gap: 8, padding: 16, borderWidth: 1, borderRadius: 18 },
   section: { gap: 8, paddingVertical: 8 },
   nudges: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   nudgeButton: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8 },
