@@ -4,17 +4,20 @@ import { AppProviders } from "../providers/AppProviders";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppPrivacyShield } from "../security/appPrivacy";
 import { StatusBar } from "expo-status-bar";
+import { ThemePreferenceProvider } from "../theme/ThemePreferenceProvider";
 
 export default function RootLayout() {
   return (
-    <ErrorBoundary>
-      <AppPrivacyShield>
-        <AppProviders>
-          <StatusBar style="auto" />
-          <AuthenticatedStack />
-        </AppProviders>
-      </AppPrivacyShield>
-    </ErrorBoundary>
+    <ThemePreferenceProvider>
+      <ErrorBoundary>
+        <AppPrivacyShield>
+          <AppProviders>
+            <StatusBar style="auto" />
+            <AuthenticatedStack />
+          </AppProviders>
+        </AppPrivacyShield>
+      </ErrorBoundary>
+    </ThemePreferenceProvider>
   );
 }
 
