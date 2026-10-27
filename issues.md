@@ -1,6 +1,6 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 20, 2026
+**Last Updated:** October 28, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
@@ -9,10 +9,9 @@ Update with Github issues on the parent repo
 
 ### Mobile UX candidate cannot be inspected on the available emulators
 **Program gate:** Mobile Gate 5
-**Status:** Active; candidate native UI and journeys not qualified.
-**Evidence:** On 2026-10-27 the `gate5/mobile-ux-v1` Android debug build succeeded. Installation on `emulator-5554` first failed with `DEVICE_IN_USE` because another device session owned it; a separate `Pixel_7` device-open attempt failed to boot (`adb getprop` returned `error: closed`). On 2026-10-28, with the owner session, the self-contained release APK installed and launched. The native accessibility tree exposed the signed-out Clerk controls, but both device screenshot paths returned black app pixels while `AppPrivacyShield` was mounted. This reproduces the recorded capture issue; it is not evidence that the UI itself rendered blank. No authenticated candidate journey or usable screenshots of the new screens were obtained. Keep screenshot/recording privacy unqualified; do not bypass the shield or claim security acceptance as part of this UI sprint.
-**Current code follow-up (2026-10-28):** The shield now wraps the auth providers and overlays an opaque inactive/background curtain while preserving the mounted provider and route tree. The rebuilt release APK installed through the already-owned Android session; opening and closing the hosted sign-in tab returned to the enabled signed-out Clerk controls. Its device screenshot remains black. This confirms the signed-out route and browser handoff rendered, but does not qualify authenticated journeys, lifecycle interruptions, or screenshot privacy. No product-screen screenshots were obtained.
-**Exit evidence:** Complete synthetic account journeys, inspect light and dark screens through an approved redacted capture workflow, and qualify the privacy lifecycle. Retain the separate capture-privacy blocker below.
+**Status:** Active; emulator product screenshots and authenticated journeys remain incomplete. Physical-device and screen-capture privacy qualification are explicitly out of scope for this PR.
+**Evidence:** On 2026-10-28, the self-contained release APK installed through the already-owned Android session and returned to enabled signed-out Clerk controls after hosted sign-in opened and closed. The native screenshot path returned black app pixels, so no product-screen screenshots have been attached. No authenticated candidate journey is claimed. This PR does not assess screen-capture privacy effectiveness or physical-device behavior.
+**Exit evidence:** Attach screenshots of actual emulator product screens and complete the requested synthetic account journeys. Do not treat physical-device or screen-capture privacy qualification as acceptance criteria for this PR.
 
 --
 
@@ -20,18 +19,18 @@ Update with Github issues on the parent repo
 
 ### Gate 5 native integration qualification is blocked
 **Program gate:** Mobile Gate 5
-**Status:** Active; protected test API parity passes; native qualification is incomplete with a screenshot/recording privacy failure
+**Status:** Active; protected test API parity passes; emulator product screenshots and authenticated native journeys remain incomplete. Physical-device and screenshot-privacy qualification are out of scope for this PR.
 **Evidence:** On 2026-10-27 the isolated PR #75 worktree used the approved target-bound procedure to deploy only `dev:hallowed-hummingbird-284`. Exact function-spec comparison found all 44/44 mobile references public with matching kinds. Two disposable synthetic users completed native onboarding, pairing, period/pain logging, and default-off inbox verification, then scoped application cleanup and Clerk deletion both passed zero-residue/404 readback. A redundant post-onboarding `beginFixtureRun` call reproduced `fixture_cleanup_identity_mismatch` because the existing partner row was not yet registered; removing that redundant call allowed primary-then-partner registration to pass with all identity assertions and cleanup fences intact. The Pixel 7 installed APK hash matches the debug build (`84ab0679…`). Authenticated capture evidence was inconsistent: a Pixel `agent-device screenshot` and second-emulator recording returned non-black pixels; raw media was removed. Same-device account switching stopped at hosted sign-in; chat send/readback, revocation, replacement-partner isolation, Recents preview, interruption, and physical-device qualification remain open. Six high dependency advisory entries and D-018 remain explicit unresolved gates. See `docs/security/2026-10-27-gate-5-android-qualification.md`.
 **Current dependency status:** The candidate fixes the five node-forge advisories with a semver-compatible 1.4.2 override. Zod 3 remains below the patched 4.6.6 line through Expo CLI; a global Zod 4 override was rejected because Expo CLI declares Zod 3 and its optional MCP integration may depend on Zod 3 internals. npm audit reports three high findings from this single Zod advisory. Reassess when Expo CLI accepts patched Zod.
-**Exit evidence:** Resolve authenticated capture inconsistency and complete remaining native journeys with redacted evidence; obtain exact-head independent SHIELD M8.2 assessment; resolve or explicitly close the remaining Zod advisory and D-018 before their dependent gates. PR #75 is merged into the foundation; no production exposure or APK publication is authorized by this work.
+**Exit evidence:** Complete the in-scope emulator product screenshots and authenticated synthetic journeys; obtain the required exact-head source review; resolve or explicitly disposition the remaining Zod advisory and D-018 before their dependent gates. Physical-device and screenshot-privacy qualification are excluded from this PR. PR #75 is merged into the foundation; no production exposure or APK publication is authorized by this work.
 --
 
 ### Couple DM message-state and reaction UX
 **Program gate:** Continuous remediation; must close before Mobile Gate 5
-**Status:** Implemented and deployed; authenticated production verification and race-safety remediation pending
-**Evidence:** Commit `05af783` added unread state, delivery/read receipts, grouped messages, bounded reactions, and conditional authenticated Playwright coverage. GitHub Actions run `30399933598` deployed that commit, and the production Convex function spec exposes `markDelivered`, `markRead`, and `unreadSummary`. No authenticated two-user browser smoke was completed, and [GitHub issue #13](https://github.com/Zburgers/cb-connect/issues/13) records a remaining lost-update race in unread counts.
-**Scope:** Make unread updates monotonic/race-safe and complete authenticated two-user production coverage.
-**Exit evidence:** Unit/typecheck/build gates, authenticated two-user E2E at mobile and desktop widths, and production Convex two-user smoke verification.
+**Status:** Race-safe read-boundary implementation is present and GitHub issue #13 is closed; authenticated two-user smoke remains unverified.
+**Evidence:** The current `convex/mutations/messages.ts` implementation advances recipient read sequences monotonically and derives unread counts from the acknowledged boundary. `convex/mutations/messages.test.ts` covers concurrent send/read, stale boundaries, pagination, and multiple sessions; all 27 tests in that file passed on `gate5/mobile-ux-v1` at `8b590b358e3735bc6ac2eb9c83e66d1a5e819c08`. The candidate CI and isolated Gate 5 qualification checks also passed at that SHA. The approved local auth-fixture config is absent, so no authenticated test-backend smoke was run. No production smoke or deployment was performed.
+**Scope:** Complete authenticated two-user test-backend coverage and retain production verification as a separate release gate.
+**Exit evidence:** Authenticated two-user E2E at mobile and desktop widths, plus a scoped synthetic test-backend smoke with verified cleanup. Production verification remains outside this mobile sprint.
 
 --
 
