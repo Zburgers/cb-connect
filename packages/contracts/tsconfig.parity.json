@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@/*": ["./*"],
+      "@cb-connect/contracts": ["packages/contracts/src/index.ts"]
+    },
+    "incremental": false
+  },
+  "include": [
+    "src/index.ts",
+    "src/contract-parity.test-d.ts",
+    "../../apps/mobile/src/convex/api.parity.test-d.ts",
+    "../../apps/mobile/src/convex/api.parity.negative.test-d.ts"
+  ],
+  "exclude": []
+}

@@ -32,6 +32,60 @@ test("legacy external consent cannot authorize external notifications", async ()
   ).toEqual([false]);
 });
 
+test("mobile guard state exposes only the caller role and relationship link", async () => {
+  const t = convexTest(schema, modules);
+  const { asPrimary, asPartner } = await seedActiveCouple(t);
+
+  const primary = await asPrimary.query(api.queries.mobileAccess.getGuardState, {});
+  const partner = await asPartner.query(api.queries.mobileAccess.getGuardState, {});
+
+  expect(primary).toEqual({
+    user: { role: "primary" },
+    couple: { isLinked: true, role: "primary" },
+  });
+  expect(partner).toEqual({
+    user: { role: "partner" },
+    couple: { isLinked: true, role: "partner" },
+  });
+  expect(JSON.stringify(primary)).not.toMatch(/email|name|sharing|pairing|clerk|private/i);
+});
+
+test("mobile guard state fails closed for missing identity, revoked links, and role mismatch", async () => {
+  const t = convexTest(schema, modules);
+  expect(await t.query(api.queries.mobileAccess.getGuardState, {})).toEqual({
+    user: null,
+    couple: null,
+  });
+
+  const { asPrimary, primaryId } = await seedActiveCouple(t);
+  await t.run(async (ctx) => {
+    const membership = await ctx.db
+      .query("coupleMembers")
+      .withIndex("by_user_and_revoked_at", (q) =>
+        q.eq("userId", primaryId).eq("revokedAt", undefined),
+      )
+      .unique();
+    if (!membership) throw new Error("test membership missing");
+    await ctx.db.patch(membership._id, { revokedAt: Date.now() });
+  });
+  expect(await asPrimary.query(api.queries.mobileAccess.getGuardState, {})).toEqual({
+    user: { role: "primary" },
+    couple: { isLinked: false, role: null },
+  });
+
+  const other = convexTest(schema, modules);
+  const { asPrimary: mismatchedPrimary, primaryId: mismatchedId } = await seedActiveCouple(other);
+  await other.run(async (ctx) => {
+    await ctx.db.patch(mismatchedId, { role: "partner" });
+  });
+  expect(
+    await mismatchedPrimary.query(api.queries.mobileAccess.getGuardState, {}),
+  ).toEqual({
+    user: { role: "partner" },
+    couple: { isLinked: false, role: null },
+  });
+});
+
 test("legacy notification history exposes only type, time, and status", async () => {
   const t = convexTest(schema, modules);
   const { asPrimary, primaryId } = await seedActiveCouple(t);
