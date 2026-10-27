@@ -1,6 +1,6 @@
 # Mobile UX parity checklist
 
-Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. This is a source-level checklist, not evidence of completed native journeys.
+Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. The matrix records source-level parity; runtime evidence for the candidate is below.
 
 | Journey | Mobile coverage | Remaining gap |
 | --- | --- | --- |
@@ -11,7 +11,17 @@ Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. This is a source-level che
 | Settings | Name, time zone, notification preferences, prediction pause and baseline, sharing | Cycle and period lengths and other web personalization controls are absent. |
 | Onboarding | Server-confirmed role and time zone, then pairing | Initial period setup is deferred to logging; the web has a richer setup flow. |
 
-**Out of scope for this PR:** physical-device qualification and screen-capture privacy qualification. The existing app privacy shield remains unchanged; this sprint makes no claim about its screenshot or recording effectiveness. Emulator product screenshots and authenticated journeys remain deliverables for this PR.
+**Out of scope for this PR:** physical-device qualification and screen-capture privacy qualification. The existing app privacy shield remains unchanged; this sprint makes no claim about its screenshot or recording effectiveness. Emulator product screenshots and authenticated journeys are recorded below.
+
+## Candidate runtime evidence (2026-10-28)
+
+- **PASS:** Android 17 emulator sign-in with the persistent synthetic primary and partner accounts; role onboarding; primary-to-partner pairing; same-device account switching.
+- **PASS:** Native partner chat send followed by partner-session readback (`Read` confirmation). The message appears in the evidence screenshots.
+- **PASS:** Period logging screen, partner sharing controls, and settings navigation render on the device.
+- **BLOCKED by test backend availability:** Home receives no cycle-state presentation for either role, and Inbox says access is unavailable. Mobile shows the safe empty state and does not synthesize health predictions.
+- **NOT RUN:** Physical-device and screen-capture privacy qualification. Both are explicitly outside this PR's scope.
+
+Screenshots and capture notes: `docs/evidence/mobile-ux/README.md`.
 
 ## Shortest path to an owner-only Android beta
 

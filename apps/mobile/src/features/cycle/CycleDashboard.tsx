@@ -103,7 +103,7 @@ export function CycleDashboardView({
             <CycleCardView card={model.prediction} palette={palette} blurTarget={blurTarget} />
           ) : null}
           <Link href="/(app)/log" asChild>
-            <Pressable accessibilityRole="button" style={[styles.quickAction, { backgroundColor: palette.accent }]}>
+            <Pressable accessibilityRole="button" style={StyleSheet.flatten([styles.quickAction, { backgroundColor: palette.accent }])}>
               <Text allowFontScaling style={[styles.quickActionText, { color: palette.surface }]}>Log and view history</Text>
             </Pressable>
           </Link>
