@@ -11,3 +11,22 @@ unsigned Metro bundle smoke check, not a distributable build. Public Convex
 contract parity is checked separately with `npm run mobile:contracts:parity`
 from the repository root so the native dependency tree does not load web/server
 runtime code.
+
+## Local Android Metro on this host
+
+For the documented Node 22 toolchain and the approved synthetic-only mobile
+environment, start Metro from `apps/mobile` with IPv4-first localhost resolution:
+
+```sh
+NODE_OPTIONS=--dns-result-order=ipv4first npx expo start --localhost --port 8081
+```
+
+For the selected emulator, forward its Metro port:
+
+```sh
+adb -s <serial> reverse tcp:8081 tcp:8081
+```
+
+The debug app can then load JavaScript from this checkout.
+Keep Metro running while using the debug app. This is a local debug workflow,
+not native release qualification.

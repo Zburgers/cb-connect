@@ -9,6 +9,14 @@ Update with Github issues on the parent repo
 
 --
 
+### Gate 5 native integration qualification is blocked
+**Program gate:** Mobile Gate 5
+**Status:** Active; integrated synthetic backend and multi-user qualification pending
+**Evidence:** On 2026-10-27 the approved Convex test deployment's read-only function inventory lacked `queries/notifications.js:getMyInboxAvailability` and `queries/messages.js:listPageForMobile` used by integration source `f20409c2761b22962fef7062c1230f97e5a5bf6f`. Native sign-in and primary onboarding worked, but fixture registration returned `fixture_cleanup_identity_mismatch` after correcting a test-harness run-ID error; scoped cleanup succeeded. The second emulator failed to boot with SIGSEGV. See `docs/security/2026-10-27-gate-5-android-qualification.md`.
+**Exit evidence:** Diagnose fixture registration and confirm the approved synthetic backend is compatible with the exact candidate through an independently authorized deployment process; complete the authenticated multi-user and native privacy matrix, and obtain independent exact-SHA SHIELD review. Do not infer readiness from emulator presence, export, or source tests.
+
+--
+
 ### Couple DM message-state and reaction UX
 **Program gate:** Continuous remediation; must close before Mobile Gate 5
 **Status:** Implemented and deployed; authenticated production verification and race-safety remediation pending
