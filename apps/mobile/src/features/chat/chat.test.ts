@@ -49,4 +49,11 @@ describe("mobile private chat pagination and receipts", () => {
     expect(source).toMatch(/!unread \|\| !isAtBottomRef\.current/);
     expect(source).not.toMatch(/selectable/);
   });
+
+  test("chat distinguishes private ownership and uses the active theme surfaces", () => {
+    const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
+    expect(source).toContain('message.isMine ? "You" : message.senderName');
+    expect(source).toContain("backgroundColor: message.isMine ? palette.highlight : palette.surface");
+    expect(source).toContain("palette.border");
+  });
 });

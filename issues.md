@@ -7,6 +7,14 @@ Update with Github issues on the parent repo
 
 ## Active implementation issues
 
+### Mobile UX candidate cannot be inspected on the available emulators
+**Program gate:** Mobile Gate 5
+**Status:** Active; candidate native UI and journeys not qualified.
+**Evidence:** On 2026-10-27 the `gate5/mobile-ux-v1` Android debug build succeeded. Installation on `emulator-5554` failed with `DEVICE_IN_USE` because another device session owned it; a separate `Pixel_7` device-open attempt failed to boot (`adb getprop` returned `error: closed`). The older installed binary showed a blank screen after loading the candidate Metro bundle. No synthetic screenshots or authenticated candidate journeys were obtained.
+**Exit evidence:** Install the candidate on an available emulator, inspect light and dark screens and complete synthetic account journeys with redacted evidence. Retain the separate capture-privacy blocker below.
+
+--
+
 --
 
 ### Gate 5 native integration qualification is blocked

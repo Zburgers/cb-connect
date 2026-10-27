@@ -4,15 +4,19 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useColorScheme,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { useHostedAuth } from "@clerk/expo/hosted-auth";
+import { mobileColors } from "../theme/tokens";
 
 export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX.Element {
   const { isLoaded, isSignedIn, signOut } = useAuth();
   const { startHostedAuth } = useHostedAuth();
+  const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSignIn = mode === "sign-in";
@@ -24,7 +28,7 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
   if (!isLoaded) {
     return (
       <View
-        style={styles.container}
+        style={[styles.container, { backgroundColor: palette.background }]}
         accessibilityRole="progressbar"
         accessibilityLabel={`Loading ${action}`}
       >
@@ -64,11 +68,12 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
   };
 
   return (
-    <View style={styles.container}>
-      <Text accessibilityRole="header" style={styles.title}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
+      <Text accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>
         {isSignIn ? "Sign In" : "Create Account"}
       </Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.subtitle, { color: palette.muted }]}>
         {isSignIn
           ? "Sign in to access your CB Connect account"
           : "Sign up for a new CB Connect account"}
@@ -82,15 +87,15 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
 
       {isSignedIn ? (
         <View style={styles.notice}>
-          <Text style={styles.secondaryText}>You are currently signed in.</Text>
+          <Text style={[styles.secondaryText, { color: palette.foreground }]}>You are currently signed in.</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Sign out of current account"
-            style={[styles.button, styles.secondaryButton]}
+            style={[styles.button, styles.secondaryButton, { borderColor: palette.border }]}
             disabled={isSubmitting}
             onPress={handleSignOut}
           >
-            <Text style={styles.secondaryText}>Sign Out</Text>
+            <Text style={[styles.secondaryText, { color: palette.foreground }]}>Sign Out</Text>
           </Pressable>
         </View>
       ) : null}
@@ -98,26 +103,26 @@ export function AuthScreen({ mode }: { mode: "sign-in" | "sign-up" }): React.JSX
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={isSignIn ? "Sign in with Clerk" : "Create account with Clerk"}
-        style={[styles.button, isSubmitting && styles.disabled]}
+        style={[styles.button, { backgroundColor: palette.accent }, isSubmitting && styles.disabled]}
         disabled={isSubmitting}
         onPress={handleAuth}
       >
         {isSubmitting ? (
-          <ActivityIndicator color="#fff" size="small" />
+          <ActivityIndicator color={palette.surface} size="small" />
         ) : (
-          <Text style={styles.buttonText}>
+          <Text style={[styles.buttonText, { color: palette.surface }]}>
             {primaryLabel}
           </Text>
         )}
       </Pressable>
 
       <View style={styles.linkRow}>
-        <Text style={styles.secondaryText}>
+        <Text style={[styles.secondaryText, { color: palette.muted }]}>
           {isSignIn ? "Don't have an account?" : "Already have an account?"}
         </Text>
         <Link href={isSignIn ? "/(auth)/sign-up" : "/(auth)/sign-in"} asChild>
           <Pressable accessibilityRole="link">
-            <Text style={styles.linkText}>{isSignIn ? "Create Account" : "Sign In"}</Text>
+            <Text style={[styles.linkText, { color: palette.accent }]}>{isSignIn ? "Create Account" : "Sign In"}</Text>
           </Pressable>
         </Link>
       </View>
@@ -133,7 +138,7 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "#fff",
   },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 8, color: "#111" },
+  title: { fontFamily: "serif", fontSize: 34, lineHeight: 42, marginBottom: 8 },
   subtitle: {
     fontSize: 15,
     color: "#666",
@@ -143,7 +148,7 @@ const styles = StyleSheet.create({
   error: {
     backgroundColor: "#FEE2E2",
     color: "#991B1B",
-    borderRadius: 8,
+    borderRadius: 18,
     padding: 12,
     marginBottom: 16,
   },

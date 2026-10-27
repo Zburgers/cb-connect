@@ -3,11 +3,13 @@ import { useAuth } from "@clerk/expo";
 import { AppProviders } from "../providers/AppProviders";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppPrivacyShield } from "../security/appPrivacy";
+import { StatusBar } from "expo-status-bar";
 
 export default function RootLayout() {
   return (
     <ErrorBoundary>
       <AppProviders>
+        <StatusBar style="auto" />
         <AppPrivacyShield>
           <AuthenticatedStack />
         </AppPrivacyShield>

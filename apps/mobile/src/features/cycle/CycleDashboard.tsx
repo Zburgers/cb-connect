@@ -1,7 +1,11 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
+import { Link } from "expo-router";
+import { BlurTargetView, BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { useMutation, useQuery } from "convex/react";
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -60,15 +64,16 @@ export function CycleDashboardView({
   palette: typeof mobileColors.light | typeof mobileColors.dark;
 }): React.JSX.Element {
   const textStyle = { color: palette.foreground };
+  const blurTarget = useRef<View>(null);
   return (
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: palette.background }]}
     >
+      <BlurTargetView ref={blurTarget} style={StyleSheet.absoluteFill}>
+        <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
+      </BlurTargetView>
       <ScrollView
-        contentContainerStyle={[
-          styles.screen,
-          { backgroundColor: palette.background },
-        ]}
+        contentContainerStyle={styles.screen}
       >
         <View style={styles.content}>
           <Text
@@ -76,7 +81,7 @@ export function CycleDashboardView({
             accessibilityRole="header"
             style={[styles.heading, textStyle]}
           >
-            Cycle overview
+            Welcome back
           </Text>
           <Text
             allowFontScaling
@@ -92,11 +97,16 @@ export function CycleDashboardView({
             </Text>
           ) : null}
           {model.state ? (
-            <CycleCardView card={model.state} palette={palette} />
+            <CycleCardView card={model.state} palette={palette} blurTarget={blurTarget} />
           ) : null}
           {model.prediction ? (
-            <CycleCardView card={model.prediction} palette={palette} />
+            <CycleCardView card={model.prediction} palette={palette} blurTarget={blurTarget} />
           ) : null}
+          <Link href="/(app)/log" asChild>
+            <Pressable accessibilityRole="button" style={[styles.quickAction, { backgroundColor: palette.accent }]}>
+              <Text allowFontScaling style={[styles.quickActionText, { color: palette.surface }]}>Log and view history</Text>
+            </Pressable>
+          </Link>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -106,12 +116,18 @@ export function CycleDashboardView({
 function CycleCardView({
   card,
   palette,
+  blurTarget,
 }: {
   card: NonNullable<CycleDashboardPresentation["state"]>;
   palette: typeof mobileColors.light | typeof mobileColors.dark;
+  blurTarget: React.RefObject<View | null>;
 }) {
   return (
-    <View
+    <BlurView
+      blurTarget={blurTarget}
+      blurMethod="dimezisBlurViewSdk31Plus"
+      tint={palette === mobileColors.dark ? "dark" : "light"}
+      intensity={35}
       accessible
       accessibilityRole="summary"
       accessibilityLabel={[
@@ -124,7 +140,7 @@ function CycleCardView({
         .join(". ")}
       style={[
         styles.card,
-        { backgroundColor: palette.background, borderColor: palette.muted },
+        { backgroundColor: palette.glass, borderColor: palette.border },
       ]}
     >
       <Text
@@ -157,7 +173,7 @@ function CycleCardView({
           {card.disclaimer}
         </Text>
       ) : null}
-    </View>
+    </BlurView>
   );
 }
 
@@ -170,15 +186,16 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
   },
-  screen: { flexGrow: 1, padding: 20 },
+  screen: { flexGrow: 1, padding: 24, paddingBottom: 32 },
   content: { width: "100%", maxWidth: 560, alignSelf: "center", gap: 16 },
-  heading: { fontSize: 28, lineHeight: 36, fontWeight: "700", flexShrink: 1 },
+  heading: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
   subtitle: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
   card: {
     width: "100%",
-    padding: 16,
+    padding: 22,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 24,
+    overflow: "hidden",
     gap: 8,
   },
   status: {
@@ -195,4 +212,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flexShrink: 1,
   },
+  quickAction: { minHeight: 52, borderRadius: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 16 },
+  quickActionText: { fontSize: 16, fontWeight: "700", textAlign: "center" },
 });
