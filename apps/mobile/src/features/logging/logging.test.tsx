@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 const source = readFileSync(new URL("./LoggingScreen.tsx", import.meta.url), "utf8");
+const dateFieldSource = readFileSync(new URL("./DateField.tsx", import.meta.url), "utf8");
 
 describe("mobile logging safety", () => {
   it("renders backend duplicate, overlap, future and stale-authority failures as safe guidance", () => {
@@ -28,7 +29,9 @@ describe("mobile logging safety", () => {
     expect(source).toContain("if (!online) throw new Error(\"offline\")");
     expect(source).toContain("Nothing can be saved until your connection returns.");
     expect(source).toContain("accessibilityRole=\"button\"");
-    expect(source).toContain("accessibilityLabel={openPeriod ? \"Period end date");
+    expect(source).toContain('<DateField label={openPeriod ? "Period end date" : "Period start date"}');
+    expect(dateFieldSource).toContain("accessibilityRole=\"button\"");
+    expect(dateFieldSource).toContain("accessibilityLabel={`${label}: ${value || placeholder}`}");
     expect(source).toContain("accessibilityRole=\"alert\"");
   });
 

@@ -6,6 +6,7 @@ import { loggingApi } from "./loggingApi";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
 import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
+import { DateField } from "./DateField";
 
 function Action({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
@@ -107,10 +108,10 @@ export function LoggingScreen() {
     <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>{openPeriod ? "Confirm period end" : "Period start"}</Text>
     <Text style={{ color: palette.muted }}>{openPeriod ? "Choose when your period ended." : "Add the first day of bleeding. Leave the end date blank if it has not ended."}</Text>
     {role === "partner" ? <Text style={{ color: palette.muted }}>Select the date in the primary user’s calendar.</Text> : null}
-    <Text style={{ color: palette.foreground }}>{openPeriod ? "End date" : "Start date"} (YYYY-MM-DD)</Text>
-    <TextInput accessibilityLabel={openPeriod ? "Period end date, YYYY-MM-DD" : "Period start date, YYYY-MM-DD"} value={selectedStartDate} onChangeText={setStartDate} autoCapitalize="none" style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+    <Text style={{ color: palette.foreground }}>{openPeriod ? "End date" : "Start date"}</Text>
+    <DateField label={openPeriod ? "Period end date" : "Period start date"} value={selectedStartDate} onChange={setStartDate} palette={palette} disabled={disabledPeriod} maximumDate={today ?? undefined} minimumDate={openPeriod?.startDate} />
     {role === "primary" && today && timeZone ? <View style={styles.row}><Action label="Today" disabled={disabledPeriod} onPress={() => setStartDate(today)} /><Action label="Yesterday" disabled={disabledPeriod} onPress={() => setStartDate(dateDaysAgo(1, now, timeZone))} /></View> : null}
-    {!openPeriod ? <><Text style={{ color: palette.foreground }}>End date (optional)</Text><TextInput accessibilityLabel="Optional period end date, YYYY-MM-DD" value={endDate} onChangeText={setEndDate} placeholder="Leave blank to keep it open" placeholderTextColor={palette.muted} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} /></> : null}
+    {!openPeriod ? <><Text style={{ color: palette.foreground }}>End date (optional)</Text><DateField label="Optional period end date" value={endDate} onChange={setEndDate} palette={palette} disabled={disabledPeriod} placeholder="Leave blank to keep it open" maximumDate={today ?? undefined} minimumDate={selectedStartDate || undefined} clearable /></> : null}
     <View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
     <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text>
     <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabledPeriod || !selectedStartDate.trim()} onPress={savePeriod} />
@@ -118,8 +119,8 @@ export function LoggingScreen() {
     {role === "primary" ? <>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Pain log</Text>
       <Text style={{ color: palette.muted }}>Rate your pain from 0 (none) to 10 (worst).</Text>
-      <Text style={{ color: palette.foreground }}>Date (YYYY-MM-DD)</Text>
-      <TextInput accessibilityLabel="Pain log date, YYYY-MM-DD" value={selectedPainDate} onChangeText={setPainDate} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+      <Text style={{ color: palette.foreground }}>Date</Text>
+      <DateField label="Pain log date" value={selectedPainDate} onChange={setPainDate} palette={palette} disabled={disabledPain} maximumDate={today ?? undefined} />
       <Text style={{ color: palette.foreground }}>Pain score</Text>
       <TextInput accessibilityLabel="Pain score from 0 to 10" keyboardType="number-pad" value={painScore} onChangeText={setPainScore} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
       <View style={styles.row}>
@@ -143,8 +144,8 @@ export function LoggingScreen() {
       <Text style={{ color: palette.foreground }}>{period.startDate}{period.endDate ? ` – ${period.endDate}` : " – ongoing"}</Text>
       <Text style={{ color: palette.muted }}>{period.certainty} · {period.source === "partner_assist" ? `assisted by ${period.createdByName}` : period.source === "self" ? "self logged" : "legacy record"}{period.confirmationStatus === "unreviewed" ? " · needs review" : " · accepted"}</Text>
       {period.canCorrect && period._id && period.authorityVersion !== undefined ? editing === period._id ? <>
-        <TextInput accessibilityLabel="Corrected period start date, YYYY-MM-DD" value={editStartDate} onChangeText={setEditStartDate} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
-        <TextInput accessibilityLabel="Corrected period end date, YYYY-MM-DD" value={editEndDate} onChangeText={setEditEndDate} placeholder="End date (blank means open)" style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+        <DateField label="Corrected period start date" value={editStartDate} onChange={setEditStartDate} palette={palette} disabled={disabledPeriod} maximumDate={today ?? undefined} />
+        <DateField label="Corrected period end date" value={editEndDate} onChange={setEditEndDate} palette={palette} disabled={disabledPeriod} placeholder="End date (blank means open)" maximumDate={today ?? undefined} minimumDate={editStartDate || undefined} clearable />
         <Action label="Save correction" disabled={disabledPeriod} onPress={() => correct(period)} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
       </> : <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(period._id!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}

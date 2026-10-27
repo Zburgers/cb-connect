@@ -5,7 +5,7 @@ Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. The matrix records source-
 | Journey | Mobile coverage | Remaining gap |
 | --- | --- | --- |
 | Cycle home | Server-derived cycle state and prediction, with a log shortcut | Web nutrition and pain guidance and partner care actions are absent. |
-| Logging and history | Period start/end, pain, history and authorized correction; primary date shortcuts | Dates are still text fields; pain uses a numeric input and stepper; history is not the web timeline and CSV export is absent. Deletion remains blocked by D-012. |
+| Logging and history | Period start/end, pain, history and authorized correction; primary date shortcuts and native date picker | Pain uses a numeric input with a stepper; history is not the web timeline and CSV export is absent. Deletion remains blocked by D-012. |
 | Partner and chat | Pairing, presence, sharing controls, revoke, nudges and chat | Relationship date, nickname, native code sharing and chat clearing are absent. Replacement-partner isolation remains subject to D-018. |
 | Inbox | Server-gated inbox, read/dismiss and partner/settings navigation | Inbox availability is default-off; push is not implemented. |
 | Settings | Name, time zone, notification preferences, prediction pause and baseline, sharing | Cycle and period lengths and other web personalization controls are absent. |
@@ -18,6 +18,7 @@ Baseline: `b851ff19c93810b7c29cab0386fb2a245030829e`. The matrix records source-
 - **PASS:** Android 17 emulator sign-in with the persistent synthetic primary and partner accounts; role onboarding; primary-to-partner pairing; same-device account switching.
 - **PASS:** Native partner chat send followed by partner-session readback (`Read` confirmation). The message appears in the evidence screenshots.
 - **PASS:** Period logging screen, partner sharing controls, and settings navigation render on the device.
+- **PASS:** Android's native date picker opens, constrains future dates, and applies the selected period date; this check did not submit a write.
 - **BLOCKED by test backend availability:** Home receives no cycle-state presentation for either role, and Inbox says access is unavailable. Mobile shows the safe empty state and does not synthesize health predictions.
 - **NOT RUN:** Physical-device and screen-capture privacy qualification. Both are explicitly outside this PR's scope.
 

@@ -32,6 +32,7 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("react-native", () => ({
+  Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   StyleSheet: { create: (styles: object) => styles },
@@ -41,6 +42,8 @@ vi.mock("react-native", () => ({
   useColorScheme: () => runtime.scheme,
 }));
 
+vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker" }));
+
 vi.mock("convex/react", () => ({
   useConvexConnectionState: () => ({ isWebSocketConnected: runtime.connection }),
   useQuery: () => runtime.queries.shift(),
@@ -48,6 +51,7 @@ vi.mock("convex/react", () => ({
 }));
 
 import React from "react";
+import { DateField } from "./DateField";
 import { LoggingScreen } from "./LoggingScreen";
 import { localDate } from "./logging";
 
@@ -104,6 +108,12 @@ function inputValue(tree: React.ReactNode, label: string) {
   return (found.props as { value: string }).value;
 }
 
+function dateField(tree: React.ReactNode, label: string) {
+  const found = find(tree, (element) => element.type === DateField && (element.props as { label?: string }).label === label);
+  if (!found) throw new Error(`Missing date field: ${label}`);
+  return found.props as { value: string; onChange: (value: string) => void; palette: { surface: string; foreground: string } };
+}
+
 function textContent(node: React.ReactNode): string {
   return React.Children.toArray(node).map((child) => React.isValidElement(child)
     ? textContent((child.props as { children?: React.ReactNode }).children)
@@ -146,7 +156,7 @@ describe("LoggingScreen actions", () => {
     let tree = render();
     await button(tree, "Yesterday")();
     tree = render();
-    expect(inputValue(tree, "Period start date, YYYY-MM-DD")).toBe("2026-10-26");
+    expect(dateField(tree, "Period start date").value).toBe("2026-10-26");
     runtime.access = "partner";
     tree = render();
     expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Yesterday")).toBeUndefined();
@@ -169,9 +179,10 @@ describe("LoggingScreen actions", () => {
       runtime.scheme = scheme;
       runtime.periods = openPeriod;
       const tree = render();
-      const dateInput = find(tree, (element) => element.type === "TextInput" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Period end date, YYYY-MM-DD");
+      const date = dateField(tree, "Period end date");
       const historyCard = find(tree, (element) => element.type === "View" && Array.isArray((element.props as { style?: unknown }).style) && ((element.props as { style: unknown[] }).style).some((style) => Boolean(style && typeof style === "object" && "backgroundColor" in style)));
-      expect((dateInput?.props as { style: unknown[] }).style).toContainEqual(expect.objectContaining({ backgroundColor: background, color: foreground }));
+      expect(date.palette.surface).toBe(background);
+      expect(date.palette.foreground).toBe(foreground);
       expect((historyCard?.props as { style: unknown[] }).style).toContainEqual(expect.objectContaining({ backgroundColor: background }));
     }
   });
@@ -193,7 +204,7 @@ describe("LoggingScreen actions", () => {
   it("reports a partial start/end write without claiming the end was saved", async () => {
     endSelf.mockRejectedValueOnce(new Error("EXACT_INTERVAL_OVERLAP"));
     const tree = render();
-    input(tree, "Optional period end date, YYYY-MM-DD")("2026-10-24");
+    dateField(tree, "Optional period end date").onChange("2026-10-24");
     const ready = render();
     await button(ready, "Save period")();
 
@@ -212,7 +223,7 @@ describe("LoggingScreen actions", () => {
       expect(savedAccountTimeZone).not.toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
       const tree = render();
-      input(tree, "Pain log date, YYYY-MM-DD")("2026-01-02");
+      dateField(tree, "Pain log date").onChange("2026-01-02");
       input(render(), "Pain score from 0 to 10")("6");
       await button(render(), "Save pain log")();
 
@@ -243,7 +254,7 @@ describe("LoggingScreen actions", () => {
     expect(buttonIsDisabled(tree, "Confirm end")).toBe(true);
     expect(buttonIsDisabled(tree, "Save pain log")).toBe(true);
     expect(buttonIsDisabled(tree, "Correct period")).toBe(true);
-    expect(inputValue(tree, "Period end date, YYYY-MM-DD")).toBe("");
+    expect(dateField(tree, "Period end date").value).toBe("");
     await button(tree, "Confirm end")();
     await button(tree, "Save pain log")();
     expect(endSelf).not.toHaveBeenCalled();
@@ -274,7 +285,7 @@ describe("LoggingScreen actions", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-26T20:00:00.000Z"));
     runtime.account = { timeZone: "Asia/Kolkata" };
-    expect(inputValue(render(), "Period start date, YYYY-MM-DD")).toBe("2026-10-27");
+    expect(dateField(render(), "Period start date").value).toBe("2026-10-27");
   });
 
   it("requires a partner to enter a date instead of defaulting to the partner calendar", async () => {
@@ -287,9 +298,9 @@ describe("LoggingScreen actions", () => {
     expect(localDate(new Date(), "America/Los_Angeles")).toBe(primaryToday);
 
     let tree = render();
-    expect(inputValue(tree, "Period start date, YYYY-MM-DD")).toBe("");
+    expect(dateField(tree, "Period start date").value).toBe("");
     expect(buttonIsDisabled(tree, "Save period")).toBe(true);
-    input(tree, "Period start date, YYYY-MM-DD")(primaryToday);
+    dateField(tree, "Period start date").onChange(primaryToday);
     tree = render();
     await button(tree, "Save period")();
 
