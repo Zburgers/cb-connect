@@ -30,6 +30,7 @@ const environment = {
 };
 
 const cleanupConvexFixturePair = vi.fn();
+const cleanupFixturePair = vi.fn();
 const beginConvexFixtureRun = vi.fn();
 const deleteUser = vi.fn();
 const registerConvexFixtureUser = vi.fn();
@@ -61,26 +62,23 @@ function page(token: string, name: string) {
 }
 
 vi.mock("@playwright/test", () => {
-  const primaryPage = page("primary-convex-token", "primary");
-  const partnerPage = page("partner-convex-token", "partner");
-  const primaryContext = {
-    newPage: vi.fn().mockResolvedValue(primaryPage),
+  const context = (name: string, token: string) => ({
+    newPage: vi.fn().mockResolvedValue(page(token, name)),
     storageState: vi.fn(),
     close,
-  };
-  const partnerContext = {
-    newPage: vi.fn().mockResolvedValue(partnerPage),
-    storageState: vi.fn(),
-    close,
-  };
+  });
   return {
     chromium: {
-      launch: vi.fn().mockResolvedValue({
-        newContext: vi
-          .fn()
-          .mockResolvedValueOnce(primaryContext)
-          .mockResolvedValueOnce(partnerContext),
-        close,
+      launch: vi.fn().mockImplementation(async () => {
+        let contextIndex = 0;
+        return {
+          newContext: vi.fn().mockImplementation(async () =>
+            contextIndex++ === 0
+              ? context("primary", "primary-convex-token")
+              : context("partner", "partner-convex-token"),
+          ),
+          close,
+        };
       }),
     },
     expect: () => ({ toBeVisible: vi.fn().mockResolvedValue(undefined) }),
@@ -100,6 +98,7 @@ vi.mock("node:fs/promises", () => ({
 
 vi.mock("./support/authEnvironment", () => ({
   cleanupConvexFixturePair,
+  cleanupFixturePair,
   beginConvexFixtureRun,
   createClerkFixtureServices: () => ({ deleteUser }),
   loadAuthEnvironment: () => environment,
@@ -127,6 +126,12 @@ describe("authenticated fixture global setup", () => {
 
   test("creates the durable run before dashboard work and cleans it when partner sign-in fails", async () => {
     cleanupConvexFixturePair.mockResolvedValue(undefined);
+    cleanupFixturePair.mockImplementation(async (pair, services) => {
+      await services.cleanupApplicationData?.(pair);
+      await services.deleteUser(pair.partner.clerkId);
+      await services.deleteUser(pair.primary.clerkId);
+      return { ok: true, errors: [] };
+    });
     beginConvexFixtureRun.mockImplementation(async () => {
       navigationEvents.push("begin");
     });
@@ -164,6 +169,37 @@ describe("authenticated fixture global setup", () => {
     );
     expect(deleteUser).toHaveBeenCalledWith(fixturePair.partner.clerkId);
     expect(deleteUser).toHaveBeenCalledWith(fixturePair.primary.clerkId);
+  });
+
+  test("preserves fixture accounts and reports cleanup/readback failure", async () => {
+    cleanupFixturePair.mockResolvedValue({
+      ok: false,
+      errors: ["application_cleanup_failed"],
+    });
+    beginConvexFixtureRun.mockResolvedValue(undefined);
+    signIn
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("partner_sign_in_failed"));
+    clerkSetup.mockResolvedValue(undefined);
+    close.mockResolvedValue(undefined);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const setup = (await import("./auth.global.setup")).default;
+
+    await expect(setup({} as never)).rejects.toThrow(
+      "authenticated_fixture_setup_failed",
+    );
+
+    expect(cleanupFixturePair).toHaveBeenCalledWith(
+      fixturePair,
+      expect.objectContaining({ cleanupApplicationData: expect.any(Function) }),
+      { maxAttempts: 3 },
+    );
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalledWith(
+      "authenticated_fixture_cleanup_errors:application_cleanup_failed",
+    );
+    errorLog.mockRestore();
   });
 
 });
