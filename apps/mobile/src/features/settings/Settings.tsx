@@ -5,6 +5,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, Tex
 import type { NotificationPurpose } from "@cb-connect/contracts";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
+import { useThemePreference } from "../../theme/ThemePreferenceProvider";
+import { themeModes } from "../../theme/themePreference";
 import { getNotificationPurposeLabel, getVisibleNotificationPurposes } from "../notifications/presentation";
 
 type SharingKey = "sharingPain" | "sharingPhase" | "sharingPeriodWrite";
@@ -20,6 +22,7 @@ function deviceTimeZone(): string | null {
 
 export function Settings() {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+  const { mode: themeMode, ready: themeReady, setMode: setThemeMode } = useThemePreference();
   const { signOut } = useAuth();
   const profile = useQuery(api.queries.users.getMe, {});
   const isPrimary = profile?.role === "primary";
@@ -79,6 +82,26 @@ export function Settings() {
       <Text allowFontScaling accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Settings</Text>
       {error ? <Text allowFontScaling accessibilityRole="alert" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{error}</Text> : null}
       {message ? <Text allowFontScaling accessibilityLiveRegion="polite" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{message}</Text> : null}
+
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
+        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Appearance</Text>
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Choose how CB Connect looks. System follows your device setting.</Text>
+        <View style={styles.themeChoices}>
+          {themeModes.map((choice) => (
+            <Pressable
+              key={choice}
+              accessibilityRole="radio"
+              accessibilityLabel={`${choice[0].toUpperCase()}${choice.slice(1)} appearance`}
+              accessibilityState={{ checked: themeMode === choice, disabled: !themeReady }}
+              disabled={!themeReady}
+              onPress={() => void setThemeMode(choice).catch(() => setError("Unable to save appearance preference. Try again."))}
+              style={[styles.themeChoice, { borderColor: themeMode === choice ? palette.accent : palette.border, backgroundColor: themeMode === choice ? palette.highlight : "transparent" }]}
+            >
+              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{choice[0].toUpperCase()}{choice.slice(1)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
 
       <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Profile</Text>
@@ -228,5 +251,7 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12 },
   switchRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
   switchLabel: { flex: 1, fontSize: 15 },
+  themeChoices: { flexDirection: "row", gap: 8 },
+  themeChoice: { flex: 1, justifyContent: "center", minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8 },
   button: { minHeight: 48, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 16 },
 });

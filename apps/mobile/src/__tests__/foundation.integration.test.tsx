@@ -33,7 +33,8 @@ describe("mobile foundation route boundary", () => {
   it("contains route errors in an accessible privacy-safe fallback", () => {
     expect(root).toContain("<ErrorBoundary>");
     expect(root).toContain("<AppPrivacyShield>");
-    expect(root).toContain("<AppPrivacyShield>\n        <AppProviders>");
+    expect(root).toContain("<ThemePreferenceProvider>");
+    expect(root).toContain("<AppPrivacyShield>\n          <AppProviders>");
     expect(root).toContain('<Stack.Screen name="onboarding" />');
     expect(root).toContain("<Stack.Protected guard={isLoaded && Boolean(isSignedIn)}>");
     expect(root).toContain('<Stack.Screen name="(auth)/sign-in" />');

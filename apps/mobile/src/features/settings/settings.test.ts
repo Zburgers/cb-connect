@@ -5,6 +5,13 @@ const source = readFileSync(new URL("./Settings.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../../app/(app)/settings.tsx", import.meta.url), "utf8");
 
 describe("mobile settings privacy and accessibility", () => {
+  it("offers app-level Light, System, and Dark appearance choices", () => {
+    expect(source).toContain("Appearance");
+    expect(source).toContain("themeModes.map");
+    expect(source).toContain('accessibilityRole="radio"');
+    expect(source).toContain("setThemeMode(choice)");
+    expect(source).toContain("System follows your device setting.");
+  });
   it("keeps pause, context, and sharing controls primary-private", () => {
     expect(source).toContain("{isPrimary ? (");
     expect(source).toContain("Private prediction controls");
