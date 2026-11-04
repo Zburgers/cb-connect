@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePaginatedQuery, useMutation, useConvexConnectionState } from "convex/react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useIsFocused } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
@@ -12,7 +12,6 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
   const palette = dark ? mobileColors.dark : mobileColors.light;
   const connection = useConvexConnectionState();
   const connected = connection.isWebSocketConnected;
-  const isFocused = useIsFocused();
   const { results, status, loadMore } = usePaginatedQuery(
     api.queries.messages.listPageForMobile,
     { relationshipGeneration },
@@ -50,12 +49,12 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, [latestMessageId]);
 
-  useEffect(() => {
-    if (!isFocused || !unread || !isAtBottomRef.current) return;
+  useFocusEffect(useCallback(() => {
+    if (!unread || !isAtBottomRef.current) return;
     void markDelivered({ messageId: unread._id })
       .then(() => markReadThrough({ messageId: unread._id }))
       .catch(() => undefined);
-  }, [isAtBottom, isFocused, markDelivered, markReadThrough, unread?._id]);
+  }, [isAtBottom, markDelivered, markReadThrough, unread?._id]));
 
   async function handleSend() {
     if (!connected) {
