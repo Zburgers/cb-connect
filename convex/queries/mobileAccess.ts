@@ -20,7 +20,9 @@ export const getGuardState = query({
     const relationship = await getCoupleForUser(ctx, user._id);
     return {
       user: { role: user.role ?? null },
-      couple: relationship
+      // Pending invitations are not active couple links. Keep this aligned
+      // with getCoupleStatus.isLinked and the web's private-primary journey.
+      couple: relationship?.couple.status === "active"
         ? { isLinked: true, role: relationship.membership.role }
         : { isLinked: false, role: null },
     };
