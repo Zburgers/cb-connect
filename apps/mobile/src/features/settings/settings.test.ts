@@ -19,7 +19,7 @@ describe("mobile settings privacy and accessibility", () => {
     expect(source).toContain("Sharing");
     expect(source).toContain("updateSharing(args)");
     expect(source).toContain('getPredictionSegmentOptions, isPrimary ? {} : "skip"');
-    expect(route).toContain('access === "primary" || access === "partner" ? <Settings />');
+    expect(route).toContain('access === "primary" || access === "partner" || access === "unlinked_primary" ? <Settings />');
   });
 
   it("uses the role-specific preference contract and accessible switches", () => {
