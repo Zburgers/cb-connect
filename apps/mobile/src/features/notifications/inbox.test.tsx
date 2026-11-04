@@ -61,14 +61,15 @@ describe("mobile notification inbox contract", () => {
     inboxMocks.available = false;
     let markup = renderToStaticMarkup(<Inbox />);
     expect(inboxMocks.paginationArgs).toBe("skip");
-    expect(markup).toContain("The in-app inbox is unavailable right now.");
+    expect(markup).toContain("In-app inbox access is unavailable for this account right now.");
+    expect(markup).toContain("does not reflect device notification permission or push channel availability");
     expect(markup).not.toContain("Message activity");
 
     inboxMocks.available = true;
     markup = renderToStaticMarkup(<Inbox />);
     expect(inboxMocks.paginationArgs).toEqual({});
     expect(markup).toContain("Message activity");
-    expect(markup).toContain("Messages unavailable");
+    expect(markup).toContain("Open partner");
 
     inboxMocks.available = false;
     markup = renderToStaticMarkup(<Inbox />);
@@ -85,9 +86,10 @@ describe("mobile notification inbox contract", () => {
     expect(source).toContain("dismissMyInboxItem");
     expect(source).toContain("items.loadMore(20)");
     expect(source).toContain('router.push("/(app)/settings")');
-    expect(source).toContain("Messages unavailable");
-    expect(source).toContain("Push is not available until Gate 6");
-    expect(source).toContain("device permission and channel availability are separate");
+    expect(source).toContain('router.push("/(app)/partner")');
+    expect(source).toContain("You’re all caught up.");
+    expect(source).toContain("Saving…");
+    expect(source).not.toContain("Gate 6");
     expect(source).toContain('accessibilityLabel={`Mark ${presentation.title} as read`}');
     expect(source).toContain('accessibilityLabel={`Dismiss ${presentation.title}`}');
   });

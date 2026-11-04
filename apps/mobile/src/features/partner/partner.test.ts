@@ -69,4 +69,12 @@ describe("mobile partner access and accessibility", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
     expect(source).not.toMatch(/messages\.clear/);
   });
+
+  test("sharing controls explain consent scope and show the current server setting state", () => {
+    const source = readFileSync(resolve(mobileRoot, "src/features/partner/PartnerControls.tsx"), "utf8");
+    expect(source).toContain("Choose what your partner can see or add.");
+    expect(source).toContain('value ? "On" : "Off"');
+    expect(source).toContain("palette.highlight");
+    expect(source).toContain("await sharing({ [key]: value })");
+  });
 });

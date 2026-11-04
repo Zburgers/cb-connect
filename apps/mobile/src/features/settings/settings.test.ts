@@ -5,6 +5,13 @@ const source = readFileSync(new URL("./Settings.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../../app/(app)/settings.tsx", import.meta.url), "utf8");
 
 describe("mobile settings privacy and accessibility", () => {
+  it("offers app-level Light, System, and Dark appearance choices", () => {
+    expect(source).toContain("Appearance");
+    expect(source).toContain("themeModes.map");
+    expect(source).toContain('accessibilityRole="radio"');
+    expect(source).toContain("setThemeMode(choice)");
+    expect(source).toContain("System follows your device setting.");
+  });
   it("keeps pause, context, and sharing controls primary-private", () => {
     expect(source).toContain("{isPrimary ? (");
     expect(source).toContain("Private prediction controls");
@@ -19,8 +26,8 @@ describe("mobile settings privacy and accessibility", () => {
     expect(source).toContain("getVisibleNotificationPurposes");
     expect(source).toContain('accessibilityRole="switch"');
     expect(source).toContain('accessibilityRole="button"');
-    expect(source).toContain("Push is unavailable until Gate 6");
-    expect(source).toContain("device permission and notification channel availability are separate");
+    expect(source).toContain("Push delivery is not available in this build; device permission and push channel availability are separate.");
+    expect(source).not.toContain("Gate 6");
   });
 
   it("does not offer account erasure while D-012 is unresolved or expose mutation errors", () => {
