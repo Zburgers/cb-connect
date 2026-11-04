@@ -6,7 +6,7 @@ import { AccessContext } from "../../navigation/accessContext";
 
 export default function SettingsScreen() {
   const access = useContext(AccessContext);
-  return access === "primary" || access === "partner" ? <Settings /> : <AccessUnavailable />;
+  return access === "primary" || access === "partner" || access === "unlinked_primary" ? <Settings /> : <AccessUnavailable />;
 }
 
 function AccessUnavailable() {

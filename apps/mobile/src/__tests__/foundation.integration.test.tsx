@@ -10,6 +10,9 @@ describe("mobile foundation route boundary", () => {
   const root = read("../app/_layout.tsx");
   const notFound = read("../app/+not-found.tsx");
   const metro = read("../../metro.config.js");
+  const chat = read("../app/(app)/chat.tsx");
+  const partner = read("../features/partner/PartnerControls.tsx");
+  const home = read("../features/cycle/CycleDashboard.tsx");
 
   it("places Clerk and Convex auth before backend role and relationship checks", () => {
     expect(layout).toContain("<AuthGate>");
@@ -17,12 +20,25 @@ describe("mobile foundation route boundary", () => {
     expect(layout).not.toMatch(/getMe|getCoupleStatus|getCapabilities/);
     expect(layout).toContain("<Tabs.Protected guard={access.canRenderProtectedContent}>");
     expect(layout).toContain("<Tabs.Protected guard={canRenderPartnerRoute(access)}>");
+    expect(layout).toContain("<Tabs.Protected guard={canRenderChatRoute(access)}>");
     expect(layout).toContain("<Tabs.Protected guard={!access.canRenderProtectedContent && access.state !== \"unlinked\"}>");
     expect(metro).toContain("config.watchFolders = [path.resolve(repositoryRoot, \"convex\")]");
     expect(metro).toMatch(
       /config\.resolver\.nodeModulesPaths\s*=\s*\[\s*path\.resolve\(projectRoot,\s*"node_modules"\)\s*\]/,
     );
     expect(metro).not.toContain('path.resolve(repositoryRoot, "node_modules")');
+  });
+
+  it("places chat on its own linked-only tab and routes Inbox through Home", () => {
+    expect(layout).toContain('<Tabs.Screen name="chat"');
+    expect(layout).toContain('<Tabs.Screen name="notifications" options={{ href: null }} />');
+    expect(chat).toContain("guard?.couple?.isLinked === true");
+    expect(chat).toContain('couple.status === "active"');
+    expect(chat).toContain("relationshipGeneration");
+    expect(chat).toContain("KeyboardAvoidingView");
+    expect(partner).not.toContain("<CoupleChat");
+    expect(home).toContain('href="/(app)/notifications"');
+    expect(home).toContain('href="/(app)/chat"');
   });
 
   it("keeps status copy generic and renders no cycle or partner data", () => {

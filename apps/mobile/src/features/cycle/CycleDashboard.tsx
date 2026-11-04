@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import { Link } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMutation, useQuery } from "convex/react";
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../convex/api";
+import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
 import {
   getCycleDashboardPresentation,
@@ -65,6 +67,7 @@ export function CycleDashboardView({
 }): React.JSX.Element {
   const textStyle = { color: palette.foreground };
   const blurTarget = useRef<View>(null);
+  const access = useContext(AccessContext);
   return (
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: palette.background }]}
@@ -76,13 +79,24 @@ export function CycleDashboardView({
         contentContainerStyle={styles.screen}
       >
         <View style={styles.content}>
-          <Text
-            allowFontScaling
-            accessibilityRole="header"
-            style={[styles.heading, textStyle]}
-          >
-            Welcome back
-          </Text>
+          <View style={styles.headerRow}>
+            <Text
+              allowFontScaling
+              accessibilityRole="header"
+              style={[styles.heading, textStyle]}
+            >
+              Welcome back
+            </Text>
+            <Link href="/(app)/notifications" asChild>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open inbox"
+                style={[styles.inboxBell, { backgroundColor: palette.glass, borderColor: palette.border }]}
+              >
+                <Ionicons name="notifications-outline" size={23} color={palette.foreground} />
+              </Pressable>
+            </Link>
+          </View>
           <Text
             allowFontScaling
             style={[styles.subtitle, { color: palette.muted }]}
@@ -101,6 +115,19 @@ export function CycleDashboardView({
           ) : null}
           {model.prediction ? (
             <CycleCardView card={model.prediction} palette={palette} blurTarget={blurTarget} />
+          ) : null}
+          {(access === "primary" || access === "partner") ? (
+            <Link href="/(app)/chat" asChild>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open private chat" style={[styles.secondaryAction, { borderColor: palette.border }]}>
+                <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Open private chat</Text>
+              </Pressable>
+            </Link>
+          ) : access === "unlinked_primary" ? (
+            <Link href="/(app)/partner" asChild>
+              <Pressable accessibilityRole="button" accessibilityLabel="Invite a partner (optional)" style={[styles.secondaryAction, { borderColor: palette.border }]}>
+                <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Invite a partner (optional)</Text>
+              </Pressable>
+            </Link>
           ) : null}
           <Link href="/(app)/log" asChild>
             <Pressable accessibilityRole="button" style={StyleSheet.flatten([styles.quickAction, { backgroundColor: palette.accent }])}>
@@ -188,6 +215,9 @@ const styles = StyleSheet.create({
   },
   screen: { flexGrow: 1, padding: 24, paddingBottom: 32 },
   content: { width: "100%", maxWidth: 560, alignSelf: "center", gap: 16 },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  inboxBell: { height: 48, width: 48, alignItems: "center", justifyContent: "center", borderRadius: 16, borderWidth: 1 },
+  secondaryAction: { minHeight: 48, borderWidth: 1, borderRadius: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 16 },
   heading: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
   subtitle: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
   card: {
