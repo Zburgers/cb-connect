@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   screen: { flexGrow: 1, padding: 24, paddingBottom: 32 },
   content: { width: "100%", maxWidth: 560, alignSelf: "center", gap: 16 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  inboxBell: { height: 48, width: 48, alignItems: "center", justifyContent: "center", borderRadius: 16, borderWidth: 1 },
+  inboxBell: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", borderRadius: 16, borderWidth: 1 },
   secondaryAction: { minHeight: 48, borderWidth: 1, borderRadius: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 16 },
   heading: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
   subtitle: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
