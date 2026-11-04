@@ -57,7 +57,25 @@ done
 line_number() {
   local pattern="$1"
   local file="$2"
-  grep -nF "$pattern" "$file" | head -n 1 | cut -d: -f1
+  local match
+  match="$(grep -nF "$pattern" "$file" | head -n 1 || true)"
+  if [[ -z "$match" ]]; then
+    echo "missing required source policy: $pattern ($file)" >&2
+    exit 1
+  fi
+  printf '%s\n' "${match%%:*}"
+}
+
+line_number_matching() {
+  local pattern="$1"
+  local file="$2"
+  local match
+  match="$(grep -nE "$pattern" "$file" | head -n 1 || true)"
+  if [[ -z "$match" ]]; then
+    echo "missing required source policy: $pattern ($file)" >&2
+    exit 1
+  fi
+  printf '%s\n' "${match%%:*}"
 }
 
 preflight_line="$(line_number 'Preflight authenticated test Convex deploy key target' "$workflow")"
@@ -81,13 +99,13 @@ fi
 setup_file="e2e/auth.global.setup.ts"
 primary_sign_in_line="$(line_number 'await signIn(primaryPage, environment, pair.primary' "$setup_file")"
 fixture_run_line="$(line_number 'await beginConvexFixtureRun(environment, pair!, token)' "$setup_file")"
-cleanup_install_line="$(line_number 'services.cleanupApplicationData = (fixturePair)' "$setup_file")"
+cleanup_install_line="$(line_number_matching 'services\.cleanupApplicationData = (async )?\(fixturePair\)' "$setup_file")"
 primary_onboarding_line="$(line_number '      primaryPage,' "$setup_file")"
 link_line="$(line_number 'await linkCouple(primaryPage, partnerPage)' "$setup_file")"
 storage_line="$(line_number 'await saveStorageState(primaryContext' "$setup_file")"
 mapfile -t registration_lines < <(grep -n 'await registerConvexFixtureUser' "$setup_file" | cut -d: -f1)
-if (( primary_sign_in_line >= fixture_run_line || fixture_run_line >= cleanup_install_line || cleanup_install_line >= primary_onboarding_line )); then
-  echo "fixture run and cleanup must precede primary application navigation" >&2
+if (( primary_sign_in_line >= cleanup_install_line || cleanup_install_line >= fixture_run_line || fixture_run_line >= primary_onboarding_line )); then
+  echo "fixture cleanup retry and durable run must precede primary application navigation" >&2
   exit 1
 fi
 if (( ${#registration_lines[@]} != 2 || link_line >= registration_lines[0] || registration_lines[0] >= registration_lines[1] || registration_lines[1] >= storage_line )); then

@@ -1,6 +1,84 @@
 import { v } from "convex/values";
-import { query } from "../_generated/server";
+import { paginationOptsValidator } from "convex/server";
+import { query, type QueryCtx } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
 import { getActiveCoupleSpace } from "../_helpers/coupleSpace";
+
+const MOBILE_CHAT_PAGE_SIZE = 40;
+
+async function projectMessages(
+  ctx: QueryCtx,
+  messages: Doc<"coupleMessages">[],
+  user: Doc<"users">,
+  membership: Doc<"coupleMembers">,
+  partnerMembership: Doc<"coupleMembers">,
+) {
+  const [userState, partnerState] = await Promise.all([
+    ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) =>
+        q.eq("coupleId", membership.coupleId).eq("userId", user._id)
+      )
+      .first(),
+    ctx.db
+      .query("coupleChatStates")
+      .withIndex("by_couple_and_user", (q) =>
+        q.eq("coupleId", membership.coupleId).eq("userId", partnerMembership.userId)
+      )
+      .first(),
+  ]);
+  return await Promise.all(
+    messages.map(async (message) => {
+      const sender = await ctx.db.get(message.senderId);
+      const isMine = message.senderId === user._id;
+      const isPartner = message.senderId === partnerMembership.userId;
+      const senderPreferredName = getDisplayFallback(sender);
+      const senderName = isMine
+        ? "You"
+        : isPartner
+          ? membership.partnerNickname || senderPreferredName
+          : senderPreferredName;
+      const reactions = await ctx.db
+        .query("coupleMessageReactions")
+        .withIndex("by_message", (q) => q.eq("messageId", message._id))
+        .take(20);
+      const grouped = new Map<string, { emoji: string; count: number; isMine: boolean }>();
+      for (const reaction of reactions) {
+        const current = grouped.get(reaction.emoji);
+        if (current) {
+          current.count += 1;
+          current.isMine ||= reaction.userId === user._id;
+        } else {
+          grouped.set(reaction.emoji, {
+            emoji: reaction.emoji,
+            count: 1,
+            isMine: reaction.userId === user._id,
+          });
+        }
+      }
+      const recipientState = isMine ? partnerState : userState;
+      const readThrough = recipientState?.lastReadSequence ?? 0;
+      const isReadByCursor = message.recipientSequence !== undefined
+        ? message.recipientSequence <= readThrough
+        : readThrough > (recipientState?.legacySequenceBase ?? 0) ||
+          message.createdAt <= (recipientState?.legacyReadThroughAt ?? 0);
+
+      return {
+        _id: message._id,
+        body: message.body,
+        createdAt: message.createdAt,
+        senderName,
+        senderImageUrl: sender?.imageUrl ?? null,
+        isMine,
+        deliveredAt: message.deliveredAt ?? null,
+        readAt: message.readAt ?? (
+          isReadByCursor ? recipientState?.lastReadAt ?? message.createdAt : null
+        ),
+        reactions: [...grouped.values()],
+      };
+    })
+  );
+}
 
 export const listForCouple = query({
   args: {
@@ -49,72 +127,54 @@ export const listForCouple = query({
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
 
-    const [userState, partnerState] = await Promise.all([
-      ctx.db
-        .query("coupleChatStates")
-        .withIndex("by_couple_and_user", (q) =>
-          q.eq("coupleId", membership.coupleId).eq("userId", user._id)
-        )
-        .first(),
-      ctx.db
-        .query("coupleChatStates")
-        .withIndex("by_couple_and_user", (q) =>
-          q.eq("coupleId", membership.coupleId).eq("userId", partnerMembership.userId)
-        )
-        .first(),
-    ]);
     const ordered = messages.reverse();
-    return await Promise.all(
-      ordered.map(async (message) => {
-        const sender = await ctx.db.get(message.senderId);
-        const isMine = message.senderId === user._id;
-        const isPartner = message.senderId === partnerMembership.userId;
-        const senderPreferredName = getDisplayFallback(sender);
-        const senderName = isMine
-          ? "You"
-          : isPartner
-            ? membership.partnerNickname || senderPreferredName
-            : senderPreferredName;
-        const reactions = await ctx.db
-          .query("coupleMessageReactions")
-          .withIndex("by_message", (q) => q.eq("messageId", message._id))
-          .take(20);
-        const grouped = new Map<string, { emoji: string; count: number; isMine: boolean }>();
-        for (const reaction of reactions) {
-          const current = grouped.get(reaction.emoji);
-          if (current) {
-            current.count += 1;
-            current.isMine ||= reaction.userId === user._id;
-          } else {
-            grouped.set(reaction.emoji, {
-              emoji: reaction.emoji,
-              count: 1,
-              isMine: reaction.userId === user._id,
-            });
-          }
-        }
-        const recipientState = isMine ? partnerState : userState;
-        const readThrough = recipientState?.lastReadSequence ?? 0;
-        const isReadByCursor = message.recipientSequence !== undefined
-          ? message.recipientSequence <= readThrough
-          : readThrough > (recipientState?.legacySequenceBase ?? 0) ||
-            message.createdAt <= (recipientState?.legacyReadThroughAt ?? 0);
+    return await projectMessages(ctx, ordered, user, membership, partnerMembership);
+  },
+});
 
-        return {
-          _id: message._id,
-          body: message.body,
-          createdAt: message.createdAt,
-          senderName,
-          senderImageUrl: sender?.imageUrl ?? null,
-          isMine,
-          deliveredAt: message.deliveredAt ?? null,
-          readAt: message.readAt ?? (
-            isReadByCursor ? recipientState?.lastReadAt ?? message.createdAt : null
+export const listPageForMobile = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    relationshipGeneration: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const {
+      user,
+      membership,
+      partnerMembership,
+      couple,
+      relationshipStartedAt,
+      relationshipMembershipId,
+    } = await getActiveCoupleSpace(ctx);
+    if (args.relationshipGeneration !== String(relationshipMembershipId)) {
+      throw new Error("Relationship changed; refresh chat");
+    }
+    const page = await ctx.db
+      .query("coupleMessages")
+      .withIndex("by_couple_created", (q) =>
+        q
+          .eq("coupleId", membership.coupleId)
+          .gt("createdAt", Math.max(relationshipStartedAt, couple.chatClearedAt ?? 0))
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("clearedAt"), undefined),
+          q.or(
+            q.eq(q.field("relationshipMembershipId"), relationshipMembershipId),
+            q.eq(q.field("relationshipMembershipId"), undefined),
           ),
-          reactions: [...grouped.values()],
-        };
-      })
-    );
+        )
+      )
+      .order("desc")
+      .paginate({
+        ...args.paginationOpts,
+        numItems: Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), MOBILE_CHAT_PAGE_SIZE),
+        maximumRowsRead: MOBILE_CHAT_PAGE_SIZE * 2,
+      });
+    return {
+      ...page,
+      page: await projectMessages(ctx, page.page, user, membership, partnerMembership),
+    };
   },
 });
 

@@ -46,6 +46,7 @@ type DashboardData = {
   periodPredictionV2?: PeriodPredictionV2;
   partnerPredictionV2?: PartnerPredictionV2Projection;
   partnerPredictionV2Exposed: boolean;
+  partnerPredictionV2CanEnsureSnapshot: boolean;
   painData?: {
     score: number;
     severity: ReturnType<typeof getPainSeverityBucket>;
@@ -85,6 +86,7 @@ export const getDashboardData = query({
         cycleStateV1: null,
         cycleStateV1Exposed: false,
         partnerPredictionV2Exposed: false,
+        partnerPredictionV2CanEnsureSnapshot: false,
         painData: null,
         painTip: null,
         nutritionTips: [],
@@ -108,6 +110,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
 
@@ -129,6 +132,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
 
@@ -143,6 +147,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
       targetUser = primaryUser;
@@ -281,6 +286,7 @@ export const getDashboardData = query({
       isPartnerView && partnerPredictionV2Exposed;
     const predictionFields = {
       partnerPredictionV2Exposed,
+      partnerPredictionV2CanEnsureSnapshot: partnerPredictionV2Enabled,
       ...(partnerPredictionV2 ? { partnerPredictionV2 } : {}),
       ...(!isPartnerView && periodPredictionV2 ? { periodPredictionV2 } : {}),
     };

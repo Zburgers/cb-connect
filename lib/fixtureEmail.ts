@@ -2,6 +2,7 @@ export type FixtureRole = "primary" | "partner";
 
 const MAX_EMAIL_LOCAL_PART_LENGTH = 64;
 const FIXTURE_EMAIL_PREFIX = "cb-connect-e2e+";
+const CLERK_TEST_SUFFIX = "+clerk_test";
 const FIXTURE_EMAIL_DOMAIN = "example.com";
 
 function digestRunId(runId: string): string {
@@ -21,7 +22,7 @@ function digestRunId(runId: string): string {
 }
 
 export function fixtureEmail(runId: string, role: FixtureRole): string {
-  const suffix = `-${role}`;
+  const suffix = `-${role}${CLERK_TEST_SUFFIX}`;
   const rawLocalPart = `${FIXTURE_EMAIL_PREFIX}${runId}${suffix}`;
   if (rawLocalPart.length <= MAX_EMAIL_LOCAL_PART_LENGTH) {
     return `${rawLocalPart}@${FIXTURE_EMAIL_DOMAIN}`;
