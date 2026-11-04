@@ -6,7 +6,7 @@ import { AccessContext } from "../../navigation/accessContext";
 
 export default function NotificationsScreen() {
   const access = useContext(AccessContext);
-  return access === "primary" || access === "partner" ? <Inbox /> : <AccessUnavailable />;
+  return access === "primary" || access === "partner" || access === "unlinked_primary" ? <Inbox /> : <AccessUnavailable />;
 }
 
 function AccessUnavailable() {

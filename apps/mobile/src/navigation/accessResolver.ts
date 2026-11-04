@@ -18,6 +18,7 @@ export type AccessState =
   | "backend_pending"
   | "onboarding_incomplete"
   | "unlinked"
+  | "unlinked_primary"
   | "role_mismatch"
   | "primary"
   | "partner";
@@ -30,6 +31,12 @@ export interface AccessResolution {
 
 export function canRenderPartnerRoute(access: AccessResolution): boolean {
   return access.canRenderProtectedContent || access.state === "unlinked";
+}
+
+/** Chat is a relationship-only destination, unlike private primary tracking. */
+export function canRenderChatRoute(access: AccessResolution): boolean {
+  return access.canRenderProtectedContent &&
+    (access.state === "primary" || access.state === "partner");
 }
 
 export function accessStatusRedirect(state: AccessState): "/onboarding" | "/(app)/partner" | null {
@@ -63,6 +70,11 @@ export function resolveAccessState(inputs: AccessStateInputs): AccessResolution 
     return { state: "onboarding_incomplete", canRenderProtectedContent: false };
   }
   if (!inputs.couple?.isLinked) {
+    // Web permits primary users to track privately before connecting a partner.
+    // Partner-only screens remain gated until a current relationship is confirmed.
+    if (inputs.user.role === "primary") {
+      return { state: "unlinked_primary", canRenderProtectedContent: true, role: "primary" };
+    }
     return { state: "unlinked", canRenderProtectedContent: false };
   }
   if (!inputs.couple.role || inputs.couple.role !== inputs.user.role) {
