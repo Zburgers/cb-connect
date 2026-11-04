@@ -3,16 +3,21 @@ import { useAuth } from "@clerk/expo";
 import { AppProviders } from "../providers/AppProviders";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppPrivacyShield } from "../security/appPrivacy";
+import { StatusBar } from "expo-status-bar";
+import { ThemePreferenceProvider } from "../theme/ThemePreferenceProvider";
 
 export default function RootLayout() {
   return (
-    <ErrorBoundary>
-      <AppProviders>
+    <ThemePreferenceProvider>
+      <ErrorBoundary>
         <AppPrivacyShield>
-          <AuthenticatedStack />
+          <AppProviders>
+            <StatusBar style="auto" />
+            <AuthenticatedStack />
+          </AppProviders>
         </AppPrivacyShield>
-      </AppProviders>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </ThemePreferenceProvider>
   );
 }
 

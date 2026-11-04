@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePaginatedQuery, useMutation, useConvexConnectionState } from "convex/react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
@@ -48,12 +49,12 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, [latestMessageId]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!unread || !isAtBottomRef.current) return;
     void markDelivered({ messageId: unread._id })
       .then(() => markReadThrough({ messageId: unread._id }))
       .catch(() => undefined);
-  }, [isAtBottom, markDelivered, markReadThrough, unread?._id]);
+  }, [isAtBottom, markDelivered, markReadThrough, unread?._id]));
 
   async function handleSend() {
     if (!connected) {
@@ -76,9 +77,11 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}>
-      <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Private chat</Text>
-      <Text style={{ color: palette.muted }}>Messages are visible to this active couple only.</Text>
+    <View style={[styles.container, { backgroundColor: "transparent" }]}>
+      <View style={[styles.chatHeader, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Private chat</Text>
+        <Text style={{ color: palette.muted }}>Only you and your connected partner can see these messages.</Text>
+      </View>
       {!connected ? (
         <Text accessibilityRole="alert" style={{ color: palette.foreground }}>
           Reconnect before sending. Messages are not queued offline.
@@ -131,8 +134,8 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         scrollEventThrottle={16}
       >
         {messages.map((message) => (
-          <View key={message._id} style={styles.message}>
-            <Text style={[styles.sender, { color: palette.foreground }]}>{message.senderName}</Text>
+          <View key={message._id} style={[styles.message, { backgroundColor: message.isMine ? palette.highlight : palette.surface, borderColor: palette.border, alignSelf: message.isMine ? "flex-end" : "flex-start" }]}>
+            <Text style={[styles.sender, { color: message.isMine ? palette.accent : palette.foreground }]}>{message.isMine ? "You" : message.senderName}</Text>
             <Text style={{ color: palette.foreground }}>{message.body}</Text>
             <Text style={{ color: palette.muted }}>
               {message.readAt ? "Read" : message.deliveredAt ? "Delivered" : "Sent"}
@@ -190,10 +193,11 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
 
 const styles = StyleSheet.create({
   container: { flex: 1, gap: 10, padding: 16, minHeight: 320 },
+  chatHeader: { gap: 5, padding: 14, borderWidth: 1, borderRadius: 18 },
   heading: { fontSize: 20, fontWeight: "700" },
   messages: { flex: 1, minHeight: 160 },
   messageList: { gap: 12, paddingVertical: 8 },
-  message: { gap: 4, padding: 12, borderRadius: 12, backgroundColor: "#00000008" },
+  message: { gap: 4, padding: 12, borderRadius: 16, borderWidth: 1, maxWidth: "88%" },
   sender: { fontWeight: "700" },
   reactions: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   reactionButton: { minHeight: 40, minWidth: 40, alignItems: "center", justifyContent: "center", padding: 4 },

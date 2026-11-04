@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const capture = vi.hoisted(() => ({
   preventScreenCaptureAsync: vi.fn().mockResolvedValue(undefined),
@@ -6,9 +7,20 @@ const capture = vi.hoisted(() => ({
   allowScreenCaptureAsync: vi.fn().mockResolvedValue(undefined),
   disableAppSwitcherProtectionAsync: vi.fn().mockResolvedValue(undefined),
 }));
+const lifecycle = vi.hoisted(() => ({
+  listener: undefined as ((state: "active" | "background" | "inactive") => void) | undefined,
+  remove: vi.fn(),
+}));
 
 vi.mock("expo-screen-capture", () => capture);
 vi.mock("react-native", () => ({
+  AppState: {
+    currentState: "active",
+    addEventListener: vi.fn((_event: string, listener: typeof lifecycle.listener) => {
+      lifecycle.listener = listener;
+      return { remove: lifecycle.remove };
+    }),
+  },
   Platform: { OS: "android" },
   View: () => null,
 }));
@@ -18,6 +30,7 @@ import { mountAppPrivacyShield, protectAppPrivacy } from "./appPrivacy";
 describe("mobile privacy protection", () => {
   beforeEach(() => vi.clearAllMocks());
   const captureKey = expect.stringMatching(/^cb-connect-sensitive-screens-\d+$/);
+  const source = readFileSync(new URL("./appPrivacy.tsx", import.meta.url), "utf8");
 
   it("requests capture blocking for protected app content on Android", async () => {
     const release = await protectAppPrivacy("android");
@@ -63,6 +76,25 @@ describe("mobile privacy protection", () => {
     enableProtection();
     await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
     expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it("tracks inactive and background states for the privacy curtain", () => {
+    const onAppActiveChange = vi.fn();
+    const unmount = mountAppPrivacyShield("android", vi.fn(), vi.fn(), onAppActiveChange);
+    lifecycle.listener?.("background");
+    lifecycle.listener?.("inactive");
+    lifecycle.listener?.("active");
+
+    expect(onAppActiveChange.mock.calls).toEqual([[false], [false], [true]]);
+    unmount();
+    expect(lifecycle.remove).toHaveBeenCalledOnce();
+  });
+
+  it("covers rather than unmounts the provider and route tree while inactive", () => {
+    expect(source).toContain("{children}");
+    expect(source).toContain("StyleSheet.absoluteFill");
+    expect(source).toContain('importantForAccessibility={appIsActive ? "auto" : "no-hide-descendants"}');
+    expect(source).not.toContain("protectedReady && appIsActive ?");
   });
 
   it("releases partially enabled iOS protection when switcher setup fails", async () => {

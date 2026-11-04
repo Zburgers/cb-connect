@@ -1,27 +1,38 @@
 # CB Connect - Issues & Feature Tracker
 
-**Last Updated:** August 20, 2026
+**Last Updated:** October 28, 2026
 Update with Github issues on the parent repo
 
 **Major-release program:** `docs/plans/2026-08-01-cb-connect-major-release-program.md`. Issues remain a continuous remediation lane; P0 findings interrupt feature rollout and applicable P1 findings must be closed or explicitly owned before a gate exits.
 
 ## Active implementation issues
 
+### Mobile dashboard and inbox need the approved test backend to expose their states
+**Program gate:** Mobile Gate 5
+**Status:** Active; the native dashboard cycle summary and in-app inbox remain unavailable from the approved test backend for both synthetic roles. Physical-device and screen-capture privacy qualification are explicitly out of scope for this PR.
+**Evidence:** On 2026-10-28, the existing Android 17 emulator ran the candidate against the approved test backend with the persistent synthetic primary/partner pair. Native sign-in, pairing, partner sharing controls, a server-confirmed chat send and partner readback succeeded. Home displays the backend-provided “Cycle details are not available yet” state for both roles; Inbox reports that in-app inbox access is unavailable. The UI does not invent cycle state or predictions. Redacted native screenshots are in `docs/evidence/mobile-ux/`.
+**Exit evidence:** Restore the dashboard and inbox views by making the expected states available through the approved backend contract, then verify their native presentation. Physical-device and screen-capture privacy qualification are not acceptance criteria for this PR.
+
+--
+
 --
 
 ### Gate 5 native integration qualification is blocked
 **Program gate:** Mobile Gate 5
-**Status:** Active; protected test API parity passes; native qualification is incomplete with a screenshot/recording privacy failure
+**Status:** Active; protected test API parity passes, emulator screenshots are attached, and native pairing plus chat send/readback have passed. Dashboard cycle state and inbox availability are currently missing from the approved test backend. Physical-device and screenshot-privacy qualification are out of scope for this PR.
 **Evidence:** On 2026-10-27 the isolated PR #75 worktree used the approved target-bound procedure to deploy only `dev:hallowed-hummingbird-284`. Exact function-spec comparison found all 44/44 mobile references public with matching kinds. Two disposable synthetic users completed native onboarding, pairing, period/pain logging, and default-off inbox verification, then scoped application cleanup and Clerk deletion both passed zero-residue/404 readback. A redundant post-onboarding `beginFixtureRun` call reproduced `fixture_cleanup_identity_mismatch` because the existing partner row was not yet registered; removing that redundant call allowed primary-then-partner registration to pass with all identity assertions and cleanup fences intact. The Pixel 7 installed APK hash matches the debug build (`84ab0679…`). Authenticated capture evidence was inconsistent: a Pixel `agent-device screenshot` and second-emulator recording returned non-black pixels; raw media was removed. Same-device account switching stopped at hosted sign-in; chat send/readback, revocation, replacement-partner isolation, Recents preview, interruption, and physical-device qualification remain open. Six high dependency advisory entries and D-018 remain explicit unresolved gates. See `docs/security/2026-10-27-gate-5-android-qualification.md`.
-**Exit evidence:** Resolve authenticated capture inconsistency and complete remaining native journeys with redacted evidence; obtain exact-head independent SHIELD M8.2 assessment; resolve six advisories and D-018 before their dependent gates. Keep PR #75 draft/unmerged; no production exposure or APK publication.
+**Current candidate update (2026-10-28):** The persistent synthetic pair signed into the native candidate on the existing emulator, paired, and completed a chat send/readback; the recipient UI showed `Read`. Same-device primary/partner switching succeeded. Partner revocation/replacement isolation remain unverified. Dashboard state and inbox availability remain unavailable on the approved test backend. Physical-device and screenshot-privacy checks are excluded from this PR.
+**Current dependency status:** The candidate fixes the five node-forge advisories with a semver-compatible 1.4.2 override. Zod 3 remains below the patched 4.6.6 line through Expo CLI; a global Zod 4 override was rejected because Expo CLI declares Zod 3 and its optional MCP integration may depend on Zod 3 internals. npm audit reports three high findings from this single Zod advisory. Reassess when Expo CLI accepts patched Zod.
+**Exit evidence:** Complete the in-scope emulator product screenshots and authenticated synthetic journeys; obtain the required exact-head source review; resolve or explicitly disposition the remaining Zod advisory and D-018 before their dependent gates. Physical-device and screenshot-privacy qualification are excluded from this PR. PR #75 is merged into the foundation; no production exposure or APK publication is authorized by this work.
 --
 
 ### Couple DM message-state and reaction UX
 **Program gate:** Continuous remediation; must close before Mobile Gate 5
-**Status:** Implemented and deployed; authenticated production verification and race-safety remediation pending
-**Evidence:** Commit `05af783` added unread state, delivery/read receipts, grouped messages, bounded reactions, and conditional authenticated Playwright coverage. GitHub Actions run `30399933598` deployed that commit, and the production Convex function spec exposes `markDelivered`, `markRead`, and `unreadSummary`. No authenticated two-user browser smoke was completed, and [GitHub issue #13](https://github.com/Zburgers/cb-connect/issues/13) records a remaining lost-update race in unread counts.
-**Scope:** Make unread updates monotonic/race-safe and complete authenticated two-user production coverage.
-**Exit evidence:** Unit/typecheck/build gates, authenticated two-user E2E at mobile and desktop widths, and production Convex two-user smoke verification.
+**Status:** Race-safe read-boundary implementation is present and GitHub issue #13 is closed; native synthetic two-account chat send/readback passed. Desktop-width E2E remains unverified.
+**Evidence:** The current `convex/mutations/messages.ts` implementation advances recipient read sequences monotonically and derives unread counts from the acknowledged boundary. `convex/mutations/messages.test.ts` covers concurrent send/read, stale boundaries, pagination, and multiple sessions; all 27 tests in that file passed on `gate5/mobile-ux-v1` at `8b590b358e3735bc6ac2eb9c83e66d1a5e819c08`. The candidate CI and isolated Gate 5 qualification checks also passed at that SHA. The approved local auth-fixture config is absent, so no authenticated test-backend smoke was run. No production smoke or deployment was performed.
+**Current candidate evidence (2026-10-28):** Using the persistent synthetic primary/partner pair on the approved test backend, the primary sent a chat message and the partner session showed the same message with `Read`. This verifies the native two-account send/readback path only; it does not cover desktop widths or every unread race.
+**Scope:** Complete authenticated two-user test-backend coverage and retain production verification as a separate release gate.
+**Exit evidence:** Authenticated two-user E2E at mobile and desktop widths, plus a scoped synthetic test-backend smoke with verified cleanup. Production verification remains outside this mobile sprint.
 
 --
 

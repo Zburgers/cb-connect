@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { mobileColors } from "../../theme/tokens";
 import { api } from "../../convex/api";
 import {
@@ -67,11 +68,9 @@ export function OnboardingScreen({
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: palette.background }]}
     >
+      <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
       <ScrollView
-        contentContainerStyle={[
-          styles.screen,
-          { backgroundColor: palette.background },
-        ]}
+        contentContainerStyle={styles.screen}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.content}>
@@ -103,8 +102,8 @@ export function OnboardingScreen({
                 style={[
                   styles.button,
                   {
-                    backgroundColor: palette.background,
-                    borderColor: palette.muted,
+                    backgroundColor: palette.glass,
+                    borderColor: palette.border,
                   },
                 ]}
               >
@@ -146,8 +145,8 @@ export function OnboardingScreen({
                   style={[
                     styles.button,
                     {
-                      backgroundColor: palette.background,
-                      borderColor: palette.muted,
+                      backgroundColor: palette.glass,
+                      borderColor: palette.border,
                     },
                   ]}
                 >
@@ -172,7 +171,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   screen: { flexGrow: 1, justifyContent: "center", padding: 20 },
   content: { width: "100%", maxWidth: 480, alignSelf: "center", gap: 16 },
-  title: { fontSize: 28, fontWeight: "700", flexShrink: 1 },
+  title: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
   body: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
   button: {
     minHeight: 52,
@@ -181,7 +180,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 20,
   },
   buttonText: {
     fontSize: 16,

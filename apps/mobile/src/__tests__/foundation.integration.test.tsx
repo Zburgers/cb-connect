@@ -15,9 +15,9 @@ describe("mobile foundation route boundary", () => {
     expect(layout).toContain("<AuthGate>");
     expect(layout).toContain("api.queries.mobileAccess.getGuardState");
     expect(layout).not.toMatch(/getMe|getCoupleStatus|getCapabilities/);
-    expect(layout).toContain("<Stack.Protected guard={access.canRenderProtectedContent}>");
-    expect(layout).toContain("<Stack.Protected guard={canRenderPartnerRoute(access)}>");
-    expect(layout).toContain("<Stack.Protected guard={!access.canRenderProtectedContent && access.state !== \"unlinked\"}>");
+    expect(layout).toContain("<Tabs.Protected guard={access.canRenderProtectedContent}>");
+    expect(layout).toContain("<Tabs.Protected guard={canRenderPartnerRoute(access)}>");
+    expect(layout).toContain("<Tabs.Protected guard={!access.canRenderProtectedContent && access.state !== \"unlinked\"}>");
     expect(metro).toContain("config.watchFolders = [path.resolve(repositoryRoot, \"convex\")]");
     expect(metro).toMatch(
       /config\.resolver\.nodeModulesPaths\s*=\s*\[\s*path\.resolve\(projectRoot,\s*"node_modules"\)\s*\]/,
@@ -32,8 +32,9 @@ describe("mobile foundation route boundary", () => {
 
   it("contains route errors in an accessible privacy-safe fallback", () => {
     expect(root).toContain("<ErrorBoundary>");
-    expect(root).toContain("<AppProviders>");
     expect(root).toContain("<AppPrivacyShield>");
+    expect(root).toContain("<ThemePreferenceProvider>");
+    expect(root).toContain("<AppPrivacyShield>\n          <AppProviders>");
     expect(root).toContain('<Stack.Screen name="onboarding" />');
     expect(root).toContain("<Stack.Protected guard={isLoaded && Boolean(isSignedIn)}>");
     expect(root).toContain('<Stack.Screen name="(auth)/sign-in" />');

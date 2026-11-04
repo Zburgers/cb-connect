@@ -5,6 +5,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, Tex
 import type { NotificationPurpose } from "@cb-connect/contracts";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
+import { useThemePreference } from "../../theme/ThemePreferenceProvider";
+import { themeModes } from "../../theme/themePreference";
 import { getNotificationPurposeLabel, getVisibleNotificationPurposes } from "../notifications/presentation";
 
 type SharingKey = "sharingPain" | "sharingPhase" | "sharingPeriodWrite";
@@ -20,6 +22,7 @@ function deviceTimeZone(): string | null {
 
 export function Settings() {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+  const { mode: themeMode, ready: themeReady, setMode: setThemeMode } = useThemePreference();
   const { signOut } = useAuth();
   const profile = useQuery(api.queries.users.getMe, {});
   const isPrimary = profile?.role === "primary";
@@ -75,12 +78,32 @@ export function Settings() {
   const preferenceMap = new Map(preferences.map((preference) => [preference.purpose, preference]));
 
   return (
-    <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: palette.background }}>
+    <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: "transparent" }}>
       <Text allowFontScaling accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Settings</Text>
-      {error ? <Text allowFontScaling accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      {message ? <Text allowFontScaling accessibilityLiveRegion="polite" style={{ color: palette.muted }}>{message}</Text> : null}
+      {error ? <Text allowFontScaling accessibilityRole="alert" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{error}</Text> : null}
+      {message ? <Text allowFontScaling accessibilityLiveRegion="polite" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{message}</Text> : null}
 
-      <View style={styles.section}>
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
+        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Appearance</Text>
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Choose how CB Connect looks. System follows your device setting.</Text>
+        <View style={styles.themeChoices}>
+          {themeModes.map((choice) => (
+            <Pressable
+              key={choice}
+              accessibilityRole="radio"
+              accessibilityLabel={`${choice[0].toUpperCase()}${choice.slice(1)} appearance`}
+              accessibilityState={{ checked: themeMode === choice, disabled: !themeReady }}
+              disabled={!themeReady}
+              onPress={() => void setThemeMode(choice).catch(() => setError("Unable to save appearance preference. Try again."))}
+              style={[styles.themeChoice, { borderColor: themeMode === choice ? palette.accent : palette.border, backgroundColor: themeMode === choice ? palette.highlight : "transparent" }]}
+            >
+              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{choice[0].toUpperCase()}{choice.slice(1)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Profile</Text>
         <TextInput
           accessibilityLabel="Preferred name"
@@ -93,7 +116,7 @@ export function Settings() {
         <ActionButton label="Save preferred name" disabled={busy} onPress={() => void run(() => updateProfile({ preferredName: nameDraft }), "Profile updated.")} palette={palette} />
       </View>
 
-      <View style={styles.section}>
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Time zone</Text>
         <Text allowFontScaling style={{ color: palette.muted }}>Saved: {profile.timeZone ?? "Not set"}</Text>
         <Text allowFontScaling style={{ color: palette.muted }}>This device: {zone ?? "Unavailable"}</Text>
@@ -105,9 +128,9 @@ export function Settings() {
         />
       </View>
 
-      <View style={styles.section}>
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>In-app notifications</Text>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>These preferences control in-app notifications only. Push is unavailable until Gate 6; device permission and notification channel availability are separate.</Text>
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>These preferences control in-app notifications only. Push delivery is not available in this build; device permission and push channel availability are separate.</Text>
         {visiblePurposes.map((purpose: NotificationPurpose) => {
           const preference = preferenceMap.get(purpose);
           if (!preference) return null;
@@ -132,7 +155,7 @@ export function Settings() {
 
       {isPrimary ? (
         <>
-          <View style={styles.section}>
+          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
             <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Private prediction controls</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Pausing predictions affects only your account and is not shared with your partner.</Text>
             <SettingSwitch
@@ -154,7 +177,7 @@ export function Settings() {
             ))}
             {segmentOptions === null ? <Text allowFontScaling style={{ color: palette.muted }}>Private context controls are unavailable while prediction context is disabled or history is incomplete.</Text> : null}
           </View>
-          <View style={styles.section}>
+          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
             <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Sharing</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Changes take effect through your account’s sharing settings.</Text>
             {couple?.sharingSettings ? (
@@ -168,7 +191,7 @@ export function Settings() {
         </>
       ) : null}
 
-      <View style={styles.section}>
+      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
         <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Account</Text>
         <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Account deletion is unavailable until the retention and deletion policy is approved.</Text>
         <ActionButton label={busy ? "Signing out" : "Sign out"} disabled={busy} onPress={() => void run(signOut, "Signed out.")} palette={palette} />
@@ -218,14 +241,17 @@ function ActionButton({
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  container: { padding: 24, gap: 20 },
-  title: { fontSize: 26, fontWeight: "700" },
-  section: { gap: 12 },
-  sectionTitle: { fontSize: 19, fontWeight: "600" },
+  container: { padding: 20, paddingBottom: 36, gap: 16 },
+  title: { fontSize: 30, fontWeight: "600", letterSpacing: -0.5 },
+  section: { gap: 12, padding: 16, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth },
+  sectionTitle: { fontSize: 18, fontWeight: "600" },
   subsectionTitle: { fontSize: 16, fontWeight: "600" },
   description: { fontSize: 14, lineHeight: 21 },
-  input: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 12 },
+  notice: { borderRadius: 14, padding: 12, fontSize: 14, lineHeight: 20 },
+  input: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12 },
   switchRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
   switchLabel: { flex: 1, fontSize: 15 },
-  button: { minHeight: 48, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 14 },
+  themeChoices: { flexDirection: "row", gap: 8 },
+  themeChoice: { flex: 1, justifyContent: "center", minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8 },
+  button: { minHeight: 48, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 16 },
 });

@@ -2,6 +2,7 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AuthGate } from "./AuthGate";
 import { resolveAuthState } from "./authResolver";
+import { mobileColors } from "../theme/tokens";
 
 const hooks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -167,10 +168,10 @@ describe("AuthGate rendering boundary", () => {
     hooks.useConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: false });
 
     const rejected = AuthGate({ children: React.createElement("PrivateContent") });
-    expect(rejected.props.style).toContainEqual(expect.objectContaining({ backgroundColor: "#111827" }));
+    expect(rejected.props.style).toContainEqual(expect.objectContaining({ backgroundColor: mobileColors.dark.background }));
     const rejectedTitle = findElement(rejected, "Text");
     const rejectedTitleStyle = (rejectedTitle?.props as { style?: unknown[] } | undefined)?.style;
-    expect(rejectedTitleStyle).toContainEqual(expect.objectContaining({ color: "#F9FAFB" }));
+    expect(rejectedTitleStyle).toContainEqual(expect.objectContaining({ color: mobileColors.dark.foreground }));
     hooks.useColorScheme.mockReturnValue("light");
   });
 
