@@ -45,6 +45,9 @@ describe("mobile private chat pagination and receipts", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
     expect(source).toMatch(/scrollToEnd\(\{ animated: false \}\)/);
     expect(source).toMatch(/useLayoutEffect/);
+    expect(source).toContain('import { useFocusEffect } from "expo-router"');
+    expect(source).toMatch(/useFocusEffect\(useCallback\(\(\) => \{/);
+    expect(source).not.toMatch(/useIsFocused/);
     expect(source).toMatch(/remaining <= 2/);
     expect(source).toMatch(/!unread \|\| !isAtBottomRef\.current/);
     expect(source).not.toMatch(/selectable/);
