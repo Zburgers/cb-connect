@@ -64,7 +64,7 @@ export function DateField({
             onChange={handleChange}
           />
           {Platform.OS === "ios" ? (
-            <Pressable accessibilityRole="button" onPress={() => setOpen(false)} style={styles.done}>
+            <Pressable accessibilityRole="button" onPress={() => { onChange(formatLocalDateOnly(pickerValue)); setOpen(false); }} style={styles.done}>
               <Text style={{ color: palette.accent, fontWeight: "700" }}>Done</Text>
             </Pressable>
           ) : null}
