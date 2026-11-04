@@ -14,6 +14,7 @@ const statusCopy: Record<AccessState, string> = {
   backend_pending: "Checking account access…",
   onboarding_incomplete: "Account setup is not complete yet.",
   unlinked: "An active relationship is required for this area.",
+  unlinked_primary: "You can track privately without linking a partner.",
   role_mismatch: "Account access is unavailable right now.",
   primary: "Your primary account is ready.",
   partner: "Your partner account is ready.",

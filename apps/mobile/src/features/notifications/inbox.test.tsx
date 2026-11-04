@@ -95,7 +95,7 @@ describe("mobile notification inbox contract", () => {
   });
 
   it("does not query inbox content unless the server-derived active role is available", () => {
-    expect(route).toContain('access === "primary" || access === "partner" ? <Inbox />');
+    expect(route).toContain('access === "primary" || access === "partner" || access === "unlinked_primary" ? <Inbox />');
     expect(route).toContain('accessibilityRole="alert"');
     expect(route).toContain('accessibilityRole="header"');
     expect(route).toContain("In-app notifications are unavailable right now.");
