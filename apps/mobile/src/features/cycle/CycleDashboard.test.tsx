@@ -407,6 +407,8 @@ describe("mobile cycle dashboard", () => {
     expect(screen).toContain('accessibilityRole="header"');
     expect(screen).toContain('accessibilityRole="summary"');
     expect(screen).toContain("StyleSheet.flatten([styles.quickAction");
+    expect(screen).toContain("StyleSheet.flatten([styles.secondaryAction");
+    expect(screen).not.toContain("style={[styles.secondaryAction");
     expect(screen).toContain("maxWidth: 560");
     expect(screen).toContain("useColorScheme");
     expect(screen).not.toMatch(/\bheight:\s*\d/);

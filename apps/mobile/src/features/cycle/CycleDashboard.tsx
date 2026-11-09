@@ -91,7 +91,7 @@ export function CycleDashboardView({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Open inbox"
-                style={[styles.inboxBell, { backgroundColor: palette.glass, borderColor: palette.border }]}
+                style={StyleSheet.flatten([styles.inboxBell, { backgroundColor: palette.glass, borderColor: palette.border }])}
               >
                 <Ionicons name="notifications-outline" size={23} color={palette.foreground} />
               </Pressable>
@@ -118,13 +118,13 @@ export function CycleDashboardView({
           ) : null}
           {(access === "primary" || access === "partner") ? (
             <Link href="/(app)/chat" asChild>
-              <Pressable accessibilityRole="button" accessibilityLabel="Open private chat" style={[styles.secondaryAction, { borderColor: palette.border }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open private chat" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>
                 <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Open private chat</Text>
               </Pressable>
             </Link>
           ) : access === "unlinked_primary" ? (
             <Link href="/(app)/partner" asChild>
-              <Pressable accessibilityRole="button" accessibilityLabel="Invite a partner (optional)" style={[styles.secondaryAction, { borderColor: palette.border }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Invite a partner (optional)" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>
                 <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Invite a partner (optional)</Text>
               </Pressable>
             </Link>
