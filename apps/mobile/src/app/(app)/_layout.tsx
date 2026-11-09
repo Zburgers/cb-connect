@@ -8,7 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { api } from "../../convex/api";
 import { AuthGate } from "../../auth/AuthGate";
-import { canRenderPartnerRoute, resolveAccessState } from "../../navigation/accessResolver";
+import { canRenderChatRoute, canRenderPartnerRoute, resolveAccessState } from "../../navigation/accessResolver";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
 
@@ -36,12 +36,15 @@ function GuardedRoutes() {
           <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }} />
           <Tabs.Screen name="log" options={{ title: "Log", tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }} />
         </Tabs.Protected>
+        <Tabs.Protected guard={canRenderChatRoute(access)}>
+          <Tabs.Screen name="chat" options={{ title: "Chat", tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" color={color} size={size} /> }} />
+        </Tabs.Protected>
         <Tabs.Protected guard={canRenderPartnerRoute(access)}>
           <Tabs.Screen name="partner" options={{ title: "Partner", href: access.state === "unlinked" ? null : undefined, tabBarIcon: ({ color, size }) => <Ionicons name="heart-outline" color={color} size={size} /> }} />
         </Tabs.Protected>
         <Tabs.Protected guard={access.canRenderProtectedContent}>
-          <Tabs.Screen name="notifications" options={{ title: "Inbox", tabBarIcon: ({ color, size }) => <Ionicons name="notifications-outline" color={color} size={size} /> }} />
           <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }} />
+          <Tabs.Screen name="notifications" options={{ href: null }} />
         </Tabs.Protected>
         <Tabs.Protected guard={!access.canRenderProtectedContent && access.state !== "unlinked"}>
           <Tabs.Screen name="status" options={{ href: null }} />

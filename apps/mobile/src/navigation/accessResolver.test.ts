@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessStatusRedirect, canRenderPartnerRoute, resolveAccessState, type AccessStateInputs } from "./accessResolver";
+import { accessStatusRedirect, canRenderChatRoute, canRenderPartnerRoute, resolveAccessState, type AccessStateInputs } from "./accessResolver";
 
 const ready: AccessStateInputs = {
   auth: "authenticated",
@@ -21,7 +21,7 @@ describe("resolveAccessState", () => {
     ["couple query loading", { couple: undefined }, "backend_pending"],
     ["missing user", { user: null }, "onboarding_incomplete"],
     ["role absent", { user: { role: null } }, "onboarding_incomplete"],
-    ["unlinked or revoked relationship", { couple: { isLinked: false, role: null } }, "unlinked"],
+    ["unlinked partner", { user: { role: "partner" }, couple: { isLinked: false, role: null } }, "unlinked"],
     ["missing relationship role", { couple: { isLinked: true, role: null } }, "role_mismatch"],
     ["inconsistent backend roles", { couple: { isLinked: true, role: "partner" } }, "role_mismatch"],
   ] as const)("blocks protected access for %s", (_label, patch, state) => {
@@ -38,6 +38,27 @@ describe("resolveAccessState", () => {
     });
     expect(result).toEqual({ state: role, canRenderProtectedContent: true, role });
     expect(canRenderPartnerRoute(result)).toBe(true);
+    expect(canRenderChatRoute(result)).toBe(true);
+  });
+
+  it("allows private primary Home and Log before pairing without exposing chat", () => {
+    const primary = resolveAccessState({
+      ...ready,
+      couple: { isLinked: false, role: null },
+    });
+    expect(primary).toEqual({ state: "unlinked_primary", canRenderProtectedContent: true, role: "primary" });
+    expect(canRenderPartnerRoute(primary)).toBe(true);
+    expect(canRenderChatRoute(primary)).toBe(false);
+    expect(accessStatusRedirect(primary.state)).toBeNull();
+  });
+
+  it("revocation and stale access still keep unlinked partners out of protected content", () => {
+    const partner = resolveAccessState({ ...ready, user: { role: "partner" }, couple: { isLinked: false, role: null } });
+    expect(partner.canRenderProtectedContent).toBe(false);
+    expect(canRenderChatRoute(partner)).toBe(false);
+    expect(canRenderPartnerRoute(partner)).toBe(true);
+    const disconnected = resolveAccessState({ ...ready, online: false });
+    expect(canRenderChatRoute(disconnected)).toBe(false);
   });
 
   it("routes role-incomplete accounts to onboarding and role-complete unlinked accounts to pairing", () => {

@@ -53,6 +53,15 @@ describe("mobile private chat pagination and receipts", () => {
     expect(source).not.toMatch(/selectable/);
   });
 
+  test("dedicated chat page keeps every conversation generation isolated", () => {
+    const source = readFileSync(resolve(mobileRoot, "src/app/(app)/chat.tsx"), "utf8");
+    expect(source).toContain('access === "primary" || access === "partner"');
+    expect(source).toContain('guard?.couple?.role === access');
+    expect(source).toContain('couple.role === access');
+    expect(source).toContain('key={couple.relationshipGeneration}');
+    expect(source).not.toMatch(/messages\.clear/);
+  });
+
   test("chat distinguishes private ownership and uses the active theme surfaces", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
     expect(source).toContain('message.isMine ? "You" : message.senderName');

@@ -7,7 +7,6 @@ import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
-import { CoupleChat } from "../chat/CoupleChat";
 
 type CoupleStatus = FunctionReturnType<typeof api.queries.couples.getCoupleStatus>;
 type GuardState = FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>;
@@ -225,7 +224,6 @@ function ActivePartnerView({
       )}
       <NudgeControls dark={dark} />
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      <CoupleChat relationshipGeneration={couple.relationshipGeneration} dark={dark} />
     </ScrollView>
   );
 }
