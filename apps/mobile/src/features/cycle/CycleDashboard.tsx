@@ -17,9 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../convex/api";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { HomeNudges } from "../home/HomeNudges";
+import { HomeSupport } from "../home/HomeSupport";
 import {
   getCycleDashboardPresentation,
   shouldEnsureCyclePredictionSnapshot,
+  type CycleDashboardData,
   type CycleDashboardPresentation,
 } from "./CycleDashboardModel";
 
@@ -55,14 +58,16 @@ export function CycleDashboard(): React.JSX.Element {
     );
   }
 
-  return <CycleDashboardView model={model} palette={palette} />;
+  return <CycleDashboardView model={model} data={data!} palette={palette} />;
 }
 
 export function CycleDashboardView({
   model,
+  data,
   palette,
 }: {
   model: CycleDashboardPresentation;
+  data: CycleDashboardData;
   palette: typeof mobileColors.light | typeof mobileColors.dark;
 }): React.JSX.Element {
   const textStyle = { color: palette.foreground };
@@ -102,8 +107,8 @@ export function CycleDashboardView({
             style={[styles.subtitle, { color: palette.muted }]}
           >
             {model.role === "partner"
-              ? "Shared cycle information"
-              : "Your cycle information"}
+              ? "Support signals are shown only when your partner has shared them."
+              : "Today’s rhythm, translated into support."}
           </Text>
           {model.message ? (
             <Text allowFontScaling style={{ color: palette.muted }}>
@@ -116,6 +121,15 @@ export function CycleDashboardView({
           {model.prediction ? (
             <CycleCardView card={model.prediction} palette={palette} blurTarget={blurTarget} />
           ) : null}
+          <HomeNudges dark={palette === mobileColors.dark} />
+          {access === "primary" || access === "partner" ? (
+            <Link href="/(app)/partner" asChild>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open partner connection and sharing controls" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>
+                <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Partner connection and sharing</Text>
+              </Pressable>
+            </Link>
+          ) : null}
+          <HomeSupport data={data} dark={palette === mobileColors.dark} />
           {(access === "primary" || access === "partner") ? (
             <Link href="/(app)/chat" asChild>
               <Pressable accessibilityRole="button" accessibilityLabel="Open private chat" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>

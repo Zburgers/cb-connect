@@ -11,6 +11,7 @@ import { AuthGate } from "../../auth/AuthGate";
 import { canRenderChatRoute, canRenderPartnerRoute, resolveAccessState } from "../../navigation/accessResolver";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { PresenceHeartbeat } from "../../features/home/PresenceHeartbeat";
 
 function GuardedRoutes() {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
@@ -27,6 +28,9 @@ function GuardedRoutes() {
 
   return (
     <AccessContext.Provider value={access.state}>
+      {access.state === "primary" || access.state === "partner" ? (
+        <PresenceHeartbeat />
+      ) : null}
       <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: palette.background }}>
       <BlurTargetView ref={blurTarget} style={StyleSheet.absoluteFill}>
         <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
