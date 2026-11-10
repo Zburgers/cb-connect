@@ -6,16 +6,44 @@ import type {
   PredictionV2ReasonCode,
 } from "@cb-connect/contracts";
 
+export type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
+
 export type CycleDashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
   message?: string;
+  cycleInfo?: {
+    phase: keyof typeof phaseLabels;
+    cycleDay: number;
+    daysUntilNextPeriod: number;
+    predictedNextPeriodStart: string;
+    predictedNextPeriodEnd: string;
+    phaseDescription: string;
+  } | null;
   cycleStateV1: CycleStateV1 | null;
   cycleStateV1Exposed: boolean;
   periodPredictionV2?: PrimaryPredictionV2;
   partnerPredictionV2?: PartnerPredictionV2;
   partnerPredictionV2Exposed: boolean;
   partnerPredictionV2CanEnsureSnapshot: boolean;
+  nutritionTipsPhase?: keyof typeof phaseLabels | null;
+  painData?: {
+    score: number;
+    severity: string;
+    tags?: readonly PainTag[];
+    note?: string;
+  } | null;
+  painTip?: {
+    _id: string;
+    title: string;
+    suggestions: readonly string[];
+    safetyNote: string;
+  } | null;
+  nutritionTips?: readonly {
+    _id: string;
+    foodItem: string;
+    reasoning: string;
+  }[];
 };
 
 export type CycleCard = {
@@ -275,10 +303,32 @@ export function getCycleDashboardPresentation(
 ): CycleDashboardPresentation | null {
   if (!data || !capabilities) return null;
   const role = data.isPartnerView ? "partner" : "primary";
-  const state =
+  const exposedCycleState =
     capabilities.cycleStateV1 && data.cycleStateV1Exposed && data.cycleStateV1
       ? cycleStateCard(data.cycleStateV1)
       : null;
+  // The dashboard query returns legacy cycleInfo to a partner only when phase
+  // sharing permits it and neither newer partner projection is exposed.
+  const canUseLegacyCycleInfo =
+    !data.isPartnerView ||
+    (!data.cycleStateV1Exposed && !data.partnerPredictionV2Exposed);
+  const legacyCycleState = canUseLegacyCycleInfo && data.cycleInfo
+    ? {
+        status: `${phaseLabels[data.cycleInfo.phase]} phase`,
+        title: `${phaseLabels[data.cycleInfo.phase]} · cycle day ${data.cycleInfo.cycleDay}`,
+        details: [
+          data.cycleInfo.phaseDescription,
+          `${data.cycleInfo.daysUntilNextPeriod} days until the next period`,
+          ...(formatCycleCalendarDate(data.cycleInfo.predictedNextPeriodStart)
+            ? [`Expected start: ${formatCycleCalendarDate(data.cycleInfo.predictedNextPeriodStart)}`]
+            : []),
+        ],
+        ...(data.cycleInfo.phase === "ovulation"
+          ? { disclaimer: "Calendar timing is an estimate and does not confirm ovulation." }
+          : {}),
+      }
+    : null;
+  const state = exposedCycleState ?? legacyCycleState;
   const prediction =
     role === "primary"
       ? capabilities.periodPredictionV2 && data.periodPredictionV2
@@ -294,7 +344,9 @@ export function getCycleDashboardPresentation(
     message:
       state || prediction
         ? ""
-        : (data.message ?? "Cycle details are not available yet."),
+        : (data.message ?? (role === "partner"
+            ? "Cycle timing is not shared right now."
+            : "Cycle details are not available yet.")),
     state,
     prediction,
   };

@@ -59,6 +59,7 @@ const mobilePublicRefs = {
   "mutations.presence.heartbeat": mobile.mutations.presence.heartbeat,
   "mutations.presence.goOffline": mobile.mutations.presence.goOffline,
   "mutations.painLog.createOrUpdatePainLog": mobile.mutations.painLog.createOrUpdatePainLog,
+  "mutations.misc.hideNutritionTip": mobile.mutations.misc.hideNutritionTip,
 } as const;
 
 const serverPublicRefs = {
@@ -106,6 +107,7 @@ const serverPublicRefs = {
   "mutations.presence.heartbeat": server.mutations.presence.heartbeat,
   "mutations.presence.goOffline": server.mutations.presence.goOffline,
   "mutations.painLog.createOrUpdatePainLog": server.mutations.painLog.createOrUpdatePainLog,
+  "mutations.misc.hideNutritionTip": server.mutations.misc.hideNutritionTip,
 } as const;
 
 type MobileRefs = typeof mobilePublicRefs;

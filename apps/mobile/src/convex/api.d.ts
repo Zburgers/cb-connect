@@ -285,5 +285,10 @@ export declare const api: {
         timeZone?: string;
       }, { logId: string; created: boolean }>;
     };
+    readonly misc: {
+      readonly hideNutritionTip: FunctionReference<"mutation", "public", {
+        nutritionTipId: GenericId<"nutritionTips">;
+      }, null>;
+    };
   };
 };
