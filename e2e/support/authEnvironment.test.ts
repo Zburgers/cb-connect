@@ -103,8 +103,8 @@ describe("approved authenticated fixture environment", () => {
 
     expect(primary.split("@")[0]?.length).toBeLessThanOrEqual(64);
     expect(partner.split("@")[0]?.length).toBeLessThanOrEqual(64);
-    expect(primary).toMatch(/^cb-connect-e2e\+.+-primary@example\.com$/);
-    expect(partner).toMatch(/^cb-connect-e2e\+.+-partner@example\.com$/);
+    expect(primary).toMatch(/^cb-connect-e2e\+.+-primary\+clerk_test@example\.com$/);
+    expect(partner).toMatch(/^cb-connect-e2e\+.+-partner\+clerk_test@example\.com$/);
     expect(primary).not.toBe(partner);
     expect(fixtureEmail(runId, "primary")).toBe(primary);
   });

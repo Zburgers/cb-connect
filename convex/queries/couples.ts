@@ -68,6 +68,9 @@ export const getCoupleStatus = query({
       status: couple.status,
       role: membership.role,
       linkedAt: couple.linkedAt ?? null,
+      relationshipGeneration: partnerMembership
+        ? String(membership.role === "partner" ? membership._id : partnerMembership._id)
+        : null,
       connectedSinceDate: couple.connectedSinceDate ?? null,
       anniversary: getAnniversaryMoment(couple.connectedSinceDate ?? null),
       sharingSettings: {

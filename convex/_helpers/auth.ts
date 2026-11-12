@@ -6,15 +6,24 @@ const SYNTHETIC_CLERK_ISSUER = "https://holy-clam-29.clerk.accounts.dev";
 const CONVEX_TEST_ISSUER = "https://convex.test";
 const APPROVED_TEST_DEPLOYMENT = "dev:hallowed-hummingbird-284";
 
+function isConfiguredIssuer(issuer: string): boolean {
+  return process.env.CLERK_FRONTEND_API_URL
+    ?.split(",")
+    .some((domain) => domain.trim() === issuer) ?? false;
+}
+
 export function getLegacyClerkSubject(
   identity: Awaited<ReturnType<QueryCtx["auth"]["getUserIdentity"]>>,
 ): string | null {
   if (!identity) return null;
-  if (identity.issuer === LEGACY_CLERK_ISSUER) return identity.subject;
+  if (identity.issuer === LEGACY_CLERK_ISSUER && isConfiguredIssuer(identity.issuer)) {
+    return identity.subject;
+  }
 
   // Synthetic Clerk identities are trusted only on the fixture-cleanup deployment.
   if (
     identity.issuer === SYNTHETIC_CLERK_ISSUER &&
+    isConfiguredIssuer(identity.issuer) &&
     process.env.CB_CONNECT_BACKEND_DEPLOYMENT === APPROVED_TEST_DEPLOYMENT &&
     process.env.CB_CONNECT_FIXTURE_CLEANUP_ENABLED === "true"
   ) {

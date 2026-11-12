@@ -7,7 +7,10 @@ import {
   getPainSeverityBucket,
   type CycleInfo,
 } from "../_helpers/cycleCalculations";
-import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
+import {
+  nextCalendarDayBoundary,
+  toCalendarDateInTimeZone,
+} from "../_helpers/calendarDates";
 import { buildCycleReadModel } from "../_helpers/cycleReadModel";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { isHistoryVisible } from "../_helpers/cycleFactEligibility";
@@ -38,6 +41,8 @@ const MAX_CYCLE_FACT_ROWS = 100;
 type DashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
+  calendarDate?: string;
+  nextCalendarDayAt?: number;
   message?: string;
   cycleInfo?: CycleInfo | null;
   nutritionTipsPhase: CycleInfo["phase"] | null;
@@ -46,6 +51,7 @@ type DashboardData = {
   periodPredictionV2?: PeriodPredictionV2;
   partnerPredictionV2?: PartnerPredictionV2Projection;
   partnerPredictionV2Exposed: boolean;
+  partnerPredictionV2CanEnsureSnapshot: boolean;
   painData?: {
     score: number;
     severity: ReturnType<typeof getPainSeverityBucket>;
@@ -85,6 +91,7 @@ export const getDashboardData = query({
         cycleStateV1: null,
         cycleStateV1Exposed: false,
         partnerPredictionV2Exposed: false,
+        partnerPredictionV2CanEnsureSnapshot: false,
         painData: null,
         painTip: null,
         nutritionTips: [],
@@ -108,6 +115,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
 
@@ -129,6 +137,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
 
@@ -143,6 +152,7 @@ export const getDashboardData = query({
           cycleStateV1: null,
           cycleStateV1Exposed: false,
           partnerPredictionV2Exposed: false,
+          partnerPredictionV2CanEnsureSnapshot: false,
         };
       }
       targetUser = primaryUser;
@@ -187,6 +197,10 @@ export const getDashboardData = query({
 
     const today =
       args.todayDate ?? toCalendarDateInTimeZone(new Date(), targetUser.timeZone);
+    const dateContext = {
+      calendarDate: today,
+      nextCalendarDayAt: nextCalendarDayBoundary(new Date(), targetUser.timeZone),
+    };
     const predictionData = predictionV2EnabledForTarget
       ? await readCyclePredictionData(ctx, targetUserId, targetUser)
       : null;
@@ -281,28 +295,36 @@ export const getDashboardData = query({
       isPartnerView && partnerPredictionV2Exposed;
     const predictionFields = {
       partnerPredictionV2Exposed,
+      partnerPredictionV2CanEnsureSnapshot: partnerPredictionV2Enabled,
       ...(partnerPredictionV2 ? { partnerPredictionV2 } : {}),
       ...(!isPartnerView && periodPredictionV2 ? { periodPredictionV2 } : {}),
     };
 
-    let separatelySharedPainData: DashboardData["painData"] = null;
-    if (isPartnerView && !canViewPhase && primaryMembership?.sharingPain) {
-      const todayPainLog = await ctx.db
+    // Pain consent is independent of cycle visibility and period history. Read
+    // the consented, account-local pain signal before the no-period early
+    // return so a partner can still see it when phase sharing is enabled.
+    const separatelySharedPainLog =
+      isPartnerView &&
+      partnerCoupleStatus === "active" &&
+      primaryMembership?.sharingPain
+        ? await ctx.db
         .query("painLogs")
         .withIndex("by_user_and_date", (q) =>
           q.eq("userId", targetUserId).eq("date", today)
         )
-        .unique();
-      separatelySharedPainData = todayPainLog
+        .unique()
+        : null;
+    const separatelySharedPainData: DashboardData["painData"] =
+      separatelySharedPainLog
         ? {
-            score: todayPainLog.painScore,
-            severity: getPainSeverityBucket(todayPainLog.painScore),
+            score: separatelySharedPainLog.painScore,
+            severity: getPainSeverityBucket(separatelySharedPainLog.painScore),
           }
         : null;
-    }
 
     if (!recentPeriod) {
       return {
+        ...dateContext,
         hasData: separatelySharedPainData !== null,
         isPartnerView,
         message:
@@ -340,12 +362,14 @@ export const getDashboardData = query({
         : readModel?.cycleStateV1.phase ?? cycleInfo?.phase ?? null;
 
     // Get today's pain log
-    const todayPainLog = await ctx.db
-      .query("painLogs")
-      .withIndex("by_user_and_date", (q) =>
-        q.eq("userId", targetUserId).eq("date", today)
-      )
-      .unique();
+    const todayPainLog = isPartnerView
+      ? separatelySharedPainLog
+      : await ctx.db
+          .query("painLogs")
+          .withIndex("by_user_and_date", (q) =>
+            q.eq("userId", targetUserId).eq("date", today)
+          )
+          .unique();
 
     // Check sharing permissions if partner view
     let painData = null;
@@ -359,6 +383,7 @@ export const getDashboardData = query({
       // Phase sharing check
       if (!canViewPhase) {
         return {
+          ...dateContext,
           hasData: true,
           isPartnerView,
           cycleInfo: null,
@@ -384,6 +409,7 @@ export const getDashboardData = query({
 
     if (!tipPhase) {
       return {
+        ...dateContext,
         hasData: true,
         isPartnerView,
         cycleInfo: null,
@@ -441,6 +467,7 @@ export const getDashboardData = query({
     const nutritionTips = shuffled.slice(0, 3);
 
     return {
+      ...dateContext,
       hasData: true,
       isPartnerView,
       cycleInfo: partnerV1View || partnerPredictionView ? null : cycleInfo,

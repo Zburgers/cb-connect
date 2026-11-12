@@ -328,6 +328,14 @@ describe("dashboard cycle state read model", () => {
       }
     });
 
+    const missingSnapshot = await asPartner.query(
+      api.queries.dashboard.getDashboardData,
+      { todayDate: "2026-08-25" },
+    );
+    expect(missingSnapshot.partnerPredictionV2CanEnsureSnapshot).toBe(true);
+    expect(missingSnapshot.partnerPredictionV2Exposed).toBe(false);
+    expect(missingSnapshot).not.toHaveProperty("partnerPredictionV2");
+
     expect(
       await asPartner.mutation(
         api.mutations.predictionSnapshots.ensureForViewer,
@@ -340,6 +348,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(true);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(true);
     expect(result.partnerPredictionV2).toMatchObject({
       version: 2,
       status: "estimated",
@@ -397,6 +406,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");
     expect(result.cycleStateV1).toMatchObject({
@@ -493,6 +503,7 @@ describe("dashboard cycle state read model", () => {
     });
 
     expect(result.partnerPredictionV2Exposed).toBe(false);
+    expect(result.partnerPredictionV2CanEnsureSnapshot).toBe(false);
     expect(result.hasData).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");
@@ -547,11 +558,81 @@ describe("dashboard cycle state read model", () => {
     expect(result.painData).toMatchObject({ score: 4 });
     expect(result.painData).not.toHaveProperty("tags");
     expect(result.painData).not.toHaveProperty("note");
+    expect(result.calendarDate).toBe("2026-08-25");
+    expect(result.nextCalendarDayAt).toEqual(expect.any(Number));
+    expect(result).not.toHaveProperty("timeZone");
     expect(result.cycleInfo).toBeNull();
     expect(result.cycleStateV1).toBeNull();
     expect(result.partnerPredictionV2Exposed).toBe(false);
     expect(result).not.toHaveProperty("partnerPredictionV2");
     expect(result).not.toHaveProperty("periodPredictionV2");
+  });
+
+  test("shares pain without period history when phase sharing is on, and hides it after revocation", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_STATE_V1", "true");
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
+    vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, coupleId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+    });
+
+    await t.run(async (ctx) => {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary")
+        )
+        .first();
+      expect(primaryMembership).not.toBeNull();
+      await ctx.db.patch(primaryMembership!._id, { sharingPain: true });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-08-25",
+        painScore: 6,
+        tags: ["cramps"],
+        note: "private note",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const sharedResult = await asPartner.query(
+      api.queries.dashboard.getDashboardData,
+      { todayDate: "2026-08-25" },
+    );
+
+    expect(sharedResult.message).toBe(
+      "No period data yet. Log your last period to get started.",
+    );
+    expect(sharedResult.hasData).toBe(true);
+    expect(sharedResult.painData).toMatchObject({ score: 6 });
+    expect(sharedResult.painData).not.toHaveProperty("tags");
+    expect(sharedResult.painData).not.toHaveProperty("note");
+    expect(sharedResult.cycleInfo).toBeNull();
+    expect(sharedResult.cycleStateV1).toMatchObject({
+      status: "insufficient_data",
+      phase: null,
+    });
+
+    await t.run(async (ctx) => {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary")
+        )
+        .first();
+      expect(primaryMembership).not.toBeNull();
+      await ctx.db.patch(primaryMembership!._id, { sharingPain: false });
+    });
+
+    const revokedResult = await asPartner.query(
+      api.queries.dashboard.getDashboardData,
+      { todayDate: "2026-08-25" },
+    );
+
+    expect(revokedResult.hasData).toBe(false);
+    expect(revokedResult.painData).toBeNull();
   });
 
   test("returns an unavailable V2 contract when the primary has no eligible start", async () => {
