@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import {
   Pressable,
   ScrollView,
@@ -13,11 +13,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { mobileColors } from "../../theme/tokens";
 import { api } from "../../convex/api";
+import { DateField } from "../logging/DateField";
 import {
+  DEFAULT_CYCLE_LENGTH,
+  DEFAULT_PERIOD_LENGTH,
+  getCertaintyChoiceStyle,
+  getCycleSetupFailureMessage,
+  getDeviceDate,
   getDeviceTimeZone,
+  hasInitialPeriod,
   isMobileRole,
+  MAX_CYCLE_LENGTH,
+  MAX_PERIOD_LENGTH,
+  MIN_CYCLE_LENGTH,
+  MIN_PERIOD_LENGTH,
+  saveInitialCycleSetup,
   saveOnboardingRole,
   type MobileRole,
+  type PeriodCertainty,
 } from "./onboardingModel";
 
 export function OnboardingScreen({
@@ -27,19 +40,53 @@ export function OnboardingScreen({
 }): React.JSX.Element {
   const router = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
+  const online = useConvexConnectionState().isWebSocketConnected;
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
-  const ensureUser = useMutation(api.mutations.users.ensureUser);
-  const updateRole = useMutation(api.mutations.users.updateUserRole);
-  const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
-  const palette =
-    useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const [saving, setSaving] = useState(false);
   const [confirmedRole, setConfirmedRole] = useState<MobileRole | null>(null);
   const [failed, setFailed] = useState(false);
-
-  const loading = isLoading || !isAuthenticated || me === undefined;
+  const [startDate, setStartDate] = useState("");
+  const [certainty, setCertainty] = useState<PeriodCertainty>("exact");
+  const [cycleLength, setCycleLength] = useState(DEFAULT_CYCLE_LENGTH);
+  const [periodLength, setPeriodLength] = useState(DEFAULT_PERIOD_LENGTH);
+  const [setupSaved, setSetupSaved] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsInitialized, setSettingsInitialized] = useState(false);
   const existingRole = me && isMobileRole(me.role) ? me.role : null;
   const complete = confirmedRole ?? existingRole;
+  const periodHistory = useQuery(
+    api.queries.history.getPeriodHistory,
+    isAuthenticated && complete === "primary" ? {} : "skip",
+  );
+  const existingCycleSettings = useQuery(
+    api.queries.history.getCycleSettings,
+    isAuthenticated && complete === "primary" ? {} : "skip",
+  );
+  const ensureUser = useMutation(api.mutations.users.ensureUser);
+  const updateRole = useMutation(api.mutations.users.updateUserRole);
+  const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
+  const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
+  const updateCycleSettings = useMutation(api.mutations.periods.updateCycleSettings);
+  const palette =
+    useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+
+  const loading =
+    isLoading ||
+    !isAuthenticated ||
+    me === undefined ||
+    (complete === "primary" &&
+      (periodHistory === undefined || existingCycleSettings === undefined));
+  const periodIsSaved = setupSaved || hasInitialPeriod(periodHistory);
+  const deviceTimeZone = getDeviceTimeZone();
+
+  useEffect(() => {
+    if (settingsInitialized || existingCycleSettings === undefined) return;
+    setCycleLength(existingCycleSettings.cycleLength);
+    setPeriodLength(existingCycleSettings.periodLength);
+    setSettingsInitialized(true);
+  }, [existingCycleSettings, settingsInitialized]);
 
   const chooseRole = async (role: MobileRole) => {
     setFailed(false);
@@ -48,12 +95,39 @@ export function OnboardingScreen({
       const savedRole = await saveOnboardingRole({
         role,
         currentRole: existingRole ?? me?.role,
-        timeZone: getDeviceTimeZone(),
+        timeZone: deviceTimeZone,
         ensureUser: () => ensureUser({}),
         updateRole: (args) => updateRole(args),
         updateTimeZone: (args) => updateTimeZone(args),
       });
       setConfirmedRole(savedRole);
+    } catch {
+      setFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveCycleSetup = async () => {
+    setFailed(false);
+    setSettingsSaved(false);
+    setSaving(true);
+    try {
+      await saveInitialCycleSetup({
+        startDate,
+        startCertainty: certainty,
+        cycleLength,
+        periodLength,
+        timeZone: deviceTimeZone,
+        existingPeriods: [
+          ...(periodHistory ?? []),
+        ],
+        isOnline: () => onlineRef.current,
+        logPeriodStart: (args) => logPeriodStart(args),
+        updateCycleSettings: (args) => updateCycleSettings(args),
+        onSettingsSaved: () => setSettingsSaved(true),
+      });
+      setSetupSaved(true);
     } catch {
       setFailed(true);
     } finally {
@@ -90,7 +164,7 @@ export function OnboardingScreen({
             >
               Checking your account…
             </Text>
-          ) : complete ? (
+          ) : complete === "partner" || (complete === "primary" && periodIsSaved) ? (
             <>
               <Text allowFontScaling style={[styles.body, textStyle]}>
                 Your {complete} role is saved.
@@ -109,6 +183,71 @@ export function OnboardingScreen({
               >
                 <Text allowFontScaling style={[styles.buttonText, textStyle]}>
                   Continue
+                </Text>
+              </Pressable>
+            </>
+          ) : complete === "primary" ? (
+            <>
+              <Text allowFontScaling style={[styles.body, { color: palette.muted }]}>
+                Let’s set up your cycle tracking.
+              </Text>
+              {!online ? (
+                <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
+                  Offline. Reconnect before saving your cycle setup.
+                </Text>
+              ) : null}
+              {failed ? (
+                <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
+                  {getCycleSetupFailureMessage(settingsSaved, online)}
+                </Text>
+              ) : null}
+              <DateField
+                label="When did your last period start?"
+                value={startDate}
+                onChange={setStartDate}
+                palette={palette}
+                maximumDate={deviceTimeZone ? getDeviceDate(deviceTimeZone) : undefined}
+                placeholder="Choose start date"
+                disabled={saving}
+              />
+              <Text allowFontScaling style={[styles.body, textStyle]}>How certain are you about that date?</Text>
+              <View style={styles.row}>
+                {(["exact", "approximate"] as const).map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${value === "exact" ? "Exact" : "Approximate"} start date`}
+                    accessibilityState={{ selected: certainty === value, disabled: saving }}
+                    disabled={saving}
+                    onPress={() => setCertainty(value)}
+                    style={[styles.choice, getCertaintyChoiceStyle(certainty === value, palette)]}
+                  >
+                    <Text allowFontScaling style={[styles.buttonText, textStyle]}>
+                      {value === "exact" ? "Exact date" : "Approximate date"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text allowFontScaling style={[styles.body, textStyle]}>Average cycle length: {cycleLength} days</Text>
+              <View style={styles.row}>
+                <LengthButton label="Decrease cycle length" value={cycleLength} minimum={MIN_CYCLE_LENGTH} disabled={saving} palette={palette} onChange={setCycleLength} delta={-1} />
+                <LengthButton label="Increase cycle length" value={cycleLength} maximum={MAX_CYCLE_LENGTH} disabled={saving} palette={palette} onChange={setCycleLength} delta={1} />
+              </View>
+              <Text allowFontScaling style={[styles.body, textStyle]}>Average period length: {periodLength} days</Text>
+              <View style={styles.row}>
+                <LengthButton label="Decrease period length" value={periodLength} minimum={MIN_PERIOD_LENGTH} disabled={saving} palette={palette} onChange={setPeriodLength} delta={-1} />
+                <LengthButton label="Increase period length" value={periodLength} maximum={MAX_PERIOD_LENGTH} disabled={saving} palette={palette} onChange={setPeriodLength} delta={1} />
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Start tracking"
+                accessibilityState={{ disabled: saving || !startDate || !online }}
+                disabled={saving || !startDate || !online}
+                onPress={() => void saveCycleSetup()}
+                style={[styles.button, { backgroundColor: palette.glass, borderColor: palette.border }]}
+              >
+                <Text allowFontScaling style={[styles.buttonText, textStyle]}>
+                  {saving ? "Saving…" : "Start Tracking"}
                 </Text>
               </Pressable>
             </>
@@ -171,6 +310,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   screen: { flexGrow: 1, justifyContent: "center", padding: 20 },
   content: { width: "100%", maxWidth: 480, alignSelf: "center", gap: 16 },
+  row: { flexDirection: "row", gap: 12 },
+  choice: { minHeight: 52, flex: 1, justifyContent: "center", alignItems: "center", padding: 12, borderWidth: 1, borderRadius: 16 },
   title: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
   body: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
   button: {
@@ -190,3 +331,40 @@ const styles = StyleSheet.create({
   },
   error: { fontSize: 15, lineHeight: 22 },
 });
+
+function LengthButton({
+  label,
+  value,
+  minimum,
+  maximum,
+  delta,
+  disabled,
+  palette,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  minimum?: number;
+  maximum?: number;
+  delta: -1 | 1;
+  disabled: boolean;
+  palette: typeof mobileColors.light | typeof mobileColors.dark;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  const next = value + delta;
+  const atLimit = (minimum !== undefined && next < minimum) || (maximum !== undefined && next > maximum);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || atLimit }}
+      disabled={disabled || atLimit}
+      onPress={() => onChange(next)}
+      style={[styles.choice, { backgroundColor: palette.glass, borderColor: palette.border }]}
+    >
+      <Text allowFontScaling style={[styles.buttonText, { color: palette.foreground }]}>
+        {delta < 0 ? "−" : "+"} 1 day
+      </Text>
+    </Pressable>
+  );
+}

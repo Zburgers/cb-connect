@@ -1,14 +1,14 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { useConvexConnectionState, useQuery } from "convex/react";
 import { useRef } from "react";
-import { StyleSheet, useColorScheme, View } from "react-native";
+import { ActivityIndicator, StyleSheet, useColorScheme, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BlurTargetView, BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { api } from "../../convex/api";
 import { AuthGate } from "../../auth/AuthGate";
-import { canRenderChatRoute, canRenderPartnerRoute, resolveAccessState } from "../../navigation/accessResolver";
+import { canRenderChatRoute, canRenderPartnerRoute, resolveAccessState, resolvePrimaryCycleSetupRoute } from "../../navigation/accessResolver";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
 import { PresenceHeartbeat } from "../../features/home/PresenceHeartbeat";
@@ -25,6 +25,22 @@ function GuardedRoutes() {
     couple: guardState?.couple,
     backendCurrent: connection.isWebSocketConnected && guardState !== undefined,
   });
+  const periodHistory = useQuery(
+    api.queries.history.getPeriodHistory,
+    access.role === "primary" ? {} : "skip",
+  );
+  const cycleSetupRoute = resolvePrimaryCycleSetupRoute(access.role, periodHistory);
+
+  if (cycleSetupRoute === "pending") {
+    return (
+      <SafeAreaView edges={["top"]} style={{ flex: 1, justifyContent: "center", backgroundColor: palette.background }}>
+        <ActivityIndicator accessibilityLabel="Checking cycle setup" color={palette.accent} />
+      </SafeAreaView>
+    );
+  }
+  if (cycleSetupRoute === "onboarding") {
+    return <Redirect href="/onboarding" />;
+  }
 
   return (
     <AccessContext.Provider value={access.state}>
