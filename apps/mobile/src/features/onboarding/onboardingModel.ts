@@ -62,12 +62,16 @@ export async function saveInitialCycleSetup({
     throw new Error(`Period length must be between ${MIN_PERIOD_LENGTH} and ${MAX_PERIOD_LENGTH} days.`);
   }
 
+  // Save settings first so any persisted period is proof that both setup writes
+  // completed. If the period write fails, onboarding remains available and the
+  // settings query can restore the saved values on the next launch.
+  await updateCycleSettings({ cycleLength, periodLength });
+
   const alreadySaved = existingPeriods.some((period) => period.startDate === startDate);
   if (!alreadySaved) {
     await logPeriodStart({ startDate, startCertainty, timeZone });
   }
   onPeriodSaved?.(startDate);
-  await updateCycleSettings({ cycleLength, periodLength });
 }
 
 export function isMobileRole(value: unknown): value is MobileRole {
