@@ -291,21 +291,27 @@ export const getDashboardData = query({
       ...(!isPartnerView && periodPredictionV2 ? { periodPredictionV2 } : {}),
     };
 
-    let separatelySharedPainData: DashboardData["painData"] = null;
-    if (isPartnerView && !canViewPhase && primaryMembership?.sharingPain) {
-      const todayPainLog = await ctx.db
+    // Pain consent is independent of cycle visibility and period history. Read
+    // the consented, account-local pain signal before the no-period early
+    // return so a partner can still see it when phase sharing is enabled.
+    const separatelySharedPainLog =
+      isPartnerView &&
+      partnerCoupleStatus === "active" &&
+      primaryMembership?.sharingPain
+        ? await ctx.db
         .query("painLogs")
         .withIndex("by_user_and_date", (q) =>
           q.eq("userId", targetUserId).eq("date", today)
         )
-        .unique();
-      separatelySharedPainData = todayPainLog
+        .unique()
+        : null;
+    const separatelySharedPainData: DashboardData["painData"] =
+      separatelySharedPainLog
         ? {
-            score: todayPainLog.painScore,
-            severity: getPainSeverityBucket(todayPainLog.painScore),
+            score: separatelySharedPainLog.painScore,
+            severity: getPainSeverityBucket(separatelySharedPainLog.painScore),
           }
         : null;
-    }
 
     if (!recentPeriod) {
       return {
@@ -346,12 +352,14 @@ export const getDashboardData = query({
         : readModel?.cycleStateV1.phase ?? cycleInfo?.phase ?? null;
 
     // Get today's pain log
-    const todayPainLog = await ctx.db
-      .query("painLogs")
-      .withIndex("by_user_and_date", (q) =>
-        q.eq("userId", targetUserId).eq("date", today)
-      )
-      .unique();
+    const todayPainLog = isPartnerView
+      ? separatelySharedPainLog
+      : await ctx.db
+          .query("painLogs")
+          .withIndex("by_user_and_date", (q) =>
+            q.eq("userId", targetUserId).eq("date", today)
+          )
+          .unique();
 
     // Check sharing permissions if partner view
     let painData = null;
