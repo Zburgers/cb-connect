@@ -12,10 +12,20 @@ export function getCertaintyChoiceStyle(
   };
 }
 
-export function getCycleSetupFailureMessage(settingsSaved: boolean): string {
-  return settingsSaved
-    ? "Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup."
-    : "We couldn’t confirm which setup changes were saved. Check your connection and retry.";
+export function getCycleSetupFailureMessage(
+  settingsSaved: boolean,
+  online: boolean,
+): string {
+  if (settingsSaved && !online) {
+    return "Your cycle settings are saved. The period start wasn’t submitted because the app is offline. Reconnect to finish setup.";
+  }
+  if (settingsSaved) {
+    return "Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup.";
+  }
+  if (!online) {
+    return "The app is offline, so setup changes couldn’t be confirmed. Reconnect and retry.";
+  }
+  return "We couldn’t confirm which setup changes were saved. Check your connection and retry.";
 }
 
 export const DEFAULT_CYCLE_LENGTH = 28;
@@ -51,6 +61,7 @@ export async function saveInitialCycleSetup({
   existingPeriods,
   logPeriodStart,
   updateCycleSettings,
+  isOnline,
   onSettingsSaved,
 }: {
   startDate: string;
@@ -68,6 +79,7 @@ export async function saveInitialCycleSetup({
     cycleLength: number;
     periodLength: number;
   }) => Promise<unknown>;
+  isOnline: () => boolean;
   onSettingsSaved?: () => void;
 }): Promise<void> {
   if (!startDate) throw new Error("Choose when your last period started.");
@@ -78,6 +90,7 @@ export async function saveInitialCycleSetup({
   if (!Number.isInteger(periodLength) || periodLength < MIN_PERIOD_LENGTH || periodLength > MAX_PERIOD_LENGTH) {
     throw new Error(`Period length must be between ${MIN_PERIOD_LENGTH} and ${MAX_PERIOD_LENGTH} days.`);
   }
+  if (!isOnline()) throw new Error("offline");
 
   // Save settings first so any persisted period is proof that both setup writes
   // completed. If the period write fails, onboarding remains available and the
@@ -87,6 +100,7 @@ export async function saveInitialCycleSetup({
 
   const alreadySaved = existingPeriods.some((period) => period.startDate === startDate);
   if (!alreadySaved) {
+    if (!isOnline()) throw new Error("offline");
     await logPeriodStart({ startDate, startCertainty, timeZone });
   }
 }
