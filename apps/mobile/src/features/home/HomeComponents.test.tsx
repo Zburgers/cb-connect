@@ -4,12 +4,14 @@ const runtime = vi.hoisted(() => ({
   access: "primary" as string,
   connection: true,
   account: { timeZone: "UTC" } as { timeZone?: string } | null | undefined,
+  painHistory: [] as Array<{ date: string; painScore: number; tags?: readonly string[]; note?: string }>,
   presence: undefined as { isPresent: boolean; expiresAt: number } | undefined,
   latest: null as null | { _id: string; senderName: string; message: string; emoji: string },
   queries: [] as unknown[],
   mutations: [] as ReturnType<typeof vi.fn>[],
   state: [] as unknown[],
   cursor: 0,
+  formDate: "",
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -46,7 +48,7 @@ vi.mock("convex/react", () => ({
 
 import React from "react";
 import { HomeNudges } from "./HomeNudges";
-import { HomePainCheckIn } from "./HomePainCheckIn";
+import { getPainCheckInSubmission, HomePainCheckIn } from "./HomePainCheckIn";
 import { HomeSupport } from "./HomeSupport";
 
 function find(
@@ -79,6 +81,24 @@ function textContent(node: React.ReactNode): string {
     : String(child)).join("");
 }
 
+function renderFunctionComponents(node: React.ReactNode): React.ReactNode {
+  return React.Children.map(node, (child) => {
+    if (!React.isValidElement(child)) return child;
+    if (typeof child.type === "function") {
+      return renderFunctionComponents(
+        (child.type as (props: Record<string, unknown>) => React.ReactNode)(
+          child.props as Record<string, unknown>,
+        ),
+      );
+    }
+    return React.cloneElement(
+      child,
+      undefined,
+      renderFunctionComponents((child.props as { children?: React.ReactNode }).children),
+    );
+  });
+}
+
 function pressable(tree: React.ReactNode, label: string): React.ReactElement {
   const found = find(tree, (element) =>
     element.type === "Pressable" &&
@@ -88,11 +108,17 @@ function pressable(tree: React.ReactNode, label: string): React.ReactElement {
   return found;
 }
 
-function renderPain(currentPain: { score: number; tags?: readonly never[]; note?: string } | null = null) {
+function renderPain() {
   runtime.cursor = 0;
-  runtime.queries = [runtime.account];
+  const date = (runtime.state[0] as string | null) ?? new Date().toISOString().slice(0, 10);
+  if (runtime.formDate && runtime.formDate !== date) {
+    // The real form is keyed by source date; discard its old-day draft state.
+    runtime.state = runtime.state.slice(0, 2);
+  }
+  runtime.formDate = date;
+  runtime.queries = [runtime.account, runtime.painHistory];
   runtime.mutations = [savePain];
-  return HomePainCheckIn({ currentPain, dark: false });
+  return renderFunctionComponents(HomePainCheckIn({ dark: false }));
 }
 
 function renderNudges() {
@@ -111,10 +137,12 @@ describe("Home native interactions", () => {
     runtime.access = "primary";
     runtime.connection = true;
     runtime.account = { timeZone: "UTC" };
+    runtime.painHistory = [];
     runtime.presence = { isPresent: false, expiresAt: 0 };
     runtime.latest = null;
     runtime.state = [];
     runtime.cursor = 0;
+    runtime.formDate = "";
     for (const mutation of [savePain, sendNudge, markSeen]) {
       mutation.mockReset().mockResolvedValue({ success: true });
     }
@@ -155,12 +183,10 @@ describe("Home native interactions", () => {
     runtime.account = {};
     const tree = renderPain();
     expect(textContent(tree)).toContain("Account timezone is unavailable");
-    expect((pressable(tree, "Save today’s signal").props as { disabled: boolean }).disabled).toBe(true);
-    await (pressable(tree, "Save today’s signal").props as { onPress: () => void }).onPress();
     expect(savePain).not.toHaveBeenCalled();
   });
 
-  it("uses the account-local date at submission time across midnight", async () => {
+  it("requests the new date instead of submitting a draft from before midnight", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-27T23:59:59.000Z"));
     const tree = renderPain();
@@ -168,7 +194,58 @@ describe("Home native interactions", () => {
     vi.setSystemTime(new Date("2026-10-28T00:00:01.000Z"));
     save.onPress();
     await Promise.resolve();
-    expect(savePain).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-10-28", timeZone: "UTC" }));
+    expect(savePain).not.toHaveBeenCalled();
+    expect(runtime.state[0]).toBe("2026-10-28");
+  });
+
+  it("refreshes the authoritative new-day check-in before saving after midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T23:59:59.000Z"));
+    runtime.painHistory = [{
+      date: "2026-10-27",
+      painScore: 8,
+      tags: ["cramps"],
+      note: "Yesterday’s private note",
+    }];
+
+    const yesterdayForm = renderPain();
+    vi.setSystemTime(new Date("2026-10-28T00:00:01.000Z"));
+    await (pressable(yesterdayForm, "Save today’s signal").props as { onPress: () => void }).onPress();
+    expect(savePain).not.toHaveBeenCalled();
+
+    runtime.painHistory = [{
+      date: "2026-10-28",
+      painScore: 2,
+      tags: ["fatigue"],
+      note: "Today’s private note",
+    }];
+    const refreshedForm = renderPain();
+    expect(textContent(refreshedForm)).toContain("Today’s check-in is ready");
+    expect(textContent(refreshedForm)).toContain("2/10");
+    const refreshedNote = find(refreshedForm, (element) => element.type === "TextInput" &&
+      (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Pain note, optional");
+    expect(refreshedNote?.props).toMatchObject({ value: "Today’s private note" });
+
+    await (pressable(refreshedForm, "Save today’s signal").props as { onPress: () => void }).onPress();
+    await Promise.resolve();
+    expect(savePain).toHaveBeenCalledWith({
+      date: "2026-10-28",
+      timeZone: "UTC",
+      painScore: 2,
+      tags: ["fatigue"],
+      note: "Today’s private note",
+    });
+  });
+
+  it("returns refresh instead of stale values when a draft date no longer matches today", () => {
+    expect(getPainCheckInSubmission({
+      sourceDate: "2026-10-27",
+      currentDate: "2026-10-28",
+      timeZone: "UTC",
+      score: 8,
+      tags: ["cramps"],
+      note: "Yesterday’s private note",
+    })).toEqual({ kind: "refresh", date: "2026-10-28" });
   });
 
   it("keeps phase nutrition hidden with current unapproved defaults", () => {
