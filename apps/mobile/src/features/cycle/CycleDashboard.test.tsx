@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getCycleDashboardPresentation,
   formatCycleCalendarDate,
+  nextCalendarDate,
   shouldEnsureCyclePredictionSnapshot,
   type CycleDashboardData,
 } from "./CycleDashboardModel";
@@ -161,6 +162,20 @@ function dataFor(
 }
 
 describe("mobile cycle dashboard", () => {
+  it("advances only the primary account-local calendar date at rollover", () => {
+    expect(nextCalendarDate("2026-03-08")).toBe("2026-03-09");
+    expect(nextCalendarDate("2026-12-31")).toBe("2027-01-01");
+    expect(() => nextCalendarDate("2026-02-30")).toThrow("Invalid calendar date");
+  });
+
+  it("refreshes its dashboard subscription at account-local midnight and on resume", () => {
+    const source = readFileSync(new URL("./CycleDashboard.tsx", import.meta.url), "utf8");
+    expect(source).toContain("todayDate ? { todayDate } : {}");
+    expect(source).toContain("data.nextCalendarDayAt - Date.now()");
+    expect(source).toContain('AppState.addEventListener("change"');
+    expect(source).toContain("setRollover(null)");
+  });
+
   for (const role of ["primary", "partner"] as const) {
     it.each(states[role])(
       `${role} preserves the %s state semantics`,
@@ -389,6 +404,55 @@ describe("mobile cycle dashboard", () => {
     ).toBeNull();
     expect(getCycleDashboardPresentation(undefined, capabilities)).toBeNull();
     expect(getCycleDashboardPresentation(data, undefined)).toBeNull();
+  });
+
+  it("uses legacy cycle info only for primary or an authorized partner fallback", () => {
+    const legacyOnly = {
+      ...capabilities,
+      cycleStateV1: false,
+      periodPredictionV2: false,
+      partnerPredictionV2: false,
+    };
+    const cycleInfo = {
+      phase: "follicular" as const,
+      cycleDay: 8,
+      daysUntilNextPeriod: 20,
+      predictedNextPeriodStart: "2026-03-28",
+      predictedNextPeriodEnd: "2026-04-01",
+      phaseDescription: "A calendar estimate from recorded cycle facts.",
+    };
+    expect(
+      getCycleDashboardPresentation(
+        { ...dataFor("primary", states.primary[1]), cycleStateV1Exposed: false, cycleInfo },
+        legacyOnly,
+      )?.state,
+    ).toMatchObject({ status: "Follicular phase", title: "Follicular · cycle day 8" });
+
+    const partnerLegacy = getCycleDashboardPresentation(
+      {
+        ...dataFor("partner", states.partner[1]),
+        cycleStateV1Exposed: false,
+        partnerPredictionV2Exposed: false,
+        cycleInfo,
+        message: undefined,
+      },
+      legacyOnly,
+    );
+    expect(partnerLegacy?.state).toMatchObject({
+      status: "Follicular phase",
+      title: "Follicular · cycle day 8",
+    });
+
+    const partnerNewProjection = getCycleDashboardPresentation(
+      {
+        ...dataFor("partner", states.partner[1]),
+        cycleInfo,
+        message: undefined,
+      },
+      legacyOnly,
+    );
+    expect(partnerNewProjection?.state).toBeNull();
+    expect(partnerNewProjection?.message).toBe("Cycle timing is not shared right now.");
   });
 
   it("does not render invalid or DST-shifted date-only values through local time", () => {

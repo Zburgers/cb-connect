@@ -22,6 +22,8 @@ type CycleFactReadLabel = "exact" | "approximate" | "legacy_unknown";
 type CycleDashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
+  calendarDate?: string;
+  nextCalendarDayAt?: number;
   message?: string;
   cycleStateV1: CycleState | PartnerCycleProjection | null;
   cycleStateV1Exposed: boolean;
@@ -284,6 +286,11 @@ export declare const api: {
         note?: string;
         timeZone?: string;
       }, { logId: string; created: boolean }>;
+    };
+    readonly misc: {
+      readonly hideNutritionTip: FunctionReference<"mutation", "public", {
+        nutritionTipId: GenericId<"nutritionTips">;
+      }, null>;
     };
   };
 };

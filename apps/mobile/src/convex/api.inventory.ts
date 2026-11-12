@@ -43,4 +43,5 @@ export const mobilePublicApiInventory = {
   "mutations.presence.heartbeat": true,
   "mutations.presence.goOffline": true,
   "mutations.painLog.createOrUpdatePainLog": true,
+  "mutations.misc.hideNutritionTip": true,
 } as const;
