@@ -1,5 +1,10 @@
 import type { CycleDashboardData } from "../cycle/CycleDashboardModel";
 
+// Keep in lockstep with components/dashboard/cycleStateCopy.ts. The current
+// web policy is intentionally unapproved/staff-only, so native must fail closed.
+export const HOME_CYCLE_COPY_APPROVAL = "unapproved" as const;
+export const HOME_CYCLE_COPY_EXPOSURE = "staff_only" as const;
+
 export const NUDGE_OPTIONS = [
   { emoji: "💗", message: "Thinking of you" },
   { emoji: "🤗", message: "Sending a soft hug" },
@@ -21,9 +26,20 @@ export function getNudgeMessage(emoji: string): string {
 export function canSendNudge(
   access: string,
   isOnline: boolean,
-  partnerPresent: boolean,
 ): boolean {
-  return (access === "primary" || access === "partner") && isOnline && partnerPresent;
+  return (access === "primary" || access === "partner") && isOnline;
+}
+
+export function canShowCalendarNutritionTips(
+  state: CycleDashboardData["cycleStateV1"],
+  approval: "unapproved" | "approved" = HOME_CYCLE_COPY_APPROVAL,
+  exposure: "staff_only" | "ordinary_users" = HOME_CYCLE_COPY_EXPOSURE,
+): boolean {
+  return (
+    state?.status === "estimated" &&
+    approval === "approved" &&
+    exposure === "ordinary_users"
+  );
 }
 
 export function getHomeSupportPresentation(data: CycleDashboardData) {
@@ -35,7 +51,10 @@ export function getHomeSupportPresentation(data: CycleDashboardData) {
       pain: data.painData
         ? { score: data.painData.score, severity: data.painData.severity }
         : null,
-      painTip: legacySharedProjection ? data.painTip ?? null : null,
+      painTip:
+        legacySharedProjection && data.painData && data.painData.score >= 4
+          ? data.painTip ?? null
+          : null,
       nutritionTips: [],
       nutritionTipsPhase: null,
     };
@@ -53,7 +72,11 @@ export function getHomeSupportPresentation(data: CycleDashboardData) {
       : null,
     painTip:
       data.painData && data.painData.score >= 4 ? data.painTip ?? null : null,
-    nutritionTips: data.nutritionTips ?? [],
-    nutritionTipsPhase: data.nutritionTipsPhase ?? null,
+    nutritionTips: canShowCalendarNutritionTips(data.cycleStateV1)
+      ? data.nutritionTips ?? []
+      : [],
+    nutritionTipsPhase: canShowCalendarNutritionTips(data.cycleStateV1)
+      ? data.nutritionTipsPhase ?? null
+      : null,
   };
 }

@@ -66,12 +66,13 @@ export function HomePainCheckIn({
   }, [currentPain]);
 
   async function submit() {
-    if (!online || !today || !isValidTimeZone(timeZone) || busy) return;
+    if (!online || !isValidTimeZone(timeZone) || busy) return;
+    const date = localDate(new Date(), timeZone);
     setBusy(true);
     setSaved(false);
     setError(null);
     try {
-      await savePain({ date: today, timeZone, painScore: score, tags, ...(note ? { note } : {}) });
+      await savePain({ date, timeZone, painScore: score, tags, ...(note ? { note } : {}) });
       setSaved(true);
     } catch {
       setError("Could not save this check-in. Check your connection and try again.");
@@ -198,7 +199,11 @@ export function HomePainCheckIn({
       <Text style={[styles.counter, { color: palette.muted }]}>{note.length}/140</Text>
       {!online || account === undefined || !today ? (
         <Text style={{ color: palette.muted }}>
-          {!online ? "Offline. Nothing can be saved until your connection returns." : "Checking your account timezone…"}
+          {!online
+            ? "Offline. Nothing can be saved until your connection returns."
+            : account === undefined
+              ? "Checking your account timezone…"
+              : "Account timezone is unavailable. Add it in Settings before saving."}
         </Text>
       ) : null}
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
