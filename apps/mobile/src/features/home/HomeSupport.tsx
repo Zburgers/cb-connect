@@ -65,7 +65,7 @@ export function HomeSupport({
 
   return (
     <View style={styles.stack}>
-      <HomePainCheckIn currentPain={support.pain} dark={dark} />
+      <HomePainCheckIn dark={dark} />
 
       {support.painTip ? (
         <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>

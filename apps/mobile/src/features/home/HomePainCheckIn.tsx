@@ -28,6 +28,47 @@ type CurrentPain = {
   note?: string;
 } | null;
 
+type PainHistoryRow = {
+  date: string;
+  painScore: number;
+  tags?: readonly PainTag[];
+  note?: string;
+};
+
+export function getPainCheckInSubmission(input: {
+  sourceDate: string;
+  currentDate: string;
+  timeZone: string;
+  score: number;
+  tags: readonly PainTag[];
+  note: string;
+}):
+  | { kind: "refresh"; date: string }
+  | {
+      kind: "save";
+      args: {
+        date: string;
+        timeZone: string;
+        painScore: number;
+        tags: PainTag[];
+        note?: string;
+      };
+    } {
+  if (input.sourceDate !== input.currentDate) {
+    return { kind: "refresh", date: input.currentDate };
+  }
+  return {
+    kind: "save",
+    args: {
+      date: input.currentDate,
+      timeZone: input.timeZone,
+      painScore: input.score,
+      tags: [...input.tags],
+      ...(input.note ? { note: input.note } : {}),
+    },
+  };
+}
+
 function feelingLabel(score: number): string {
   if (score <= 1) return "Clear";
   if (score <= 4) return "Tender";
@@ -36,15 +77,90 @@ function feelingLabel(score: number): string {
 }
 
 export function HomePainCheckIn({
-  currentPain,
   dark,
 }: {
-  currentPain: CurrentPain;
   dark: boolean;
 }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
   const online = useConvexConnectionState().isWebSocketConnected;
   const account = useQuery(api.queries.users.getMe, online ? {} : "skip");
+  const [draftDate, setDraftDate] = useState<string | null>(null);
+  const [dateChanged, setDateChanged] = useState(false);
+  const timeZone = account?.timeZone;
+  const today = isValidTimeZone(timeZone) ? localDate(new Date(), timeZone) : null;
+  const sourceDate = draftDate ?? today;
+  const painHistory = useQuery(
+    api.queries.history.getPainHistory,
+    online && sourceDate && isValidTimeZone(timeZone)
+      ? { startDate: sourceDate, endDate: sourceDate }
+      : "skip",
+  ) as readonly PainHistoryRow[] | undefined;
+  const record = painHistory?.find((row) => row.date === sourceDate);
+
+  if (!online) {
+    return (
+      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text style={{ color: palette.muted }}>Offline. Nothing can be saved until your connection returns.</Text>
+      </View>
+    );
+  }
+  if (account === undefined) {
+    return (
+      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text style={{ color: palette.muted }}>Checking your account timezone…</Text>
+      </View>
+    );
+  }
+  if (!isValidTimeZone(timeZone)) {
+    return (
+      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text style={{ color: palette.muted }}>Account timezone is unavailable. Add it in Settings before saving.</Text>
+      </View>
+    );
+  }
+  if (!sourceDate || painHistory === undefined) {
+    return (
+      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text style={{ color: palette.muted }}>Loading today’s check-in…</Text>
+      </View>
+    );
+  }
+
+  return (
+    <PainCheckInForm
+      key={sourceDate}
+      currentPain={record ? { score: record.painScore, tags: record.tags, note: record.note } : null}
+      dark={dark}
+      online={online}
+      timeZone={timeZone}
+      sourceDate={sourceDate}
+      dateChanged={dateChanged}
+      onDateRollover={(date) => {
+        setDraftDate(date);
+        setDateChanged(true);
+      }}
+    />
+  );
+}
+
+function PainCheckInForm({
+  currentPain,
+  dark,
+  online,
+  timeZone,
+  sourceDate,
+  dateChanged,
+  onDateRollover,
+}: {
+  currentPain: CurrentPain;
+  dark: boolean;
+  online: boolean;
+  timeZone: string;
+  sourceDate: string;
+  dateChanged: boolean;
+  onDateRollover: (date: string) => void;
+}): React.JSX.Element {
+  const palette = dark ? mobileColors.dark : mobileColors.light;
   const savePain = useMutation(api.mutations.painLog.createOrUpdatePainLog);
   const [score, setScore] = useState(currentPain?.score ?? 0);
   const [tags, setTags] = useState<PainTag[]>([
@@ -54,11 +170,6 @@ export function HomePainCheckIn({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timeZone = account?.timeZone;
-  const today = isValidTimeZone(timeZone)
-    ? localDate(new Date(), timeZone)
-    : null;
-
   useEffect(() => {
     setScore(currentPain?.score ?? 0);
     setTags([...(currentPain?.tags ?? [])]);
@@ -68,11 +179,25 @@ export function HomePainCheckIn({
   async function submit() {
     if (!online || !isValidTimeZone(timeZone) || busy) return;
     const date = localDate(new Date(), timeZone);
+    const submission = getPainCheckInSubmission({
+      sourceDate,
+      currentDate: date,
+      timeZone,
+      score,
+      tags,
+      note,
+    });
+    if (submission.kind === "refresh") {
+      setSaved(false);
+      setError(null);
+      onDateRollover(submission.date);
+      return;
+    }
     setBusy(true);
     setSaved(false);
     setError(null);
     try {
-      await savePain({ date, timeZone, painScore: score, tags, ...(note ? { note } : {}) });
+      await savePain(submission.args);
       setSaved(true);
     } catch {
       setError("Could not save this check-in. Check your connection and try again.");
@@ -197,13 +322,14 @@ export function HomePainCheckIn({
         value={note}
       />
       <Text style={[styles.counter, { color: palette.muted }]}>{note.length}/140</Text>
-      {!online || account === undefined || !today ? (
+      {!online ? (
         <Text style={{ color: palette.muted }}>
-          {!online
-            ? "Offline. Nothing can be saved until your connection returns."
-            : account === undefined
-              ? "Checking your account timezone…"
-              : "Account timezone is unavailable. Add it in Settings before saving."}
+          Offline. Nothing can be saved until your connection returns.
+        </Text>
+      ) : null}
+      {dateChanged ? (
+        <Text accessibilityLiveRegion="polite" style={{ color: palette.foreground }}>
+          The date changed. Today’s check-in is ready. Review it before saving.
         </Text>
       ) : null}
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
@@ -211,10 +337,10 @@ export function HomePainCheckIn({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={busy ? "Saving check-in" : "Save today’s signal"}
-        accessibilityState={{ disabled: busy || !online || !today }}
-        disabled={busy || !online || !today}
+        accessibilityState={{ disabled: busy || !online }}
+        disabled={busy || !online}
         onPress={() => void submit()}
-        style={[styles.save, { backgroundColor: palette.foreground, opacity: busy || !online || !today ? 0.55 : 1 }]}
+        style={[styles.save, { backgroundColor: palette.foreground, opacity: busy || !online ? 0.55 : 1 }]}
       >
         <Text style={{ color: palette.background, fontWeight: "700" }}>
           {busy ? "Saving…" : saved ? "Check-in saved" : "Save today’s signal"}
