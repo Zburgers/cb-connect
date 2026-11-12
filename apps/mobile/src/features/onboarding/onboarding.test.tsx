@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
+  getDeviceDate,
   getDeviceTimeZone,
+  hasInitialPeriod,
   isMobileRole,
+  saveInitialCycleSetup,
   saveOnboardingRole,
 } from "./onboardingModel";
 
@@ -120,5 +123,103 @@ describe("mobile onboarding role setup", () => {
     expect(screen).toContain('accessibilityRole="alert"');
     expect(screen).not.toMatch(/\bheight:\s*\d/);
     expect(route).toContain("<AuthGate>");
+  });
+});
+
+describe("mobile initial cycle setup", () => {
+  const base = {
+    startDate: "2026-11-10",
+    startCertainty: "approximate" as const,
+    cycleLength: 28,
+    periodLength: 5,
+    timeZone: "Asia/Kolkata",
+    existingPeriods: [] as { startDate: string; certainty?: string }[],
+  };
+
+  it("routes an existing primary period to completion and a period-free primary to setup", () => {
+    expect(hasInitialPeriod(undefined)).toBe(false);
+    expect(hasInitialPeriod([])).toBe(false);
+    expect(hasInitialPeriod([{ startDate: "2026-11-10" }])).toBe(true);
+  });
+
+  it("uses the device timezone for the current calendar date", () => {
+    expect(getDeviceDate("Asia/Kolkata")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("writes the selected certainty and settings after the period receipt", async () => {
+    const calls: string[] = [];
+    await saveInitialCycleSetup({
+      ...base,
+      logPeriodStart: async (args) => {
+        calls.push(`period:${args.startDate}:${args.startCertainty}:${args.timeZone}`);
+      },
+      updateCycleSettings: async (args) => {
+        calls.push(`settings:${args.cycleLength}:${args.periodLength}`);
+      },
+    });
+    expect(calls).toEqual([
+      "period:2026-11-10:approximate:Asia/Kolkata",
+      "settings:28:5",
+    ]);
+  });
+
+  it("does not duplicate a period after a partial settings failure and retry", async () => {
+    let savedPeriodStart: string | null = null;
+    const logPeriodStart = vi.fn(async () => {
+    });
+    const updateCycleSettings = vi.fn(async () => {
+      if (updateCycleSettings.mock.calls.length === 1) throw new Error("offline");
+    });
+    await expect(
+      saveInitialCycleSetup({
+        ...base,
+        logPeriodStart,
+        updateCycleSettings,
+        onPeriodSaved: (startDate) => {
+          savedPeriodStart = startDate;
+        },
+      }),
+    ).rejects.toThrow("offline");
+
+    await saveInitialCycleSetup({
+      ...base,
+      existingPeriods: savedPeriodStart ? [{ startDate: savedPeriodStart }] : [],
+      logPeriodStart,
+      updateCycleSettings,
+    });
+    expect(logPeriodStart).toHaveBeenCalledTimes(1);
+    expect(updateCycleSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the period write when the selected event is already present", async () => {
+    const logPeriodStart = vi.fn(async () => undefined);
+    const updateCycleSettings = vi.fn(async () => undefined);
+    await saveInitialCycleSetup({
+      ...base,
+      existingPeriods: [{ startDate: base.startDate }],
+      logPeriodStart,
+      updateCycleSettings,
+    });
+    expect(logPeriodStart).not.toHaveBeenCalled();
+    expect(updateCycleSettings).toHaveBeenCalledOnce();
+  });
+
+  it("rejects missing timezone, dates, and out-of-range settings before writing", async () => {
+    const logPeriodStart = vi.fn(async () => undefined);
+    const updateCycleSettings = vi.fn(async () => undefined);
+    for (const invalid of [
+      { ...base, startDate: "" },
+      { ...base, timeZone: null },
+      { ...base, cycleLength: 20 },
+      { ...base, cycleLength: 41 },
+      { ...base, periodLength: 1 },
+      { ...base, periodLength: 9 },
+    ]) {
+      await expect(
+        saveInitialCycleSetup({ ...invalid, logPeriodStart, updateCycleSettings }),
+      ).rejects.toThrow();
+    }
+    expect(logPeriodStart).not.toHaveBeenCalled();
+    expect(updateCycleSettings).not.toHaveBeenCalled();
   });
 });

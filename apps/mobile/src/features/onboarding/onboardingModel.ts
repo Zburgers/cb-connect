@@ -1,4 +1,74 @@
 export type MobileRole = "primary" | "partner";
+export type PeriodCertainty = "exact" | "approximate";
+
+export const DEFAULT_CYCLE_LENGTH = 28;
+export const MIN_CYCLE_LENGTH = 21;
+export const MAX_CYCLE_LENGTH = 40;
+export const DEFAULT_PERIOD_LENGTH = 5;
+export const MIN_PERIOD_LENGTH = 2;
+export const MAX_PERIOD_LENGTH = 8;
+
+export function getDeviceDate(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function hasInitialPeriod(
+  periods: readonly { startDate: string }[] | undefined,
+): boolean {
+  return (periods?.length ?? 0) > 0;
+}
+
+export async function saveInitialCycleSetup({
+  startDate,
+  startCertainty,
+  cycleLength,
+  periodLength,
+  timeZone,
+  existingPeriods,
+  logPeriodStart,
+  updateCycleSettings,
+  onPeriodSaved,
+}: {
+  startDate: string;
+  startCertainty: PeriodCertainty;
+  cycleLength: number;
+  periodLength: number;
+  timeZone: string | null;
+  existingPeriods: readonly { startDate: string; certainty?: string }[];
+  logPeriodStart: (args: {
+    startDate: string;
+    startCertainty: PeriodCertainty;
+    timeZone: string;
+  }) => Promise<unknown>;
+  updateCycleSettings: (args: {
+    cycleLength: number;
+    periodLength: number;
+  }) => Promise<unknown>;
+  onPeriodSaved?: (startDate: string) => void;
+}): Promise<void> {
+  if (!startDate) throw new Error("Choose when your last period started.");
+  if (!timeZone) throw new Error("A device time zone is required to continue.");
+  if (!Number.isInteger(cycleLength) || cycleLength < MIN_CYCLE_LENGTH || cycleLength > MAX_CYCLE_LENGTH) {
+    throw new Error(`Cycle length must be between ${MIN_CYCLE_LENGTH} and ${MAX_CYCLE_LENGTH} days.`);
+  }
+  if (!Number.isInteger(periodLength) || periodLength < MIN_PERIOD_LENGTH || periodLength > MAX_PERIOD_LENGTH) {
+    throw new Error(`Period length must be between ${MIN_PERIOD_LENGTH} and ${MAX_PERIOD_LENGTH} days.`);
+  }
+
+  const alreadySaved = existingPeriods.some((period) => period.startDate === startDate);
+  if (!alreadySaved) {
+    await logPeriodStart({ startDate, startCertainty, timeZone });
+  }
+  onPeriodSaved?.(startDate);
+  await updateCycleSettings({ cycleLength, periodLength });
+}
 
 export function isMobileRole(value: unknown): value is MobileRole {
   return value === "primary" || value === "partner";

@@ -243,7 +243,11 @@ export declare const api: {
       readonly updateUserPreferences: FunctionReference<"mutation", "public", { preferredName?: string }, string>;
     };
     readonly periods: {
-      readonly updateCycleSettings: FunctionReference<"mutation", "public", { predictionPaused?: boolean }, null>;
+      readonly updateCycleSettings: FunctionReference<"mutation", "public", {
+        cycleLength?: number;
+        periodLength?: number;
+        predictionPaused?: boolean;
+      }, null>;
       readonly logPeriodStart: FunctionReference<"mutation", "public", PeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly assistLogPeriodStart: FunctionReference<"mutation", "public", AssistedPeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly logPeriodEnd: FunctionReference<"mutation", "public", PeriodEndArgs, { eventId: GenericId<"periodEvents"> }>;
