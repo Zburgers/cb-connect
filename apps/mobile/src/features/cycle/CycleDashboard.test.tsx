@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getCycleDashboardPresentation,
   formatCycleCalendarDate,
+  nextCalendarDate,
   shouldEnsureCyclePredictionSnapshot,
   type CycleDashboardData,
 } from "./CycleDashboardModel";
@@ -161,6 +162,20 @@ function dataFor(
 }
 
 describe("mobile cycle dashboard", () => {
+  it("advances only the primary account-local calendar date at rollover", () => {
+    expect(nextCalendarDate("2026-03-08")).toBe("2026-03-09");
+    expect(nextCalendarDate("2026-12-31")).toBe("2027-01-01");
+    expect(() => nextCalendarDate("2026-02-30")).toThrow("Invalid calendar date");
+  });
+
+  it("refreshes its dashboard subscription at account-local midnight and on resume", () => {
+    const source = readFileSync(new URL("./CycleDashboard.tsx", import.meta.url), "utf8");
+    expect(source).toContain("todayDate ? { todayDate } : {}");
+    expect(source).toContain("data.nextCalendarDayAt - Date.now()");
+    expect(source).toContain('AppState.addEventListener("change"');
+    expect(source).toContain("setRollover(null)");
+  });
+
   for (const role of ["primary", "partner"] as const) {
     it.each(states[role])(
       `${role} preserves the %s state semantics`,

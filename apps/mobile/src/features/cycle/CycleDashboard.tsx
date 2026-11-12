@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurTargetView, BlurView } from "expo-blur";
@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useMutation, useQuery } from "convex/react";
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,13 +22,20 @@ import { HomeNudges } from "../home/HomeNudges";
 import { HomeSupport } from "../home/HomeSupport";
 import {
   getCycleDashboardPresentation,
+  nextCalendarDate,
   shouldEnsureCyclePredictionSnapshot,
   type CycleDashboardData,
   type CycleDashboardPresentation,
 } from "./CycleDashboardModel";
 
 export function CycleDashboard(): React.JSX.Element {
-  const data = useQuery(api.queries.dashboard.getDashboardData, {});
+  const account = useQuery(api.queries.users.getMe, {});
+  const [rollover, setRollover] = useState<{ userId: string; date: string } | null>(null);
+  const todayDate = account && rollover?.userId === account._id ? rollover.date : undefined;
+  const data = useQuery(
+    api.queries.dashboard.getDashboardData,
+    todayDate ? { todayDate } : {},
+  );
   const capabilities = useQuery(api.queries.capabilities.getCapabilities, {});
   const ensurePredictionSnapshot = useMutation(
     api.mutations.predictionSnapshots.ensureForViewer,
@@ -35,6 +43,37 @@ export function CycleDashboard(): React.JSX.Element {
   const model = getCycleDashboardPresentation(data, capabilities);
   const palette =
     useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+
+  useEffect(() => {
+    if (
+      rollover &&
+      account?._id === rollover.userId &&
+      data?.calendarDate === rollover.date
+    ) {
+      // The date argument forces one fresh subscription at rollover. Return to
+      // server-derived date context so account timezone changes stay current.
+      setRollover(null);
+    }
+  }, [account?._id, data?.calendarDate, rollover]);
+
+  useEffect(() => {
+    if (!account?._id || !data?.calendarDate || !data.nextCalendarDayAt) return;
+    const advanceDateIfNeeded = () => {
+      if (Date.now() < data.nextCalendarDayAt!) return;
+      setRollover({ userId: account._id, date: nextCalendarDate(data.calendarDate!) });
+    };
+    const timeout = setTimeout(
+      advanceDateIfNeeded,
+      Math.max(0, data.nextCalendarDayAt - Date.now() + 25),
+    );
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") advanceDateIfNeeded();
+    });
+    return () => {
+      clearTimeout(timeout);
+      subscription.remove();
+    };
+  }, [account?._id, data?.calendarDate, data?.nextCalendarDayAt]);
 
   useEffect(() => {
     if (shouldEnsureCyclePredictionSnapshot(data, capabilities)) {

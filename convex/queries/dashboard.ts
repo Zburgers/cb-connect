@@ -7,7 +7,10 @@ import {
   getPainSeverityBucket,
   type CycleInfo,
 } from "../_helpers/cycleCalculations";
-import { toCalendarDateInTimeZone } from "../_helpers/calendarDates";
+import {
+  nextCalendarDayBoundary,
+  toCalendarDateInTimeZone,
+} from "../_helpers/calendarDates";
 import { buildCycleReadModel } from "../_helpers/cycleReadModel";
 import { readCyclePredictionData } from "../_helpers/cyclePredictionData";
 import { isHistoryVisible } from "../_helpers/cycleFactEligibility";
@@ -38,6 +41,8 @@ const MAX_CYCLE_FACT_ROWS = 100;
 type DashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
+  calendarDate?: string;
+  nextCalendarDayAt?: number;
   message?: string;
   cycleInfo?: CycleInfo | null;
   nutritionTipsPhase: CycleInfo["phase"] | null;
@@ -192,6 +197,10 @@ export const getDashboardData = query({
 
     const today =
       args.todayDate ?? toCalendarDateInTimeZone(new Date(), targetUser.timeZone);
+    const dateContext = {
+      calendarDate: today,
+      nextCalendarDayAt: nextCalendarDayBoundary(new Date(), targetUser.timeZone),
+    };
     const predictionData = predictionV2EnabledForTarget
       ? await readCyclePredictionData(ctx, targetUserId, targetUser)
       : null;
@@ -315,6 +324,7 @@ export const getDashboardData = query({
 
     if (!recentPeriod) {
       return {
+        ...dateContext,
         hasData: separatelySharedPainData !== null,
         isPartnerView,
         message:
@@ -373,6 +383,7 @@ export const getDashboardData = query({
       // Phase sharing check
       if (!canViewPhase) {
         return {
+          ...dateContext,
           hasData: true,
           isPartnerView,
           cycleInfo: null,
@@ -398,6 +409,7 @@ export const getDashboardData = query({
 
     if (!tipPhase) {
       return {
+        ...dateContext,
         hasData: true,
         isPartnerView,
         cycleInfo: null,
@@ -455,6 +467,7 @@ export const getDashboardData = query({
     const nutritionTips = shuffled.slice(0, 3);
 
     return {
+      ...dateContext,
       hasData: true,
       isPartnerView,
       cycleInfo: partnerV1View || partnerPredictionView ? null : cycleInfo,

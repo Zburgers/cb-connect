@@ -558,6 +558,9 @@ describe("dashboard cycle state read model", () => {
     expect(result.painData).toMatchObject({ score: 4 });
     expect(result.painData).not.toHaveProperty("tags");
     expect(result.painData).not.toHaveProperty("note");
+    expect(result.calendarDate).toBe("2026-08-25");
+    expect(result.nextCalendarDayAt).toEqual(expect.any(Number));
+    expect(result).not.toHaveProperty("timeZone");
     expect(result.cycleInfo).toBeNull();
     expect(result.cycleStateV1).toBeNull();
     expect(result.partnerPredictionV2Exposed).toBe(false);
