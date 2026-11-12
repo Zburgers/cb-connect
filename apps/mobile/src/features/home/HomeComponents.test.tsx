@@ -12,6 +12,9 @@ const runtime = vi.hoisted(() => ({
   state: [] as unknown[],
   cursor: 0,
   formDate: "",
+  memoized: [] as Array<{ dependencies: readonly unknown[]; value: unknown } | undefined>,
+  effectDependencies: [] as Array<readonly unknown[] | undefined>,
+  runEffects: false,
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -19,7 +22,25 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useContext: () => runtime.access,
-    useEffect: () => undefined,
+    useEffect: (effect: () => void, dependencies?: readonly unknown[]) => {
+      const index = runtime.cursor++;
+      if (!runtime.runEffects || !dependencies) return;
+      const previous = runtime.effectDependencies[index];
+      const changed = !previous || previous.length !== dependencies.length ||
+        dependencies.some((dependency, dependencyIndex) => !Object.is(dependency, previous[dependencyIndex]));
+      if (changed) {
+        runtime.effectDependencies[index] = dependencies;
+        effect();
+      }
+    },
+    useMemo: (factory: () => unknown, dependencies: readonly unknown[]) => {
+      const index = runtime.cursor++;
+      const previous = runtime.memoized[index];
+      const changed = !previous || previous.dependencies.length !== dependencies.length ||
+        dependencies.some((dependency, dependencyIndex) => !Object.is(dependency, previous.dependencies[dependencyIndex]));
+      if (changed) runtime.memoized[index] = { dependencies, value: factory() };
+      return runtime.memoized[index]!.value;
+    },
     useState: (initial: unknown) => {
       const index = runtime.cursor++;
       if (runtime.state.length <= index) runtime.state[index] = initial;
@@ -108,8 +129,9 @@ function pressable(tree: React.ReactNode, label: string): React.ReactElement {
   return found;
 }
 
-function renderPain() {
+function renderPain(dark = false) {
   runtime.cursor = 0;
+  runtime.runEffects = true;
   const date = (runtime.state[0] as string | null) ?? new Date().toISOString().slice(0, 10);
   if (runtime.formDate && runtime.formDate !== date) {
     // The real form is keyed by source date; discard its old-day draft state.
@@ -118,11 +140,12 @@ function renderPain() {
   runtime.formDate = date;
   runtime.queries = [runtime.account, runtime.painHistory];
   runtime.mutations = [savePain];
-  return renderFunctionComponents(HomePainCheckIn({ dark: false }));
+  return renderFunctionComponents(HomePainCheckIn({ dark }));
 }
 
 function renderNudges() {
   runtime.cursor = 0;
+  runtime.runEffects = false;
   runtime.queries = [runtime.presence, runtime.latest];
   runtime.mutations = [sendNudge, markSeen];
   return HomeNudges({ dark: false });
@@ -143,6 +166,9 @@ describe("Home native interactions", () => {
     runtime.state = [];
     runtime.cursor = 0;
     runtime.formDate = "";
+    runtime.memoized = [];
+    runtime.effectDependencies = [];
+    runtime.runEffects = false;
     for (const mutation of [savePain, sendNudge, markSeen]) {
       mutation.mockReset().mockResolvedValue({ success: true });
     }
@@ -177,6 +203,45 @@ describe("Home native interactions", () => {
     await (pressable(tree, "Save today’s signal").props as { onPress: () => void }).onPress();
     await Promise.resolve();
     expect(savePain.mock.calls.at(-1)?.[0]).not.toHaveProperty("note");
+  });
+
+  it("preserves edited check-in values when the parent rerenders for a theme change", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-28T09:00:00.000Z"));
+    runtime.painHistory = [{
+      date: "2026-10-28",
+      painScore: 6,
+      tags: ["cramps"],
+      note: "Saved note",
+    }];
+
+    let tree = renderPain();
+    (pressable(tree, "Rough: Needs active care").props as { onPress: () => void }).onPress();
+    tree = renderPain();
+    (pressable(tree, "Add Head pressure").props as { onPress: () => void }).onPress();
+    tree = renderPain();
+    const note = find(tree, (element) => element.type === "TextInput" &&
+      (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Pain note, optional");
+    (note!.props as { onChangeText: (value: string) => void }).onChangeText("Unsaved theme-safe note");
+
+    // Simulate a parent rerender that receives an equivalent newly allocated query row.
+    runtime.painHistory = runtime.painHistory.map((record) => ({ ...record }));
+    tree = renderPain(true);
+    expect((pressable(tree, "Rough: Needs active care").props as { accessibilityState: { selected: boolean } }).accessibilityState.selected).toBe(true);
+    expect((pressable(tree, "Remove Head pressure").props as { accessibilityState: { selected: boolean } }).accessibilityState.selected).toBe(true);
+    const preservedNote = find(tree, (element) => element.type === "TextInput" &&
+      (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Pain note, optional");
+    expect(preservedNote?.props).toMatchObject({ value: "Unsaved theme-safe note" });
+
+    await (pressable(tree, "Save today’s signal").props as { onPress: () => void }).onPress();
+    await Promise.resolve();
+    expect(savePain).toHaveBeenCalledWith({
+      date: "2026-10-28",
+      timeZone: "UTC",
+      painScore: 8,
+      tags: ["cramps", "headache"],
+      note: "Unsaved theme-safe note",
+    });
   });
 
   it("keeps pain writes disabled when the account timezone is missing", async () => {

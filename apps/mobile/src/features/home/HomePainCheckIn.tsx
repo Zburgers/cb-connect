@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { api } from "../../convex/api";
@@ -96,6 +96,13 @@ export function HomePainCheckIn({
       : "skip",
   ) as readonly PainHistoryRow[] | undefined;
   const record = painHistory?.find((row) => row.date === sourceDate);
+  const recordTagsSignature = JSON.stringify(record?.tags ?? []);
+  const currentPain = useMemo(
+    () => record
+      ? { score: record.painScore, tags: record.tags, note: record.note }
+      : null,
+    [record?.date, record?.painScore, recordTagsSignature, record?.note],
+  );
 
   if (!online) {
     return (
@@ -129,7 +136,7 @@ export function HomePainCheckIn({
   return (
     <PainCheckInForm
       key={sourceDate}
-      currentPain={record ? { score: record.painScore, tags: record.tags, note: record.note } : null}
+      currentPain={currentPain}
       dark={dark}
       online={online}
       timeZone={timeZone}
