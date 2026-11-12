@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { CycleDashboardData } from "../cycle/CycleDashboardModel";
 import {
+  CYCLE_STATE_COPY_APPROVAL,
+  CYCLE_STATE_COPY_EXPOSURE,
+} from "../../../../../components/dashboard/cycleStateCopy";
+import {
   canSendNudge,
+  canShowCalendarNutritionTips,
   getHomeSupportPresentation,
   getNudgeMessage,
+  HOME_CYCLE_COPY_APPROVAL,
+  HOME_CYCLE_COPY_EXPOSURE,
   NUDGE_OPTIONS,
   PAIN_NOTE_PRIVACY_COPY,
 } from "./HomeModel";
@@ -31,12 +38,21 @@ describe("Android Home and nudge contracts", () => {
     expect(getNudgeMessage("invalid")).toBe("A gentle nudge");
   });
 
-  it("allows sending only for a linked role with a live connection and present partner", () => {
-    expect(canSendNudge("primary", true, true)).toBe(true);
-    expect(canSendNudge("partner", true, true)).toBe(true);
-    expect(canSendNudge("unlinked_primary", true, true)).toBe(false);
-    expect(canSendNudge("primary", false, true)).toBe(false);
-    expect(canSendNudge("primary", true, false)).toBe(false);
+  it("allows a linked sender to nudge an offline partner when connected", () => {
+    expect(canSendNudge("primary", true)).toBe(true);
+    expect(canSendNudge("partner", true)).toBe(true);
+    expect(canSendNudge("unlinked_primary", true)).toBe(false);
+    expect(canSendNudge("primary", false)).toBe(false);
+  });
+
+  it("fails closed for phase nutrition unless copy is approved for ordinary users", () => {
+    expect(HOME_CYCLE_COPY_APPROVAL).toBe(CYCLE_STATE_COPY_APPROVAL);
+    expect(HOME_CYCLE_COPY_EXPOSURE).toBe(CYCLE_STATE_COPY_EXPOSURE);
+    expect(canShowCalendarNutritionTips({ status: "estimated" } as never)).toBe(false);
+    expect(canShowCalendarNutritionTips({ status: "estimated" } as never, "approved", "staff_only")).toBe(false);
+    expect(canShowCalendarNutritionTips({ status: "estimated" } as never, "unapproved", "ordinary_users")).toBe(false);
+    expect(canShowCalendarNutritionTips({ status: "estimated" } as never, "approved", "ordinary_users")).toBe(true);
+    expect(canShowCalendarNutritionTips({ status: "prediction_paused" } as never, "approved", "ordinary_users")).toBe(false);
   });
 
   it("shows primary support content only when applicable", () => {
@@ -45,14 +61,15 @@ describe("Android Home and nudge contracts", () => {
       painData: { score: 6, severity: "moderate", tags: ["cramps"], note: "private" },
       painTip: { _id: "tip", title: "Take a gentle pause", suggestions: ["Rest"], safetyNote: "Seek help if needed." },
       nutritionTipsPhase: "follicular",
+      cycleStateV1: { status: "estimated" } as never,
       nutritionTips: [{ _id: "food", foodItem: "Oats", reasoning: "Comforting" }],
     };
     expect(getHomeSupportPresentation(data)).toMatchObject({
       role: "primary",
       pain: { score: 6, tags: ["cramps"], note: "private" },
       painTip: { title: "Take a gentle pause" },
-      nutritionTipsPhase: "follicular",
-      nutritionTips: [{ foodItem: "Oats" }],
+      nutritionTipsPhase: null,
+      nutritionTips: [],
     });
     expect(getHomeSupportPresentation({
       ...data,
@@ -98,6 +115,19 @@ describe("Android Home and nudge contracts", () => {
       nutritionTips: [],
       nutritionTipsPhase: null,
     });
+  });
+
+  it("keeps partner pain guidance hidden when consent leaves the shared signal absent", () => {
+    const support = getHomeSupportPresentation({
+      ...base,
+      isPartnerView: true,
+      cycleStateV1Exposed: false,
+      partnerPredictionV2Exposed: false,
+      painData: null,
+      painTip: { _id: "tip", title: "private tip", suggestions: ["private"], safetyNote: "private" },
+    });
+    expect(support.pain).toBeNull();
+    expect(support.painTip).toBeNull();
   });
 
   it("makes the owner-only pain note boundary clear", () => {

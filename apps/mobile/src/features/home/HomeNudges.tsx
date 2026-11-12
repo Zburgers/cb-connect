@@ -37,11 +37,7 @@ export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | nul
   const partnerPresent = Boolean(
     presence?.isPresent && presence.expiresAt > now,
   );
-  const canSend = canSendNudge(access, online, partnerPresent);
-
-  useEffect(() => {
-    if (!partnerPresent) setSentEmoji(null);
-  }, [partnerPresent]);
+  const canSend = canSendNudge(access, online);
 
   if (!linked) return null;
 
@@ -88,7 +84,7 @@ export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | nul
             accessibilityRole="header"
             style={[styles.label, { color: palette.foreground }]}
           >
-            {access === "partner" ? "Both online now" : "Partner online now"}
+            {partnerPresent ? "Your partner is here now" : "Your partner is away right now"}
           </Text>
           <Text style={[styles.heading, { color: palette.foreground }]}>
             Nudge {target}
@@ -126,9 +122,6 @@ export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | nul
 
       {latest ? (
         <View
-          accessible
-          accessibilityRole="summary"
-          accessibilityLabel={`${latest.senderName} nudged you. ${latest.message}`}
           style={[
             styles.receivedCard,
             { backgroundColor: palette.highlight, borderColor: palette.accent },
