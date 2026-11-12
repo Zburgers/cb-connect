@@ -4,7 +4,7 @@
 
 **Goal:** Bring native onboarding to the current web primary setup behavior while preserving public Convex authorization and mobile date/privacy rules.
 
-**Architecture:** Keep onboarding in the existing Expo Router route and feature screen. Reuse public `getMe`, `getPeriodHistory`, `logPeriodStart`, and `updateCycleSettings` references; do not add server APIs, local persistence, or a second cycle rules implementation. Use the existing native date picker and an explicit certainty choice.
+**Architecture:** Keep onboarding in the existing Expo Router route and feature screen. Reuse public `getMe`, `getPeriodHistory`, `getCycleSettings`, `logPeriodStart`, and `updateCycleSettings` references; do not add server APIs, local persistence, or a second cycle rules implementation. Use the existing native date picker and an explicit certainty choice.
 
 **Tech Stack:** Expo Router, React Native, Convex public API, TypeScript, Vitest.
 
@@ -21,6 +21,7 @@
 | Web writes the initial start as exact (certainty not exposed in its current setup UI) | Native offers exact/approximate certainty, matching existing mobile Log controls and the mutation contract | `LoggingScreen.tsx`; `periods.logPeriodStart.startCertainty` |
 | Partner finishes onboarding without primary cycle setup | Partner continues to the app; no cycle period or settings mutation | Web role branch; server primary-role guards remain authoritative |
 | Primary with no period can enter the dashboard and later use Log | Native role receipt survives restart; if authorized period history is empty, show initial setup; existing history completes setup | `queries.history.getPeriodHistory`; existing app Log route |
+| Signed-in app cold start checks whether primary setup finished | `(app)` entry guard waits for current authenticated primary period history, routes empty history to onboarding, and leaves partners/primary history unchanged | `app/(app)/_layout.tsx`; `navigation/accessResolver.ts` |
 
 ## Ordered implementation tasks
 
@@ -44,11 +45,11 @@
 - Test `apps/mobile/src/features/onboarding/onboarding.test.tsx`
 
 1. Keep existing auth loading, role selection, role lock, timezone assignment, accessibility and theme behavior.
-2. Query period history and cycle settings only for an authenticated Convex session. Do not show completion until both queries resolve; hydrate the form from server settings so a restart after a failed period write can retry.
+2. Query period history and cycle settings only for an authenticated primary. Do not show completion until both queries resolve; hydrate the form from server settings so a restart after a failed period write can retry. In the signed-in `(app)` layout, hold primary access while period history is loading and redirect empty history to onboarding; partners bypass this check.
 3. Route partners to completion. Route primary users with existing period history to completion. Route primary users without period history, including after restart, to setup.
-4. Expose start date, exact/approximate certainty, cycle and period lengths, and explicit Start Tracking action. Disable submission without a date or while saving.
-5. Show retryable failure copy. Require settings success before period logging; if period logging then fails, a retry reuses persisted settings and creates exactly one event.
-6. Verify focused onboarding tests and mobile typecheck.
+4. Expose start date, exact/approximate certainty, cycle and period lengths, and explicit Start Tracking action. Show a visible selected certainty style as well as selected accessibility state. Disable submission without a date or while saving.
+5. Report partial writes accurately. Require settings success before period logging; if period logging then fails, state that settings saved and the period receipt could not be confirmed, and keep setup retryable. A retry reuses persisted settings and creates exactly one event.
+6. Verify focused onboarding and entry-routing tests plus mobile typecheck.
 
 ### Task 3 — Contract and release evidence
 
@@ -59,7 +60,7 @@
 
 All three query/mutation paths are already inventoried. Correct the existing `updateCycleSettings` type in `apps/mobile/src/convex/api.d.ts` to include the server's optional `cycleLength` and `periodLength` numbers alongside `predictionPaused`; the parity assertion must check it against the actual server reference. Do not runtime-import server implementations.
 
-Run `npm run mobile:test -- onboarding.test.tsx`, `npm run mobile:typecheck`, and `npm run typecheck`. PR CI must be green. Do not start a new emulator/device cycle for this PR. Deferred synthetic QA: fresh primary completes setup, sees the exact/certain event in Log and Home, and retry after a simulated period-write failure produces exactly one event while preserving selected settings; partner completes onboarding without period writes and remains governed by server privacy projections.
+Run `npm run mobile:test -- onboarding.test.tsx accessResolver.test.ts api.inventory.test.ts`, `npm run mobile:typecheck`, and `npm run typecheck`. PR CI must be green. Do not start a new emulator/device cycle for this PR. Deferred synthetic QA: fresh primary completes setup, sees the exact/certain event in Log and Home, and retry after a simulated period-write failure produces exactly one event while preserving selected settings; partner completes onboarding without period writes and remains governed by server privacy projections.
 
 ## Safety and scope
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessStatusRedirect, canRenderChatRoute, canRenderPartnerRoute, resolveAccessState, type AccessStateInputs } from "./accessResolver";
+import { accessStatusRedirect, canRenderChatRoute, canRenderPartnerRoute, resolveAccessState, resolvePrimaryCycleSetupRoute, type AccessStateInputs } from "./accessResolver";
 
 const ready: AccessStateInputs = {
   auth: "authenticated",
@@ -72,5 +72,18 @@ describe("resolveAccessState", () => {
     expect(canRenderPartnerRoute(offline)).toBe(false);
     expect(accessStatusRedirect(offline.state)).toBeNull();
     expect(canRenderPartnerRoute(onboarding)).toBe(false);
+  });
+});
+
+describe("primary cycle setup entry routing", () => {
+  it("holds primary entry while history is loading and sends empty history back to onboarding", () => {
+    expect(resolvePrimaryCycleSetupRoute("primary", undefined)).toBe("pending");
+    expect(resolvePrimaryCycleSetupRoute("primary", [])).toBe("onboarding");
+    expect(resolvePrimaryCycleSetupRoute("primary", [{ startDate: "2026-11-10" }])).toBe("app");
+  });
+
+  it("does not gate partners on primary cycle history", () => {
+    expect(resolvePrimaryCycleSetupRoute("partner", undefined)).toBe("app");
+    expect(resolvePrimaryCycleSetupRoute(undefined, undefined)).toBe("app");
   });
 });
