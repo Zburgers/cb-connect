@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
@@ -43,6 +43,10 @@ export function OnboardingScreen({
     api.queries.history.getPeriodHistory,
     isAuthenticated ? {} : "skip",
   );
+  const existingCycleSettings = useQuery(
+    api.queries.history.getCycleSettings,
+    isAuthenticated ? {} : "skip",
+  );
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
@@ -59,12 +63,20 @@ export function OnboardingScreen({
   const [periodLength, setPeriodLength] = useState(DEFAULT_PERIOD_LENGTH);
   const [setupSaved, setSetupSaved] = useState(false);
   const [savedPeriodStart, setSavedPeriodStart] = useState<string | null>(null);
+  const [settingsInitialized, setSettingsInitialized] = useState(false);
 
-  const loading = isLoading || !isAuthenticated || me === undefined || periodHistory === undefined;
+  const loading = isLoading || !isAuthenticated || me === undefined || periodHistory === undefined || existingCycleSettings === undefined;
   const existingRole = me && isMobileRole(me.role) ? me.role : null;
   const complete = confirmedRole ?? existingRole;
   const periodIsSaved = setupSaved || hasInitialPeriod(periodHistory);
   const deviceTimeZone = getDeviceTimeZone();
+
+  useEffect(() => {
+    if (settingsInitialized || existingCycleSettings === undefined) return;
+    setCycleLength(existingCycleSettings.cycleLength);
+    setPeriodLength(existingCycleSettings.periodLength);
+    setSettingsInitialized(true);
+  }, [existingCycleSettings, settingsInitialized]);
 
   const chooseRole = async (role: MobileRole) => {
     setFailed(false);

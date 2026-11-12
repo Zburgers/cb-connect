@@ -146,7 +146,7 @@ describe("mobile initial cycle setup", () => {
     expect(getDeviceDate("Asia/Kolkata")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("writes the selected certainty and settings after the period receipt", async () => {
+  it("writes settings before creating a period receipt", async () => {
     const calls: string[] = [];
     await saveInitialCycleSetup({
       ...base,
@@ -158,18 +158,17 @@ describe("mobile initial cycle setup", () => {
       },
     });
     expect(calls).toEqual([
-      "period:2026-11-10:approximate:Asia/Kolkata",
       "settings:28:5",
+      "period:2026-11-10:approximate:Asia/Kolkata",
     ]);
   });
 
-  it("does not duplicate a period after a partial settings failure and retry", async () => {
+  it("keeps setup retryable if the period write fails after settings are saved", async () => {
     let savedPeriodStart: string | null = null;
     const logPeriodStart = vi.fn(async () => {
+      if (logPeriodStart.mock.calls.length === 1) throw new Error("offline");
     });
-    const updateCycleSettings = vi.fn(async () => {
-      if (updateCycleSettings.mock.calls.length === 1) throw new Error("offline");
-    });
+    const updateCycleSettings = vi.fn(async () => undefined);
     await expect(
       saveInitialCycleSetup({
         ...base,
@@ -186,9 +185,24 @@ describe("mobile initial cycle setup", () => {
       existingPeriods: savedPeriodStart ? [{ startDate: savedPeriodStart }] : [],
       logPeriodStart,
       updateCycleSettings,
+      onPeriodSaved: (startDate) => {
+        savedPeriodStart = startDate;
+      },
     });
-    expect(logPeriodStart).toHaveBeenCalledTimes(1);
+    expect(logPeriodStart).toHaveBeenCalledTimes(2);
     expect(updateCycleSettings).toHaveBeenCalledTimes(2);
+    expect(savedPeriodStart).toBe(base.startDate);
+  });
+
+  it("does not create a period if saving cycle settings fails", async () => {
+    const logPeriodStart = vi.fn(async () => undefined);
+    const updateCycleSettings = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    await expect(
+      saveInitialCycleSetup({ ...base, logPeriodStart, updateCycleSettings }),
+    ).rejects.toThrow("offline");
+    expect(logPeriodStart).not.toHaveBeenCalled();
   });
 
   it("skips the period write when the selected event is already present", async () => {
