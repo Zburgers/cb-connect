@@ -11,6 +11,8 @@ export type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
 export type CycleDashboardData = {
   hasData: boolean;
   isPartnerView: boolean;
+  calendarDate?: string;
+  nextCalendarDayAt?: number;
   message?: string;
   cycleInfo?: {
     phase: keyof typeof phaseLabels;
@@ -45,6 +47,18 @@ export type CycleDashboardData = {
     reasoning: string;
   }[];
 };
+
+export function nextCalendarDate(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Invalid calendar date");
+  }
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new Error("Invalid calendar date");
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
 
 export type CycleCard = {
   status: string;
