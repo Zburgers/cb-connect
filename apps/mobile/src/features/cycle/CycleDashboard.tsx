@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurTargetView, BlurView } from "expo-blur";
@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useMutation, useQuery } from "convex/react";
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,14 +18,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../convex/api";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { HomeNudges } from "../home/HomeNudges";
+import { HomeSupport } from "../home/HomeSupport";
 import {
   getCycleDashboardPresentation,
+  nextCalendarDate,
   shouldEnsureCyclePredictionSnapshot,
+  type CycleDashboardData,
   type CycleDashboardPresentation,
 } from "./CycleDashboardModel";
 
 export function CycleDashboard(): React.JSX.Element {
-  const data = useQuery(api.queries.dashboard.getDashboardData, {});
+  const account = useQuery(api.queries.users.getMe, {});
+  const [rollover, setRollover] = useState<{ userId: string; date: string } | null>(null);
+  const todayDate = account && rollover?.userId === account._id ? rollover.date : undefined;
+  const data = useQuery(
+    api.queries.dashboard.getDashboardData,
+    todayDate ? { todayDate } : {},
+  );
   const capabilities = useQuery(api.queries.capabilities.getCapabilities, {});
   const ensurePredictionSnapshot = useMutation(
     api.mutations.predictionSnapshots.ensureForViewer,
@@ -32,6 +43,37 @@ export function CycleDashboard(): React.JSX.Element {
   const model = getCycleDashboardPresentation(data, capabilities);
   const palette =
     useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+
+  useEffect(() => {
+    if (
+      rollover &&
+      account?._id === rollover.userId &&
+      data?.calendarDate === rollover.date
+    ) {
+      // The date argument forces one fresh subscription at rollover. Return to
+      // server-derived date context so account timezone changes stay current.
+      setRollover(null);
+    }
+  }, [account?._id, data?.calendarDate, rollover]);
+
+  useEffect(() => {
+    if (!account?._id || !data?.calendarDate || !data.nextCalendarDayAt) return;
+    const advanceDateIfNeeded = () => {
+      if (Date.now() < data.nextCalendarDayAt!) return;
+      setRollover({ userId: account._id, date: nextCalendarDate(data.calendarDate!) });
+    };
+    const timeout = setTimeout(
+      advanceDateIfNeeded,
+      Math.max(0, data.nextCalendarDayAt - Date.now() + 25),
+    );
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") advanceDateIfNeeded();
+    });
+    return () => {
+      clearTimeout(timeout);
+      subscription.remove();
+    };
+  }, [account?._id, data?.calendarDate, data?.nextCalendarDayAt]);
 
   useEffect(() => {
     if (shouldEnsureCyclePredictionSnapshot(data, capabilities)) {
@@ -55,14 +97,16 @@ export function CycleDashboard(): React.JSX.Element {
     );
   }
 
-  return <CycleDashboardView model={model} palette={palette} />;
+  return <CycleDashboardView model={model} data={data!} palette={palette} />;
 }
 
 export function CycleDashboardView({
   model,
+  data,
   palette,
 }: {
   model: CycleDashboardPresentation;
+  data: CycleDashboardData;
   palette: typeof mobileColors.light | typeof mobileColors.dark;
 }): React.JSX.Element {
   const textStyle = { color: palette.foreground };
@@ -102,8 +146,8 @@ export function CycleDashboardView({
             style={[styles.subtitle, { color: palette.muted }]}
           >
             {model.role === "partner"
-              ? "Shared cycle information"
-              : "Your cycle information"}
+              ? "Support signals are shown only when your partner has shared them."
+              : "Today’s rhythm, translated into support."}
           </Text>
           {model.message ? (
             <Text allowFontScaling style={{ color: palette.muted }}>
@@ -116,6 +160,15 @@ export function CycleDashboardView({
           {model.prediction ? (
             <CycleCardView card={model.prediction} palette={palette} blurTarget={blurTarget} />
           ) : null}
+          <HomeNudges dark={palette === mobileColors.dark} />
+          {access === "primary" || access === "partner" ? (
+            <Link href="/(app)/partner" asChild>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open partner connection and sharing controls" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>
+                <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Partner connection and sharing</Text>
+              </Pressable>
+            </Link>
+          ) : null}
+          <HomeSupport data={data} dark={palette === mobileColors.dark} />
           {(access === "primary" || access === "partner") ? (
             <Link href="/(app)/chat" asChild>
               <Pressable accessibilityRole="button" accessibilityLabel="Open private chat" style={StyleSheet.flatten([styles.secondaryAction, { borderColor: palette.border }])}>

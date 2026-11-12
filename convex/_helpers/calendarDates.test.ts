@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  nextCalendarDayBoundary,
   requirePastOrTodayCalendarDate,
   resolveCalendarTimeZone,
   toCalendarDateInTimeZone,
@@ -72,6 +73,14 @@ describe("calendar dates", () => {
         "America/Los_Angeles"
       )
     ).toBe("2026-08-05");
+  });
+
+  test("finds the account-local day boundary across DST", () => {
+    const beforeMidnight = new Date("2026-03-09T03:00:00.000Z");
+    const boundary = nextCalendarDayBoundary(beforeMidnight, "America/New_York");
+    expect(boundary).toBe(Date.parse("2026-03-09T04:00:00.000Z"));
+    expect(toCalendarDateInTimeZone(new Date(boundary - 1), "America/New_York")).toBe("2026-03-08");
+    expect(toCalendarDateInTimeZone(new Date(boundary), "America/New_York")).toBe("2026-03-09");
   });
 
   test("keeps date-only values stable across DST transitions", () => {

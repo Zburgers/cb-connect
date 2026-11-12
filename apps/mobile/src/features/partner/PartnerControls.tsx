@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AppState, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { useState } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/expo";
 import type { FunctionReturnType } from "convex/server";
@@ -7,6 +7,7 @@ import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
+import { HomeNudges } from "../home/HomeNudges";
 
 type CoupleStatus = FunctionReturnType<typeof api.queries.couples.getCoupleStatus>;
 type GuardState = FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>;
@@ -222,7 +223,7 @@ function ActivePartnerView({
       ) : (
         <PartnerCycleSummary role={role} sharingPhase={settings.phase} dark={dark} />
       )}
-      <NudgeControls dark={dark} />
+      <HomeNudges dark={dark} />
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
     </ScrollView>
   );
@@ -260,26 +261,6 @@ function PartnerCycleSummary({ role, sharingPhase, dark }: { role: CoupleRole; s
 function PresenceStatus({ dark }: { dark: boolean }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
   const presence = useQuery(api.queries.presence.getPartnerPresence, {});
-  const heartbeat = useMutation(api.mutations.presence.heartbeat);
-  const goOffline = useMutation(api.mutations.presence.goOffline);
-
-  useEffect(() => {
-    const beat = () => {
-      if (AppState.currentState === "active") void heartbeat({}).catch(() => undefined);
-      else void goOffline({}).catch(() => undefined);
-    };
-    beat();
-    const interval = setInterval(beat, 15_000);
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void heartbeat({}).catch(() => undefined);
-      else void goOffline({}).catch(() => undefined);
-    });
-    return () => {
-      clearInterval(interval);
-      subscription.remove();
-      void goOffline({}).catch(() => undefined);
-    };
-  }, [goOffline, heartbeat]);
 
   const label = presence === undefined
     ? "Checking recent activity…"
@@ -289,53 +270,6 @@ function PresenceStatus({ dark }: { dark: boolean }): React.JSX.Element {
         ? `Last active ${new Date(presence.lastSeen).toLocaleString()}`
         : "No recent activity";
   return <Text accessibilityLabel={`Partner activity: ${label}`} style={{ color: palette.muted }}>{label}</Text>;
-}
-
-function NudgeControls({ dark }: { dark: boolean }): React.JSX.Element {
-  const palette = dark ? mobileColors.dark : mobileColors.light;
-  const send = useMutation(api.mutations.nudges.send);
-  const markSeen = useMutation(api.mutations.nudges.markSeen);
-  const latest = useQuery(api.queries.nudges.latestReceived, {});
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const emojis = ["💗", "🤗", "☕", "🌙", "✨", "🫶"];
-  return (
-    <View style={styles.section}>
-      <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Send a nudge</Text>
-      <View style={styles.nudges}>
-        {emojis.map((emoji) => (
-          <Pressable
-            key={emoji}
-            accessibilityRole="button"
-            accessibilityLabel={`Send ${emoji} nudge`}
-            accessibilityState={{ disabled: sending }}
-            disabled={sending}
-            onPress={() => {
-              setSending(true);
-              void send({ emoji }).catch(() => setError("Nudge not sent. Try again.")).finally(() => setSending(false));
-            }}
-            style={styles.nudgeButton}
-          >
-            <Text>{emoji}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {latest ? (
-        <View>
-          <Text style={{ color: palette.foreground }}>{latest.senderName}: {latest.message}</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Mark nudge as seen"
-            onPress={() => void markSeen({ nudgeId: latest._id }).catch(() => setError("Nudge receipt was not saved."))}
-            style={styles.actionButton}
-          >
-            <Text style={{ color: palette.foreground }}>Mark as seen</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-    </View>
-  );
 }
 
 function Toggle({ label, value, onChange, dark, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; dark: boolean; disabled?: boolean }): React.JSX.Element {
@@ -389,6 +323,4 @@ const styles = StyleSheet.create({
   statePill: { minWidth: 48, alignItems: "center", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
   card: { gap: 8, padding: 16, borderWidth: 1, borderRadius: 18 },
   section: { gap: 8, paddingVertical: 8 },
-  nudges: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  nudgeButton: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8 },
 });
