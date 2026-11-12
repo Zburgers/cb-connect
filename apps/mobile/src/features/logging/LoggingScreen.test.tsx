@@ -7,6 +7,9 @@ const runtime = vi.hoisted(() => ({
   account: { timeZone: "UTC" } as { timeZone?: string } | null | undefined,
   periods: [] as unknown[] | undefined,
   pain: [] as unknown[] | undefined,
+  timeline: undefined as unknown[] | undefined,
+  writeFile: vi.fn(),
+  shareFile: vi.fn().mockResolvedValue(undefined),
   queries: [] as unknown[],
   mutations: [] as unknown[],
   state: [] as unknown[],
@@ -43,6 +46,11 @@ vi.mock("react-native", () => ({
 }));
 
 vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker" }));
+vi.mock("expo-file-system", () => ({
+  File: class { uri = "file:///cache/history.csv"; create() {} write(contents: string) { runtime.writeFile(contents); } },
+  Paths: { cache: "file:///cache" },
+}));
+vi.mock("expo-sharing", () => ({ shareAsync: (...args: unknown[]) => runtime.shareFile(...args) }));
 
 vi.mock("convex/react", () => ({
   useConvexConnectionState: () => ({ isWebSocketConnected: runtime.connection }),
@@ -62,11 +70,16 @@ const endAssist = vi.fn().mockResolvedValue({ eventId: "event-open" });
 const updateSelf = vi.fn().mockResolvedValue({ success: true as const });
 const updateAssist = vi.fn().mockResolvedValue({ eventId: "event-corrected" });
 const savePain = vi.fn().mockResolvedValue({ logId: "pain-log", created: true });
+const deletePeriod = vi.fn().mockResolvedValue({ success: true });
 
 function render() {
   runtime.cursor = 0;
-  runtime.queries = [runtime.account, runtime.periods, runtime.pain];
-  runtime.mutations = [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain];
+  const timeline = runtime.timeline ?? runtime.periods?.map((period) => {
+    const item = period as { _id?: string; startDate: string; endDate?: string; certainty: string; source: string; confirmationStatus: string; authorityVersion?: number; createdByName: string; updatedByName: string; canCorrect: boolean };
+    return { date: item.startDate, phase: "menstruation", type: "period", isOngoing: !item.endDate, period: { id: item._id, startDate: item.startDate, endDate: item.endDate, certainty: item.certainty, source: item.source, confirmationStatus: item.confirmationStatus, authorityVersion: item.authorityVersion, createdByName: item.createdByName, updatedByName: item.updatedByName, createdByViewer: true, updatedByViewer: true, canCorrect: item.canCorrect } };
+  });
+  runtime.queries = [runtime.account, runtime.periods, runtime.pain, timeline];
+  runtime.mutations = [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain, deletePeriod];
   return LoggingScreen();
 }
 
@@ -142,12 +155,15 @@ describe("LoggingScreen actions", () => {
     runtime.account = { timeZone: "UTC" };
     runtime.periods = [];
     runtime.pain = [];
-    runtime.queries = [runtime.account, runtime.periods, runtime.pain];
+    runtime.timeline = undefined;
+    runtime.queries = [runtime.account, runtime.periods, runtime.pain, runtime.timeline];
     runtime.state = [];
     runtime.cursor = 0;
-    for (const mutation of [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain]) {
+    for (const mutation of [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain, deletePeriod]) {
       mutation.mockReset().mockResolvedValue({ eventId: "event" });
     }
+    runtime.writeFile.mockReset();
+    runtime.shareFile.mockReset().mockResolvedValue(undefined);
   });
 
   it("offers local-date shortcuts only to the primary user", async () => {
@@ -243,6 +259,64 @@ describe("LoggingScreen actions", () => {
 
     expect(textContent(render())).toContain("This entry changed. Refresh history before correcting it.");
     expect(textContent(render())).not.toContain("Period correction saved.");
+  });
+
+  it("renders mixed history and asks for confirmation before primary deletion", async () => {
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", status: "recorded_period", type: "period", isOngoing: true,
+      period: { id: "event-open", startDate: "2026-10-20", certainty: "exact", source: "self", confirmationStatus: "confirmed", authorityVersion: 1, createdByName: "Alex", updatedByName: "Alex", createdByViewer: true, updatedByViewer: true, canCorrect: true },
+    }, { date: "2026-10-19", phase: "unknown", type: "pain", pain: { score: 4, tags: ["cramps"] } }];
+    const tree = render();
+    expect(textContent(tree)).toContain("Cycle history");
+    expect(textContent(tree)).toContain("Pain 4/10 · Cramps");
+    expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Delete period")).toBeDefined();
+
+    await button(tree, "Delete period")();
+    const confirmation = render();
+    expect(textContent(confirmation)).toContain("Delete this period entry?");
+    expect(deletePeriod).not.toHaveBeenCalled();
+    await button(confirmation, "Confirm delete period")();
+
+    expect(deletePeriod).toHaveBeenCalledWith({ periodEventId: "event-open", expectedAuthorityVersion: 1 });
+  });
+
+  it("keeps stale-authority deletion visible and retryable", async () => {
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", type: "period",
+      period: { id: "event-open", startDate: "2026-10-20", certainty: "exact", source: "self", confirmationStatus: "confirmed", authorityVersion: 1, createdByName: "Alex", updatedByName: "Alex", createdByViewer: true, updatedByViewer: true, canCorrect: true },
+    }];
+    deletePeriod.mockRejectedValueOnce(new Error("STALE_AUTHORITY_VERSION"));
+    await button(render(), "Delete period")();
+    await button(render(), "Confirm delete period")();
+
+    const result = render();
+    expect(textContent(result)).toContain("This entry changed. Refresh history before correcting it.");
+    expect(find(result, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Confirm delete period")).toBeDefined();
+  });
+
+  it("allows server-authorized partner corrections but never partner deletion", () => {
+    runtime.access = "partner";
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", type: "period",
+      period: { id: "event-open", startDate: "2026-10-20", certainty: "exact", source: "self", confirmationStatus: "confirmed", authorityVersion: 1, createdByName: "Alex", updatedByName: "Alex", createdByViewer: false, updatedByViewer: false, canCorrect: true },
+    }];
+    const tree = render();
+    expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Correct period")).toBeDefined();
+    expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Delete period")).toBeUndefined();
+  });
+
+  it("exports history through the native share sheet", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T12:00:00.000Z"));
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open" }];
+    runtime.timeline = [{ date: "2026-11-12", phase: "unknown", type: "pain", pain: { score: 2, tags: ["fatigue"], note: "private note" } }];
+    await button(render(), "Export CSV")();
+
+    expect(runtime.writeFile).toHaveBeenCalledWith(expect.stringContaining('"pain","2026-11-12","","2","fatigue","private note"'));
+    expect(runtime.shareFile).toHaveBeenCalledWith("file:///cache/history.csv", expect.objectContaining({ mimeType: "text/csv" }));
   });
 
   it("disables period, pain, and correction writes until the account timezone and required history resolve", async () => {

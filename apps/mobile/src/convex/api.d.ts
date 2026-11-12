@@ -1,6 +1,7 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from "convex/server";
 import type { GenericId } from "convex/values";
 import type { CycleState } from "../../../../convex/_helpers/cycleState";
+import type { TimelinePhase, TimelineStateMetadata } from "../../../../convex/_helpers/timelinePhases";
 import type { PartnerCycleProjection } from "../../../../convex/_helpers/partnerCycleProjection";
 import type {
   CycleCapabilities,
@@ -96,6 +97,32 @@ type PainHistory = Readonly<{
   note?: string;
   createdAt: number;
   updatedAt: number;
+}>;
+type TimelineHistoryEntry = Readonly<{
+  date: string;
+  phase: TimelinePhase;
+  status?: TimelineStateMetadata["status"];
+  evidence?: TimelineStateMetadata["evidence"];
+  reason?: TimelineStateMetadata["reason"];
+  type: "period" | "pain";
+  isOngoing?: boolean;
+  pain?: { score: number; tags?: readonly string[]; note?: string };
+  period?: Readonly<{
+    id?: GenericId<"periodEvents">;
+    startDate: string;
+    endDate?: string;
+    startCertainty?: CycleFactCertainty;
+    endCertainty?: CycleFactCertainty;
+    source: "self" | "partner_assist" | "system";
+    confirmationStatus: "confirmed" | "unreviewed";
+    certainty: CycleFactReadLabel;
+    authorityVersion?: number;
+    createdByName: string;
+    updatedByName: string;
+    createdByViewer: boolean;
+    updatedByViewer: boolean;
+    canCorrect: boolean;
+  }>;
 }>;
 type PeriodStartArgs = Readonly<{
   startDate: string;
@@ -223,6 +250,7 @@ export declare const api: {
       } | null>;
       readonly getPeriodHistory: FunctionReference<"query", "public", Record<string, never>, readonly PeriodHistory[]>;
       readonly getPainHistory: FunctionReference<"query", "public", { startDate: string; endDate: string }, readonly PainHistory[]>;
+      readonly getTimelineHistory: FunctionReference<"query", "public", { startDate: string; endDate: string }, readonly TimelineHistoryEntry[]>;
     };
   };
   readonly mutations: {
@@ -254,6 +282,7 @@ export declare const api: {
       readonly assistLogPeriodEnd: FunctionReference<"mutation", "public", AssistedPeriodEndArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly updatePeriodEvent: FunctionReference<"mutation", "public", PeriodCorrectionArgs, { success: boolean }>;
       readonly correctAssistedPeriodEvent: FunctionReference<"mutation", "public", AssistedPeriodCorrectionArgs, { eventId: GenericId<"periodEvents"> }>;
+      readonly deletePeriodEvent: FunctionReference<"mutation", "public", { periodEventId: GenericId<"periodEvents">; expectedAuthorityVersion?: number }, { success: boolean }>;
     };
     readonly cycleContext: {
       readonly createPredictionSegment: FunctionReference<"mutation", "public", { startDate: string }, { segmentId: string }>;
