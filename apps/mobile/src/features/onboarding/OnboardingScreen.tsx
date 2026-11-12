@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import {
   Pressable,
   ScrollView,
@@ -40,6 +40,9 @@ export function OnboardingScreen({
 }): React.JSX.Element {
   const router = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
+  const online = useConvexConnectionState().isWebSocketConnected;
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
   const [saving, setSaving] = useState(false);
   const [confirmedRole, setConfirmedRole] = useState<MobileRole | null>(null);
@@ -119,6 +122,7 @@ export function OnboardingScreen({
         existingPeriods: [
           ...(periodHistory ?? []),
         ],
+        isOnline: () => onlineRef.current,
         logPeriodStart: (args) => logPeriodStart(args),
         updateCycleSettings: (args) => updateCycleSettings(args),
         onSettingsSaved: () => setSettingsSaved(true),
@@ -187,9 +191,14 @@ export function OnboardingScreen({
               <Text allowFontScaling style={[styles.body, { color: palette.muted }]}>
                 Let’s set up your cycle tracking.
               </Text>
+              {!online ? (
+                <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
+                  Offline. Reconnect before saving your cycle setup.
+                </Text>
+              ) : null}
               {failed ? (
                 <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
-                  {getCycleSetupFailureMessage(settingsSaved)}
+                  {getCycleSetupFailureMessage(settingsSaved, online)}
                 </Text>
               ) : null}
               <DateField
@@ -232,8 +241,8 @@ export function OnboardingScreen({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Start tracking"
-                accessibilityState={{ disabled: saving || !startDate }}
-                disabled={saving || !startDate}
+                accessibilityState={{ disabled: saving || !startDate || !online }}
+                disabled={saving || !startDate || !online}
                 onPress={() => void saveCycleSetup()}
                 style={[styles.button, { backgroundColor: palette.glass, borderColor: palette.border }]}
               >

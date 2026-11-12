@@ -48,8 +48,9 @@
 2. Query period history and cycle settings only for an authenticated primary. Do not show completion until both queries resolve; hydrate the form from server settings so a restart after a failed period write can retry. In the signed-in `(app)` layout, hold primary access while period history is loading and redirect empty history to onboarding; partners bypass this check.
 3. Route partners to completion. Route primary users with existing period history to completion. Route primary users without period history, including after restart, to setup.
 4. Expose start date, exact/approximate certainty, cycle and period lengths, and explicit Start Tracking action. Show a visible selected certainty style as well as selected accessibility state. Disable submission without a date or while saving.
-5. Report partial writes accurately. Require settings success before period logging; if period logging then fails, state that settings saved and the period receipt could not be confirmed, and keep setup retryable. A retry reuses persisted settings and creates exactly one event.
-6. Verify focused onboarding and entry-routing tests plus mobile typecheck.
+5. Reject writes when the Convex connection is offline, both before settings and after its receipt before period logging. Disable Start Tracking and show offline guidance while disconnected. If the connection drops between writes, retain the settings receipt and report that the period was not submitted.
+6. Report other partial writes accurately. Require settings success before period logging; if period logging then fails, state that settings saved and the period receipt could not be confirmed, and keep setup retryable. A retry reuses persisted settings and creates exactly one event.
+7. Verify focused onboarding and entry-routing tests plus mobile typecheck.
 
 ### Task 3 — Contract and release evidence
 
@@ -60,7 +61,7 @@
 
 All three query/mutation paths are already inventoried. Correct the existing `updateCycleSettings` type in `apps/mobile/src/convex/api.d.ts` to include the server's optional `cycleLength` and `periodLength` numbers alongside `predictionPaused`; the parity assertion must check it against the actual server reference. Do not runtime-import server implementations.
 
-Run `npm run mobile:test -- onboarding.test.tsx accessResolver.test.ts api.inventory.test.ts`, `npm run mobile:typecheck`, and `npm run typecheck`. PR CI must be green. Do not start a new emulator/device cycle for this PR. Deferred synthetic QA: fresh primary completes setup, sees the exact/certain event in Log and Home, and retry after a simulated period-write failure produces exactly one event while preserving selected settings; partner completes onboarding without period writes and remains governed by server privacy projections.
+Run `npm run mobile:test -- onboarding.test.tsx accessResolver.test.ts api.inventory.test.ts`, `npm run mobile:typecheck`, and `npm run typecheck`. PR CI must be green. Do not start a new emulator/device cycle for this PR. Deferred synthetic QA: fresh primary completes setup, sees the exact/certain event in Log and Home, offline-before-submit causes no writes, and a disconnect after settings receipt blocks period logging while accurately reporting settings saved; partner completes onboarding without period writes and remains governed by server privacy projections.
 
 ## Safety and scope
 
@@ -68,5 +69,6 @@ Run `npm run mobile:test -- onboarding.test.tsx accessResolver.test.ts api.inven
 - Do not infer UTC when the device IANA timezone is unavailable; fail closed for period submission.
 - Date is calendar-date data, not a timestamp. The backend validates date and primary role.
 - Settings write is first; period write follows. The period event is the completion receipt, so a saved period proves settings succeeded. If period logging fails, the existing settings query restores the form after restart.
+- The native connection state is checked before each mutation. No offline write acknowledgement or delayed period submission is shown.
 - Keep synthetic-only QA deferred until the consolidated two-account mobile QA stage specified by the CB-01 issue.
 - Stack the single feature PR on `gate5/atlas-foundation`; the PR base must be that branch.

@@ -133,6 +133,10 @@ describe("mobile onboarding role setup", () => {
     expect(appEntry).toContain("resolvePrimaryCycleSetupRoute");
     expect(appEntry).toContain('access.role === "primary" ? {} : "skip"');
     expect(appEntry).toContain('<Redirect href="/onboarding" />');
+    expect(screen).toContain("useConvexConnectionState");
+    expect(screen).toContain("isOnline: () => onlineRef.current");
+    expect(screen).toContain("Offline. Reconnect before saving your cycle setup.");
+    expect(screen).toContain("saving || !startDate || !online");
   });
 });
 
@@ -160,6 +164,7 @@ describe("mobile initial cycle setup", () => {
     const calls: string[] = [];
     await saveInitialCycleSetup({
       ...base,
+      isOnline: () => true,
       logPeriodStart: async (args) => {
         calls.push(`period:${args.startDate}:${args.startCertainty}:${args.timeZone}`);
       },
@@ -184,6 +189,7 @@ describe("mobile initial cycle setup", () => {
     await expect(
       saveInitialCycleSetup({
         ...base,
+        isOnline: () => true,
         logPeriodStart,
         updateCycleSettings,
         onSettingsSaved: () => {
@@ -194,6 +200,7 @@ describe("mobile initial cycle setup", () => {
 
     await saveInitialCycleSetup({
       ...base,
+      isOnline: () => true,
       existingPeriods: [],
       logPeriodStart,
       updateCycleSettings,
@@ -221,10 +228,16 @@ describe("mobile initial cycle setup", () => {
   });
 
   it("reports the known write receipts after a failed setup attempt", () => {
-    expect(getCycleSetupFailureMessage(true)).toBe(
+    expect(getCycleSetupFailureMessage(true, true)).toBe(
       "Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup.",
     );
-    expect(getCycleSetupFailureMessage(false)).toBe(
+    expect(getCycleSetupFailureMessage(true, false)).toBe(
+      "Your cycle settings are saved. The period start wasn’t submitted because the app is offline. Reconnect to finish setup.",
+    );
+    expect(getCycleSetupFailureMessage(false, false)).toBe(
+      "The app is offline, so setup changes couldn’t be confirmed. Reconnect and retry.",
+    );
+    expect(getCycleSetupFailureMessage(false, true)).toBe(
       "We couldn’t confirm which setup changes were saved. Check your connection and retry.",
     );
   });
@@ -235,8 +248,45 @@ describe("mobile initial cycle setup", () => {
       throw new Error("offline");
     });
     await expect(
-      saveInitialCycleSetup({ ...base, logPeriodStart, updateCycleSettings }),
+      saveInitialCycleSetup({ ...base, isOnline: () => true, logPeriodStart, updateCycleSettings }),
     ).rejects.toThrow("offline");
+    expect(logPeriodStart).not.toHaveBeenCalled();
+  });
+
+  it("rejects an offline submission before either mutation is called", async () => {
+    const logPeriodStart = vi.fn(async () => undefined);
+    const updateCycleSettings = vi.fn(async () => undefined);
+    await expect(
+      saveInitialCycleSetup({
+        ...base,
+        isOnline: () => false,
+        logPeriodStart,
+        updateCycleSettings,
+      }),
+    ).rejects.toThrow("offline");
+    expect(updateCycleSettings).not.toHaveBeenCalled();
+    expect(logPeriodStart).not.toHaveBeenCalled();
+  });
+
+  it("preserves the settings receipt and skips period logging when connection drops between writes", async () => {
+    let online = true;
+    let settingsSaved = false;
+    const logPeriodStart = vi.fn(async () => undefined);
+    const updateCycleSettings = vi.fn(async () => undefined);
+    await expect(
+      saveInitialCycleSetup({
+        ...base,
+        isOnline: () => online,
+        logPeriodStart,
+        updateCycleSettings,
+        onSettingsSaved: () => {
+          settingsSaved = true;
+          online = false;
+        },
+      }),
+    ).rejects.toThrow("offline");
+    expect(settingsSaved).toBe(true);
+    expect(updateCycleSettings).toHaveBeenCalledOnce();
     expect(logPeriodStart).not.toHaveBeenCalled();
   });
 
@@ -245,6 +295,7 @@ describe("mobile initial cycle setup", () => {
     const updateCycleSettings = vi.fn(async () => undefined);
     await saveInitialCycleSetup({
       ...base,
+      isOnline: () => true,
       existingPeriods: [{ startDate: base.startDate }],
       logPeriodStart,
       updateCycleSettings,
@@ -265,7 +316,7 @@ describe("mobile initial cycle setup", () => {
       { ...base, periodLength: 9 },
     ]) {
       await expect(
-        saveInitialCycleSetup({ ...invalid, logPeriodStart, updateCycleSettings }),
+        saveInitialCycleSetup({ ...invalid, isOnline: () => true, logPeriodStart, updateCycleSettings }),
       ).rejects.toThrow();
     }
     expect(logPeriodStart).not.toHaveBeenCalled();
