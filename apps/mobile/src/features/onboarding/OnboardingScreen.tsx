@@ -17,6 +17,8 @@ import { DateField } from "../logging/DateField";
 import {
   DEFAULT_CYCLE_LENGTH,
   DEFAULT_PERIOD_LENGTH,
+  getCertaintyChoiceStyle,
+  getCycleSetupFailureMessage,
   getDeviceDate,
   getDeviceTimeZone,
   hasInitialPeriod,
@@ -39,21 +41,6 @@ export function OnboardingScreen({
   const router = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const me = useQuery(api.queries.users.getMe, isAuthenticated ? {} : "skip");
-  const periodHistory = useQuery(
-    api.queries.history.getPeriodHistory,
-    isAuthenticated ? {} : "skip",
-  );
-  const existingCycleSettings = useQuery(
-    api.queries.history.getCycleSettings,
-    isAuthenticated ? {} : "skip",
-  );
-  const ensureUser = useMutation(api.mutations.users.ensureUser);
-  const updateRole = useMutation(api.mutations.users.updateUserRole);
-  const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
-  const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
-  const updateCycleSettings = useMutation(api.mutations.periods.updateCycleSettings);
-  const palette =
-    useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const [saving, setSaving] = useState(false);
   const [confirmedRole, setConfirmedRole] = useState<MobileRole | null>(null);
   const [failed, setFailed] = useState(false);
@@ -62,12 +49,32 @@ export function OnboardingScreen({
   const [cycleLength, setCycleLength] = useState(DEFAULT_CYCLE_LENGTH);
   const [periodLength, setPeriodLength] = useState(DEFAULT_PERIOD_LENGTH);
   const [setupSaved, setSetupSaved] = useState(false);
-  const [savedPeriodStart, setSavedPeriodStart] = useState<string | null>(null);
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsInitialized, setSettingsInitialized] = useState(false);
-
-  const loading = isLoading || !isAuthenticated || me === undefined || periodHistory === undefined || existingCycleSettings === undefined;
   const existingRole = me && isMobileRole(me.role) ? me.role : null;
   const complete = confirmedRole ?? existingRole;
+  const periodHistory = useQuery(
+    api.queries.history.getPeriodHistory,
+    isAuthenticated && complete === "primary" ? {} : "skip",
+  );
+  const existingCycleSettings = useQuery(
+    api.queries.history.getCycleSettings,
+    isAuthenticated && complete === "primary" ? {} : "skip",
+  );
+  const ensureUser = useMutation(api.mutations.users.ensureUser);
+  const updateRole = useMutation(api.mutations.users.updateUserRole);
+  const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
+  const logPeriodStart = useMutation(api.mutations.periods.logPeriodStart);
+  const updateCycleSettings = useMutation(api.mutations.periods.updateCycleSettings);
+  const palette =
+    useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+
+  const loading =
+    isLoading ||
+    !isAuthenticated ||
+    me === undefined ||
+    (complete === "primary" &&
+      (periodHistory === undefined || existingCycleSettings === undefined));
   const periodIsSaved = setupSaved || hasInitialPeriod(periodHistory);
   const deviceTimeZone = getDeviceTimeZone();
 
@@ -100,6 +107,7 @@ export function OnboardingScreen({
 
   const saveCycleSetup = async () => {
     setFailed(false);
+    setSettingsSaved(false);
     setSaving(true);
     try {
       await saveInitialCycleSetup({
@@ -110,11 +118,10 @@ export function OnboardingScreen({
         timeZone: deviceTimeZone,
         existingPeriods: [
           ...(periodHistory ?? []),
-          ...(savedPeriodStart ? [{ startDate: savedPeriodStart }] : []),
         ],
         logPeriodStart: (args) => logPeriodStart(args),
         updateCycleSettings: (args) => updateCycleSettings(args),
-        onPeriodSaved: setSavedPeriodStart,
+        onSettingsSaved: () => setSettingsSaved(true),
       });
       setSetupSaved(true);
     } catch {
@@ -182,9 +189,7 @@ export function OnboardingScreen({
               </Text>
               {failed ? (
                 <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
-                  {savedPeriodStart
-                    ? "Your period date is saved. We couldn’t finish the cycle settings; check your connection and try again."
-                    : "We couldn’t save your setup. Check your connection and try again."}
+                  {getCycleSetupFailureMessage(settingsSaved)}
                 </Text>
               ) : null}
               <DateField
@@ -194,7 +199,7 @@ export function OnboardingScreen({
                 palette={palette}
                 maximumDate={deviceTimeZone ? getDeviceDate(deviceTimeZone) : undefined}
                 placeholder="Choose start date"
-                disabled={saving || savedPeriodStart !== null}
+                disabled={saving}
               />
               <Text allowFontScaling style={[styles.body, textStyle]}>How certain are you about that date?</Text>
               <View style={styles.row}>
@@ -203,10 +208,10 @@ export function OnboardingScreen({
                     key={value}
                     accessibilityRole="button"
                     accessibilityLabel={`${value === "exact" ? "Exact" : "Approximate"} start date`}
-                    accessibilityState={{ selected: certainty === value, disabled: saving || savedPeriodStart !== null }}
-                    disabled={saving || savedPeriodStart !== null}
+                    accessibilityState={{ selected: certainty === value, disabled: saving }}
+                    disabled={saving}
                     onPress={() => setCertainty(value)}
-                    style={[styles.choice, { backgroundColor: palette.glass, borderColor: palette.border }]}
+                    style={[styles.choice, getCertaintyChoiceStyle(certainty === value, palette)]}
                   >
                     <Text allowFontScaling style={[styles.buttonText, textStyle]}>
                       {value === "exact" ? "Exact date" : "Approximate date"}
@@ -216,13 +221,13 @@ export function OnboardingScreen({
               </View>
               <Text allowFontScaling style={[styles.body, textStyle]}>Average cycle length: {cycleLength} days</Text>
               <View style={styles.row}>
-                <LengthButton label="Decrease cycle length" value={cycleLength} minimum={MIN_CYCLE_LENGTH} disabled={saving || savedPeriodStart !== null} palette={palette} onChange={setCycleLength} delta={-1} />
-                <LengthButton label="Increase cycle length" value={cycleLength} maximum={MAX_CYCLE_LENGTH} disabled={saving || savedPeriodStart !== null} palette={palette} onChange={setCycleLength} delta={1} />
+                <LengthButton label="Decrease cycle length" value={cycleLength} minimum={MIN_CYCLE_LENGTH} disabled={saving} palette={palette} onChange={setCycleLength} delta={-1} />
+                <LengthButton label="Increase cycle length" value={cycleLength} maximum={MAX_CYCLE_LENGTH} disabled={saving} palette={palette} onChange={setCycleLength} delta={1} />
               </View>
               <Text allowFontScaling style={[styles.body, textStyle]}>Average period length: {periodLength} days</Text>
               <View style={styles.row}>
-                <LengthButton label="Decrease period length" value={periodLength} minimum={MIN_PERIOD_LENGTH} disabled={saving || savedPeriodStart !== null} palette={palette} onChange={setPeriodLength} delta={-1} />
-                <LengthButton label="Increase period length" value={periodLength} maximum={MAX_PERIOD_LENGTH} disabled={saving || savedPeriodStart !== null} palette={palette} onChange={setPeriodLength} delta={1} />
+                <LengthButton label="Decrease period length" value={periodLength} minimum={MIN_PERIOD_LENGTH} disabled={saving} palette={palette} onChange={setPeriodLength} delta={-1} />
+                <LengthButton label="Increase period length" value={periodLength} maximum={MAX_PERIOD_LENGTH} disabled={saving} palette={palette} onChange={setPeriodLength} delta={1} />
               </View>
               <Pressable
                 accessibilityRole="button"

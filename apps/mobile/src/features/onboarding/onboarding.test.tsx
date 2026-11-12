@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   getDeviceDate,
   getDeviceTimeZone,
+  getCertaintyChoiceStyle,
+  getCycleSetupFailureMessage,
   hasInitialPeriod,
   isMobileRole,
   saveInitialCycleSetup,
@@ -114,6 +116,10 @@ describe("mobile onboarding role setup", () => {
       new URL("../../app/onboarding.tsx", import.meta.url),
       "utf8",
     );
+    const appEntry = readFileSync(
+      new URL("../../app/(app)/_layout.tsx", import.meta.url),
+      "utf8",
+    );
     expect(screen).toContain("<ScrollView");
     expect(screen).toContain("<SafeAreaView");
     expect(screen).toContain("allowFontScaling");
@@ -121,8 +127,12 @@ describe("mobile onboarding role setup", () => {
     expect(screen).toContain('accessibilityRole="button"');
     expect(screen).toMatch(/accessibilityState=\{\{\s*disabled:\s*saving/);
     expect(screen).toContain('accessibilityRole="alert"');
+    expect(screen).toContain("getCertaintyChoiceStyle(certainty === value, palette)");
     expect(screen).not.toMatch(/\bheight:\s*\d/);
     expect(route).toContain("<AuthGate>");
+    expect(appEntry).toContain("resolvePrimaryCycleSetupRoute");
+    expect(appEntry).toContain('access.role === "primary" ? {} : "skip"');
+    expect(appEntry).toContain('<Redirect href="/onboarding" />');
   });
 });
 
@@ -156,15 +166,17 @@ describe("mobile initial cycle setup", () => {
       updateCycleSettings: async (args) => {
         calls.push(`settings:${args.cycleLength}:${args.periodLength}`);
       },
+      onSettingsSaved: () => calls.push("settings-receipt"),
     });
     expect(calls).toEqual([
       "settings:28:5",
+      "settings-receipt",
       "period:2026-11-10:approximate:Asia/Kolkata",
     ]);
   });
 
   it("keeps setup retryable if the period write fails after settings are saved", async () => {
-    let savedPeriodStart: string | null = null;
+    let settingsSaved = false;
     const logPeriodStart = vi.fn(async () => {
       if (logPeriodStart.mock.calls.length === 1) throw new Error("offline");
     });
@@ -174,24 +186,47 @@ describe("mobile initial cycle setup", () => {
         ...base,
         logPeriodStart,
         updateCycleSettings,
-        onPeriodSaved: (startDate) => {
-          savedPeriodStart = startDate;
+        onSettingsSaved: () => {
+          settingsSaved = true;
         },
       }),
     ).rejects.toThrow("offline");
 
     await saveInitialCycleSetup({
       ...base,
-      existingPeriods: savedPeriodStart ? [{ startDate: savedPeriodStart }] : [],
+      existingPeriods: [],
       logPeriodStart,
       updateCycleSettings,
-      onPeriodSaved: (startDate) => {
-        savedPeriodStart = startDate;
+      onSettingsSaved: () => {
+        settingsSaved = true;
       },
     });
     expect(logPeriodStart).toHaveBeenCalledTimes(2);
     expect(updateCycleSettings).toHaveBeenCalledTimes(2);
-    expect(savedPeriodStart).toBe(base.startDate);
+    expect(settingsSaved).toBe(true);
+  });
+
+  it("shows a visible selected state for date certainty", () => {
+    const palette = { accent: "red", border: "gray", glass: "white", highlight: "pink" };
+    expect(getCertaintyChoiceStyle(true, palette)).toEqual({
+      backgroundColor: "pink",
+      borderColor: "red",
+      borderWidth: 2,
+    });
+    expect(getCertaintyChoiceStyle(false, palette)).toEqual({
+      backgroundColor: "white",
+      borderColor: "gray",
+      borderWidth: 1,
+    });
+  });
+
+  it("reports the known write receipts after a failed setup attempt", () => {
+    expect(getCycleSetupFailureMessage(true)).toBe(
+      "Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup.",
+    );
+    expect(getCycleSetupFailureMessage(false)).toBe(
+      "We couldn’t confirm which setup changes were saved. Check your connection and retry.",
+    );
   });
 
   it("does not create a period if saving cycle settings fails", async () => {

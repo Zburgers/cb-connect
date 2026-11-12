@@ -1,6 +1,23 @@
 export type MobileRole = "primary" | "partner";
 export type PeriodCertainty = "exact" | "approximate";
 
+export function getCertaintyChoiceStyle(
+  selected: boolean,
+  palette: { accent: string; border: string; glass: string; highlight: string },
+): { backgroundColor: string; borderColor: string; borderWidth: number } {
+  return {
+    backgroundColor: selected ? palette.highlight : palette.glass,
+    borderColor: selected ? palette.accent : palette.border,
+    borderWidth: selected ? 2 : 1,
+  };
+}
+
+export function getCycleSetupFailureMessage(settingsSaved: boolean): string {
+  return settingsSaved
+    ? "Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup."
+    : "We couldn’t confirm which setup changes were saved. Check your connection and retry.";
+}
+
 export const DEFAULT_CYCLE_LENGTH = 28;
 export const MIN_CYCLE_LENGTH = 21;
 export const MAX_CYCLE_LENGTH = 40;
@@ -34,7 +51,7 @@ export async function saveInitialCycleSetup({
   existingPeriods,
   logPeriodStart,
   updateCycleSettings,
-  onPeriodSaved,
+  onSettingsSaved,
 }: {
   startDate: string;
   startCertainty: PeriodCertainty;
@@ -51,7 +68,7 @@ export async function saveInitialCycleSetup({
     cycleLength: number;
     periodLength: number;
   }) => Promise<unknown>;
-  onPeriodSaved?: (startDate: string) => void;
+  onSettingsSaved?: () => void;
 }): Promise<void> {
   if (!startDate) throw new Error("Choose when your last period started.");
   if (!timeZone) throw new Error("A device time zone is required to continue.");
@@ -66,12 +83,12 @@ export async function saveInitialCycleSetup({
   // completed. If the period write fails, onboarding remains available and the
   // settings query can restore the saved values on the next launch.
   await updateCycleSettings({ cycleLength, periodLength });
+  onSettingsSaved?.();
 
   const alreadySaved = existingPeriods.some((period) => period.startDate === startDate);
   if (!alreadySaved) {
     await logPeriodStart({ startDate, startCertainty, timeZone });
   }
-  onPeriodSaved?.(startDate);
 }
 
 export function isMobileRole(value: unknown): value is MobileRole {
