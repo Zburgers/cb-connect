@@ -4,6 +4,7 @@ export const loggingApi = {
   history: {
     getPeriodHistory: api.queries.history.getPeriodHistory,
     getPainHistory: api.queries.history.getPainHistory,
+    getTimelineHistory: api.queries.history.getTimelineHistory,
   },
   periods: {
     logPeriodStart: api.mutations.periods.logPeriodStart,
@@ -12,6 +13,7 @@ export const loggingApi = {
     assistLogPeriodEnd: api.mutations.periods.assistLogPeriodEnd,
     updatePeriodEvent: api.mutations.periods.updatePeriodEvent,
     correctAssistedPeriodEvent: api.mutations.periods.correctAssistedPeriodEvent,
+    deletePeriodEvent: api.mutations.periods.deletePeriodEvent,
   },
   painLog: {
     createOrUpdatePainLog: api.mutations.painLog.createOrUpdatePainLog,
