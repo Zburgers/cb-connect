@@ -1,13 +1,16 @@
-import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/expo";
 import type { FunctionReturnType } from "convex/server";
+import * as Clipboard from "expo-clipboard";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
 import { HomeNudges } from "../home/HomeNudges";
+import { DateField } from "../logging/DateField";
+import { normalizeNickname, normalizePairingCode } from "./partnerDetails";
 
 type CoupleStatus = FunctionReturnType<typeof api.queries.couples.getCoupleStatus>;
 type GuardState = FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>;
@@ -71,7 +74,7 @@ function PairingControls({
   const generateCode = useAction(api.mutations.couples.generatePairingCode);
   const linkWithCode = useMutation(api.mutations.couples.linkPartnerWithCode);
   const [code, setCode] = useState("");
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<{ code: string; expiresAt: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -80,7 +83,7 @@ function PairingControls({
     setMessage(null);
     try {
       const result = await generateCode({});
-      setGeneratedCode(result.code);
+      setGeneratedCode(result);
     } catch {
       setMessage("A pairing code could not be created. Try again later.");
     } finally {
@@ -92,7 +95,12 @@ function PairingControls({
     setBusy(true);
     setMessage(null);
     try {
-      const result = await linkWithCode({ code });
+      const normalizedCode = normalizePairingCode(code);
+      if (!normalizedCode) {
+        setMessage("Enter a valid 6 or 12 character pairing code.");
+        return;
+      }
+      const result = await linkWithCode({ code: normalizedCode });
       if (result.success) setCode("");
       else setMessage(result.error);
     } catch {
@@ -102,7 +110,27 @@ function PairingControls({
     }
   }
 
-  const pairingCode = generatedCode ?? couple.activePairingCode?.code;
+  const activeGeneratedCode = generatedCode && generatedCode.expiresAt > Date.now() ? generatedCode : null;
+  const pairingCode = activeGeneratedCode?.code ?? couple.activePairingCode?.code;
+  const pairingExpiresAt = activeGeneratedCode?.expiresAt ?? couple.activePairingCode?.expiresAt;
+  const generatedCodeExpired = generatedCode !== null && generatedCode.expiresAt <= Date.now();
+  async function copyPairingCode() {
+    if (!pairingCode) return;
+    try {
+      await Clipboard.setStringAsync(pairingCode);
+      setMessage("Pairing code copied.");
+    } catch {
+      setMessage("Could not copy the pairing code. You can select it to copy manually.");
+    }
+  }
+  async function sharePairingCode() {
+    if (!pairingCode) return;
+    try {
+      await Share.share({ message: `Join me on CB Connect! Use pairing code: ${pairingCode}` }, { dialogTitle: "Share pairing code" });
+    } catch {
+      setMessage("Could not open the share menu. Copy the code to share it.");
+    }
+  }
   return (
     <ScrollView contentContainerStyle={styles.page} style={{ backgroundColor: "transparent" }}>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Partner connection</Text>
@@ -114,10 +142,13 @@ function PairingControls({
               {pairingCode}
             </Text>
           ) : null}
-          {couple.activePairingCode ? (
-            <Text style={{ color: palette.muted }}>
-              Expires {new Date(couple.activePairingCode.expiresAt).toLocaleString()}.
-            </Text>
+          {pairingExpiresAt ? <Text style={{ color: palette.muted }}>Expires {new Date(pairingExpiresAt).toLocaleString()}.</Text> : null}
+          {generatedCodeExpired ? <Text accessibilityRole="alert" style={{ color: palette.muted }}>Pairing code expired. Create a new one to invite your partner.</Text> : null}
+          {pairingCode ? (
+            <View style={styles.actions}>
+              <Button label="Copy pairing code" onPress={() => void copyPairingCode()} dark={dark} />
+              <Button label="Share pairing code" onPress={() => void sharePairingCode()} dark={dark} />
+            </View>
           ) : null}
           <Button label={busy ? "Creating pairing code" : pairingCode ? "Create a new pairing code" : "Create pairing code"} disabled={busy} onPress={() => void createCode()} dark={dark} />
           {couple.status === "pending" ? (
@@ -131,7 +162,9 @@ function PairingControls({
             accessibilityLabel="Partner pairing code"
             autoCapitalize="characters"
             autoCorrect={false}
-            maxLength={64}
+            maxLength={14}
+            autoComplete="off"
+            textContentType="none"
             onChangeText={setCode}
             placeholder="Pairing code"
             style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
@@ -168,7 +201,17 @@ function ActivePartnerView({
   const [sharingBusy, setSharingBusy] = useState(false);
   const sharing = useMutation(api.mutations.couples.updateSharingSettings);
   const revoke = useMutation(api.mutations.couples.revokePartnerAccess);
+  const updateConnectedSinceDate = useMutation(api.mutations.couples.updateConnectedSinceDate);
+  const updatePartnerNickname = useMutation(api.mutations.couples.updatePartnerNickname);
+  const [connectedSinceDate, setConnectedSinceDate] = useState(couple.connectedSinceDate ?? "");
+  const [partnerNickname, setPartnerNickname] = useState(couple.partner?.nickname ?? "");
+  const [detailsBusy, setDetailsBusy] = useState(false);
+  const [detailsMessage, setDetailsMessage] = useState<string | null>(null);
   const settings = couple.sharingSettings;
+  useEffect(() => {
+    setConnectedSinceDate(couple.connectedSinceDate ?? "");
+    setPartnerNickname(couple.partner?.nickname ?? "");
+  }, [couple.connectedSinceDate, couple.partner?.nickname]);
   if (!settings) return <Message text="Refreshing sharing controls…" dark={dark} />;
 
   async function setSharing(key: "sharingPain" | "sharingPhase" | "sharingPeriodWrite", value: boolean) {
@@ -181,6 +224,40 @@ function ActivePartnerView({
       setError("Sharing setting was not changed. Try again.");
     } finally {
       setSharingBusy(false);
+    }
+  }
+
+  async function saveConnectedSinceDate() {
+    if (!connectedSinceDate || detailsBusy) return;
+    setDetailsBusy(true);
+    setDetailsMessage(null);
+    try {
+      await updateConnectedSinceDate({ connectedSinceDate });
+      setDetailsMessage("Relationship date saved.");
+    } catch {
+      setDetailsMessage("Relationship date was not saved. Check the date and try again.");
+    } finally {
+      setDetailsBusy(false);
+    }
+  }
+
+  async function savePartnerNickname() {
+    const nickname = normalizeNickname(partnerNickname);
+    if (nickname === null) {
+      setDetailsMessage("Nickname must be 40 characters or fewer.");
+      return;
+    }
+    if (detailsBusy) return;
+    setDetailsBusy(true);
+    setDetailsMessage(null);
+    try {
+      await updatePartnerNickname({ nickname });
+      setPartnerNickname(nickname);
+      setDetailsMessage(nickname ? "Private nickname saved." : "Private nickname cleared.");
+    } catch {
+      setDetailsMessage("Private nickname was not saved. Try again.");
+    } finally {
+      setDetailsBusy(false);
     }
   }
 
@@ -208,6 +285,18 @@ function ActivePartnerView({
         {couple.partner?.displayName ? `Connected with ${couple.partner.displayName}.` : "Your partner is connected."}
       </Text>
       <PresenceStatus dark={dark} />
+      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Relationship date</Text>
+        <Text style={{ color: palette.muted }}>Used for anniversary moments in your shared space.</Text>
+        {couple.anniversary ? <Text style={{ color: palette.foreground }}>{couple.anniversary.headline} · {couple.anniversary.body}</Text> : null}
+        <DateField label="Relationship date" value={connectedSinceDate} onChange={setConnectedSinceDate} palette={palette} disabled={detailsBusy} />
+        <Button label={detailsBusy ? "Saving relationship details" : "Save relationship date"} disabled={detailsBusy || !connectedSinceDate} onPress={() => void saveConnectedSinceDate()} dark={dark} />
+        <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Partner nickname</Text>
+        <Text style={{ color: palette.muted }}>Private to your account. It only changes how your partner appears for you.</Text>
+        <TextInput accessibilityLabel="Private partner nickname" maxLength={40} onChangeText={setPartnerNickname} placeholder={couple.partner?.name ?? "Partner name"} value={partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
+        <Button label="Save nickname" disabled={detailsBusy} onPress={() => void savePartnerNickname()} dark={dark} />
+        {detailsMessage ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{detailsMessage}</Text> : null}
+      </View>
       {role === "primary" ? (
         <>
           <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
@@ -314,6 +403,7 @@ function Message({ text, dark }: { text: string; dark: boolean }): React.JSX.Ele
 
 const styles = StyleSheet.create({
   page: { flexGrow: 1, gap: 14, padding: 20 },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   heading: { fontSize: 22, fontWeight: "700" },
   subheading: { fontSize: 17, fontWeight: "700" },
   code: { fontSize: 24, fontWeight: "700", letterSpacing: 3, paddingVertical: 8 },

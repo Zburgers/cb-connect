@@ -7,6 +7,7 @@ import {
   canLoadPartnerCycleProjection,
   canRenderPartnerViews,
 } from "./partnerAccess";
+import { normalizePairingCode, normalizeNickname } from "./partnerDetails";
 
 const mobileRoot = process.cwd().endsWith("/apps/mobile")
   ? process.cwd()
@@ -32,6 +33,23 @@ function pressableAccessibility(source: string) {
 
 describe("mobile partner access and accessibility", () => {
   test.each([
+    [" abc123 ", "ABC123"],
+    [" abcd 1234 efgh ", "ABCD1234EFGH"],
+    ["invalid", null],
+    ["12345", null],
+    ["1234567", null],
+    ["1234567890123", null],
+  ])("normalizes pairing input %j", (input, expected) => {
+    expect(normalizePairingCode(input)).toBe(expected);
+  });
+
+  test("normalizes a viewer's private nickname without exceeding the server limit", () => {
+    expect(normalizeNickname("  My   Partner  ")).toBe("My Partner");
+    expect(normalizeNickname(" ")).toBe("");
+    expect(normalizeNickname("x".repeat(41))).toBeNull();
+  });
+
+  test.each([
     ["primary", "primary", true, false, true],
     ["partner", "partner", true, false, true],
     ["unlinked", "partner", false, false, false],
@@ -52,6 +70,18 @@ describe("mobile partner access and accessibility", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/partner/PartnerControls.tsx"), "utf8");
     expect(source).toMatch(/activeView && role && hasRelationshipGeneration\(couple\)/);
     expect(source).toMatch(/ActivePartnerView key=\{couple\.relationshipGeneration\}/);
+  });
+
+  test("partner controls expose native copy/share, relationship date and private nickname actions", () => {
+    const source = readFileSync(resolve(mobileRoot, "src/features/partner/PartnerControls.tsx"), "utf8");
+    expect(source).toContain("Clipboard.setStringAsync");
+    expect(source).toContain("Share.share");
+    expect(source).toContain("Relationship date");
+    expect(source).toContain("Partner nickname");
+    expect(source).toContain("updateConnectedSinceDate");
+    expect(source).toContain("updatePartnerNickname");
+    expect(source).toContain("Expires");
+    expect(source).toContain("Pairing code expired.");
   });
 
   test.each([

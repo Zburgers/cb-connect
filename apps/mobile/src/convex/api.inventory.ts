@@ -36,6 +36,8 @@ export const mobilePublicApiInventory = {
   "mutations.couples.linkPartnerWithCode": true,
   "mutations.couples.revokePartnerAccess": true,
   "mutations.couples.updateSharingSettings": true,
+  "mutations.couples.updateConnectedSinceDate": true,
+  "mutations.couples.updatePartnerNickname": true,
   "mutations.messages.send": true,
   "mutations.messages.markDelivered": true,
   "mutations.messages.markReadThrough": true,

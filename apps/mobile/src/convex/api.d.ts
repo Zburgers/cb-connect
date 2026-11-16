@@ -292,6 +292,8 @@ export declare const api: {
       readonly updateSharingSettings: FunctionReference<"mutation", "public", {
         sharingPain?: boolean; sharingPhase?: boolean; sharingPeriodWrite?: boolean;
       }, { success: boolean }>;
+      readonly updateConnectedSinceDate: FunctionReference<"mutation", "public", { connectedSinceDate: string }, { success: boolean }>;
+      readonly updatePartnerNickname: FunctionReference<"mutation", "public", { nickname: string }, { success: boolean }>;
     };
     readonly messages: {
       readonly send: FunctionReference<"mutation", "public", { body: string }, string>;
