@@ -264,7 +264,7 @@ export function LoggingScreen() {
       </> : null}
       {entry.pain ? <>
         <Text style={{ color: palette.foreground }}>Pain {entry.pain.score}/10 · {entry.pain.tags?.map((tag) => painTagLabels[tag] ?? tag).join(", ") || "No tags"}</Text>
-        {entry.pain.note ? <Text style={{ color: palette.muted }}>{entry.pain.note}</Text> : null}
+        {role === "primary" && entry.pain.note ? <Text style={{ color: palette.muted }}>{entry.pain.note}</Text> : null}
       </> : null}
       {entry.period?.canCorrect && entry.period.id && entry.period.authorityVersion !== undefined ? editing === entry.period.id ? <>
         <DateField label="Corrected period start date" value={editStartDate} onChange={setEditStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} />

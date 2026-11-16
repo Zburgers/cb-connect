@@ -486,7 +486,13 @@ export const getTimelineHistory = query({
             }
           : {}),
         type: "pain",
-        pain: { score: pain.painScore, tags: pain.tags, note: pain.note },
+        pain: {
+          score: pain.painScore,
+          tags: pain.tags,
+          ...(user.role === "primary" && pain.note !== undefined
+            ? { note: pain.note }
+            : {}),
+        },
       });
     }
 
