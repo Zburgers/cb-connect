@@ -7,7 +7,7 @@ import {
   canLoadPartnerCycleProjection,
   canRenderPartnerViews,
 } from "./partnerAccess";
-import { normalizePairingCode, normalizeNickname } from "./partnerDetails";
+import { getFreshPairingCode, normalizePairingCode, normalizeNickname, syncPartnerDrafts } from "./partnerDetails";
 
 const mobileRoot = process.cwd().endsWith("/apps/mobile")
   ? process.cwd()
@@ -47,6 +47,25 @@ describe("mobile partner access and accessibility", () => {
     expect(normalizeNickname("  My   Partner  ")).toBe("My Partner");
     expect(normalizeNickname(" ")).toBe("");
     expect(normalizeNickname("x".repeat(41))).toBeNull();
+  });
+
+  test("expires generated and cached server pairing codes against the same clock", () => {
+    const expired = { code: "ABC123", expiresAt: 1_000 };
+    expect(getFreshPairingCode(expired, expired, 1_001)).toBeNull();
+    expect(getFreshPairingCode(expired, { code: "DEF456", expiresAt: 2_000 }, 1_001)).toEqual({ code: "DEF456", expiresAt: 2_000 });
+    expect(getFreshPairingCode(null, expired, 999)).toEqual(expired);
+  });
+
+  test("syncing a server date does not overwrite an unrelated nickname draft", () => {
+    const draft = { connectedSinceDate: "2020-01-01", partnerNickname: "Unsaved nickname" };
+    expect(syncPartnerDrafts(draft, { connectedSinceDate: "2021-02-02" })).toEqual({
+      connectedSinceDate: "2021-02-02",
+      partnerNickname: "Unsaved nickname",
+    });
+    expect(syncPartnerDrafts(draft, { partnerNickname: "Server nickname" })).toEqual({
+      connectedSinceDate: "2020-01-01",
+      partnerNickname: "Server nickname",
+    });
   });
 
   test.each([

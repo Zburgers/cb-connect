@@ -10,7 +10,7 @@ import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
 import { HomeNudges } from "../home/HomeNudges";
 import { DateField } from "../logging/DateField";
-import { normalizeNickname, normalizePairingCode } from "./partnerDetails";
+import { getFreshPairingCode, normalizeNickname, normalizePairingCode, syncPartnerDrafts } from "./partnerDetails";
 
 type CoupleStatus = FunctionReturnType<typeof api.queries.couples.getCoupleStatus>;
 type GuardState = FunctionReturnType<typeof api.queries.mobileAccess.getGuardState>;
@@ -75,8 +75,20 @@ function PairingControls({
   const linkWithCode = useMutation(api.mutations.couples.linkPartnerWithCode);
   const [code, setCode] = useState("");
   const [generatedCode, setGeneratedCode] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const generatedCodeExpiry = generatedCode?.expiresAt;
+  const serverCodeExpiry = couple.activePairingCode?.expiresAt;
+
+  useEffect(() => {
+    const nextExpiry = [generatedCodeExpiry, serverCodeExpiry]
+      .filter((expiry): expiry is number => expiry !== undefined && expiry > now)
+      .sort((left, right) => left - right)[0];
+    if (nextExpiry === undefined) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(1, nextExpiry - Date.now() + 1));
+    return () => clearTimeout(timer);
+  }, [generatedCodeExpiry, now, serverCodeExpiry]);
 
   async function createCode() {
     setBusy(true);
@@ -110,23 +122,33 @@ function PairingControls({
     }
   }
 
-  const activeGeneratedCode = generatedCode && generatedCode.expiresAt > Date.now() ? generatedCode : null;
-  const pairingCode = activeGeneratedCode?.code ?? couple.activePairingCode?.code;
-  const pairingExpiresAt = activeGeneratedCode?.expiresAt ?? couple.activePairingCode?.expiresAt;
-  const generatedCodeExpired = generatedCode !== null && generatedCode.expiresAt <= Date.now();
+  const activePairingCode = getFreshPairingCode(generatedCode, couple.activePairingCode, now);
+  const pairingCode = activePairingCode?.code;
+  const pairingExpiresAt = activePairingCode?.expiresAt;
+  const pairingCodeExpired = [generatedCodeExpiry, serverCodeExpiry].some((expiry) => expiry !== undefined && expiry <= now);
   async function copyPairingCode() {
-    if (!pairingCode) return;
+    const freshCode = getFreshPairingCode(generatedCode, couple.activePairingCode, Date.now());
+    if (!freshCode) {
+      setNow(Date.now());
+      setMessage("Pairing code expired. Create a new one to invite your partner.");
+      return;
+    }
     try {
-      await Clipboard.setStringAsync(pairingCode);
+      await Clipboard.setStringAsync(freshCode.code);
       setMessage("Pairing code copied.");
     } catch {
       setMessage("Could not copy the pairing code. You can select it to copy manually.");
     }
   }
   async function sharePairingCode() {
-    if (!pairingCode) return;
+    const freshCode = getFreshPairingCode(generatedCode, couple.activePairingCode, Date.now());
+    if (!freshCode) {
+      setNow(Date.now());
+      setMessage("Pairing code expired. Create a new one to invite your partner.");
+      return;
+    }
     try {
-      await Share.share({ message: `Join me on CB Connect! Use pairing code: ${pairingCode}` }, { dialogTitle: "Share pairing code" });
+      await Share.share({ message: `Join me on CB Connect! Use pairing code: ${freshCode.code}` }, { dialogTitle: "Share pairing code" });
     } catch {
       setMessage("Could not open the share menu. Copy the code to share it.");
     }
@@ -143,7 +165,7 @@ function PairingControls({
             </Text>
           ) : null}
           {pairingExpiresAt ? <Text style={{ color: palette.muted }}>Expires {new Date(pairingExpiresAt).toLocaleString()}.</Text> : null}
-          {generatedCodeExpired ? <Text accessibilityRole="alert" style={{ color: palette.muted }}>Pairing code expired. Create a new one to invite your partner.</Text> : null}
+          {pairingCodeExpired ? <Text accessibilityRole="alert" style={{ color: palette.muted }}>Pairing code expired. Create a new one to invite your partner.</Text> : null}
           {pairingCode ? (
             <View style={styles.actions}>
               <Button label="Copy pairing code" onPress={() => void copyPairingCode()} dark={dark} />
@@ -203,15 +225,19 @@ function ActivePartnerView({
   const revoke = useMutation(api.mutations.couples.revokePartnerAccess);
   const updateConnectedSinceDate = useMutation(api.mutations.couples.updateConnectedSinceDate);
   const updatePartnerNickname = useMutation(api.mutations.couples.updatePartnerNickname);
-  const [connectedSinceDate, setConnectedSinceDate] = useState(couple.connectedSinceDate ?? "");
-  const [partnerNickname, setPartnerNickname] = useState(couple.partner?.nickname ?? "");
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [detailsMessage, setDetailsMessage] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState({
+    connectedSinceDate: couple.connectedSinceDate ?? "",
+    partnerNickname: couple.partner?.nickname ?? "",
+  });
   const settings = couple.sharingSettings;
   useEffect(() => {
-    setConnectedSinceDate(couple.connectedSinceDate ?? "");
-    setPartnerNickname(couple.partner?.nickname ?? "");
-  }, [couple.connectedSinceDate, couple.partner?.nickname]);
+    setDrafts((current) => syncPartnerDrafts(current, { connectedSinceDate: couple.connectedSinceDate ?? "" }));
+  }, [couple.connectedSinceDate]);
+  useEffect(() => {
+    setDrafts((current) => syncPartnerDrafts(current, { partnerNickname: couple.partner?.nickname ?? "" }));
+  }, [couple.partner?.nickname]);
   if (!settings) return <Message text="Refreshing sharing controls…" dark={dark} />;
 
   async function setSharing(key: "sharingPain" | "sharingPhase" | "sharingPeriodWrite", value: boolean) {
@@ -228,12 +254,12 @@ function ActivePartnerView({
   }
 
   async function saveConnectedSinceDate() {
-    if (!connectedSinceDate || detailsBusy) return;
+    if (detailsBusy) return;
     setDetailsBusy(true);
     setDetailsMessage(null);
     try {
-      await updateConnectedSinceDate({ connectedSinceDate });
-      setDetailsMessage("Relationship date saved.");
+      await updateConnectedSinceDate({ connectedSinceDate: drafts.connectedSinceDate });
+      setDetailsMessage(drafts.connectedSinceDate ? "Relationship date saved." : "Relationship date cleared.");
     } catch {
       setDetailsMessage("Relationship date was not saved. Check the date and try again.");
     } finally {
@@ -242,7 +268,7 @@ function ActivePartnerView({
   }
 
   async function savePartnerNickname() {
-    const nickname = normalizeNickname(partnerNickname);
+    const nickname = normalizeNickname(drafts.partnerNickname);
     if (nickname === null) {
       setDetailsMessage("Nickname must be 40 characters or fewer.");
       return;
@@ -252,7 +278,7 @@ function ActivePartnerView({
     setDetailsMessage(null);
     try {
       await updatePartnerNickname({ nickname });
-      setPartnerNickname(nickname);
+      setDrafts((current) => syncPartnerDrafts(current, { partnerNickname: nickname }));
       setDetailsMessage(nickname ? "Private nickname saved." : "Private nickname cleared.");
     } catch {
       setDetailsMessage("Private nickname was not saved. Try again.");
@@ -289,11 +315,11 @@ function ActivePartnerView({
         <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Relationship date</Text>
         <Text style={{ color: palette.muted }}>Used for anniversary moments in your shared space.</Text>
         {couple.anniversary ? <Text style={{ color: palette.foreground }}>{couple.anniversary.headline} · {couple.anniversary.body}</Text> : null}
-        <DateField label="Relationship date" value={connectedSinceDate} onChange={setConnectedSinceDate} palette={palette} disabled={detailsBusy} />
-        <Button label={detailsBusy ? "Saving relationship details" : "Save relationship date"} disabled={detailsBusy || !connectedSinceDate} onPress={() => void saveConnectedSinceDate()} dark={dark} />
+        <DateField label="Relationship date" value={drafts.connectedSinceDate} onChange={(connectedSinceDate) => setDrafts((current) => syncPartnerDrafts(current, { connectedSinceDate }))} palette={palette} disabled={detailsBusy} clearable />
+        <Button label={detailsBusy ? "Saving relationship details" : drafts.connectedSinceDate ? "Save relationship date" : "Clear relationship date"} disabled={detailsBusy} onPress={() => void saveConnectedSinceDate()} dark={dark} />
         <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Partner nickname</Text>
         <Text style={{ color: palette.muted }}>Private to your account. It only changes how your partner appears for you.</Text>
-        <TextInput accessibilityLabel="Private partner nickname" maxLength={40} onChangeText={setPartnerNickname} placeholder={couple.partner?.name ?? "Partner name"} value={partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
+        <TextInput accessibilityLabel="Private partner nickname" maxLength={40} onChangeText={(partnerNickname) => setDrafts((current) => syncPartnerDrafts(current, { partnerNickname }))} placeholder={couple.partner?.name ?? "Partner name"} value={drafts.partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
         <Button label="Save nickname" disabled={detailsBusy} onPress={() => void savePartnerNickname()} dark={dark} />
         {detailsMessage ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{detailsMessage}</Text> : null}
       </View>
