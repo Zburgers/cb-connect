@@ -302,6 +302,21 @@ describe("LoggingScreen actions", () => {
     expect(deletePeriod).toHaveBeenCalledWith({ periodEventId: "event-open", expectedAuthorityVersion: 1 });
   });
 
+  it("renders partner-shared pain score and tags without exposing a private note", () => {
+    runtime.timeline = [{
+      date: "2026-10-19", phase: "unknown", type: "pain",
+      pain: { score: 4, tags: ["cramps"], note: "private health detail" },
+    }];
+    runtime.access = "partner";
+
+    const partnerTree = render();
+    expect(textContent(partnerTree)).toContain("Pain 4/10 · Cramps");
+    expect(textContent(partnerTree)).not.toContain("private health detail");
+
+    runtime.access = "primary";
+    expect(textContent(render())).toContain("private health detail");
+  });
+
   it("keeps stale-authority deletion visible and retryable", async () => {
     runtime.periods = [{ ...openPeriod[0], _id: "event-open" }];
     runtime.timeline = [{
