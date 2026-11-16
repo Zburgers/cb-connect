@@ -113,7 +113,16 @@ export const getPainHistory = query({
       )
       .take(MAX_PAIN_HISTORY_ROWS);
 
-    return logs.filter((log) => log.date <= args.endDate);
+    const visibleLogs = logs.filter((log) => log.date <= args.endDate);
+    if (user.role !== "partner") {
+      return visibleLogs;
+    }
+
+    return visibleLogs.map((log) => {
+      const partnerLog = { ...log };
+      delete partnerLog.note;
+      return partnerLog;
+    });
   },
 });
 
