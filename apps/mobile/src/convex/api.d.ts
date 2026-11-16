@@ -88,9 +88,6 @@ type PeriodHistory = Readonly<{
   updatedByUserId?: string;
 }>;
 type PainHistory = Readonly<{
-  _id: string;
-  _creationTime: number;
-  userId: string;
   date: string;
   painScore: number;
   tags: readonly ("cramps" | "headache" | "back" | "fatigue" | "other")[];

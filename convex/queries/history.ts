@@ -118,11 +118,13 @@ export const getPainHistory = query({
       return visibleLogs;
     }
 
-    return visibleLogs.map((log) => {
-      const partnerLog = { ...log };
-      delete partnerLog.note;
-      return partnerLog;
-    });
+    return visibleLogs.map(({ date, painScore, tags, createdAt, updatedAt }) => ({
+      date,
+      painScore,
+      tags,
+      createdAt,
+      updatedAt,
+    }));
   },
 });
 

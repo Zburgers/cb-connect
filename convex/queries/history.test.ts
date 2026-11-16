@@ -57,6 +57,9 @@ describe("pain history privacy", () => {
       tags: ["cramps"],
     });
     expect(partnerHistory[0]).not.toHaveProperty("note");
+    expect(partnerHistory[0]).not.toHaveProperty("_id");
+    expect(partnerHistory[0]).not.toHaveProperty("_creationTime");
+    expect(partnerHistory[0]).not.toHaveProperty("userId");
   });
 });
 
