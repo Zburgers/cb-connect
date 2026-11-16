@@ -319,7 +319,7 @@ function ActivePartnerView({
         <Button label={detailsBusy ? "Saving relationship details" : drafts.connectedSinceDate ? "Save relationship date" : "Clear relationship date"} disabled={detailsBusy} onPress={() => void saveConnectedSinceDate()} dark={dark} />
         <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Partner nickname</Text>
         <Text style={{ color: palette.muted }}>Private to your account. It only changes how your partner appears for you.</Text>
-        <TextInput accessibilityLabel="Private partner nickname" maxLength={40} onChangeText={(partnerNickname) => setDrafts((current) => syncPartnerDrafts(current, { partnerNickname }))} placeholder={couple.partner?.name ?? "Partner name"} value={drafts.partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
+        <TextInput accessibilityLabel="Private partner nickname" editable={!detailsBusy} maxLength={40} onChangeText={(partnerNickname) => setDrafts((current) => syncPartnerDrafts(current, { partnerNickname }))} placeholder={couple.partner?.name ?? "Partner name"} value={drafts.partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
         <Button label="Save nickname" disabled={detailsBusy} onPress={() => void savePartnerNickname()} dark={dark} />
         {detailsMessage ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{detailsMessage}</Text> : null}
       </View>

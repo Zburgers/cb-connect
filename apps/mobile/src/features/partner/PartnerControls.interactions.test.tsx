@@ -76,13 +76,20 @@ const activeCouple: Record<string, unknown> = {
   partner: { name: "Partner", displayName: "Partner", nickname: null },
 };
 
-function render(couple: Record<string, unknown> = activeCouple, role: "primary" | "partner" = "primary") {
+function render(
+  couple: Record<string, unknown> = activeCouple,
+  role: "primary" | "partner" = "primary",
+  mutationOverrides: Partial<Record<number, (...args: unknown[]) => unknown>> = {},
+) {
   runtime.mutations = [
     vi.fn().mockResolvedValue({}),
     vi.fn().mockResolvedValue({}),
     vi.fn().mockResolvedValue({ success: true }),
     vi.fn().mockResolvedValue({ success: true }),
   ];
+  for (const [index, mutation] of Object.entries(mutationOverrides)) {
+    if (mutation) runtime.mutations[Number(index)] = mutation;
+  }
   runtime.queries = [null, null];
   let elements: Element[] = [];
   for (let pass = 0; pass < 2; pass += 1) {
@@ -118,7 +125,7 @@ function render(couple: Record<string, unknown> = activeCouple, role: "primary" 
 function textInput(elements: Element[], label: string) {
   const element = elements.find((item) => item.type === "TextInput" && item.props.accessibilityLabel === label);
   if (!element) throw new Error(`Missing TextInput ${label}`);
-  return element.props as { value: string; onChangeText: (value: string) => void };
+  return element.props as { value: string; editable?: boolean; onChangeText: (value: string) => void };
 }
 
 function pressable(elements: Element[], label: string) {
@@ -167,6 +174,24 @@ describe("PartnerControls interactions", () => {
     elements = render();
     await pressable(elements, "Clear relationship date").onPress();
     expect(runtime.mutations[2]).toHaveBeenCalledWith({ connectedSinceDate: "" });
+  });
+
+  it("disables nickname edits while a save is pending", async () => {
+    let elements = render();
+    textInput(elements, "Private partner nickname").onChangeText("Saved nickname");
+    let finishSave!: () => void;
+    const pendingSave = new Promise<void>((resolve) => { finishSave = resolve; });
+    elements = render(activeCouple, "primary", { 3: vi.fn(() => pendingSave) });
+
+    pressable(elements, "Save nickname").onPress();
+    elements = render();
+    expect(textInput(elements, "Private partner nickname").editable).toBe(false);
+
+    finishSave();
+    await Promise.resolve();
+    await Promise.resolve();
+    elements = render();
+    expect(textInput(elements, "Private partner nickname").editable).toBe(true);
   });
 
   it("does not copy or share a cached pairing code after its expiry time", async () => {
