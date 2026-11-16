@@ -9,6 +9,7 @@ const runtime = vi.hoisted(() => ({
   pain: [] as unknown[] | undefined,
   timeline: undefined as unknown[] | undefined,
   writeFile: vi.fn(),
+  deleteFile: vi.fn(),
   shareFile: vi.fn().mockResolvedValue(undefined),
   queries: [] as unknown[],
   mutations: [] as unknown[],
@@ -47,7 +48,7 @@ vi.mock("react-native", () => ({
 
 vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker" }));
 vi.mock("expo-file-system", () => ({
-  File: class { uri = "file:///cache/history.csv"; create() {} write(contents: string) { runtime.writeFile(contents); } },
+  File: class { uri = "file:///cache/history.csv"; exists = true; create() {} write(contents: string) { runtime.writeFile(contents); } delete() { runtime.deleteFile(); } },
   Paths: { cache: "file:///cache" },
 }));
 vi.mock("expo-sharing", () => ({ shareAsync: (...args: unknown[]) => runtime.shareFile(...args) }));
@@ -112,6 +113,12 @@ function buttonIsDisabled(tree: React.ReactNode, label: string) {
   return (found.props as { disabled: boolean }).disabled;
 }
 
+function checkbox(tree: React.ReactNode, label: string) {
+  const found = find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityRole?: string; accessibilityLabel?: string }).accessibilityRole === "checkbox" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label);
+  if (!found) throw new Error(`Missing checkbox: ${label}`);
+  return found.props as { onPress: () => void; accessibilityState?: { checked?: boolean } };
+}
+
 function input(tree: React.ReactNode, label: string) {
   const found = find(tree, (element) => element.type === "TextInput" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label);
   if (!found) throw new Error(`Missing input: ${label}`);
@@ -166,6 +173,7 @@ describe("LoggingScreen actions", () => {
       mutation.mockReset().mockResolvedValue({ eventId: "event" });
     }
     runtime.writeFile.mockReset();
+    runtime.deleteFile.mockReset();
     runtime.shareFile.mockReset().mockResolvedValue(undefined);
   });
 
@@ -330,6 +338,85 @@ describe("LoggingScreen actions", () => {
 
     expect(runtime.writeFile).toHaveBeenCalledWith(expect.stringContaining('"pain","2026-11-12","","2","fatigue","private note"'));
     expect(runtime.shareFile).toHaveBeenCalledWith("file:///cache/history.csv", expect.objectContaining({ mimeType: "text/csv" }));
+    expect(runtime.deleteFile).toHaveBeenCalledOnce();
+  });
+
+  it("deletes the cached CSV when native sharing fails", async () => {
+    runtime.shareFile.mockRejectedValueOnce(new Error("sharing cancelled"));
+    await button(render(), "Export CSV")();
+
+    expect(runtime.deleteFile).toHaveBeenCalledOnce();
+    expect(textContent(render())).toContain("Could not prepare or share history.");
+  });
+
+  it("keeps a successful export successful if best-effort file cleanup fails", async () => {
+    runtime.deleteFile.mockImplementationOnce(() => { throw new Error("cleanup failed"); });
+    await button(render(), "Export CSV")();
+
+    expect(textContent(render())).toContain("History is ready to share.");
+  });
+
+  it("promotes uncertain correction facts only after explicit confirmation", async () => {
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open", startCertainty: "approximate", endDate: "2026-10-24", endCertainty: "approximate" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", type: "period",
+      period: { id: "event-open", startDate: "2026-10-20", endDate: "2026-10-24", startCertainty: "approximate", endCertainty: "approximate", certainty: "approximate", source: "self", confirmationStatus: "confirmed", authorityVersion: 1, createdByName: "Alex", updatedByName: "Alex", createdByViewer: true, updatedByViewer: true, canCorrect: true },
+    }];
+    await button(render(), "Correct period")();
+    let tree = render();
+    expect(checkbox(tree, "Confirm this start date is exact").accessibilityState?.checked).toBe(false);
+    expect(checkbox(tree, "Confirm this end date is exact").accessibilityState?.checked).toBe(false);
+    checkbox(tree, "Confirm this start date is exact").onPress();
+    checkbox(render(), "Confirm this end date is exact").onPress();
+    tree = render();
+    await button(tree, "Save correction")();
+
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({
+      startDate: "2026-10-20",
+      endDate: "2026-10-24",
+      promoteStartCertainty: true,
+      promoteEndCertainty: true,
+      expectedAuthorityVersion: 1,
+    }));
+  });
+
+  it("preserves uncertain correction facts when the exact-confirmation controls stay unchecked", async () => {
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open", startCertainty: "legacy_unknown", endDate: "2026-10-24", endCertainty: "approximate" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", type: "period",
+      period: { id: "event-open", startDate: "2026-10-20", endDate: "2026-10-24", startCertainty: "legacy_unknown", endCertainty: "approximate", certainty: "legacy_unknown", source: "self", confirmationStatus: "unreviewed", authorityVersion: 1, createdByName: "Alex", updatedByName: "Alex", createdByViewer: true, updatedByViewer: true, canCorrect: true },
+    }];
+    await button(render(), "Correct period")();
+    await button(render(), "Save correction")();
+
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({
+      periodEventId: "event-open",
+      expectedAuthorityVersion: 1,
+      endCertainty: "approximate",
+    }));
+    expect(updateSelf.mock.calls[0][0]).not.toHaveProperty("promoteStartCertainty");
+    expect(updateSelf.mock.calls[0][0]).not.toHaveProperty("promoteEndCertainty");
+  });
+
+  it("passes explicit certainty confirmation through the partner correction mutation", async () => {
+    runtime.access = "partner";
+    runtime.periods = [{ ...openPeriod[0], _id: "event-open", authorityVersion: 2, startCertainty: "approximate", endDate: "2026-10-24", endCertainty: "approximate" }];
+    runtime.timeline = [{
+      date: "2026-10-20", phase: "menstruation", type: "period",
+      period: { id: "event-open", startDate: "2026-10-20", endDate: "2026-10-24", startCertainty: "approximate", endCertainty: "approximate", certainty: "approximate", source: "partner_assist", confirmationStatus: "confirmed", authorityVersion: 2, createdByName: "Alex", updatedByName: "Alex", createdByViewer: true, updatedByViewer: true, canCorrect: true },
+    }];
+    await button(render(), "Correct period")();
+    checkbox(render(), "Confirm this start date is exact").onPress();
+    checkbox(render(), "Confirm this end date is exact").onPress();
+    await button(render(), "Save correction")();
+
+    expect(updateAssist).toHaveBeenCalledWith(expect.objectContaining({
+      periodEventId: "event-open",
+      expectedAuthorityVersion: 2,
+      promoteStartCertainty: true,
+      promoteEndCertainty: true,
+      endCertainty: "exact",
+    }));
   });
 
   it("disables period, pain, and correction writes until the account timezone and required history resolve", async () => {

@@ -15,8 +15,8 @@
 | Web behavior | Native migration | Safety contract |
 | --- | --- | --- |
 | 90-day mixed period/pain chronological timeline with phase/status, ongoing state, provenance, certainty, and correction affordance | Render `getTimelineHistory` rows in `LoggingScreen`; preserve distinct loading/empty states and existing log forms | Use server-returned timeline projection; do not reconstruct phase or infer authorization in the client |
-| Primary period correction and delete; partner-assisted correction when `canCorrect` | Retain correction flow and add primary-authorized delete via `deletePeriodEvent` with event ID and current `authorityVersion` | Only show actions the server marks `canCorrect`; confirm before delete; surface permission/stale failures without optimistic removal |
-| Export CSV with web column order and quoting | Build rows from authorized period history and timeline pain rows, write a cache CSV, invoke native share sheet | Escape every cell; omit partner pain notes; include only backend-visible rows; don't log CSV contents |
+| Primary period correction and delete; partner-assisted correction when `canCorrect` | Retain correction flow, preserve explicit exact-certainty confirmation for uncertain start/end facts, and add primary-authorized delete via `deletePeriodEvent` with event ID and current `authorityVersion` | Preserve uncertainty unless the user explicitly confirms exactness; only show actions the server marks `canCorrect`; confirm before delete; surface permission/stale failures without optimistic removal |
+| Export CSV with web column order and quoting | Build rows from authorized period history and timeline pain rows, write a cache CSV, invoke native share sheet, then best-effort delete the temporary file | Escape every cell; omit partner pain notes; include only backend-visible rows; don't log CSV contents; clean up after share success or failure |
 | Separate pain history and period history in mobile | Replace display lists with the combined timeline while retaining current period/pain write forms | Keep primary and partner-assisted writes and exact partial-write/offline feedback unchanged |
 
 ## Ordered implementation tasks
@@ -44,7 +44,7 @@
 
 1. Test the web CSV header order, RFC-style doubled-quote cell escaping, period/pain columns, and partner-note redaction using small fixture rows.
 2. Build CSV rows from server-visible history. Preserve current web semantics: period status is open/closed, dates are date-only, source and actor labels are retained, and pain tags use semicolon separators. Do not include pain notes for a partner viewer.
-3. Use SDK 57 `File`/`Paths.cache` to write a uniquely named CSV and `Sharing.shareAsync(file.uri)` to open the system share sheet. Catch write/share errors for safe UI copy; never expose the serialized CSV in errors.
+3. Use SDK 57 `File`/`Paths.cache` to write a uniquely named CSV and `Sharing.shareAsync(file.uri)` to open the system share sheet. Delete the temporary file in `finally`, including when sharing fails or is cancelled; cleanup failure must not mask the share result. Catch write/share errors for safe UI copy; never expose the serialized CSV in errors.
 4. Install packages only if absent, using `npx expo install expo-file-system expo-sharing` from `apps/mobile` and the repo's documented Node 22/npm 11 toolchain.
 5. Run formatter unit tests and Expo dependency validation for the selected package versions.
 
@@ -56,12 +56,13 @@
 - Test `apps/mobile/src/features/logging/LoggingScreen.test.tsx`
 - Test `apps/mobile/src/features/logging/logging.test.tsx`
 
-1. Add tests for reverse-chronological mixed rows, primary and partner views, visibility of correction/delete controls, confirmation before delete, stale-authority errors, failed-delete retention, and successful timeline refresh through Convex reactivity.
+1. Add tests for reverse-chronological mixed rows, primary and partner views, visibility of correction/delete controls, explicit exact-certainty promotion versus preserved uncertainty, confirmation before delete, stale-authority errors, failed-delete retention, and successful timeline refresh through Convex reactivity.
 2. Query `getTimelineHistory` only when connected and account timezone is valid; pass an account-local rolling 90-day date range. Keep `skip` while the session, connection, or actionable timezone is unavailable.
 3. Render the timeline DTO directly. Expose phase/status, ongoing state, period certainty and source attribution; show pain score and tags only where present in the server projection. Preserve the existing date-only form, primary/partner write split, and privacy-safe error messages.
-4. Add a destructive confirmation step and call `deletePeriodEvent` only when the event has an ID and server-returned authority version. Do not mutate local history optimistically. Map stale and permission failures to clear, retryable messages.
-5. Reuse the account timezone and date semantics. Never use UTC as a fallback or send private notes to the partner-facing CSV path.
-6. Run focused logging screen tests after each behavior group.
+4. In the correction editor, show start/end exact-confirmation checkboxes only for facts not already exact. Send `promoteStartCertainty`/`promoteEndCertainty` only after the user checks the corresponding control; otherwise retain existing uncertainty and use approximate certainty for a newly entered end.
+5. Add a destructive confirmation step and call `deletePeriodEvent` only when the event has an ID and server-returned authority version. Do not mutate local history optimistically. Map stale and permission failures to clear, retryable messages.
+6. Reuse the account timezone and date semantics. Never use UTC as a fallback or send private notes to the partner-facing CSV path.
+7. Run focused logging screen tests after each behavior group.
 
 ### Task 4: CSV action and final evidence
 
@@ -80,7 +81,7 @@
 - No backend schema, migration, endpoint, estimator, or authorization change.
 - No direct database access from the mobile bundle; all runtime calls use public Convex references and server DTOs.
 - Preserve fail-closed auth, server-derived sharing/correction eligibility, authority-version conflict handling, offline write truthfulness, and account-local date semantics.
-- Deletion uses the existing authorized mutation only. This plan adds no bulk deletion, purge, or retention behavior.
+- Deletion uses the existing authorized mutation only. CSV exports are removed from cache after sharing on a best-effort basis. This plan adds no bulk deletion, purge, or retention behavior.
 - No production flag changes, deployment, merge to `main`, emulator/device live-QA cycle, or real-user fixture changes.
 - The PR base is `feat/NAK-143-mobile-onboarding`, itself stacked on `gate5/atlas-foundation`.
 

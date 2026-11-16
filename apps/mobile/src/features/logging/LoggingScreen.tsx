@@ -17,6 +17,13 @@ function Action({ label, onPress, disabled }: { label: string; onPress: () => vo
 
 type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
 type PainDraft = { score: string; tags: PainTag[]; note: string };
+function Confirmation({ label, checked, hint, onPress, disabled, palette }: { label: string; checked: boolean; hint: string; onPress: () => void; disabled: boolean; palette: (typeof mobileColors)["light"] | (typeof mobileColors)["dark"] }) {
+  return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={[styles.confirmation, disabled && styles.disabled]}>
+    <Text style={{ color: palette.foreground }}>{checked ? "☑" : "☐"} {label}</Text>
+    <Text style={{ color: palette.muted }}>{hint}</Text>
+  </Pressable>;
+}
+
 const painTagLabels: Record<string, string> = {
   cramps: "Cramps",
   headache: "Head pressure",
@@ -68,6 +75,9 @@ export function LoggingScreen() {
   const [editAuthorityVersion, setEditAuthorityVersion] = useState<number | null>(null);
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
+  const [promoteStartCertainty, setPromoteStartCertainty] = useState(false);
+  const [promoteEndCertainty, setPromoteEndCertainty] = useState(false);
+  const [editEndCertainty, setEditEndCertainty] = useState<"exact" | "approximate">("approximate");
   const [deleteConfirming, setDeleteConfirming] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
@@ -150,7 +160,17 @@ export function LoggingScreen() {
     if (editing !== period._id || editAuthorityVersion === null || period.authorityVersion !== editAuthorityVersion) {
       throw new Error("STALE_AUTHORITY_VERSION");
     }
-    const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: editAuthorityVersion };
+    const args = {
+      periodEventId: period._id,
+      startDate: editStartDate,
+      ...(editEndDate ? {
+        endDate: editEndDate,
+        endCertainty: promoteEndCertainty ? "exact" as const : editEndCertainty,
+        ...(promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+      } : {}),
+      ...(promoteStartCertainty ? { promoteStartCertainty: true } : {}),
+      expectedAuthorityVersion: editAuthorityVersion,
+    };
     if (role === "partner") await updateAssist(args);
     else await updateSelf(args);
     setEditing(null);
@@ -167,13 +187,14 @@ export function LoggingScreen() {
   const exportHistory = async () => {
     if (!today || periodHistory === undefined || timelineHistory === undefined) return;
     setError(""); setSaved(""); setExporting(true);
+    let file: File | null = null;
     try {
       const csv = buildHistoryCsv({
         periods: periodHistory,
         timeline: timelineHistory,
         isPartner: role === "partner",
       });
-      const file = new File(Paths.cache, `${Date.now()}-${historyCsvFilename(today)}`);
+      file = new File(Paths.cache, `${Date.now()}-${historyCsvFilename(today)}`);
       file.create();
       file.write(csv);
       await Sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: "Share cycle history" });
@@ -181,6 +202,11 @@ export function LoggingScreen() {
     } catch {
       setError("Could not prepare or share history. Try again when your device is available.");
     } finally {
+      try {
+        if (file?.exists) file.delete();
+      } catch {
+        // A temporary export is best-effort cleanup; cleanup failures don't hide the share result.
+      }
       setExporting(false);
     }
   };
@@ -243,13 +269,37 @@ export function LoggingScreen() {
       {entry.period?.canCorrect && entry.period.id && entry.period.authorityVersion !== undefined ? editing === entry.period.id ? <>
         <DateField label="Corrected period start date" value={editStartDate} onChange={setEditStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} />
         <DateField label="Corrected period end date" value={editEndDate} onChange={setEditEndDate} palette={palette} disabled={disabledPeriod} placeholder="End date (blank means open)" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={editStartDate || undefined} clearable />
-        <Action label="Save correction" disabled={disabledPeriod} onPress={() => {
+        <Action label="Save correction" disabled={disabledPeriod || !editStartDate.trim()} onPress={() => {
           const period = periodHistory?.find((item) => item._id === entry.period?.id);
           if (period) return correct(period);
         }} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
+        {entry.period.startCertainty !== "exact" ? <Confirmation
+          label="Confirm this start date is exact"
+          checked={promoteStartCertainty}
+          hint="Leave unchecked to preserve the existing uncertainty."
+          disabled={disabledPeriod}
+          palette={palette}
+          onPress={() => setPromoteStartCertainty((checked) => !checked)}
+        /> : null}
+        {editEndDate && entry.period.endCertainty !== "exact" ? <Confirmation
+          label="Confirm this end date is exact"
+          checked={promoteEndCertainty}
+          hint="Leave unchecked to save this end as approximate."
+          disabled={disabledPeriod}
+          palette={palette}
+          onPress={() => setPromoteEndCertainty((checked) => !checked)}
+        /> : null}
       </> : <>
-        <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(entry.period!.id!); setEditAuthorityVersion(entry.period!.authorityVersion!); setEditStartDate(entry.period!.startDate); setEditEndDate(entry.period!.endDate ?? ""); }} />
+        <Action label="Correct period" disabled={disabledPeriod} onPress={() => {
+          setEditing(entry.period!.id!);
+          setEditAuthorityVersion(entry.period!.authorityVersion!);
+          setEditStartDate(entry.period!.startDate);
+          setEditEndDate(entry.period!.endDate ?? "");
+          setPromoteStartCertainty(false);
+          setPromoteEndCertainty(false);
+          setEditEndCertainty(entry.period!.endCertainty === "exact" ? "exact" : "approximate");
+        }} />
         {role === "primary" ? deleteConfirming === entry.period.id ? <>
           <Text style={{ color: palette.noticeForeground }} accessibilityRole="alert">Delete this period entry? This changes cycle history.</Text>
           <Action label="Confirm delete period" disabled={disabledPeriod} onPress={() => {
@@ -263,4 +313,4 @@ export function LoggingScreen() {
   </ScrollView>;
 }
 
-const styles = StyleSheet.create({ content: { padding: 20, gap: 12 }, title: { fontSize: 24, fontWeight: "700" }, heading: { fontSize: 18, fontWeight: "700", marginTop: 16 }, input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "#374151", borderRadius: 8 }, unselected: { backgroundColor: "transparent" }, buttonText: { color: "#FFFFFF", fontWeight: "600" }, disabled: { opacity: 0.45 }, notice: { padding: 12, backgroundColor: "#713F12", color: "#FFFFFF", borderRadius: 8 }, error: { color: "#991B1B", fontWeight: "600" }, success: { color: "#166534", fontWeight: "600" }, card: { borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 12, gap: 8 } });
+const styles = StyleSheet.create({ content: { padding: 20, gap: 12 }, title: { fontSize: 24, fontWeight: "700" }, heading: { fontSize: 18, fontWeight: "700", marginTop: 16 }, input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "#374151", borderRadius: 8 }, confirmation: { minHeight: 48, padding: 12, justifyContent: "center", gap: 4, borderRadius: 8, borderWidth: 1, borderColor: "#9CA3AF" }, unselected: { backgroundColor: "transparent" }, buttonText: { color: "#FFFFFF", fontWeight: "600" }, disabled: { opacity: 0.45 }, notice: { padding: 12, backgroundColor: "#713F12", color: "#FFFFFF", borderRadius: 8 }, error: { color: "#991B1B", fontWeight: "600" }, success: { color: "#166534", fontWeight: "600" }, card: { borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 12, gap: 8 } });
