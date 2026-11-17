@@ -1,6 +1,6 @@
 # CB-07 — owner-led mobile UI redesign
 
-Status: **design proposal, awaiting owner selection and CB-06 acceptance**.
+Status: **owner-selected design, awaiting CB-06 functional acceptance**.
 This document does not mark NAK-149 complete or qualify native behavior.
 
 Issue: [NAK-149](https://linear.app/nakii/issue/NAK-149/cb-07-complete-mobile-ui-redesign-after-functional-parity).
@@ -60,9 +60,10 @@ the web dashboard components, and `apps/mobile/src/theme/tokens.ts`.
 They already establish Bloom, editorial serif headings, warm coral/amber,
 cream paper, dark ink, lavender support and phase-aware surfaces.
 
-The report proposes three treatments of that system:
+The report retains three treatments as references. The owner selected the first
+and requested the border distinction of the third:
 
-1. **Bloom Glass — recommended:** phase artwork is the emotional anchor;
+1. **Bloom Glass — selected, refined:** phase artwork is the emotional anchor;
    prediction and supporting sections are quieter. A detached glass dock
    has icons, labels and a sliding active capsule. Closest to the web.
 2. **Bloom Editorial:** paper-led sections, more typographic hierarchy,
@@ -70,20 +71,35 @@ The report proposes three treatments of that system:
 3. **Bloom Liquid:** richer light fields, more pronounced rounded glass
    edges and depth. Requires more native contrast/performance scrutiny.
 
-The optional supporting sage tone is `#4C6753` on `#E4EBDF` in light mode,
+The selected supporting sage tone is `#4C6753` on `#E4EBDF` in light mode,
 `#C4D4BB` on `#28382F` in dark mode. Coral remains the action color; amber
 remains atmospheric. Sage does not grant consent or replace phase semantics.
 The report also previews existing coral-only and lavender alternatives.
-The owner can mix the chosen surface treatment with the supporting tone.
+The selected blend retains Bloom Glass composition and surface opacity while
+adding Bloom Liquid’s brighter inner rim and a fine outer keyline on the phase
+anchor, supporting panels and dock. Warm shadows stay shallow; do not copy
+Liquid’s richer whole-screen glass treatment.
 
 Typography: DM Serif Display headings, DM Sans UI and tabular numeric text.
 The report embeds licensed Google Fonts. Native font bundling follows owner
 selection and must have a readable loading/failure fallback. Do not create a
 second design system or rename settled tokens just for this proposal.
 
+## Owner selection — 2026-11-17
+
+The owner selected **Bloom Glass + subtle sage**, then clarified: “first felt
+better,” while the third direction’s “borders” and “distinction” stood out.
+This settles the design direction; no further selection approval is needed.
+
+Keep the first direction’s layout, serif/UI type pairing, phase artwork,
+spacing, restrained supporting panels, coral/amber palette and selected sage.
+Borrow only the third direction’s material edge treatment: brighter inner
+rims, a fine warm outer keyline, clearer panel boundaries and a distinct dock
+silhouette in both appearances. Retain solid text backing and opaque fallback.
+
 ## Shared native presentation foundation
 
-After the entry gate and owner selection:
+Owner selection is complete. After CB-06 passes the entry gate:
 
 - Extend the existing semantic light/dark tokens with spacing, type, radii,
   on-accent foregrounds and explicit opaque fallback surfaces. Never apply
@@ -106,6 +122,20 @@ After the entry gate and owner selection:
 - Animate selected navigation with transform/opacity, around 260ms.
   Keep press feedback short; no decorative loops. Reduced motion removes
   movement. Never delay access/privacy state changes for animation.
+
+Implementation file order after the gate:
+
+| Order | Files | Focused acceptance |
+|---|---|---|
+| 1 | `apps/mobile/src/theme/tokens.ts`, new `theme/typography.ts`, `src/app/_layout.tsx` | Semantic light/dark rim, outline, on-accent and sage tokens; bundled fonts with fallback |
+| 2 | New `apps/mobile/src/components/BloomPanel.tsx`, `BloomScreen.tsx` and presentation tests | Consistent selected borders, section hierarchy, status semantics, readable opaque fallback |
+| 3 | New `apps/mobile/src/components/BloomTabBar.tsx`, existing `src/app/(app)/_layout.tsx` | Detached dock and selected capsule preserve guarded routes, tab events, safe area and enlarged labels |
+| 4 | Existing `features/cycle/`, `home/`, `onboarding/`, `logging/`, `partner/`, `chat/`, `notifications/`, `settings/` views and their tests | Roll out the selected primitives in the screen order below; retain existing data/state ownership |
+| 5 | Presentation fixtures/snapshots beside affected views, existing `src/convex/api.inventory.test.ts` and parity/boundary suites | Stable roles/states, mobile typecheck/contracts, then exact-head CI; no standalone live QA |
+
+These are planned files, not implemented native components. Recheck the
+accepted CB-06 source before editing; the required feature behavior and
+concurrency/error contracts stay with their existing owners.
 
 ## Screen-by-screen proposed inventory
 
@@ -132,9 +162,10 @@ specimen, not a model or exhaustive proof of all state combinations.
 2. **DONE — owner decision artifact:** create the self-contained HTML report
    with three treatments, all seven screen areas, semantic sample states and
    light/dark/compact/large/text/material controls.
-3. **PENDING — owner decision and prerequisite closure:** owner picks the
-   visual direction/tone; CB-06 receives focused acceptance and deterministic
-   checks. Rebase onto its accepted exact head. Do not start native work sooner.
+3. **OWNER DECISION DONE / PREREQUISITE BLOCKED:** owner selected Bloom
+   Glass + subtle sage, refined with Bloom Liquid’s border distinction. CB-06
+   still needs focused acceptance; deterministic checks are green at the
+   inspected head. Rebase onto its accepted exact head before native work.
 4. **NOT STARTED — shared tokens and primitives:** implement the selected
    presentation and navigation in the existing native stack. Focused UI tests
    cover labels, selection, opaque/dark contrast tokens and layout behavior.
@@ -184,8 +215,9 @@ present in the inspected project/global skill directories.
 Use their applicable hierarchy, type, material, state and accessibility
 guidance. Generic landing-page funnels, forced font/palette replacement,
 scroll spectacle, new frameworks and SwiftUI/Compose rewrites conflict with
-this task. Existing product/native constraints take precedence. No root
-`design.md` is locked before the owner selects the design.
+this task. Existing product/native constraints take precedence. The selected
+blend is recorded in this existing plan; no competing root `design.md` is
+introduced.
 
 ## Verification of this proposal
 
@@ -196,7 +228,8 @@ live accounts and final Android qualification. See the PR description for
 the measured report checks. Native tests, builds and live QA are NOT RUN by
 this design proposal.
 
-Artifact validation: **PASS** — 52 screen/state selections, 90 layout cases
+Artifact validation, repeated after the selected border refinement:
+**PASS** — 52 screen/state selections, 90 layout cases
 (5 screens × 3 requested widths × 3 text sizes × 2 appearances), 4 role/nav
 cases and 3 directions. No measured inner horizontal overflow, no JavaScript
 console errors and no HTTP requests with the browser offline. Pending-save
