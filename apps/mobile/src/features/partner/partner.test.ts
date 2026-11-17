@@ -114,9 +114,11 @@ describe("mobile partner access and accessibility", () => {
     expect(source).toMatch(/accessibilityLabel=/);
   });
 
-  test("mobile chat never exposes the global history clear mutation", () => {
+  test("mobile chat clears only with the current relationship generation", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
-    expect(source).not.toMatch(/messages\.clear/);
+    expect(source).toContain("api.mutations.messages.clear");
+    expect(source).toContain("clearThread({ relationshipGeneration })");
+    expect(source).toContain("Clear this chat?");
   });
 
   test("sharing controls explain consent scope and show the current server setting state", () => {
