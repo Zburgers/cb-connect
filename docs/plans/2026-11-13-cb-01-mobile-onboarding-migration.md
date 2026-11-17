@@ -72,3 +72,17 @@ Run `npm run mobile:test -- onboarding.test.tsx accessResolver.test.ts api.inven
 - The native connection state is checked before each mutation. No offline write acknowledgement or delayed period submission is shown.
 - Keep synthetic-only QA deferred until the consolidated two-account mobile QA stage specified by the CB-01 issue.
 - Stack the single feature PR on `gate5/atlas-foundation`; the PR base must be that branch.
+
+## Final-stack QA remediation — 2026-11-17
+
+The consolidated Pixel 7 run found that Approximate was offered while the
+server's cycle-facts capability was off. The legacy write path intentionally
+omits certainty, so the new entry appeared as a legacy fact. Onboarding now
+waits for authoritative capabilities, exposes certainty choices only when the
+server can retain them, and explains legacy date storage otherwise. Legacy
+writes omit the certainty argument. This does not enable a backend flag or
+change any server mutation. Enabled-mode approximate dates remain supported.
+
+Focused onboarding regression tests and mobile TypeScript/strict public parity
+pass locally. Final native flag-off and flag-on retests remain part of CB-07's
+single consolidated run.

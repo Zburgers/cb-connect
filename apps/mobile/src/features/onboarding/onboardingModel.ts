@@ -55,6 +55,7 @@ export function hasInitialPeriod(
 export async function saveInitialCycleSetup({
   startDate,
   startCertainty,
+  cycleFactsEnabled,
   cycleLength,
   periodLength,
   timeZone,
@@ -66,13 +67,14 @@ export async function saveInitialCycleSetup({
 }: {
   startDate: string;
   startCertainty: PeriodCertainty;
+  cycleFactsEnabled: boolean;
   cycleLength: number;
   periodLength: number;
   timeZone: string | null;
   existingPeriods: readonly { startDate: string; certainty?: string }[];
   logPeriodStart: (args: {
     startDate: string;
-    startCertainty: PeriodCertainty;
+    startCertainty?: PeriodCertainty;
     timeZone: string;
   }) => Promise<unknown>;
   updateCycleSettings: (args: {
@@ -101,7 +103,7 @@ export async function saveInitialCycleSetup({
   const alreadySaved = existingPeriods.some((period) => period.startDate === startDate);
   if (!alreadySaved) {
     if (!isOnline()) throw new Error("offline");
-    await logPeriodStart({ startDate, startCertainty, timeZone });
+    await logPeriodStart({ startDate, ...(cycleFactsEnabled ? { startCertainty } : {}), timeZone });
   }
 }
 

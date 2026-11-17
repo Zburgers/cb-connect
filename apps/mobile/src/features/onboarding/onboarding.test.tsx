@@ -144,6 +144,7 @@ describe("mobile initial cycle setup", () => {
   const base = {
     startDate: "2026-11-10",
     startCertainty: "approximate" as const,
+    cycleFactsEnabled: true,
     cycleLength: 28,
     periodLength: 5,
     timeZone: "Asia/Kolkata",
@@ -154,6 +155,18 @@ describe("mobile initial cycle setup", () => {
     expect(hasInitialPeriod(undefined)).toBe(false);
     expect(hasInitialPeriod([])).toBe(false);
     expect(hasInitialPeriod([{ startDate: "2026-11-10" }])).toBe(true);
+  });
+
+  it("does not submit a certainty label that the legacy backend will discard", async () => {
+    const logPeriodStart = vi.fn(async () => undefined);
+    await saveInitialCycleSetup({
+      ...base,
+      cycleFactsEnabled: false,
+      isOnline: () => true,
+      logPeriodStart,
+      updateCycleSettings: async () => undefined,
+    });
+    expect(logPeriodStart).toHaveBeenCalledWith({ startDate: base.startDate, timeZone: base.timeZone });
   });
 
   it("uses the device timezone for the current calendar date", () => {

@@ -64,6 +64,10 @@ export function OnboardingScreen({
     api.queries.history.getCycleSettings,
     isAuthenticated && complete === "primary" ? {} : "skip",
   );
+  const capabilities = useQuery(
+    api.queries.capabilities.getCapabilities,
+    isAuthenticated && complete === "primary" ? {} : "skip",
+  );
   const ensureUser = useMutation(api.mutations.users.ensureUser);
   const updateRole = useMutation(api.mutations.users.updateUserRole);
   const updateTimeZone = useMutation(api.mutations.users.updateUserTimeZone);
@@ -77,7 +81,7 @@ export function OnboardingScreen({
     !isAuthenticated ||
     me === undefined ||
     (complete === "primary" &&
-      (periodHistory === undefined || existingCycleSettings === undefined));
+      (periodHistory === undefined || existingCycleSettings === undefined || capabilities === undefined));
   const periodIsSaved = setupSaved || hasInitialPeriod(periodHistory);
   const deviceTimeZone = getDeviceTimeZone();
 
@@ -116,6 +120,7 @@ export function OnboardingScreen({
       await saveInitialCycleSetup({
         startDate,
         startCertainty: certainty,
+        cycleFactsEnabled: capabilities?.cycleFactsV1 === true,
         cycleLength,
         periodLength,
         timeZone: deviceTimeZone,
@@ -210,6 +215,7 @@ export function OnboardingScreen({
                 placeholder="Choose start date"
                 disabled={saving}
               />
+              {capabilities?.cycleFactsV1 ? <>
               <Text allowFontScaling style={[styles.body, textStyle]}>How certain are you about that date?</Text>
               <View style={styles.row}>
                 {(["exact", "approximate"] as const).map((value) => (
@@ -228,6 +234,7 @@ export function OnboardingScreen({
                   </Pressable>
                 ))}
               </View>
+              </> : <Text allowFontScaling style={[styles.body, { color: palette.muted }]}>Dates are saved without certainty labels for this account. You can review them in history.</Text>}
               <Text allowFontScaling style={[styles.body, textStyle]}>Average cycle length: {cycleLength} days</Text>
               <View style={styles.row}>
                 <LengthButton label="Decrease cycle length" value={cycleLength} minimum={MIN_CYCLE_LENGTH} disabled={saving} palette={palette} onChange={setCycleLength} delta={-1} />
