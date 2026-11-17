@@ -97,3 +97,22 @@ The companion onboarding fix is in CB-01, inherited here.
 
 Focused logging regressions and mobile TypeScript/strict public parity pass.
 Flag-off and enabled-mode native retests remain in the consolidated CB-07 run.
+
+## Final-stack Android date selection remediation — 2026-11-18
+
+The signed final-stack run exposed a correction picker that displayed a newly
+selected day, then returned to the old form date after confirmation. The pinned
+Android picker wrapper opens/updates its dialog when its callback identity
+changes; DateField supplied a new callback on each parent render. A regression
+model of that documented bridge behavior reproduces the selected-day reset on
+the old source and passes with this change.
+
+Android now opens the native dialog once per explicit press through the
+supported imperative API. Date-only formatting and minimum/maximum bounds are
+unchanged. Cancel does not apply a date, and closing/unmounting dismisses the
+dialog. The iOS spinner path is retained. No backend, API or dependency changes.
+
+Validation: CB-02 mobile TypeScript PASS; 29 files / 198 mobile tests PASS,
+including selection retention across a parent render and cancel/unmount
+coverage. Targeted signed-APK retest remains in the same consolidated CB-07
+run; these deterministic results do not establish native acceptance.

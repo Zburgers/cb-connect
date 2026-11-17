@@ -24,6 +24,7 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useContext: () => runtime.access,
     useMemo: (factory: () => unknown) => factory(),
+    useEffect: () => {},
     useState: (initial: unknown) => {
       const index = runtime.cursor++;
       if (runtime.state.length <= index) runtime.state[index] = initial;
@@ -47,7 +48,10 @@ vi.mock("react-native", () => ({
   useColorScheme: () => runtime.scheme,
 }));
 
-vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker" }));
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: "DateTimePicker",
+  DateTimePickerAndroid: { open: vi.fn(), dismiss: vi.fn().mockResolvedValue(true) },
+}));
 vi.mock("expo-file-system", () => ({
   File: class { uri = "file:///cache/history.csv"; exists = true; create() {} write(contents: string) { runtime.writeFile(contents); } delete() { runtime.deleteFile(); } },
   Paths: { cache: "file:///cache" },
