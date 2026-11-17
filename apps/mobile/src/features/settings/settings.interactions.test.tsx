@@ -13,7 +13,7 @@ const runtime = vi.hoisted(() => ({
     gender: undefined as "male" | "female" | "other" | "prefer_not_to_say" | undefined,
     partnerType: undefined as "boyfriend" | "girlfriend" | "spouse" | "partner" | "other" | undefined,
   },
-  cycleSettings: { cycleLength: 28, periodLength: 5, predictionPaused: false },
+  cycleSettings: { cycleLength: 28, periodLength: 5, predictionPaused: false } as { cycleLength: number; periodLength: number; predictionPaused: boolean } | undefined,
   preferences: [] as Array<{ purpose: string; inAppEnabled: boolean; localReminderTime?: string }>,
   saveCalls: [] as unknown[],
   saveFails: false,
@@ -53,7 +53,7 @@ vi.mock("convex/react", () => ({
     if (index === 3) return async (args: unknown) => {
       runtime.cycleSaveCalls.push(args);
       if (runtime.cycleSaveFails) throw new Error("cycle save failed");
-      runtime.cycleSettings = { ...runtime.cycleSettings, ...(args as object) };
+      if (runtime.cycleSettings) runtime.cycleSettings = { ...runtime.cycleSettings, ...(args as object) };
       return null;
     };
     if (index !== 0) return async () => null;
@@ -249,6 +249,13 @@ describe("native reminder-time settings interactions", () => {
     expect(pressable(elements, "Decrease period length").props.disabled).toBe(true);
     expect(pressable(elements, "Decrease cycle length").props.disabled).toBe(false);
     expect(pressable(elements, "Increase period length").props.disabled).toBe(false);
+  });
+
+  it("waits for saved cycle settings before enabling length controls", () => {
+    runtime.cycleSettings = undefined;
+    const elements = renderSettings();
+    expect(elements.some((element) => element.type === "ActivityIndicator" && element.props.accessibilityLabel === "Loading cycle settings")).toBe(true);
+    expect(elements.some((element) => element.type === "Pressable" && element.props.accessibilityLabel === "Increase cycle length")).toBe(false);
   });
 
   it("saves inclusive identity preferences while preserving the preferred name", async () => {

@@ -426,27 +426,34 @@ export function Settings() {
 
       {isPrimary ? (
         <>
-          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-            <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
-            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Average cycle and period lengths are used by the saved cycle settings. Changes are applied by the existing account settings service.</Text>
-            <Text allowFontScaling style={{ color: palette.foreground }}>Cycle length: {cycleDraft.cycleLength} days</Text>
-            <View style={styles.themeChoices}>
-              <ActionButton label="Decrease cycle length" disabled={busy || cycleDraft.cycleLength <= 21} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength - 1 })} palette={palette} />
-              <ActionButton label="Increase cycle length" disabled={busy || cycleDraft.cycleLength >= 40} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength + 1 })} palette={palette} />
+          {cycleSettings === undefined ? (
+            <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
+              <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
+              <ActivityIndicator accessibilityLabel="Loading cycle settings" />
             </View>
-            <Text allowFontScaling style={{ color: palette.foreground }}>Period length: {cycleDraft.periodLength} days</Text>
-            <View style={styles.themeChoices}>
-              <ActionButton label="Decrease period length" disabled={busy || cycleDraft.periodLength <= 2} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength - 1 })} palette={palette} />
-              <ActionButton label="Increase period length" disabled={busy || cycleDraft.periodLength >= 8} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength + 1 })} palette={palette} />
+          ) : (
+            <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
+              <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
+              <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Average cycle and period lengths are used by the saved cycle settings. Changes are applied by the existing account settings service.</Text>
+              <Text allowFontScaling style={{ color: palette.foreground }}>Cycle length: {cycleDraft.cycleLength} days</Text>
+              <View style={styles.themeChoices}>
+                <ActionButton label="Decrease cycle length" disabled={busy || cycleDraft.cycleLength <= 21} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength - 1 })} palette={palette} />
+                <ActionButton label="Increase cycle length" disabled={busy || cycleDraft.cycleLength >= 40} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength + 1 })} palette={palette} />
+              </View>
+              <Text allowFontScaling style={{ color: palette.foreground }}>Period length: {cycleDraft.periodLength} days</Text>
+              <View style={styles.themeChoices}>
+                <ActionButton label="Decrease period length" disabled={busy || cycleDraft.periodLength <= 2} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength - 1 })} palette={palette} />
+                <ActionButton label="Increase period length" disabled={busy || cycleDraft.periodLength >= 8} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength + 1 })} palette={palette} />
+              </View>
+              {cycleConflict ? (
+                <>
+                  <Text allowFontScaling accessibilityRole="alert" style={{ color: palette.foreground }}>These cycle settings changed elsewhere. Reload before saving.</Text>
+                  <ActionButton label="Reload cycle settings" disabled={busy} onPress={reloadCycleSettings} palette={palette} />
+                </>
+              ) : null}
+              <ActionButton label="Save cycle settings" disabled={busy || !cycleDraftDirty || cycleConflict} onPress={() => void saveCycleSettings()} palette={palette} />
             </View>
-            {cycleConflict ? (
-              <>
-                <Text allowFontScaling accessibilityRole="alert" style={{ color: palette.foreground }}>These cycle settings changed elsewhere. Reload before saving.</Text>
-                <ActionButton label="Reload cycle settings" disabled={busy || cycleSettings === undefined} onPress={reloadCycleSettings} palette={palette} />
-              </>
-            ) : null}
-            <ActionButton label="Save cycle settings" disabled={busy || !cycleDraftDirty || cycleConflict || cycleSettings === undefined} onPress={() => void saveCycleSettings()} palette={palette} />
-          </View>
+          )}
           <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
             <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Private prediction controls</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Pausing predictions affects only your account and is not shared with your partner.</Text>
