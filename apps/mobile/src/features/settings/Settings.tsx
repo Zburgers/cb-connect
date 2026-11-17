@@ -12,6 +12,34 @@ import { getNotificationPurposeLabel, getVisibleNotificationPurposes } from "../
 import { formatReminderTime, parseReminderTime } from "./reminderTime";
 
 type SharingKey = "sharingPain" | "sharingPhase" | "sharingPeriodWrite";
+type Gender = "prefer_not_to_say" | "female" | "male" | "other";
+type PartnerType = "partner" | "boyfriend" | "girlfriend" | "spouse" | "other";
+
+const genderOptions: { value: Gender; label: string }[] = [
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "other", label: "Other" },
+];
+
+const partnerTypeOptions: { value: PartnerType; label: string }[] = [
+  { value: "partner", label: "Partner" },
+  { value: "boyfriend", label: "Boyfriend" },
+  { value: "girlfriend", label: "Girlfriend" },
+  { value: "spouse", label: "Spouse" },
+  { value: "other", label: "Other" },
+];
+
+type CycleValues = { cycleLength: number; periodLength: number };
+type ProfileValues = { preferredName: string; gender: Gender; partnerType: PartnerType };
+
+function sameCycleValues(left: CycleValues, right: CycleValues): boolean {
+  return left.cycleLength === right.cycleLength && left.periodLength === right.periodLength;
+}
+
+function sameProfileValues(left: ProfileValues, right: ProfileValues): boolean {
+  return left.preferredName === right.preferredName && left.gender === right.gender && left.partnerType === right.partnerType;
+}
 
 function deviceTimeZone(): string | null {
   try {
@@ -39,6 +67,25 @@ export function Settings() {
   const createSegment = useMutation(api.mutations.cycleContext.createPredictionSegment);
   const updateSharing = useMutation(api.mutations.couples.updateSharingSettings);
   const [nameDraft, setNameDraft] = useState("");
+  const [genderDraft, setGenderDraft] = useState<Gender>("prefer_not_to_say");
+  const [partnerTypeDraft, setPartnerTypeDraft] = useState<PartnerType>("partner");
+  const [profileBaseline, setProfileBaseline] = useState<ProfileValues>({
+    preferredName: "",
+    gender: "prefer_not_to_say",
+    partnerType: "partner",
+  });
+  const [profileDraftDirty, setProfileDraftDirty] = useState(false);
+  const [profileConflict, setProfileConflict] = useState(false);
+  const [cycleDraft, setCycleDraft] = useState<CycleValues>(() => ({
+    cycleLength: cycleSettings?.cycleLength ?? 28,
+    periodLength: cycleSettings?.periodLength ?? 5,
+  }));
+  const [cycleBaseline, setCycleBaseline] = useState<CycleValues>(() => ({
+    cycleLength: cycleSettings?.cycleLength ?? 28,
+    periodLength: cycleSettings?.periodLength ?? 5,
+  }));
+  const [cycleDraftDirty, setCycleDraftDirty] = useState(false);
+  const [cycleConflict, setCycleConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -46,7 +93,44 @@ export function Settings() {
   const [reminderPickerOpen, setReminderPickerOpen] = useState(false);
   const zone = deviceTimeZone();
 
-  useEffect(() => setNameDraft(profile?.preferredName ?? ""), [profile?.preferredName]);
+  useEffect(() => {
+    if (!profile) return;
+    const saved: ProfileValues = {
+      preferredName: profile.preferredName ?? "",
+      gender: profile.gender ?? "prefer_not_to_say",
+      partnerType: profile.partnerType ?? "partner",
+    };
+    if (!profileDraftDirty) {
+      if (nameDraft !== saved.preferredName) setNameDraft(saved.preferredName);
+      if (genderDraft !== saved.gender) setGenderDraft(saved.gender);
+      if (partnerTypeDraft !== saved.partnerType) setPartnerTypeDraft(saved.partnerType);
+      if (!sameProfileValues(profileBaseline, saved)) setProfileBaseline(saved);
+      if (profileConflict) setProfileConflict(false);
+    } else if (sameProfileValues(saved, { preferredName: nameDraft, gender: genderDraft, partnerType: partnerTypeDraft })) {
+      if (!sameProfileValues(profileBaseline, saved)) setProfileBaseline(saved);
+      setProfileDraftDirty(false);
+      if (profileConflict) setProfileConflict(false);
+    } else if (!sameProfileValues(saved, profileBaseline)) {
+      setProfileConflict(true);
+    }
+  }, [profile?.preferredName, profile?.gender, profile?.partnerType, profileDraftDirty, profileBaseline, nameDraft, genderDraft, partnerTypeDraft, profileConflict]);
+
+  useEffect(() => {
+    if (!cycleSettings) return;
+    const saved = { cycleLength: cycleSettings.cycleLength, periodLength: cycleSettings.periodLength };
+    if (!cycleDraftDirty) {
+      if (!sameCycleValues(cycleDraft, saved)) setCycleDraft(saved);
+      if (!sameCycleValues(cycleBaseline, saved)) setCycleBaseline(saved);
+      if (cycleConflict) setCycleConflict(false);
+    } else if (sameCycleValues(saved, cycleDraft)) {
+      if (!sameCycleValues(cycleDraft, saved)) setCycleDraft(saved);
+      if (!sameCycleValues(cycleBaseline, saved)) setCycleBaseline(saved);
+      setCycleDraftDirty(false);
+      if (cycleConflict) setCycleConflict(false);
+    } else if (!sameCycleValues(saved, cycleBaseline)) {
+      setCycleConflict(true);
+    }
+  }, [cycleSettings?.cycleLength, cycleSettings?.periodLength, cycleDraftDirty, cycleDraft, cycleBaseline, cycleConflict]);
 
   const run = async (action: () => Promise<unknown>, successMessage?: string) => {
     setBusy(true);
@@ -71,6 +155,83 @@ export function Settings() {
         ? { sharingPhase: value }
         : { sharingPeriodWrite: value };
     return run(() => updateSharing(args), "Sharing settings updated.");
+  };
+
+  const saveCycleSettings = () => {
+    if (!isPrimary || cycleConflict || !cycleSettings) return Promise.resolve(false);
+    const current = { cycleLength: cycleSettings.cycleLength, periodLength: cycleSettings.periodLength };
+    if (!sameCycleValues(current, cycleBaseline)) {
+      setCycleConflict(true);
+      setError("These cycle settings changed elsewhere. Reload before saving.");
+      return Promise.resolve(false);
+    }
+    return run(() => updateCycleSettings(cycleDraft), "Cycle settings updated.").then((saved) => {
+      if (saved) {
+        setCycleBaseline(cycleDraft);
+        setCycleDraftDirty(false);
+        setCycleConflict(false);
+      }
+      return saved;
+    });
+  };
+
+  const saveProfilePreferences = () => {
+    if (!profile || profileConflict) return Promise.resolve(false);
+    const current: ProfileValues = {
+      preferredName: profile.preferredName ?? "",
+      gender: profile.gender ?? "prefer_not_to_say",
+      partnerType: profile.partnerType ?? "partner",
+    };
+    if (!sameProfileValues(current, profileBaseline)) {
+      setProfileConflict(true);
+      setError("Profile preferences changed elsewhere. Reload before saving.");
+      return Promise.resolve(false);
+    }
+    return run(() => updateProfile({
+      preferredName: nameDraft,
+      gender: genderDraft,
+      partnerType: partnerTypeDraft,
+    }), "Profile updated.").then((saved) => {
+      if (saved) {
+        setProfileBaseline({ preferredName: nameDraft, gender: genderDraft, partnerType: partnerTypeDraft });
+        setProfileDraftDirty(false);
+        setProfileConflict(false);
+      }
+      return saved;
+    });
+  };
+
+  const reloadProfilePreferences = () => {
+    if (!profile) return;
+    const saved: ProfileValues = {
+      preferredName: profile.preferredName ?? "",
+      gender: profile.gender ?? "prefer_not_to_say",
+      partnerType: profile.partnerType ?? "partner",
+    };
+    setNameDraft(saved.preferredName);
+    setGenderDraft(saved.gender);
+    setPartnerTypeDraft(saved.partnerType);
+    setProfileBaseline(saved);
+    setProfileDraftDirty(false);
+    setProfileConflict(false);
+  };
+
+  const reloadCycleSettings = () => {
+    if (!cycleSettings) return;
+    const saved = { cycleLength: cycleSettings.cycleLength, periodLength: cycleSettings.periodLength };
+    setCycleDraft(saved);
+    setCycleBaseline(saved);
+    setCycleDraftDirty(false);
+    setCycleConflict(false);
+    setError(null);
+  };
+
+  const changeCycleDraft = (change: Partial<CycleValues>) => {
+    setCycleDraft((current) => ({ ...current, ...change }));
+    setCycleDraftDirty(true);
+    setCycleConflict(false);
+    setError(null);
+    setMessage(null);
   };
 
   if (profile === undefined || preferences === undefined || (isPrimary && couple === undefined)) {
@@ -126,12 +287,62 @@ export function Settings() {
         <TextInput
           accessibilityLabel="Preferred name"
           maxLength={40}
-          onChangeText={setNameDraft}
+          onChangeText={(value) => {
+            setNameDraft(value);
+            setProfileDraftDirty(true);
+            setProfileConflict(false);
+          }}
           placeholder="Preferred name"
           value={nameDraft}
           style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
         />
-        <ActionButton label="Save preferred name" disabled={busy} onPress={() => void run(() => updateProfile({ preferredName: nameDraft }), "Profile updated.")} palette={palette} />
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Gender</Text>
+        <View style={styles.themeChoices}>
+          {genderOptions.map((option) => (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityLabel={`Gender: ${option.label}`}
+              accessibilityState={{ checked: genderDraft === option.value, disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                setGenderDraft(option.value);
+                setProfileDraftDirty(true);
+                setProfileConflict(false);
+              }}
+              style={[styles.themeChoice, { borderColor: genderDraft === option.value ? palette.accent : palette.border, backgroundColor: genderDraft === option.value ? palette.highlight : "transparent" }]}
+            >
+              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Relationship term</Text>
+        <View style={styles.themeChoices}>
+          {partnerTypeOptions.map((option) => (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityLabel={`Relationship term: ${option.label}`}
+              accessibilityState={{ checked: partnerTypeDraft === option.value, disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                setPartnerTypeDraft(option.value);
+                setProfileDraftDirty(true);
+                setProfileConflict(false);
+              }}
+              style={[styles.themeChoice, { borderColor: partnerTypeDraft === option.value ? palette.accent : palette.border, backgroundColor: partnerTypeDraft === option.value ? palette.highlight : "transparent" }]}
+            >
+              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {profileConflict ? (
+          <>
+            <Text allowFontScaling accessibilityRole="alert" style={{ color: palette.foreground }}>Profile preferences changed elsewhere. Reload before saving.</Text>
+            <ActionButton label="Reload profile preferences" disabled={busy} onPress={reloadProfilePreferences} palette={palette} />
+          </>
+        ) : null}
+        <ActionButton label="Save profile preferences" disabled={busy || profileConflict || !profileDraftDirty} onPress={() => void saveProfilePreferences()} palette={palette} />
       </View>
 
       <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
@@ -215,6 +426,27 @@ export function Settings() {
 
       {isPrimary ? (
         <>
+          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
+            <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
+            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Average cycle and period lengths are used by the saved cycle settings. Changes are applied by the existing account settings service.</Text>
+            <Text allowFontScaling style={{ color: palette.foreground }}>Cycle length: {cycleDraft.cycleLength} days</Text>
+            <View style={styles.themeChoices}>
+              <ActionButton label="Decrease cycle length" disabled={busy || cycleDraft.cycleLength <= 21} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength - 1 })} palette={palette} />
+              <ActionButton label="Increase cycle length" disabled={busy || cycleDraft.cycleLength >= 40} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength + 1 })} palette={palette} />
+            </View>
+            <Text allowFontScaling style={{ color: palette.foreground }}>Period length: {cycleDraft.periodLength} days</Text>
+            <View style={styles.themeChoices}>
+              <ActionButton label="Decrease period length" disabled={busy || cycleDraft.periodLength <= 2} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength - 1 })} palette={palette} />
+              <ActionButton label="Increase period length" disabled={busy || cycleDraft.periodLength >= 8} onPress={() => changeCycleDraft({ periodLength: cycleDraft.periodLength + 1 })} palette={palette} />
+            </View>
+            {cycleConflict ? (
+              <>
+                <Text allowFontScaling accessibilityRole="alert" style={{ color: palette.foreground }}>These cycle settings changed elsewhere. Reload before saving.</Text>
+                <ActionButton label="Reload cycle settings" disabled={busy || cycleSettings === undefined} onPress={reloadCycleSettings} palette={palette} />
+              </>
+            ) : null}
+            <ActionButton label="Save cycle settings" disabled={busy || !cycleDraftDirty || cycleConflict || cycleSettings === undefined} onPress={() => void saveCycleSettings()} palette={palette} />
+          </View>
           <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
             <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Private prediction controls</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Pausing predictions affects only your account and is not shared with your partner.</Text>
