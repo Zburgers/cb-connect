@@ -64,10 +64,11 @@ import { BloomPanel } from "../../components/BloomPanel";
 import { DateField } from "../logging/DateField";
 import { OnboardingScreen } from "./OnboardingScreen";
 
-function setup({ me, periods = [], settings = { cycleLength: 28, periodLength: 5 }, online = true, loading = false }: {
+function setup({ me, periods = [], settings = { cycleLength: 28, periodLength: 5 }, capabilities = { cycleFactsV1: true }, online = true, loading = false }: {
   me?: unknown;
   periods?: unknown;
   settings?: unknown;
+  capabilities?: unknown;
   online?: boolean;
   loading?: boolean;
 } = {}) {
@@ -75,7 +76,7 @@ function setup({ me, periods = [], settings = { cycleLength: 28, periodLength: 5
   runtime.authenticated = true;
   runtime.online = online;
   runtime.scheme = "light";
-  runtime.queryValues = [me, periods, settings];
+  runtime.queryValues = [me, periods, settings, capabilities];
   runtime.mutations = [runtime.ensureUser, runtime.updateRole, runtime.updateTimeZone, runtime.logPeriodStart, runtime.updateCycleSettings];
   runtime.state = [];
   runtime.stateCursor = 0;
@@ -150,6 +151,21 @@ describe("Onboarding presentation", () => {
 
   it("presents primary cycle setup with certainty and a disabled save until a date is chosen", () => {
     expect(presentation(setup({ me: { role: "primary" }, periods: [], settings: { cycleLength: 28, periodLength: 5 } }))).toMatchSnapshot();
+  });
+
+  it("explains legacy date storage without offering certainty that cannot be retained", () => {
+    const view = presentation(setup({ me: { role: "primary" }, capabilities: { cycleFactsV1: false } }));
+    expect(view).toMatchSnapshot();
+    expect(JSON.stringify(view)).not.toContain("Approximate start date");
+    expect(JSON.stringify(view)).toContain("Dates are saved without certainty labels");
+  });
+
+  it("waits for authoritative capabilities before offering the date form", () => {
+    setup({ me: { role: "primary" } });
+    runtime.queryValues[3] = undefined;
+    const tree = render();
+    expect(find(tree, (element) => element.props.accessibilityLabel === "Start tracking")).toBeUndefined();
+    expect(find(tree, (element) => element.type === DateField)).toBeUndefined();
   });
 
   it("presents the partner completion path without primary cycle fields", () => {

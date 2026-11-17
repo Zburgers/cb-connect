@@ -30,7 +30,16 @@ const config: ExpoConfig = {
   orientation: "portrait",
   plugins: ["expo-router", "expo-secure-store", "@clerk/expo", "expo-font", "@react-native-community/datetimepicker", "expo-sharing", "./plugins/withOwnerAndroidSigning.cjs"],
   ios: { bundleIdentifier: identifier },
-  android: { package: identifier, versionCode: 1 },
+  android: {
+    package: identifier,
+    versionCode: 1,
+    allowBackup: false,
+    blockedPermissions: [
+      "android.permission.SYSTEM_ALERT_WINDOW",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+    ],
+  },
   extra: { mobileEnvironment: environment },
 };
 export default config;
