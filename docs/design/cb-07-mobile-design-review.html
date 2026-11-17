@@ -250,8 +250,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   </div>
   <aside class="gate" aria-label="Implementation gate">
     <strong>Design proposal only · native implementation is blocked</strong>
-    CB-01–CB-05 have stacked-development acceptance. CB-06 has a new remediation head. Its exact-head deterministic/mobile CI now passes; focused re-review must pass before native redesign begins. All phone content below is illustrative, local sample data; controls never call Clerk or Convex.
-    <a href="https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5938446480">Read the preceding CB-06 review</a>.
+    CB-01–CB-05 have stacked-development acceptance. CB-06 has green exact-head deterministic/mobile CI, but re-review still requires one P2 fix: stale-save errors must reliably expose the reload action. Native redesign waits for feature acceptance. All phone content below is illustrative, local sample data; controls never call Clerk or Convex.
+    <a href="https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5939281005">Read the current CB-06 review</a>.
   </aside>
 
   <section aria-labelledby="directions-heading">
@@ -316,16 +316,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     </details>
     <details>
       <summary>Stack evidence and implementation entry gate</summary>
-      <p>Snapshot at 17 Nov 2026. CB-01–CB-05 have passing deterministic qualification and isolated mobile CI. CB-06 changed to ca01eda during this report: deterministic and mobile CI passed; focused re-review was pending at this snapshot. Acceptance below is review evidence, not a release claim.</p>
+      <p>Snapshot at 17 Nov 2026. CB-01–CB-05 have passing deterministic qualification and isolated mobile CI. CB-06 changed to ca01eda during this report: deterministic and mobile CI passed; focused re-review requires one stale-error recovery fix at this snapshot. Acceptance below is review evidence, not a release claim.</p>
       <div class="table-wrap"><table><thead><tr><th>Ticket / PR</th><th>Exact head</th><th>Focused review</th></tr></thead><tbody>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/79">CB-01 #79</a></td><td><code>8e1faa457e54efc7c82d53b5c284846aaaf87fc2</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/81">CB-02 #81</a></td><td><code>0d324a15defcd0404b7cbf990d65e47b025e9db9</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/82">CB-03 #82</a></td><td><code>7f09aebde8854910775c0d029ea839816f2c01c2</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/83">CB-04 #83</a></td><td><code>a9c3355317f281f5022ffc7638aafb762478ed53</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/84">CB-05 #84</a></td><td><code>a322ba73f1c363d2ed9af1bdbc9fd6b881a76dfb</code></td><td class="pass">Accepted; outdated inbox thread remains open</td></tr>
-        <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/85">CB-06 #85</a></td><td><code>ca01eda57e7305766c7960ec3ab948087d6e7206</code></td><td class="blocked">BLOCKED · focused re-review pending</td></tr>
+        <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/85">CB-06 #85</a></td><td><code>ca01eda57e7305766c7960ec3ab948087d6e7206</code></td><td class="blocked">BLOCKED · changes required · stale-error recovery</td></tr>
       </tbody></table></div>
-      <ul><li>CB-06 adds identity-keyed drafts, protected profile editing and conditional cycle writes at 8a71780. These remediations need exact-head focused review and checks; the earlier blocking review is historical evidence, not a verdict on the new head.</li><li>After remediation, refresh all stack heads, rebase this branch onto accepted CB-06, and verify review/check evidence on the new exact head.</li><li>Keep #67 draft. Base this PR on CB-06, never main. This design report does not accept CB-06 or authorize merge, production flags, release or deployment.</li></ul>
+      <ul><li>CB-06 adds identity-keyed drafts, protected profile editing and conditional cycle writes at 8a71780. Exact-head re-review verifies these remediations, but requires a reliable stale-error discriminator and realistic client-wrapped error test so the reload action appears.</li><li>After remediation, refresh all stack heads, rebase this branch onto accepted CB-06, and verify review/check evidence on the new exact head.</li><li>Keep #67 draft. Base this PR on CB-06, never main. This design report does not accept CB-06 or authorize merge, production flags, release or deployment.</li></ul>
     </details>
     <details>
       <summary>Single consolidated final Android QA checklist</summary>

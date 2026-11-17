@@ -30,19 +30,23 @@ and GitHub descriptions, checks, reviews and review threads for #79 and
 | CB-03 | [#82](https://github.com/Zburgers/cb-connect/pull/82) | `7f09aebde8854910775c0d029ea839816f2c01c2` | Accepted for stacked development | PASS / PASS |
 | CB-04 | [#83](https://github.com/Zburgers/cb-connect/pull/83) | `a9c3355317f281f5022ffc7638aafb762478ed53` | Accepted for stacked development | PASS / PASS |
 | CB-05 | [#84](https://github.com/Zburgers/cb-connect/pull/84) | `a322ba73f1c363d2ed9af1bdbc9fd6b881a76dfb` | Accepted; outdated inbox thread remains open | PASS / PASS |
-| CB-06 | [#85](https://github.com/Zburgers/cb-connect/pull/85) | `ca01eda57e7305766c7960ec3ab948087d6e7206` | Re-review pending | PASS / PASS |
+| CB-06 | [#85](https://github.com/Zburgers/cb-connect/pull/85) | `ca01eda57e7305766c7960ec3ab948087d6e7206` | Changes required: stale-error recovery P2 | PASS / PASS |
 
 The [preceding CB-06 review](https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5938446480)
 required account-keyed draft isolation, in-flight profile editing protection,
 and resolution of stale-write guarantees. The new CB-06 commit adds an
 identity-keyed settings subtree, protected name editing, conditional cycle
 writes and regression tests. Those changes belong to CB-06 and are inherited,
-not authored by CB-07. This proposal makes no acceptance claim for them.
+not authored by CB-07. The [exact-head re-review](https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5939281005)
+verified those fixes but requires one P2 correction: use a stable stale-error
+discriminator compatible with client-wrapped Convex rejections, and prove
+the reload action appears while retaining the draft. CB-07 does not fix or
+accept that feature defect.
 Profile conflict warnings must not be described as atomic concurrency guards.
 
 **Implementation entry gate: BLOCKED** until all six focused reviews and
-exact-head deterministic checks pass (CB-06 CI is now green, re-review remains
-pending). Refresh this snapshot and the base
+exact-head deterministic checks pass (CB-06 CI is green, re-review requires
+changes required for stale-error recovery). Refresh this snapshot and the base
 before native work. Local test claims in earlier PRs were read as reported
 evidence; this design pass did not independently rerun feature qualification.
 Skipped production release jobs are not release evidence.
