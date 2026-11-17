@@ -220,7 +220,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
           <BloomPanel palette={palette} variant="sage"><Text style={[bloomType.body, { color: palette.foreground }]}>Start a private conversation. Messages stay between you and your partner.</Text></BloomPanel>
         ) : null}
       </ScrollView>
-      <ScrollView style={styles.controls} contentContainerStyle={styles.controlContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
+      <ScrollView accessibilityLabel="Message controls" style={styles.controls} contentContainerStyle={styles.controlContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
       {error ? <BloomNotice palette={palette} alert>{error}</BloomNotice> : null}
       <ScrollView horizontal keyboardShouldPersistTaps="handled" style={styles.quickScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
         {QUICK_COMPOSE.map((suggestion) => (

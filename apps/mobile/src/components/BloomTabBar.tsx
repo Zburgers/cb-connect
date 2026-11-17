@@ -96,8 +96,9 @@ export function BloomTabBar({ state, descriptors, navigation, dark, palette, blu
         {activeIndex >= 0 ? <Animated.View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.selection, { width: geometry.itemWidth, height: geometry.itemHeight, borderRadius: geometry.largeText ? 18 : 33, backgroundColor: palette.dockSelection, borderColor: palette.rim, transform: position.getTranslateTransform() }]}>
           <LinearGradient colors={[palette.rim, "transparent"]} pointerEvents="none" style={styles.selectionReflection} />
         </Animated.View> : null}
-        <View style={styles.items} accessibilityRole="tablist">
-          {routes.map((route) => {
+        <View accessibilityRole="tablist">
+          {Array.from({ length: Math.ceil(routes.length / geometry.columns) }, (_, row) => <View key={row} style={styles.items}>
+          {routes.slice(row * geometry.columns, (row + 1) * geometry.columns).map((route) => {
             const options = descriptors[route.key].options;
             const focused = route.key === activeKey;
             const color = focused ? palette.accent : palette.foreground;
@@ -110,6 +111,7 @@ export function BloomTabBar({ state, descriptors, navigation, dark, palette, blu
               <BloomText style={[styles.label, { color, fontFamily: focused ? bloomFonts.semibold : bloomFonts.medium, fontSize: geometry.largeText ? 14 : 12 }]}>{label}</BloomText>
             </Pressable>;
           })}
+          </View>)}
         </View>
       </View>
     </View>
@@ -124,7 +126,9 @@ const styles = StyleSheet.create({
   tint: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   reflection: { position: "absolute", left: 0, right: 0, top: 0, height: 19 },
   innerRim: { position: "absolute", top: 2, left: 2, right: 2, bottom: 2, borderWidth: StyleSheet.hairlineWidth },
-  items: { flexDirection: "row", flexWrap: "wrap" },
+  // Explicit rows keep fractional Yoga widths from wrapping the final tab and
+  // making the rendered dock taller than the inset reserved by its scenes.
+  items: { flexDirection: "row", flexWrap: "nowrap" },
   selection: { position: "absolute", left: 6, top: 6, borderWidth: 1, overflow: "hidden" },
   selectionReflection: { position: "absolute", top: 0, left: 0, right: 0, height: 14 },
   item: { justifyContent: "center", alignItems: "center", paddingHorizontal: 4, paddingVertical: 7, gap: 3 },

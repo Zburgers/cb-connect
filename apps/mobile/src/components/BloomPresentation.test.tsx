@@ -143,6 +143,15 @@ describe("Bloom dock navigation and materials", () => {
     const screen = elements(BloomScreen({ palette: mobileColors.light, title: "Settings", children: "Last action" }));
     expect(screen.find((el) => el.type === "ScrollView")!.props.contentContainerStyle[1].paddingBottom).toBe(getBloomScrollBottomPadding(2));
   });
+  it.each([[1, 1, 5], [2, 3, 2]])("keeps declared dock rows at fractional Pixel 7 width and font scale %s", (scale, rowCount, firstRowCount) => {
+    runtime.width = 411.428571;
+    runtime.scale = scale;
+    const tablist = elements(BloomTabBar(fixture().props)).find((el) => el.props.accessibilityRole === "tablist")!;
+    const rows = React.Children.toArray(tablist.props.children) as Element[];
+    expect(rows).toHaveLength(rowCount);
+    expect(React.Children.count(rows[0].props.children)).toBe(firstRowCount);
+    expect(rows.every((row) => row.props.style.flexWrap === "nowrap")).toBe(true);
+  });
 });
 
 function ViewFixture() { return React.createElement("SceneContent"); }
