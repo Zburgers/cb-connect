@@ -45,8 +45,8 @@ accept that feature defect.
 Profile conflict warnings must not be described as atomic concurrency guards.
 
 **Implementation entry gate: BLOCKED** until all six focused reviews and
-exact-head deterministic checks pass (CB-06 CI is green, re-review requires
-changes required for stale-error recovery). Refresh this snapshot and the base
+exact-head deterministic checks pass (CB-06 CI is green; stale-error recovery
+still requires correction). Refresh this snapshot and the base
 before native work. Local test claims in earlier PRs were read as reported
 evidence; this design pass did not independently rerun feature qualification.
 Skipped production release jobs are not release evidence.
