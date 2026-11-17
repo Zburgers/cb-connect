@@ -349,15 +349,12 @@ describe("native reminder-time settings interactions", () => {
     runtime.profile = {
       ...runtime.profile,
       _id: "primary-two",
-      preferredName: "Second account",
-      gender: "female",
-      partnerType: "spouse",
     };
     runtime.cycleSettings = { cycleLength: 28, periodLength: 5, predictionPaused: false };
     elements = renderSettings();
     elements = renderSettings();
 
-    expect(elements.some((element) => element.type === "TextInput" && element.props.value === "Second account")).toBe(true);
+    expect(elements.some((element) => element.type === "TextInput" && element.props.value === "Naki")).toBe(true);
     expect(pressable(elements, "Save profile preferences").props.disabled).toBe(true);
     expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Cycle length: 28 days")).toBe(true);
     expect(pressable(elements, "Save cycle settings").props.disabled).toBe(true);
