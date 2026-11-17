@@ -32,3 +32,24 @@ standalone APK must pass the production rows of the canonical QA checklist.
 No UI workaround or fallback to test accounts resolves these prerequisites.
 
 Rechecked mobile public-function metadata during the resumed 2026-11-18 run: the same three references remain absent; deployed cycle-save and chat-clear argument schemas differ from the qualified synthetic target. This is metadata evidence, not authenticated production acceptance.
+
+A further 2026-11-18 refresh used the Convex connector's explicitly read-only
+production selector and function metadata (no user-data reads or writes).
+Synthetic exposes all 50 required mobile references; production still exposes
+47. The same three names are missing, with no kind/visibility differences in
+the remaining references; cycle-save and chat-clear argument schemas still
+differ. Public web readiness remains HTTP 200/ready at the recorded frontend
+`a7756d8` and backend deployment timestamp, and the production Clerk public
+environment still reports native API disabled. Unauthenticated public query
+errors are generic server errors and were not treated as authenticated or
+contract evidence; the metadata comparison is the basis for this finding.
+
+The current Clerk hosted-auth setup guide requires enabling Native API and
+registering the native app before creating its production build. This client
+uses `useHostedAuth` without a custom redirect; the default callback derives
+from the Android namespace/package, and the Clerk Expo plugin registers its
+intent filter. Production namespace/package is `tech.builtbynaki.cbconnect`.
+Native-app registration must be verified in Clerk's Native applications page;
+an empty SSO redirect list alone does not establish that registration state.
+See https://clerk.com/docs/guides/account-portal/hosted-auth. No production auth
+setting or registration was changed by this preflight.

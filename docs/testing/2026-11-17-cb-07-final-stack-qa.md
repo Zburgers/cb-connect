@@ -338,3 +338,75 @@ TypeScript and 29 files / 198 tests pass. No backend/API/dependency change.
 The same final-stack run must retest the next signed artifact before accepting
 correction saves. CB-03–CB-06 were locally restacked with identical lane patches
 by range-diff; no branch has been pushed for this finding yet.
+
+### Partner inbox, paging and clear
+
+On signed `1662a3e`, the operator loaded the enabled synthetic partner inbox,
+marked a notice read, dismissed it, opened its Messages destination and used
+Load more. Supplemental public-API readback found 44 unique remaining notices
+in pages 20/20/4, with primary inbox empty. This is separate from the UI result
+and does not prove every native row was visually inspected. Partner Message
+activity was toggled off/on/off through native Settings, restoring false.
+Chat Load older messages exposed older run-labelled messages. Clear cancel
+preserved all 48 run-labelled messages; confirmed Clear produced the native
+empty state. Root verified zero visible messages for both accounts and that
+old source-bound inbox notices no longer appeared.
+
+For the pending-notice revocation case, root temporarily re-enabled only the
+partner Message activity preference and sent one run-labelled message through
+the real authenticated primary web DM. It rendered and the web composer
+cleared. Revocation/relink of the same existing accounts is coordinated next;
+preference and relationship-field baselines must be restored afterward.
+
+Current local integrated source `88281931f0fd99d33dd28588f931cd1b7076155a`
+passes 34 files / 295 mobile tests, native TypeScript/strict contract parity and
+root TypeScript. Its next signed APK is still building; existing device cases
+remain attributed to `1662a3e`. The previously documented JDK17 directory was
+absent; Gradle9.3.1 now launches from the existing Studio JBR25 (officially
+supported), and the project's configured Java17 compiler was automatically
+provisioned. Initial build attempts failed before compilation on that missing
+path / wrapper download timeout; no candidate was installed from those attempts.
+
+### Live revoke, normal relink and restoration
+
+Root revoked the synthetic relationship through the actual primary web UI
+while Luna held the partner's unread inbox notice. Native immediately showed
+only the unpaired connection form; inbox, Home, Chat and dock were absent.
+Android Back did not reopen protected content. Read-only identity checks
+confirmed both existing accounts remained intact and unlinked.
+
+Malformed input showed bounded-code validation; a first invitation expired by
+web regeneration produced “Invalid or expired pairing code” without linking.
+Native primary Copy confirmed success; Share opened the chooser and was
+cancelled without external delivery. A code-bearing action diff exposed one
+synthetic invitation; root invalidated it by regeneration before further use.
+Its replacement stayed in a private mode-600 relay, and the SAME partner
+linked successfully through normal UI. No account was created or deleted.
+
+Post-link native and supplemental API checks found no prior chat/inbox
+contents. Both profile names/nicknames and relationship date are blank/unset;
+cycle baselines are 28/5/unpaused, reminder unset, Message activity off.
+Original sharing baseline is phase on, pain off, period assistance off. The
+three task-created relay files were removed after successful relink. Android
+clipboard read was unsupported; its contents were preserved, and clipboard
+cleanup remains unqualified. Test notification flags are being restored to
+their exact original false values before ending the enabled phase.
+
+### Picker-window privacy finding and later candidate
+
+A supervisor inspected the stored synthetic date-dialog capture: the calendar
+was visible while the Activity behind it was black. Source confirms Expo sets
+FLAG_SECURE only on the Activity, and the pinned date/time picker creates
+separate unprotected windows. CB-02 candidate `bcfa02c` adds version/source-hash
+guarded, idempotent native dialog inheritance before display. The dependency
+version is unchanged; the lockfile only records the new project postinstall.
+CB-02 postinstall, TypeScript and 30 files / 201 tests pass. Native compile and
+modal-capture retest are still required; physical-device claims remain separate.
+
+The intermediate date-selection candidate `8828193` built successfully with
+Temurin17 in 24m43s (1490s including packaging), after transient toolchain
+recovery. SHA-256 `eb9bd35cb54df97fd3b9a49c6826690b15373a9ed9757fe4a1ee760691501008`;
+owner certificate, embedded Hermes, synthetic key, both ABIs, non-debuggable /
+backup-disabled manifest and source-map/password/blocked-permission exclusions
+pass. It does NOT contain the later native modal privacy fix. It is internal
+and has not been uploaded or emailed.
