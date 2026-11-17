@@ -30,6 +30,8 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [isAtBottom, setIsAtBottom] = useState(false);
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
   const isAtBottomRef = useRef(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const contentHeight = useRef(0);
@@ -97,6 +99,10 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         text: "Clear chat",
         style: "destructive",
         onPress: () => {
+          if (!connectedRef.current) {
+            setError("Reconnect before clearing chat.");
+            return;
+          }
           setError(null);
           setClearing(true);
           void clearThread({ relationshipGeneration })
