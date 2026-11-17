@@ -74,6 +74,21 @@ Final PR review and CI remain separately visible on the exact PR head.
 
 ## Consolidated live Android / web QA
 
+The resumed run uses the canonical [final-stack QA checklist](../../testing/2026-11-17-cb-07-final-stack-qa.md).
+The owner has now started Pixel 7 successfully. The startup failure below is
+historical; resumed results and final APK identity are recorded in that runbook.
+The approved synthetic backend was refreshed through the target-bound executor
+to source `026249a` for this consolidated run. Readback confirms all 50 public
+mobile names/kinds/visibility and CB-06's `expectedCurrent` cycle argument.
+Production remains unchanged; see [production readiness](production-readiness.md).
+
+The later packaging changes pass 33 files / 285 mobile tests, mobile TypeScript
+plus strict parity, root TypeScript, Expo Doctor 21/21 and a 1,612-module Android
+Hermes export. Valid production Expo configuration and mixed-target rejection
+were checked without relying on Node's TypeScript stripping. A real Gradle
+release-task dry run refuses missing owner credentials as expected; this is a
+signing-guard test, not a successful signed build.
+
 **BLOCKED before native launch.** Inventory identified a Pixel 7 Android 17
 emulator, not a physical device. The Device panel's `device_open` failed:
 

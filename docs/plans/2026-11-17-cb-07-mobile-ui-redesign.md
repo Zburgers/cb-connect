@@ -1,6 +1,6 @@
 # CB-07 — owner-led mobile UI redesign
 
-Status: **native implementation complete; deterministic checks and review recorded below; final live QA blocked by emulator startup**.
+Status: **native implementation complete; consolidated live QA resumed on the owner-started Pixel 7; production delivery prerequisites recorded separately**.
 This document does not mark NAK-149 complete or qualify native behavior.
 
 Issue: [NAK-149](https://linear.app/nakii/issue/NAK-149/cb-07-complete-mobile-ui-redesign-after-functional-parity).
@@ -181,17 +181,20 @@ specimen, not a model or exhaustive proof of all state combinations.
    `npm run mobile:typecheck` (strict parity), inventory, negative fixtures and
    server-only-import checks pass locally. GitHub exact-head CI is separate.
    Backend/functional gaps go back to CB-01–CB-06, not into this PR.
-7. **BLOCKED — one final stack live QA:** follow the consolidated checklist
-   inside the HTML report and PR description, on the final integrated exact
+7. **IN PROGRESS — one final stack live QA:** follow the canonical
+   [QA runbook](../testing/2026-11-17-cb-07-final-stack-qa.md), on the final integrated exact
    source/APK head, using the approved persistent synthetic pair. No standalone
    native live QA for this design PR. Record failures under the owning feature;
-   rerun targeted checks after fixes. Device panel boot and its advised recovery
-   both failed with emulator SIGSEGV before usable UI control. No paired-account
-   live QA, native screenshots, TalkBack, keyboard or privacy evidence is claimed.
+   rerun targeted checks after fixes. The former emulator SIGSEGV blocker is
+   superseded by the owner's successful boot. One resumed GPT-6 Luna agent
+   operates the emulator; results remain case-specific in the runbook.
 8. **PENDING — final acceptance:** owner reviews screen inventory, role/state
    coverage, snapshots and consolidated QA results. Only then accept/merge
    bottom-up into `gate5/atlas-foundation`, holding #67 draft. No production
-   deployment, flag change, signing/release or new product feature is in scope.
+   deployment or new product feature is in scope. The owner's subsequent
+   request adds production-compatible APK packaging and private email delivery
+   after QA. Its [production preflight](../evidence/cb-07-mobile-ui/production-readiness.md)
+   records missing deployed mobile contracts and disabled native Clerk auth.
 
 ## Accessibility and responsive acceptance
 
@@ -242,4 +245,6 @@ The self-contained HTML report remains illustrative. Its 52 state selections,
 90 layout cases, four role/navigation cases, three directions, offline assets
 and no-overflow checks are browser-artifact evidence only. Native glass
 performance, actual composited contrast, keyboard, TalkBack, privacy and
-paired-account cross-client journeys remain blocked/unrun as documented.
+paired-account cross-client journeys are recorded only when actually exercised
+in the resumed QA runbook. Secure native capture prevents pixel inspection;
+source/mockup evidence does not establish composited native glass quality.
