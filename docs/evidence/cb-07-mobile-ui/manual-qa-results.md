@@ -4,12 +4,13 @@ This file records actual manual results incrementally. It is limited to the
 approved synthetic development environment and the Android emulator. It does
 not qualify a production build or physical device.
 
-## Run identity
+## Current signed-run identity
 
 - Device: local `emulator-5554`, Pixel 7, Android 17 emulator (`physical=false`).
 - App: `tech.builtbynaki.cbconnect.beta`.
-- Native APK SHA-256: `8c7a5773df3953a3b8160bcd8bfa08a4daa7a711885dd63efc546623154f9499` (x86_64 debug APK; Metro required).
-- Metro JavaScript source: `f907e301ccec365122bd3cef1b029dbb63cbb078`.
+- Current installed owner-signed APK source: `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; SHA-256 `312f48c10e1755540440d35f3ff8ba7a23bd5ea0089586c24647a4fde43d82e7`. Embedded JS; Metro stopped and no reverse port. Later source changes require a new artifact and targeted retests.
+- Historical initial debug APK SHA-256: `8c7a5773df3953a3b8160bcd8bfa08a4daa7a711885dd63efc546623154f9499` (x86_64 debug APK; Metro required).
+- Historical initial Metro JavaScript source: `f907e301ccec365122bd3cef1b029dbb63cbb078`.
 - Runtime: approved synthetic Clerk development issuer and refreshed synthetic Convex development deployment; no production target used.
 - Interaction: pinned `agent-device` session for the local Pixel emulator. ADB was used only to inventory/install and forward `tcp:8081`.
 - Sensitive fixture values and raw authenticated payloads are not recorded. No raw screenshots are stored here.
@@ -45,14 +46,37 @@ not qualify a production build or physical device.
 | UI-04 — compact font/layout check | PARTIAL | Agent-device text-size preset `small` was applied; app relaunch retained the authenticated partner session. All five dock destinations stayed in one row at y=2100–2286 on the 1080×2400 emulator. Secure-window screenshots remain black, so visual legibility and content clipping were not assessed. | Same emulator/debug APK/current Metro; baseline before this group was Large. |
 | UI-04 — accessibility-large font/layout check | PARTIAL | Agent-device `accessibility-large` text-size preset produced a three-row dock on Home (Home/Log y=1846–1993; Chat/Partner y=1993–2140; Settings y=2140–2287). Accessibility labels remained exposed. A React Native warning/error overlay appeared after relaunch and was dismissed through agent-device; no visual or final-action reachability claim is made at this scale. The preset label was not independently verified as exactly 200%. | Same emulator/debug APK/current Metro; visual contrast not assessable. |
 | UI-04 — restore baseline | BLOCKED | Issued agent-device `settings text-size large` successfully, but the emulator then disappeared from adb before a relaunch or readback could verify the restored setting and safe app screen. `device_list` showed the Pixel 7 emulator unbooted; reopening its old `emulator-5554` id failed because the current inventory no longer exposes that id. | Stop device interaction pending supervisor direction; no new device session opened. |
+| ENV-01 — post-restart existing debug app inspection | BLOCKED | On the recovered Pixel 7 emulator, `agent-device settings text-size` reported Large. Opening the installed debug beta through the pinned `agent-device` command showed the React Native “Unable to load script” screen because Metro was stopped. The existing authenticated screen could not be reached, so sign-out through the UI was not possible. No UI dismiss/reload was used and no app data was changed. | Pixel 7 emulator, Android 17; installed debug APK remains Metro-dependent; integrated app source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`. |
+| APK-02 — standalone synthetic cold launch without Metro | PASS | Root installed the exact owner-signed APK `cb-connect-synthetic-1662a3e8e405.apk` (SHA-256 `312f48c10e1755540440d35f3ff8ba7a23bd5ea0089586c24647a4fde43d82e7`), confirmed `adb reverse --list` empty and Metro stopped, then `agent-device open tech.builtbynaki.cbconnect.beta --relaunch` cold-launched to native Sign In with no missing-script screen. | Pixel 7 emulator / Android 17; APK source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; synthetic profile. |
+| APK-02 — standalone synthetic primary sign-in | PASS | Hosted Clerk sign-in using the protected preview primary fixture returned to the native onboarding completion screen (“Your primary role is saved”) while Metro was stopped and adb reverse remained empty. The existing persistent synthetic primary account/session was used; no account was created. | Pixel 7 emulator / Android 17; signed synthetic APK source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`, SHA-256 `312f48c10e1755540440d35f3ff8ba7a23bd5ea0089586c24647a4fde43d82e7`; account-local identity omitted. |
+| LOG-01 — standalone legacy capability certainty UI | PASS | In the owner-signed standalone synthetic APK on the primary fixture, Log showed the explicit notice “Dates are saved without certainty labels for this account. You can review them in history.” No Exact/Approximate choice or selected-certainty state was shown. The existing open period was not modified. | Pixel 7 emulator / Android 17; APK source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; offline standalone (Metro stopped, no reverse port). |
+| UI-02 — dock geometry on signed standalone APK | PASS | On the owner-signed standalone APK at Large system text and 1080×2400 viewport, all five tab groups shared y=2090–2287, height 197; no wrapped Settings row. | Pixel 7 emulator; source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; Metro stopped and reverse list empty. |
+| CHAT-01 — signed standalone primary text send | PASS | On the owner-signed APK with Metro stopped and reverse list empty, sent “CB07 signed standalone primary chat 2026-11-18”; it rendered under YOU with “Sent”, and the composer cleared/disabled. | Pixel 7 emulator; synthetic primary session; APK source `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`. |
+| UI-03 — signed standalone chat keyboard/action | PARTIAL | The message field accepted and focused a run-labelled draft, but `agent-device keyboard status` reported `Keyboard visible: no` (text input, app owner), so on-screen keyboard layout/keyboard-aware dock behavior remains unqualified. With keyboard hidden, Send was reachable; message sent and composer cleared. | Pixel 7 emulator; standalone synthetic APK; Metro stopped. |
+| AUTH-03 — standalone partner privacy and B-side state | PASS | After primary sign-out, the protected persistent partner fixture authenticated to the signed standalone APK. Partner Home showed only the private-pain empty notice; Partner Log had no Pain log editor. The partner Chat showed the run-labelled primary message as read and its reaction controls. Partner profile exposed account-private nickname and relationship-date controls. | Pixel 7 emulator; signed synthetic APK, Metro stopped; no primary pain note was displayed. |
+| CHAT-01 — standalone reaction add/remove | PASS | In the partner session, added a heart reaction to the run-labelled primary message; accessibility state changed to “Remove 💗 reaction …” and count 1. Removed it, returning the control to “Add 💗 reaction …” and no count. | Synthetic chat state restored to its prior no-heart reaction for that message. |
+| AUTH-03 — primary return and unsent partner draft isolation | PASS | After partner Chat held a run-labelled unsent draft, I signed out and reauthenticated as primary. The native Chat composer was blank/disabled; it displayed shared messages but no partner draft. Primary Log showed the primary-only synthetic pain entry and its private note. | Standalone signed synthetic APK; persistent pair unchanged; partner draft was never sent. |
+| SET-04 — offline unsaved profile draft retention | PARTIAL / follow-up | Entered a run-labelled preferred-name draft in Settings without pressing any save control. Airplane mode produced “Offline. Protected features are hidden until your connection returns”; after reconnect, the app returned through primary onboarding completion and Settings reopened with the preferred-name field blank. No write had been submitted, so this observes unsaved local-draft loss across the offline gate/remount, not failed-save handling. | Name baseline was blank before and after; no server profile write. Airplane mode restored off. |
+| SET-02 — signed standalone appearance selection | PASS | On signed APK, appearance radiobutton selection changed System→Light→Dark→System and returned to System selected. | Restored original System preference. Visual palette contrast remains blocked by secure black screenshots. |
+| A11Y-01 — TalkBack dock semantics | PARTIAL | Enabled TalkBack through Android Settings UI. Signed app accessibility JSON exposed Home/Log/Chat/Partner/Settings as tab roles with matching labels and Home selected. One TalkBack-style right swipe did not expose a focused-node change or spoken output in the agent-device evidence, so traversal order/announcements remain unqualified. TalkBack was turned off in Accessibility settings and showed “Off” before touch-driven QA continued. | Pixel 7 emulator; baseline TalkBack OFF restored. |
+| A11Y-02 — Android reduced motion and transparency controls | PARTIAL | Android Accessibility → Color & motion showed Remove animations enabled on arrival and Reduce blur effects disabled. Toggled both through visible Settings UI, checked the app Home/Settings accessibility UI with reduced motion, then restored the observed initial values: Remove animations ON and Reduce blur OFF. App screenshots remain black under the privacy shield, so actual motion transitions and composited transparency/contrast were not visually evaluated. | Pixel 7 emulator; restored settings confirmed by screenshot in ignored `build/mobile/qa/`. |
+| NET-01 — emulator network and app recovery | PARTIAL | Through the pinned device UI, set Airplane mode OFF and Wi-Fi ON. Chrome loaded `http://10.0.2.2:3007/api/health` with `status: ok` and loaded `https://example.com` with its expected documentation-domain text. A foreground open of Beta cleared its offline gate to the primary onboarding completion screen; Continue returned to Home. | Connectivity paths PASS; native gate recovery observed once, without reinstall or account mutation. No app data reset. |
+| SET-03 — native/web cycle settings concurrency | PASS | Primary Settings showed baseline cycle length 28 days and period length 5 days. Increased native cycle length to 29 without saving. After root saved 30 days through the authenticated primary web UI, native preserved the 29-day draft, displayed “These cycle settings changed elsewhere. Reload before saving.” and disabled Save while exposing Reload. Pressing Reload adopted 30 days and cleared the conflict. Root then restored 28/5 in web; native showed 28/5 with no conflict and Save disabled. | Same synthetic primary account and backend. Native did not overwrite the web change; original cycle settings restored. |
+| SET-04 — native/web profile draft conflict | PASS | With preferred name blank in baseline, entered `CB07 native profile draft` in the native Settings field without saving. Root's authenticated web UI saved `CB07 web profile draft` and independently verified the backend value. Scrolling within the same Settings mount to the Profile/Time zone boundary revealed the native draft preserved, “Profile preferences changed elsewhere. Reload before saving.”, Reload profile preferences, and disabled Save profile preferences. Reload adopted the web label and cleared the alert; Save remained disabled. | Same synthetic primary account; no native profile write. Root restored blank through web and native field returned clean/Save disabled. |
+| REM-01 — reminder time save/readback/restore | PASS | Baseline reminder was unset (“Choose a time”; Save disabled). Selected and saved 07:30 through the native time picker; Settings showed 07:30 and disabled Save. Root independently read 07:30 in the primary web UI, then cleared/saved the time to restore unset. Native refreshed to “Choose a time” with Save disabled. | Primary synthetic account, time zone Asia/Calcutta; in-app reminder preference remained off. |
+| LOG-02 — end period, correction bounds/cancel, delete cancel/confirm | PASS / correction save NOT RUN | Confirmed the run-created open Nov 16 period ended Nov 18; history then showed Nov 16–18 as a past period. In its correction form, the corrected END-date calendar showed Nov 16–18 enabled and dates before the period start or after today disabled. Cancel correction left history unchanged. Delete confirmation identified the period entry and warned it changes cycle history; Cancel preserved the entry, and Confirm delete removed it. Same-account setup resumed afterward and a replacement Nov 18 period was saved with 28/5; web independently read it back. On the replacement correction form, a screenshot showed Nov 17 selected before OK, but after OK the app field still read Nov 18. The form was canceled; correction save was not attempted. | Existing primary synthetic account/pair preserved. A second date selection attempt did not change the picker; root is investigating the shared date field for a targeted signed retest. |
+| LOG-03 — CSV preview/share cancellation | PARTIAL | Export CSV opened the Android chooser for `1794951866015-cb-connect-history-2026-11-18.csv`; no recommended people were listed. Gmail, Chat, Drive, Gemini, Add to Chat and Quick Share were available. Dismissed the chooser with Back and sent nothing externally. The app returned to its offline gate; source implements best-effort temporary-file deletion in `finally`, but filesystem cleanup was not independently observed. | CSV contained only same-account synthetic history; external sharing canceled. |
+| SET-05 — unequal-baseline A→B profile isolation | PASS / restore verified | Held unsaved primary draft `CB07 primary unsaved draft`, signed out, and authenticated to the same partner fixture. Partner Home showed only the private-pain notice, not the primary pain entry or note. Partner Settings showed its own server baseline `CB07 partner baseline`; the primary draft was absent. Cleared that partner name and saved through native Settings. | Partner name restored blank; no pair/account mutation. Partner inbox/chat fixture preparation was separate and root-managed. |
+| ONB-02 — existing-role resume after history deletion | PASS | After deletion of the sole run-created period, the existing primary account returned to cycle setup with 28/5 and legacy certainty notice/controls omitted. Selected Nov 18, saved Start tracking, continued through “Your primary role is saved” and reached Home as the same account. | No new account or role provisioning; replacement Nov 18 period restored and web-read back. |
+
 ## Pending
 
-All other manual checklist cases remain **NOT RUN** until individually recorded.
-Production interoperability, standalone APK qualification, physical-device
-privacy, and delivery are separate gates and are not evidenced by this run.
+Cases remain **NOT RUN** unless individually recorded above. The signed APK has
+passed individual standalone/auth/journey subcases; remaining compound cases,
+production interoperability, physical-device privacy and delivery remain open.
 
 
-## Interrupted device track
+## Historical interrupted device track
 
 Pixel 7 disappeared during the enlarged-text checks. The Large text restore was
 issued but not observed afterward. Automated recovery first reported insufficient
@@ -62,14 +86,15 @@ caches were deleted. Clearing a stale panel entry did not recover boot. The
 operator stopped after bounded recovery attempts. An owner GUI restart is needed;
 no alternate input driver, new device, or replacement agent was used.
 
-The integrated `1662a3e` APK is signed and statically checked, but has not been
-installed/launched. Its standalone runtime acceptance remains pending. The same
+At that interrupted checkpoint the integrated `1662a3e` APK had not yet been
+installed/launched. The signed-run rows above supersede that install blocker. The same
 Luna agent remains available for continuation; the report is not an overall pass.
 
-## Remaining canonical coverage
+## Remaining coverage at the interruption checkpoint (historical)
 
 A partial result above does not complete a multi-step canonical case. The next
-pass must explicitly cover the following; the device outage prevents continuation.
+pass required the following. Later signed-run rows above record the resumed
+subcases; an entire compound case remains open until all its steps are covered.
 
 | Cases | Outstanding scope |
 |---|---|
@@ -107,6 +132,7 @@ attempts returned `user cancelled MCP tool call`, before a pinned UI session
 could be obtained. It stopped without UI interaction or APK installation.
 The signed candidate hash still matches the recorded `312f48c1…` artifact.
 
-Current continuation blocker is device access, not emulator startup. The owner
+At that checkpoint continuation was blocked by device access, not startup;
+the later root connection and signed-run rows supersede this blocker. The owner
 was asked to allow the device-access request or report that no prompt appeared.
 No new native case passed, no app/AVD data was reset and no APK was emailed.

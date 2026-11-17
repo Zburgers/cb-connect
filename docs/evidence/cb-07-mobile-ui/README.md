@@ -1,6 +1,6 @@
 # CB-07 native Bloom implementation evidence
 
-Date: 2026-11-17. Issue: NAK-149. PR: [#86](https://github.com/Zburgers/cb-connect/pull/86).
+Date: 2026-11-17; resumed signed run 2026-11-18. Issue: NAK-149. PR: [#86](https://github.com/Zburgers/cb-connect/pull/86).
 Base: accepted CB-06 `8371af42b50e0b046bbdd148844cc9891c317ae4`.
 Implementation identity: the `feat(UI): implement native Bloom redesign and reflective glass dock`
 commit in this PR; later documentation-only commits do not change its app source.
@@ -104,7 +104,7 @@ was provisioned and no live health/chat data was changed. Production was not
 used. No credentials, account IDs, pairing codes or authenticated screenshots
 are included in this evidence.
 
-| Final-stack scenario group | Status |
+| Historical first-attempt scenario group | Status at that attempt |
 |---|---|
 | Native launch and visual readback | BLOCKED — emulator startup |
 | Onboarding, partial-save/resume and period/pain/CSV journeys | BLOCKED — native launch prerequisite |
@@ -133,13 +133,19 @@ The resumed [manual results](manual-qa-results.md) contain actual primary and
 partner Clerk journeys, initial period/pain writes with independent web readback,
 profile restore, appearance persistence, inbox gating and partner privacy. Live
 QA exposed the accidental dock row/Send interception (fixed and retested) and
-legacy certainty mismatch (fixed in CB-01/CB-02; native retest pending). See the
+legacy certainty mismatch (fixed in CB-01/CB-02; signed legacy-mode UI retest PASS). See the
 [canonical checklist](../../testing/2026-11-17-cb-07-final-stack-qa.md) for remaining
 steps and exact artifact/hash/signing evidence.
 
-A signed standalone synthetic APK was built from the integrated source. Static
-APK checks pass; standalone install/runtime is **NOT RUN**. Pixel 7 went offline
-and bounded recovery remained unsuccessful after clearing only task-generated
-caches and stale panel state. The owner must restart the same AVD; no user/AVD
-data was deleted. No production setting was changed and no APK was emailed or
-uploaded. Full QA and production delivery remain incomplete.
+The signed standalone synthetic APK is now installed on the same Pixel 7 after
+the owner's restart. Its installed bytes match the candidate hash; no Metro
+process or reverse port is present. Cold launch, hosted primary/partner auth,
+legacy capability notice, one-row dock, primary chat send, reaction roundtrip
+and unsent partner-draft isolation have passed as individual subcases. Further
+manual coverage is in progress in the canonical log. Secure screenshots are
+black by policy; actual glass compositing/contrast remains unqualified.
+
+The earlier offline/device-access blockers are historical attempts, retained
+in the runbook. No AVD/user data was wiped. Production remains unchanged; its
+missing deployed contracts and native auth prerequisites prevent production
+acceptance/delivery. No APK has been emailed or uploaded.

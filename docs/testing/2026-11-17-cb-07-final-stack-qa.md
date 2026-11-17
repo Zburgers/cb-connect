@@ -1,6 +1,6 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL — Pixel 7 is online again; device-access requests were cancelled, preventing QA continuation. No production APK qualified or delivered.**
+**Current verdict: PARTIAL — signed standalone synthetic APK installed and cold launch passed; consolidated manual QA resumed. No production APK qualified or delivered.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
@@ -21,7 +21,7 @@ then privately deliver it to the named recipient. Issue: NAK-149; PR: #86.
 | Supervisor | Root agent: fixes, source checks, build/signing, target verification, delivery |
 | Initial debug artifact | x86_64 debug; SHA-256 `8c7a5773df3953a3b8160bcd8bfa08a4daa7a711885dd63efc546623154f9499` |
 | Initial runtime | Approved synthetic Clerk and Convex; persistent preview primary/partner pair |
-| Internal standalone artifact | Signed `1662a3e` candidate built; static checks PASS; install/runtime NOT RUN |
+| Internal standalone artifact | Signed `1662a3e` installed; static checks and cold launch without Metro PASS; remaining runtime cases in progress |
 | Final production artifact | NOT BUILT / NOT QUALIFIED — production runtime prerequisites below remain unresolved |
 | Production interoperability | NOT RUN — separate from synthetic mutation QA |
 
@@ -138,17 +138,17 @@ behavior. Do not label those PASS from source tests or Android compilation.
 | PROD-01 | FAIL | 47/50 deployed mobile references; conditional cycle argument absent; production Native API disabled. See production-readiness evidence | Web `a7756d8`; `prod:festive-malamute-715` |
 | Dock and Chat Send retest | PASS | Explicit rows fixed measured overlap; all five tabs share one row, Send is above dock, send renders and clears composer | Native Metro `b502e54`; same initial debug APK |
 | WEB-01 native-to-web readback | PASS | Same synthetic accounts agreed on initial period/phase, private pain entry, restored blank name, chat message and heart reaction; partner did not see private pain note | Local web port 3007; approved synthetic backend |
-| Certainty legacy mismatch | FAIL → FIXED IN SOURCE / RETEST PENDING | Legacy flag-off backend discarded offered Approximate. CB-01/CB-02 now respect server capability; no backend flag changed | CB-01 `1c48a37`; CB-02 `8e64a97`; integrated `1662a3e` |
+| Certainty legacy mismatch — initial attempt | FAIL → FIXED / signed UI retest PASS | Legacy flag-off backend discarded offered Approximate. CB-01/CB-02 now respect server capability; no backend flag changed | CB-01 `1c48a37`; CB-02 `8e64a97`; integrated `1662a3e` |
 | Internal APK static/build checks | PASS | Owner-signed, embedded JS, non-debuggable, arm64/x86_64; expected synthetic public key, no signing password/source maps in APK | Superseded `f907e30` artifact; not runtime or production acceptance |
-| Device recovery | BLOCKED | Pixel 7 dropped offline during font checks. Recovery reported insufficient disk; own generated caches removed. Retry still closed during boot; awaiting build completion and resource recovery | Same Pixel 7 AVD; no user/AVD data deleted |
-| Manual matrix remainder | BLOCKED / NOT RUN | One Luna operator is retained; per-case actual results and outstanding scope are in `docs/evidence/cb-07-mobile-ui/manual-qa-results.md` | No overall full-QA PASS |
+| Device recovery — historical interruption | BLOCKED at that attempt | Pixel 7 dropped offline during font checks. Recovery reported insufficient disk; own generated caches removed. Retry still closed during boot; awaiting build completion and resource recovery | Same Pixel 7 AVD; no user/AVD data deleted |
+| Manual matrix remainder — interruption checkpoint | BLOCKED / NOT RUN at that attempt | One Luna operator is retained; per-case actual results and outstanding scope are in `docs/evidence/cb-07-mobile-ui/manual-qa-results.md` | No overall full-QA PASS |
 
 ## Defects and retests
 
 | Defect | Owning lane | Cause / remediation | Retest |
 |---|---|---|---|
 | Dock covers Chat Send | CB-07 | Fractional widths plus flex wrapping created an unexpected second row. Explicit rows in `b502e54` | PASS on Pixel 7: Send ends 91 px above dock; native send and web readback succeed |
-| Approximate date becomes legacy unknown | CB-01 / CB-02 | UI offered certainty while server capability was off. Capability-aware controls/writes in `1c48a37` / `8e64a97` | Source tests PASS; integrated native retest pending |
+| Approximate date becomes legacy unknown | CB-01 / CB-02 | UI offered certainty while server capability was off. Capability-aware controls/writes in `1c48a37` / `8e64a97` | Source tests PASS; signed APK legacy notice/hidden certainty retest PASS; enabled-mode writes remain separate |
 
 Preserve previous attempts; do not convert an unexecuted case to PASS.
 
@@ -174,7 +174,7 @@ off-host backup is NOT VERIFIED. This candidate predates the live QA fixes and
 is not a delivery artifact. No email or Drive upload has been performed.
 
 
-### Current internal candidate (runtime pending)
+### Current internal candidate — build checkpoint before owner restart
 
 `cb-connect-synthetic-1662a3e8e405.apk`, source
 `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; SHA-256
@@ -185,8 +185,156 @@ production-key absence, no source maps/signing password in the APK and
 non-debuggable manifest all pass. Backup is disabled and the configured
 legacy storage/overlay permissions are absent. Build completed in 15m 2s.
 
-This is an internal synthetic artifact. Standalone install, cold launch and
-journeys were not run because the emulator is unavailable. It is not the
-requested working production APK and was not uploaded or emailed. Production
-contract/auth blockers are unchanged. The owner has been asked to restart the
-same emulator without wiping data; the existing Luna agent will resume.
+At this build checkpoint the emulator was unavailable, so standalone runtime
+was pending. This is historical; the resumed signed run below supersedes that
+blocker. The artifact remains synthetic and has not been uploaded or emailed.
+Production contract/auth prerequisites remain unresolved.
+
+
+### Standalone run resumed — 2026-11-18
+
+Root device connection succeeded after the child requests were cancelled. The
+same Luna operator uses its exact pinned command in the same task. Large text
+baseline was verified. Only the disposable internal beta app was replaced to
+switch from debug signing to owner release signing; the AVD, other apps and
+persistent backend accounts/records were preserved. Signature was reverified;
+install succeeded, package version `0.0.1` / code `1` is non-debuggable with
+backup disabled. No Metro process or reverse mapping was present. Luna's cold
+launch reached native Sign In without a missing-script screen (APK-02 launch
+subcase PASS). Remaining auth/journey acceptance is in progress in the manual
+results log; a launch subcase does not complete the whole APK-02 case.
+
+
+Supervisor checks for the resumed signed run: installed base-APK bytes match
+SHA-256 `312f48c10e1755540440d35f3ff8ba7a23bd5ea0089586c24647a4fde43d82e7`;
+crash buffer has no new entries after installation (the earlier scrcpy helper
+failure predates it). Fresh synthetic deployment inventory still matches all
+50 mobile public names, kinds and visibility, including conditional cycle args.
+Local web liveness is HTTP 200; readiness is HTTP 503 because this development
+server has no qualified release metadata. It is not a production readiness
+result. An unauthenticated protected Settings request redirects to the approved
+Clerk sign-in host. No credential-bearing URLs or raw auth logs are retained
+in this report.
+
+### Fixture identity audit — 2026-11-18
+
+Read-only Clerk email lookup found one existing account for each protected
+login email. Both saved fixture ID fields are stale; the working credentials
+and accounts were preserved. Supplemental API readback bound each unique
+login to its token subject, backend Clerk subject and expected primary/partner
+role, then checked bidirectional linkage and matching relationship generation.
+Those checks passed. Backend display email metadata differs from login email
+and was not used as the auth identity. No fixture file/account/pair was changed.
+Only short-lived sessions created for this audit were revoked. This audit is
+programmatic identity/readback evidence, separate from Luna's hosted native
+sign-in and manual UI results.
+
+### Signed-run connectivity interruption
+
+After system accessibility navigation, the signed native app intermittently
+returned to its offline guard. It briefly recovered to Home, then the guard
+persisted. No save was submitted in this interval. Host synthetic web/backend
+liveness remained HTTP 200. Native logs reported WebSocket close code 1006 /
+software-caused connection abort, with no new app crash, auth error or render
+error pattern in the inspected log window. The device operator is checking
+airplane/Wi-Fi and Chrome connectivity before classifying this as an emulator
+network problem or app-recovery defect. Pending native/web draft concurrency
+was not executed during this interruption.
+
+The same operator then confirmed emulator Chrome could load both local
+`/api/health` (status `ok`) and a public HTTPS page. With airplane OFF and Wi-Fi
+ON, the native gate cleared on foreground open, Continue returned Home. No
+reinstall or reset was required. The recovery subcase passed; this does not
+prove failed-save draft retention or rule out intermittent reconnection issues.
+
+### Native/web settings conflict — signed APK
+
+Luna held an unsaved native cycle-length draft of 29 against saved 28/5. Root
+used the separate authenticated primary web UI to save 30/5. Native retained
+the 29 draft, displayed “These cycle settings changed elsewhere. Reload before
+saving.”, exposed Reload cycle settings and disabled Save. This conflict and
+no-silent-overwrite subcase passed. Explicit reload and original 28/5 restoration
+are recorded separately after observation; this is not yet the entire SET-04
+failed-save/pending matrix.
+
+Luna explicitly reloaded cycle settings to 30; root then restored 28/5 in the
+actual web UI. Supplemental backend readback and native refresh both verified
+28/5/unpaused again, no conflict and disabled Save. The same mounted-draft
+scenario for preferred name also passed: blank baseline, native run-labelled
+draft held, distinct web run-labelled value saved, native draft preserved with
+changed-elsewhere warning, Reload control and disabled Save. The warning was
+initially outside the current accessibility viewport; scrolling to the profile
+panel exposed it. That navigation delay was not a product defect.
+
+Profile explicit Reload adopted the web label and disabled Save; root restored
+blank through web, and supplemental backend readback verified both accounts'
+names blank and 28/5/unpaused baselines.
+
+### Reminder and enabled inbox preparation
+
+Luna's native primary reminder baseline was unset (picker default was not a
+saved value). Native selected and saved 07:30; root's separate authenticated
+web time field independently displayed 07:30. Root cleared and saved the web
+time field, restoring unset. Native restoration readback is recorded in the
+operator log. In-app reminder consent stayed off; no scheduled/push delivery
+is claimed.
+
+For inbox/chat paging fixture preparation, root recorded the exact original
+values of cycle-facts and four notification flags as false and confirmed no
+GitHub job in progress. Only the approved synthetic deployment's notification
+outbox/projection/delivery/inbox flags are temporarily enabled. Cycle-facts,
+scheduler and production settings are untouched in this phase. The planned
+public-API fixture preparation uses only the verified persistent pair and
+run-labelled chat messages, with partner Message activity restored afterward.
+This setup is programmatic; manual inbox/pagination results remain separate.
+All flag originals must be restored and read back before ending this run.
+
+Luna verified native preferred name blank/Save disabled/no stale warning and
+reminder Choose a time/Save disabled with consent off after web restoration.
+Root then prepared 45 CB07-labelled primary chat messages (48 total); every
+message remains run-labelled. Supplemental inbox readiness shows primary
+empty, partner first page 20 with `isDone=false`, establishing a real second
+page for the manual operator. No manual inbox PASS is inferred from that API
+read. Root's real authenticated web DM independently displays the signed
+native primary send from this run; private-thread readback succeeds.
+
+The settings-bounds attempt accidentally advanced an unsaved local cycle draft
+to 33 through repeated stale targeting; no Save was pressed. The operator
+restored 28 using fresh single-action references and observed disabled Save.
+This is a test-operation correction, not a server write or a successful full
+bounds test. Remaining bounds coverage must be stated separately.
+
+### History and same-account setup resume
+
+The operator ended the run-created initial period, opened correction and
+verified cancellation, then cancelled deletion (record remained) before
+confirming deletion of only that run-created period. Empty history returned
+the same primary account to existing-role cycle setup. Replacement setup
+completed with original 28/5 settings and capability-aware legacy copy. Root's
+authenticated web Log independently showed the replacement open period and
+retained private pain entry. Correction-save, CSV and partner phases remain
+separate cases in the operator log.
+
+### Local fixture metadata correction
+
+After repeating unique-email, JWT-subject, backend-subject/role and
+bidirectional-pair checks successfully, root atomically corrected only the
+two stale local Clerk ID metadata fields in the protected fixture file.
+Ignored status and mode 600 were preserved; all other keys were compared
+unchanged before writing. Credentials, accounts, relationship and server data
+were unchanged. Earlier “file unchanged” statements describe the audit stage
+before this correction. No account provisioning or deletion occurred.
+
+### Android date-selection finding — owning CB-02 fix pending integration
+
+With TalkBack verified OFF, the correction picker displayed the newly selected
+day in its header; after confirmation the form still showed its old date on
+two bounded attempts. No uncertain correction was saved. The owning CB-02
+candidate `4dae60b` uses the supported Android imperative picker so unrelated
+renders do not reopen/reset an unconfirmed selection; cancellation/unmount
+dismissal and iOS behavior are retained. The old-source bridge regression
+fails on selected-day retention and passes with the change; CB-02 mobile
+TypeScript and 29 files / 198 tests pass. No backend/API/dependency change.
+The same final-stack run must retest the next signed artifact before accepting
+correction saves. CB-03–CB-06 were locally restacked with identical lane patches
+by range-diff; no branch has been pushed for this finding yet.
