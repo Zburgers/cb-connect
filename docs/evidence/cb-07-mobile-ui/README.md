@@ -89,7 +89,7 @@ were checked without relying on Node's TypeScript stripping. A real Gradle
 release-task dry run refuses missing owner credentials as expected; this is a
 signing-guard test, not a successful signed build.
 
-**BLOCKED before native launch.** Inventory identified a Pixel 7 Android 17
+**Historical first attempt — BLOCKED before native launch.** Inventory identified a Pixel 7 Android 17
 emulator, not a physical device. The Device panel's `device_open` failed:
 
 > The emulator process for "Pixel_7" was killed by SIGSEGV before coming online.
@@ -119,3 +119,27 @@ when device control is available. File feature failures under their owning
 CB-01–CB-06 ticket/PR, fix there and rerun targeted checks. Keep #67 draft,
 retain the stack and do not accept/merge or deploy based on these local
 deterministic/build results alone.
+
+
+## Current integrated QA checkpoint
+
+Integrated app source: `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`, stacked on
+CB-06 `a12cb3a625d4b7341e86370c57ee1c6d69d5663b`. Mobile tests **33 files / 293
+PASS**, native TypeScript/strict parity PASS and exact-head deterministic/mobile
+CI PASS. Source review by the same GPT-6 Luna agent found no actionable P0/P1/P2
+regressions; it did not substitute source review for device acceptance.
+
+The resumed [manual results](manual-qa-results.md) contain actual primary and
+partner Clerk journeys, initial period/pain writes with independent web readback,
+profile restore, appearance persistence, inbox gating and partner privacy. Live
+QA exposed the accidental dock row/Send interception (fixed and retested) and
+legacy certainty mismatch (fixed in CB-01/CB-02; native retest pending). See the
+[canonical checklist](../../testing/2026-11-17-cb-07-final-stack-qa.md) for remaining
+steps and exact artifact/hash/signing evidence.
+
+A signed standalone synthetic APK was built from the integrated source. Static
+APK checks pass; standalone install/runtime is **NOT RUN**. Pixel 7 went offline
+and bounded recovery remained unsuccessful after clearing only task-generated
+caches and stale panel state. The owner must restart the same AVD; no user/AVD
+data was deleted. No production setting was changed and no APK was emailed or
+uploaded. Full QA and production delivery remain incomplete.

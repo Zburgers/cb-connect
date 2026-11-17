@@ -196,6 +196,41 @@ specimen, not a model or exhaustive proof of all state combinations.
    after QA. Its [production preflight](../evidence/cb-07-mobile-ui/production-readiness.md)
    records missing deployed mobile contracts and disabled native Clerk auth.
 
+## Consolidated QA fixes and restack — 2026-11-17
+
+The first live pass exposed a dock layout defect: fractional item widths let
+Settings wrap onto an unplanned second row, covering Chat Send. Explicit rows
+now keep rendered height aligned with the reserved inset. Pixel 7 retest at
+Large text confirmed five tabs on one row, Send above the dock, successful send
+and cleared composer. Native and independent web partner readback agreed.
+
+The same run found certainty choices offered while the legacy backend flag was
+off. The fix belongs to CB-01/CB-02: authoritative capability loading, truthful
+legacy-date copy, and certainty/promotion controls only when supported. Backend
+flags remain unchanged. Their new source heads passed deterministic/mobile CI;
+CB-03–CB-06 were rebased with identical lane patches (`git range-diff` equality).
+
+| Lane | Current head after remediation |
+|---|---|
+| CB-01 #79 | `1c48a37` |
+| CB-02 #81 | `8e64a97` |
+| CB-03 #82 | `c26ee67` |
+| CB-04 #83 | `c263886` |
+| CB-05 #84 | `b88cb5e` |
+| CB-06 #85 | `a12cb3a` |
+| CB-07 #86 | `1662a3e` integrated source; later evidence-only commits may follow |
+
+The original acceptance table above is historical; it does not claim focused
+review of the new certainty changes. The consolidated runbook records targeted
+native retests. Integrated source passed 33 files / 293 mobile tests, native
+TypeScript and strict public API parity. No new backend function or dependency
+was introduced by these remediations. #67 remains draft.
+
+A newer local `design-for-ai` skill became available during QA. Its checker
+principles were applied to type, hierarchy, interaction states, targets and
+responsive layout. The owner-selected glass material/palette remains the
+explicit design choice; browser-only SEO guidance does not apply to native UI.
+
 ## Accessibility and responsive acceptance
 
 Use at least 48dp interactive targets, labels and selected/disabled states,

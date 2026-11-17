@@ -1,5 +1,7 @@
 # CB-07 final-stack Android QA and APK delivery
 
+**Current verdict: PARTIAL — device continuation blocked; no production APK qualified or delivered.**
+
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
 then privately deliver it to the named recipient. Issue: NAK-149; PR: #86.
@@ -11,13 +13,16 @@ then privately deliver it to the named recipient. Issue: NAK-149; PR: #86.
 | Checkout | `worktrees/cb connect/naki-8d3ef4e1-4fae137bcb8c4d75` |
 | Branch | `feat/NAK-149-mobile-ui-redesign` |
 | Starting source | `026249a773a9599a322e2f0d082a4f0b4c6ffa07` |
+| Integrated source | `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33` |
+| Current CB-06 base | `a12cb3a625d4b7341e86370c57ee1c6d69d5663b` |
 | Accepted CB-06 base | `8371af42b50e0b046bbdd148844cc9891c317ae4` |
 | Device | local `emulator-5554`, Pixel 7, Android 17, emulator (not physical) |
 | Manual operator | One resumed GPT-6 Luna agent; reuse this agent for retests |
 | Supervisor | Root agent: fixes, source checks, build/signing, target verification, delivery |
 | Initial debug artifact | x86_64 debug; SHA-256 `8c7a5773df3953a3b8160bcd8bfa08a4daa7a711885dd63efc546623154f9499` |
 | Initial runtime | Approved synthetic Clerk and Convex; persistent preview primary/partner pair |
-| Final release artifact | NOT BUILT — record source SHA, filename, ABI, SHA-256, signature, version and target below |
+| Internal standalone artifact | Signed `1662a3e` candidate built; static checks PASS; install/runtime NOT RUN |
+| Final production artifact | NOT BUILT / NOT QUALIFIED — production runtime prerequisites below remain unresolved |
 | Production interoperability | NOT RUN — separate from synthetic mutation QA |
 
 Record every source/build/runtime change in the run log. A later documentation
@@ -131,13 +136,21 @@ behavior. Do not label those PASS from source tests or Android compilation.
 | AUTH-01 hosted cancellation | PASS | Luna opened Clerk hosted sign-in and closed it; native Sign In returned | Initial debug APK; synthetic Clerk |
 | WEB-01 auth prerequisite | PASS | Headless system Chrome completed standard sign-in and development test-email verification; web shows Initial Setup | Local web port 3007; same synthetic primary |
 | PROD-01 | FAIL | 47/50 deployed mobile references; conditional cycle argument absent; production Native API disabled. See production-readiness evidence | Web `a7756d8`; `prod:festive-malamute-715` |
-| Manual matrix remainder | NOT RUN | One resumed Luna operator is working through the checklist; details in `docs/evidence/cb-07-mobile-ui/manual-qa-results.md` when available | See identity table |
+| Dock and Chat Send retest | PASS | Explicit rows fixed measured overlap; all five tabs share one row, Send is above dock, send renders and clears composer | Native Metro `b502e54`; same initial debug APK |
+| WEB-01 native-to-web readback | PASS | Same synthetic accounts agreed on initial period/phase, private pain entry, restored blank name, chat message and heart reaction; partner did not see private pain note | Local web port 3007; approved synthetic backend |
+| Certainty legacy mismatch | FAIL → FIXED IN SOURCE / RETEST PENDING | Legacy flag-off backend discarded offered Approximate. CB-01/CB-02 now respect server capability; no backend flag changed | CB-01 `1c48a37`; CB-02 `8e64a97`; integrated `1662a3e` |
+| Internal APK static/build checks | PASS | Owner-signed, embedded JS, non-debuggable, arm64/x86_64; expected synthetic public key, no signing password/source maps in APK | Superseded `f907e30` artifact; not runtime or production acceptance |
+| Device recovery | BLOCKED | Pixel 7 dropped offline during font checks. Recovery reported insufficient disk; own generated caches removed. Retry still closed during boot; awaiting build completion and resource recovery | Same Pixel 7 AVD; no user/AVD data deleted |
+| Manual matrix remainder | BLOCKED / NOT RUN | One Luna operator is retained; per-case actual results and outstanding scope are in `docs/evidence/cb-07-mobile-ui/manual-qa-results.md` | No overall full-QA PASS |
 
 ## Defects and retests
 
-No new runtime defect recorded yet. Record severity, owning CB issue, concrete
-reproduction, cause, fix SHA and affected-case retests here. Preserve previous
-attempts; append results instead of converting an unexecuted case to PASS.
+| Defect | Owning lane | Cause / remediation | Retest |
+|---|---|---|---|
+| Dock covers Chat Send | CB-07 | Fractional widths plus flex wrapping created an unexpected second row. Explicit rows in `b502e54` | PASS on Pixel 7: Send ends 91 px above dock; native send and web readback succeed |
+| Approximate date becomes legacy unknown | CB-01 / CB-02 | UI offered certainty while server capability was off. Capability-aware controls/writes in `1c48a37` / `8e64a97` | Source tests PASS; integrated native retest pending |
+
+Preserve previous attempts; do not convert an unexecuted case to PASS.
 
 ## Final artifact and delivery record
 
@@ -146,3 +159,34 @@ versionCode, signing certificate SHA-256 (never private key), APK SHA-256,
 Clerk/Convex target identity, standalone launch evidence, unresolved limits,
 recipient access verification and sent-message ID. Do not send a test-only or
 Metro-dependent APK under a production-ready label.
+
+
+### Internal candidate identity (superseded, never delivered)
+
+Source `f907e301ccec365122bd3cef1b029dbb63cbb078`; Android package
+`tech.builtbynaki.cbconnect.beta`, version `0.0.1` / code `1`; arm64-v8a and
+x86_64; embedded Hermes JS, non-debuggable; synthetic Clerk/Convex. SHA-256:
+`8147edf9deb6be0cd008c1eefc90879743149bda02f9d04cd13d87bf80c0914b`.
+Owner RSA-3072 certificate SHA-256:
+`286645f10054d5bb6477de5124d5adc1e8838aeb51c593e9d782d52078988c2d`.
+Private signing custody and a local recovery copy were verified outside Git;
+off-host backup is NOT VERIFIED. This candidate predates the live QA fixes and
+is not a delivery artifact. No email or Drive upload has been performed.
+
+
+### Current internal candidate (runtime pending)
+
+`cb-connect-synthetic-1662a3e8e405.apk`, source
+`1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; SHA-256
+`312f48c10e1755540440d35f3ff8ba7a23bd5ea0089586c24647a4fde43d82e7`.
+Android beta package/version/ABIs and owner certificate match the identity above.
+Signature verification, embedded Hermes JS, expected synthetic public key,
+production-key absence, no source maps/signing password in the APK and
+non-debuggable manifest all pass. Backup is disabled and the configured
+legacy storage/overlay permissions are absent. Build completed in 15m 2s.
+
+This is an internal synthetic artifact. Standalone install, cold launch and
+journeys were not run because the emulator is unavailable. It is not the
+requested working production APK and was not uploaded or emailed. Production
+contract/auth blockers are unchanged. The owner has been asked to restart the
+same emulator without wiping data; the existing Luna agent will resume.

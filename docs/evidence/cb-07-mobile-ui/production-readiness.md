@@ -11,7 +11,8 @@ production functions, flags, auth settings or accounts were changed.
 | Deployed mobile entry points | FAIL | 47/50 inventory references present; missing `queries.mobileAccess.getGuardState`, `queries.messages.listPageForMobile`, `queries.notifications.getMyInboxAvailability` |
 | CB-06 conditional cycle contract | FAIL | Deployed `mutations.periods.updateCycleSettings` lacks `expectedCurrent`; source requires it for conditional settings saves |
 | Clerk production instance | PASS | Public FAPI environment identifies production, home `https://cb.builtbynaki.tech` |
-| Clerk native auth | BLOCKED | Public FAPI `auth_config.native_settings.api_enabled` is `false`; native callback registration also needs verification |
+| Clerk native auth | BLOCKED | Public FAPI `auth_config.native_settings.api_enabled` is `false`; native application/callback registration still needs verification |
+| Clerk token/redirect preflight | PARTIAL | Current production instance/domain confirmed through read-only API; Convex JWT template exists; SSO redirect list is empty |
 | Production sign-in/readback | NOT RUN | Missing native auth and backend contracts prevent a valid release journey |
 | Production APK delivery | BLOCKED | Cannot qualify or distribute as working production while required runtime/auth contracts are absent |
 
