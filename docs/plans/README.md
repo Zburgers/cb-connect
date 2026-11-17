@@ -77,6 +77,12 @@ proceed behind its default-off feature flag.
 
 ## Planning policy
 
+The [CB-07 mobile UI redesign proposal](2026-11-17-cb-07-mobile-ui-redesign.md)
+and [interactive owner design report](../design/cb-07-mobile-design-review.html)
+cover the final presentation pass above CB-06. Native implementation waits
+for CB-01–CB-06 focused acceptance/checks and owner selection; the proposal
+does not qualify or complete the mobile stack.
+
 - Numbered gate documents are work-package plans, not permission to edit code.
 - A gate becomes implementation-ready only when its blocking decisions are resolved and a dated task-sized execution plan is approved.
 - One execution task equals one bounded test/fail/implement/pass/commit cycle. Tasks sharing a file or interface are sequential unless the plan explicitly proves otherwise.
