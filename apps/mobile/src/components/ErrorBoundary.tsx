@@ -1,6 +1,8 @@
 import React from "react";
-import { StyleSheet, Text, useColorScheme, View } from "react-native";
+import { StyleSheet, useColorScheme, View } from "react-native";
 import { mobileColors } from "../theme/tokens";
+import { BloomText as Text } from "./BloomText";
+import { bloomType } from "../theme/typography";
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -50,7 +52,7 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "#FFFFFF",
   },
-  title: { fontSize: 20, fontWeight: "600", marginBottom: 8 },
+  title: { ...bloomType.heading, marginBottom: 8 },
   message: { fontSize: 15, textAlign: "center" },
 });
 

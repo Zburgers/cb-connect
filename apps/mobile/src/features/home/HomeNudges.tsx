@@ -1,9 +1,12 @@
 import { useContext, useEffect, useState } from "react";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { api } from "../../convex/api";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { BloomPanel } from "../../components/BloomPanel";
+import { BloomText as Text } from "../../components/BloomText";
+import { bloomType } from "../../theme/typography";
 import { canSendNudge, NUDGE_OPTIONS } from "./HomeModel";
 
 export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | null {
@@ -74,10 +77,10 @@ export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | nul
   return (
     <View style={styles.stack}>
       {canSend ? (
-        <View
+        <BloomPanel palette={palette}
           style={[
             styles.card,
-            { backgroundColor: palette.glass, borderColor: palette.border },
+            { backgroundColor: palette.surface, borderColor: palette.outline },
           ]}
         >
           <Text
@@ -117,7 +120,7 @@ export function HomeNudges({ dark }: { dark: boolean }): React.JSX.Element | nul
               Sent {sentEmoji} to {target}.
             </Text>
           ) : null}
-        </View>
+        </BloomPanel>
       ) : null}
 
       {latest ? (
@@ -161,7 +164,7 @@ const styles = StyleSheet.create({
   stack: { gap: 12 },
   card: { borderWidth: 1, borderRadius: 24, padding: 16, gap: 10 },
   label: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1.2 },
-  heading: { fontSize: 18, fontWeight: "700" },
+  heading: { ...bloomType.heading, fontSize: 18, fontWeight: "700" },
   emojiRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   emojiButton: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   emoji: { fontSize: 22 },
@@ -169,5 +172,5 @@ const styles = StyleSheet.create({
   receivedEmoji: { fontSize: 28 },
   receivedCopy: { flex: 1, gap: 4 },
   message: { fontSize: 15, fontWeight: "600" },
-  dismiss: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  dismiss: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
 });

@@ -3,7 +3,11 @@ import { useAuth } from "@clerk/expo";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Switch, TextInput, useColorScheme, View } from "react-native";
+import { BloomText as Text } from "../../components/BloomText";
+import { BloomNotice, BloomPanel } from "../../components/BloomPanel";
+import { BloomScreen } from "../../components/BloomScreen";
+import { bloomType } from "../../theme/typography";
 import type { NotificationPurpose } from "@cb-connect/contracts";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
@@ -294,14 +298,13 @@ function ProfileSettings({
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: "transparent" }}>
-      <Text allowFontScaling accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Settings</Text>
-      {error ? <Text allowFontScaling accessibilityRole="alert" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{error}</Text> : null}
-      {message ? <Text allowFontScaling accessibilityLiveRegion="polite" style={[styles.notice, { color: palette.foreground, backgroundColor: palette.highlight }]}>{message}</Text> : null}
+    <BloomScreen palette={palette} title="Settings" subtitle="Your account, preferences, and privacy controls." eyebrow="YOUR SPACE">
+      {error ? <BloomNotice palette={palette} alert>{error}</BloomNotice> : null}
+      {message ? <BloomNotice palette={palette} tone="sage">{message}</BloomNotice> : null}
 
-      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Appearance</Text>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Choose how CB Connect looks. System follows your device setting.</Text>
+      <BloomPanel palette={palette} variant="warm">
+        <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Appearance</Text>
+        <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Choose how CB Connect looks. System follows your device setting.</Text>
         <View style={styles.themeChoices}>
           {themeModes.map((choice) => (
             <Pressable
@@ -311,16 +314,16 @@ function ProfileSettings({
               accessibilityState={{ checked: themeMode === choice, disabled: !themeReady }}
               disabled={!themeReady}
               onPress={() => void setThemeMode(choice).catch(() => setError("Unable to save appearance preference. Try again."))}
-              style={[styles.themeChoice, { borderColor: themeMode === choice ? palette.accent : palette.border, backgroundColor: themeMode === choice ? palette.highlight : "transparent" }]}
+              style={({ pressed }) => [styles.themeChoice, { borderColor: themeMode === choice ? palette.accent : palette.outline, backgroundColor: themeMode === choice ? palette.highlight : palette.surface, opacity: !themeReady ? 0.5 : pressed ? 0.82 : 1 }]}
             >
-              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{choice[0].toUpperCase()}{choice.slice(1)}</Text>
+              <Text allowFontScaling style={[bloomType.button, { color: palette.foreground, textAlign: "center" }]}>{choice[0].toUpperCase()}{choice.slice(1)}</Text>
             </Pressable>
           ))}
         </View>
-      </View>
+      </BloomPanel>
 
-      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Profile</Text>
+      <BloomPanel palette={palette} variant="quiet">
+        <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Profile</Text>
         <TextInput
           accessibilityLabel="Preferred name"
           maxLength={40}
@@ -332,9 +335,9 @@ function ProfileSettings({
           }}
           placeholder="Preferred name"
           value={nameDraft}
-          style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
+          style={[styles.input, bloomType.body, { color: palette.foreground, borderColor: palette.controlBorder, backgroundColor: palette.surface }]}
         />
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Gender</Text>
+        <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Gender</Text>
         <View style={styles.themeChoices}>
           {genderOptions.map((option) => (
             <Pressable
@@ -348,13 +351,13 @@ function ProfileSettings({
                 setProfileDraftDirty(true);
                 setProfileConflict(false);
               }}
-              style={[styles.themeChoice, { borderColor: genderDraft === option.value ? palette.accent : palette.border, backgroundColor: genderDraft === option.value ? palette.highlight : "transparent" }]}
+              style={({ pressed }) => [styles.themeChoice, { borderColor: genderDraft === option.value ? palette.accent : palette.outline, backgroundColor: genderDraft === option.value ? palette.highlight : palette.surface, opacity: busy ? 0.5 : pressed ? 0.82 : 1 }]}
             >
-              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{option.label}</Text>
+              <Text allowFontScaling style={[bloomType.button, { color: palette.foreground, textAlign: "center" }]}>{option.label}</Text>
             </Pressable>
           ))}
         </View>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Relationship term</Text>
+        <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Relationship term</Text>
         <View style={styles.themeChoices}>
           {partnerTypeOptions.map((option) => (
             <Pressable
@@ -368,9 +371,9 @@ function ProfileSettings({
                 setProfileDraftDirty(true);
                 setProfileConflict(false);
               }}
-              style={[styles.themeChoice, { borderColor: partnerTypeDraft === option.value ? palette.accent : palette.border, backgroundColor: partnerTypeDraft === option.value ? palette.highlight : "transparent" }]}
+              style={({ pressed }) => [styles.themeChoice, { borderColor: partnerTypeDraft === option.value ? palette.accent : palette.outline, backgroundColor: partnerTypeDraft === option.value ? palette.highlight : palette.surface, opacity: busy ? 0.5 : pressed ? 0.82 : 1 }]}
             >
-              <Text allowFontScaling style={{ color: palette.foreground, textAlign: "center" }}>{option.label}</Text>
+              <Text allowFontScaling style={[bloomType.button, { color: palette.foreground, textAlign: "center" }]}>{option.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -381,10 +384,10 @@ function ProfileSettings({
           </>
         ) : null}
         <ActionButton label="Save profile preferences" disabled={busy || profileConflict || !profileDraftDirty} onPress={() => void saveProfilePreferences()} palette={palette} />
-      </View>
+      </BloomPanel>
 
-      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Time zone</Text>
+      <BloomPanel palette={palette} variant="quiet">
+        <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Time zone</Text>
         <Text allowFontScaling style={{ color: palette.muted }}>Saved: {profile.timeZone ?? "Not set"}</Text>
         <Text allowFontScaling style={{ color: palette.muted }}>This device: {zone ?? "Unavailable"}</Text>
         <ActionButton
@@ -393,11 +396,11 @@ function ProfileSettings({
           onPress={() => zone && void run(() => updateTimeZone({ timeZone: zone }), "Time zone updated.")}
           palette={palette}
         />
-      </View>
+      </BloomPanel>
 
-      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>In-app notifications</Text>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>These preferences control in-app notifications only. Push delivery is not available in this build; device permission and push channel availability are separate.</Text>
+      <BloomPanel palette={palette} variant="quiet">
+        <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>In-app notifications</Text>
+        <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>These preferences control in-app notifications only. Push delivery is not available in this build; device permission and push channel availability are separate.</Text>
         {visiblePurposes.map((purpose: NotificationPurpose) => {
           const preference = preferenceMap.get(purpose);
           if (!preference) return null;
@@ -410,6 +413,7 @@ function ProfileSettings({
               <Switch
                 accessibilityLabel={getNotificationPurposeLabel(purpose)}
                 accessibilityRole="switch"
+                trackColor={{ false: palette.border, true: palette.sage }}
                 disabled={busy || scheduledTimeNeedsSave}
                 onValueChange={(value) => void run(() => updatePreference({
                   purpose,
@@ -424,18 +428,18 @@ function ProfileSettings({
         {cycleWindowPreference ? (
           <View style={styles.reminderTime}>
             <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Upcoming cycle window reminder time</Text>
-            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>This clock time follows your saved account time zone: {profile.timeZone ?? "Not set"}. Changing your time zone keeps this clock time.</Text>
+            <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>This clock time follows your saved account time zone: {profile.timeZone ?? "Not set"}. Changing your time zone keeps this clock time.</Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Reminder time for cycle window: ${reminderTime || "Choose a time"}`}
               accessibilityState={{ disabled: busy || !profile.timeZone }}
               disabled={busy || !profile.timeZone}
               onPress={() => setReminderPickerOpen(true)}
-              style={[styles.button, { borderColor: palette.muted }]}
+              style={({ pressed }) => [styles.button, { borderColor: palette.outline, backgroundColor: palette.surface, opacity: busy || !profile.timeZone ? 0.5 : pressed ? 0.82 : 1 }]}
             >
-              <Text allowFontScaling style={{ color: palette.foreground }}>{reminderTime || "Choose a time"}</Text>
+              <Text allowFontScaling style={[bloomType.button, { color: palette.foreground }]}>{reminderTime || "Choose a time"}</Text>
             </Pressable>
-            {!profile.timeZone ? <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Set an account time zone before choosing a reminder time.</Text> : null}
+            {!profile.timeZone ? <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Set an account time zone before choosing a reminder time.</Text> : null}
             {reminderPickerOpen ? (
               <DateTimePicker
                 accessibilityLabel="Cycle window reminder time"
@@ -460,19 +464,19 @@ function ProfileSettings({
             />
           </View>
         ) : null}
-      </View>
+      </BloomPanel>
 
       {isPrimary ? (
         <>
           {cycleSettings === undefined ? (
-            <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-              <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
+            <BloomPanel palette={palette} variant="quiet">
+              <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Cycle settings</Text>
               <ActivityIndicator accessibilityLabel="Loading cycle settings" />
-            </View>
+            </BloomPanel>
           ) : (
-            <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-              <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Cycle settings</Text>
-              <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Average cycle and period lengths are used by the saved cycle settings. Changes are applied by the existing account settings service.</Text>
+            <BloomPanel palette={palette} variant="quiet">
+              <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Cycle settings</Text>
+              <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Average cycle and period lengths are used by the saved cycle settings. Changes are applied by the existing account settings service.</Text>
               <Text allowFontScaling style={{ color: palette.foreground }}>Cycle length: {cycleDraft.cycleLength} days</Text>
               <View style={styles.themeChoices}>
                 <ActionButton label="Decrease cycle length" disabled={busy || cycleDraft.cycleLength <= 21} onPress={() => changeCycleDraft({ cycleLength: cycleDraft.cycleLength - 1 })} palette={palette} />
@@ -490,11 +494,11 @@ function ProfileSettings({
                 </>
               ) : null}
               <ActionButton label="Save cycle settings" disabled={busy || !cycleDraftDirty || cycleConflict} onPress={() => void saveCycleSettings()} palette={palette} />
-            </View>
+            </BloomPanel>
           )}
-          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-            <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Private prediction controls</Text>
-            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Pausing predictions affects only your account and is not shared with your partner.</Text>
+          <BloomPanel palette={palette} variant="sage">
+            <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Private prediction controls</Text>
+            <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Pausing predictions affects only your account and is not shared with your partner.</Text>
             <SettingSwitch
               label="Pause predictions"
               value={cycleSettings?.predictionPaused ?? false}
@@ -502,7 +506,7 @@ function ProfileSettings({
               palette={palette}
               onValueChange={(value) => void run(() => updateCycleSettings({ predictionPaused: value }))}
             />
-            <Text allowFontScaling accessibilityRole="header" style={[styles.subsectionTitle, { color: palette.foreground }]}>Private context</Text>
+            <Text allowFontScaling accessibilityRole="header" style={[bloomType.heading, { color: palette.foreground }]}>Private context</Text>
             {segmentOptions?.eligibleStartDates.map((date) => (
               <ActionButton
                 key={date}
@@ -513,10 +517,10 @@ function ProfileSettings({
               />
             ))}
             {segmentOptions === null ? <Text allowFontScaling style={{ color: palette.muted }}>Private context controls are unavailable while prediction context is disabled or history is incomplete.</Text> : null}
-          </View>
-          <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-            <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Sharing</Text>
-            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Changes take effect through your account’s sharing settings.</Text>
+          </BloomPanel>
+          <BloomPanel palette={palette} variant="quiet">
+            <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Sharing</Text>
+            <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Changes take effect through your account’s sharing settings.</Text>
             {couple?.sharingSettings ? (
               <>
                 <SettingSwitch label="Share phase" value={couple.sharingSettings.phase} disabled={busy} palette={palette} onValueChange={(value) => void changeSharing("sharingPhase", value)} />
@@ -524,16 +528,16 @@ function ProfileSettings({
                 <SettingSwitch label="Allow period assistance" value={couple.sharingSettings.periodWrite} disabled={busy || !couple.sharingSettings.phase} palette={palette} onValueChange={(value) => void changeSharing("sharingPeriodWrite", value)} />
               </>
             ) : <Text allowFontScaling style={{ color: palette.muted }}>Sharing controls are unavailable for this account.</Text>}
-          </View>
+          </BloomPanel>
         </>
       ) : null}
 
-      <View style={[styles.section, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-        <Text allowFontScaling accessibilityRole="header" style={[styles.sectionTitle, { color: palette.foreground }]}>Account</Text>
-        <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Account deletion is unavailable until the retention and deletion policy is approved.</Text>
+      <BloomPanel palette={palette} variant="quiet">
+        <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>Account</Text>
+        <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Account deletion is unavailable until the retention and deletion policy is approved.</Text>
         <ActionButton label={busy ? "Signing out" : "Sign out"} disabled={busy} onPress={() => void run(signOut, "Signed out.")} palette={palette} />
-      </View>
-    </ScrollView>
+      </BloomPanel>
+    </BloomScreen>
   );
 }
 
@@ -553,7 +557,7 @@ function SettingSwitch({
   return (
     <View style={styles.switchRow}>
       <Text allowFontScaling style={[styles.switchLabel, { color: palette.foreground }]}>{label}</Text>
-      <Switch accessibilityLabel={label} accessibilityRole="switch" disabled={disabled} onValueChange={onValueChange} value={value} />
+      <Switch accessibilityLabel={label} accessibilityRole="switch" trackColor={{ false: palette.border, true: palette.sage }} disabled={disabled} onValueChange={onValueChange} value={value} />
     </View>
   );
 }
@@ -570,26 +574,19 @@ function ActionButton({
   palette: (typeof mobileColors)["light"] | (typeof mobileColors)["dark"];
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, { borderColor: palette.muted }]}>
-      <Text allowFontScaling style={{ color: palette.foreground }}>{label}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, { borderColor: palette.outline, backgroundColor: palette.surface, opacity: disabled ? 0.5 : pressed ? 0.82 : 1 }]}>
+      <Text allowFontScaling style={[bloomType.button, { color: palette.foreground }]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  container: { padding: 20, paddingBottom: 36, gap: 16 },
-  title: { fontSize: 30, fontWeight: "600", letterSpacing: -0.5 },
-  section: { gap: 12, padding: 16, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth },
-  sectionTitle: { fontSize: 18, fontWeight: "600" },
-  subsectionTitle: { fontSize: 16, fontWeight: "600" },
-  description: { fontSize: 14, lineHeight: 21 },
-  notice: { borderRadius: 14, padding: 12, fontSize: 14, lineHeight: 20 },
-  input: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12 },
-  switchRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
+  switchRow: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
   reminderTime: { gap: 10, paddingTop: 8 },
-  switchLabel: { flex: 1, fontSize: 15 },
-  themeChoices: { flexDirection: "row", gap: 8 },
-  themeChoice: { flex: 1, justifyContent: "center", minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8 },
-  button: { minHeight: 48, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 16 },
+  switchLabel: { flex: 1, ...bloomType.body },
+  themeChoices: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  themeChoice: { flexGrow: 1, flexBasis: 112, justifyContent: "center", minHeight: 52, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+  input: { minHeight: 52, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
+  button: { minHeight: 52, alignSelf: "flex-start", justifyContent: "center", borderWidth: 1, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },
 });

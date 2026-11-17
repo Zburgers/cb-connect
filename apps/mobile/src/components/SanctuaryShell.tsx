@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import { useAuth } from "@clerk/expo";
 import type { AccessState } from "../navigation/accessResolver";
 import { mobileColors } from "../theme/tokens";
+import { BloomText as Text } from "./BloomText";
+import { bloomType } from "../theme/typography";
 import { OfflineBanner } from "./OfflineBanner";
 
 const statusCopy: Record<AccessState, string> = {
@@ -77,7 +79,7 @@ export function SanctuaryShell({ state }: { state: AccessState }): React.JSX.Ele
 const styles = StyleSheet.create({
   screen: { flex: 1, padding: 24 },
   content: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
+  title: { ...bloomType.display, marginBottom: 12 },
   message: { fontSize: 16, textAlign: "center" },
   signOutButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 16, marginTop: 24 },
   signOutText: { fontSize: 16, fontWeight: "600" },

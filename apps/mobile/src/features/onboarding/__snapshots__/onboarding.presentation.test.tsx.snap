@@ -1,0 +1,107 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Onboarding presentation > presents account loading as a polite progress state 1`] = `
+[
+  "screen: Welcome to CB Connect",
+  "eyebrow: YOUR CYCLE, YOUR WAY",
+  "text: YOUR CYCLE, YOUR WAY",
+  "heading: Welcome to CB Connect",
+  "text: Checking your account…",
+]
+`;
+
+exports[`Onboarding presentation > presents primary cycle setup with certainty and a disabled save until a date is chosen 1`] = `
+[
+  "screen: Welcome to CB Connect",
+  "eyebrow: YOUR CYCLE, YOUR WAY",
+  "text: YOUR CYCLE, YOUR WAY",
+  "heading: Welcome to CB Connect",
+  "text: Let’s set up your cycle tracking.",
+  "section: Cycle setup",
+  "heading: Cycle setup",
+  "date field: When did your last period start?",
+  "text: When did your last period start?",
+  "text: Choose start date",
+  "text: Choose date",
+  "text: How certain are you about that date?",
+  "text: Exact date",
+  "text: Approximate date",
+  "text: Average cycle length: 28 days",
+  "text: − 1 day",
+  "text: + 1 day",
+  "text: Average period length: 5 days",
+  "text: − 1 day",
+  "text: + 1 day",
+  "text: Start Tracking",
+  "When did your last period start?: Choose start date [not selected; enabled]",
+  "Exact start date [selected; enabled]",
+  "Approximate start date [not selected; enabled]",
+  "Decrease cycle length [not selected; enabled]",
+  "Increase cycle length [not selected; enabled]",
+  "Decrease period length [not selected; enabled]",
+  "Increase period length [not selected; enabled]",
+  "Start tracking [not selected; disabled]",
+]
+`;
+
+exports[`Onboarding presentation > presents role selection with the two distinct setup paths 1`] = `
+[
+  "screen: Welcome to CB Connect",
+  "eyebrow: YOUR CYCLE, YOUR WAY",
+  "text: YOUR CYCLE, YOUR WAY",
+  "heading: Welcome to CB Connect",
+  "section: Choose your role",
+  "text: Choose how you will use the app. You can’t change this after setup.",
+  "text: I track my cycle",
+  "text: I support my partner",
+  "Set role to primary [not selected; enabled]",
+  "Set role to partner [not selected; enabled]",
+]
+`;
+
+exports[`Onboarding presentation > presents the partner completion path without primary cycle fields 1`] = `
+[
+  "screen: Welcome to CB Connect",
+  "eyebrow: YOUR CYCLE, YOUR WAY",
+  "text: YOUR CYCLE, YOUR WAY",
+  "heading: Welcome to CB Connect",
+  "text: Your partner role is saved.",
+  "text: Continue",
+  "Continue to your dashboard [not selected; enabled]",
+]
+`;
+
+exports[`Onboarding presentation > reports a truthful partial save when settings succeeded but the period receipt failed 1`] = `
+[
+  "screen: Welcome to CB Connect",
+  "eyebrow: YOUR CYCLE, YOUR WAY",
+  "text: YOUR CYCLE, YOUR WAY",
+  "heading: Welcome to CB Connect",
+  "text: Let’s set up your cycle tracking.",
+  "section: Cycle setup",
+  "heading: Cycle setup",
+  "alert: Your cycle settings are saved. We couldn’t confirm that your period start date was saved. Retry to finish setup.",
+  "date field: When did your last period start?",
+  "text: When did your last period start?",
+  "text: 2026-11-10",
+  "text: Choose date",
+  "text: How certain are you about that date?",
+  "text: Exact date",
+  "text: Approximate date",
+  "text: Average cycle length: 28 days",
+  "text: − 1 day",
+  "text: + 1 day",
+  "text: Average period length: 5 days",
+  "text: − 1 day",
+  "text: + 1 day",
+  "text: Start Tracking",
+  "When did your last period start?: 2026-11-10 [not selected; enabled]",
+  "Exact start date [selected; enabled]",
+  "Approximate start date [not selected; enabled]",
+  "Decrease cycle length [not selected; enabled]",
+  "Increase cycle length [not selected; enabled]",
+  "Decrease period length [not selected; enabled]",
+  "Increase period length [not selected; enabled]",
+  "Start tracking [not selected; enabled]",
+]
+`;

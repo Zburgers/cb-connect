@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { Alert, Pressable, Share, StyleSheet, TextInput, useColorScheme, View } from "react-native";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuth } from "@clerk/expo";
 import type { FunctionReturnType } from "convex/server";
 import * as Clipboard from "expo-clipboard";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
+import { bloomType } from "../../theme/typography";
+import { BloomNotice, BloomPanel } from "../../components/BloomPanel";
+import { BloomScreen } from "../../components/BloomScreen";
+import { BloomText as Text } from "../../components/BloomText";
+import { BloomLocket } from "../../components/BloomLocket";
 import type { AccessState } from "../../navigation/accessResolver";
 import { canLoadPartnerCycleProjection, canRenderPartnerViews, type CoupleRole } from "./partnerAccess";
 import { HomeNudges } from "../home/HomeNudges";
@@ -154,11 +159,12 @@ function PairingControls({
     }
   }
   return (
-    <ScrollView contentContainerStyle={styles.page} style={{ backgroundColor: "transparent" }}>
-      <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Partner connection</Text>
+    <BloomScreen palette={palette} title="Partner connection" eyebrow="YOUR SHARED SPACE" subtitle={role === "primary" ? "Create a private invitation for one partner." : "Connect with the person who invited you."}>
+      <BloomLocket />
       {role === "primary" ? (
         <>
-          <Text style={{ color: palette.muted }}>Create a code for one partner to join.</Text>
+          <BloomPanel palette={palette} variant="warm">
+          <Text style={[bloomType.section, { color: palette.foreground }]}>Invite your partner</Text>
           {pairingCode ? (
             <Text accessibilityLabel="Pairing code" selectable style={[styles.code, { color: palette.foreground }]}>
               {pairingCode}
@@ -176,10 +182,13 @@ function PairingControls({
           {couple.status === "pending" ? (
             <Text style={{ color: palette.muted }}>This code can be used by one partner account.</Text>
           ) : null}
+          </BloomPanel>
         </>
       ) : (
         <>
-          <Text style={{ color: palette.muted }}>Enter the pairing code from your partner.</Text>
+          <BloomPanel palette={palette} variant="sage">
+          <Text style={[bloomType.section, { color: palette.foreground }]}>Enter an invitation code</Text>
+          <Text style={{ color: palette.muted }}>Use the 6 or 12 character code shared by your partner.</Text>
           <TextInput
             accessibilityLabel="Partner pairing code"
             autoCapitalize="characters"
@@ -193,15 +202,16 @@ function PairingControls({
             value={code}
           />
           <Button label={busy ? "Connecting" : "Connect with code"} disabled={busy || !code.trim()} onPress={() => void joinCouple()} dark={dark} />
+          </BloomPanel>
         </>
       )}
-      {message ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{message}</Text> : null}
+      {message ? <BloomNotice palette={palette} alert>{message}</BloomNotice> : null}
       <Button label={busy ? "Please wait" : "Sign out"} disabled={busy} onPress={() => {
         setBusy(true);
         setMessage(null);
         void signOut().catch(() => setMessage("Unable to sign out. Try again.")).finally(() => setBusy(false));
       }} dark={dark} />
-    </ScrollView>
+    </BloomScreen>
   );
 }
 
@@ -305,13 +315,10 @@ function ActivePartnerView({
   }
 
   return (
-    <ScrollView style={{ backgroundColor: "transparent" }} contentContainerStyle={styles.page}>
-      <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Partner connection</Text>
-      <Text style={{ color: palette.muted }}>
-        {couple.partner?.displayName ? `Connected with ${couple.partner.displayName}.` : "Your partner is connected."}
-      </Text>
+    <BloomScreen palette={palette} title="Partner connection" eyebrow="YOUR SHARED SPACE" subtitle={couple.partner?.displayName ? `Connected with ${couple.partner.displayName}.` : "Your partner is connected."}>
+      <BloomLocket />
       <PresenceStatus dark={dark} />
-      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+      <BloomPanel palette={palette} variant="warm">
         <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Relationship date</Text>
         <Text style={{ color: palette.muted }}>Used for anniversary moments in your shared space.</Text>
         {couple.anniversary ? <Text style={{ color: palette.foreground }}>{couple.anniversary.headline} · {couple.anniversary.body}</Text> : null}
@@ -321,26 +328,26 @@ function ActivePartnerView({
         <Text style={{ color: palette.muted }}>Private to your account. It only changes how your partner appears for you.</Text>
         <TextInput accessibilityLabel="Private partner nickname" editable={!detailsBusy} maxLength={40} onChangeText={(partnerNickname) => setDrafts((current) => syncPartnerDrafts(current, { partnerNickname }))} placeholder={couple.partner?.name ?? "Partner name"} value={drafts.partnerNickname} style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]} />
         <Button label="Save nickname" disabled={detailsBusy} onPress={() => void savePartnerNickname()} dark={dark} />
-        {detailsMessage ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{detailsMessage}</Text> : null}
-      </View>
+        {detailsMessage ? <BloomNotice palette={palette} alert>{detailsMessage}</BloomNotice> : null}
+      </BloomPanel>
       {role === "primary" ? (
         <>
-          <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+          <BloomPanel palette={palette} variant="sage">
             <Text accessibilityRole="header" style={[styles.subheading, { color: palette.foreground }]}>Sharing controls</Text>
             <Text style={{ color: palette.muted }}>Choose what your partner can see or add. Changes take effect when saved.</Text>
             <Toggle label="Cycle phase" value={settings.phase} onChange={(value) => void setSharing("sharingPhase", value)} dark={dark} disabled={sharingBusy} />
             <Toggle label="Pain details" value={settings.pain} onChange={(value) => void setSharing("sharingPain", value)} dark={dark} disabled={sharingBusy} />
             <Toggle label="Partner period logging" value={settings.periodWrite} onChange={(value) => void setSharing("sharingPeriodWrite", value)} dark={dark} disabled={sharingBusy} />
             {sharingBusy ? <Text accessibilityRole="progressbar" style={{ color: palette.muted }}>Saving sharing setting…</Text> : null}
-          </View>
+          </BloomPanel>
           <Button label="Revoke partner access" onPress={confirmRevoke} dark={dark} destructive />
         </>
       ) : (
         <PartnerCycleSummary role={role} sharingPhase={settings.phase} dark={dark} />
       )}
       <HomeNudges dark={dark} />
-      {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-    </ScrollView>
+      {error ? <BloomNotice palette={palette} alert>{error}</BloomNotice> : null}
+    </BloomScreen>
   );
 }
 
@@ -424,19 +431,16 @@ function Button({ label, onPress, disabled = false, dark, destructive = false }:
 
 function Message({ text, dark }: { text: string; dark: boolean }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
-  return <View style={[styles.page, { backgroundColor: palette.background }]}><Text style={{ color: palette.foreground }}>{text}</Text></View>;
+  return <BloomScreen palette={palette}><BloomPanel palette={palette}><Text style={[bloomType.body, { color: palette.foreground }]}>{text}</Text></BloomPanel></BloomScreen>;
 }
 
 const styles = StyleSheet.create({
-  page: { flexGrow: 1, gap: 14, padding: 20 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  heading: { fontSize: 22, fontWeight: "700" },
   subheading: { fontSize: 17, fontWeight: "700" },
   code: { fontSize: 24, fontWeight: "700", letterSpacing: 3, paddingVertical: 8 },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 },
   actionButton: { minHeight: 48, justifyContent: "center", alignItems: "center", borderWidth: 1, borderRadius: 8, paddingHorizontal: 12 },
   toggle: { minHeight: 52, flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   statePill: { minWidth: 48, alignItems: "center", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
-  card: { gap: 8, padding: 16, borderWidth: 1, borderRadius: 18 },
   section: { gap: 8, paddingVertical: 8 },
 });

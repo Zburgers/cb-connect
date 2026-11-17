@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
+import { BloomPanel } from "../../components/BloomPanel";
+import { BloomText as Text } from "../../components/BloomText";
+import { bloomType } from "../../theme/typography";
 import { isValidTimeZone, localDate } from "../logging/logging";
 import type { PainTag } from "../cycle/CycleDashboardModel";
 import { PAIN_NOTE_PRIVACY_COPY } from "./HomeModel";
@@ -106,30 +109,30 @@ export function HomePainCheckIn({
 
   if (!online) {
     return (
-      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+      <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
         <Text style={{ color: palette.muted }}>Offline. Nothing can be saved until your connection returns.</Text>
-      </View>
+      </BloomPanel>
     );
   }
   if (account === undefined) {
     return (
-      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+      <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
         <Text style={{ color: palette.muted }}>Checking your account timezone…</Text>
-      </View>
+      </BloomPanel>
     );
   }
   if (!isValidTimeZone(timeZone)) {
     return (
-      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+      <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
         <Text style={{ color: palette.muted }}>Account timezone is unavailable. Add it in Settings before saving.</Text>
-      </View>
+      </BloomPanel>
     );
   }
   if (!sourceDate || painHistory === undefined) {
     return (
-      <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+      <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
         <Text style={{ color: palette.muted }}>Loading today’s check-in…</Text>
-      </View>
+      </BloomPanel>
     );
   }
 
@@ -214,10 +217,10 @@ function PainCheckInForm({
   }
 
   return (
-    <View
+    <BloomPanel palette={palette}
       style={[
         styles.card,
-        { backgroundColor: palette.glass, borderColor: palette.border },
+        { backgroundColor: palette.surface, borderColor: palette.outline },
       ]}
     >
       <Text style={[styles.eyebrow, { color: palette.muted }]}>Body check-in</Text>
@@ -246,10 +249,10 @@ function PainCheckInForm({
                 },
               ]}
             >
-              <Text style={{ color: selected ? palette.surface : palette.foreground, fontWeight: "700" }}>
+              <Text style={{ color: selected ? palette.onAccent : palette.foreground, fontWeight: "700" }}>
                 {feeling.label}
               </Text>
-              <Text style={{ color: selected ? palette.surface : palette.muted, fontSize: 12 }}>
+              <Text style={{ color: selected ? palette.onAccent : palette.muted, fontSize: 12 }}>
                 {feeling.help}
               </Text>
             </Pressable>
@@ -325,7 +328,7 @@ function PainCheckInForm({
         onChangeText={setNote}
         placeholder="What would help you remember today?"
         placeholderTextColor={palette.muted}
-        style={[styles.note, { backgroundColor: palette.surface, borderColor: palette.border, color: palette.foreground }]}
+        style={[styles.note, { backgroundColor: palette.surface, borderColor: palette.controlBorder, color: palette.foreground }]}
         value={note}
       />
       <Text style={[styles.counter, { color: palette.muted }]}>{note.length}/140</Text>
@@ -353,21 +356,21 @@ function PainCheckInForm({
           {busy ? "Saving…" : saved ? "Check-in saved" : "Save today’s signal"}
         </Text>
       </Pressable>
-    </View>
+    </BloomPanel>
   );
 }
 
 const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 14 },
-  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.5, textTransform: "uppercase" },
-  title: { fontSize: 26, lineHeight: 32, fontWeight: "700" },
+  eyebrow: { ...bloomType.label, fontSize: 12, fontWeight: "700", letterSpacing: 1.5, textTransform: "uppercase" },
+  title: { ...bloomType.heading },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   feeling: { minWidth: "47%", flexGrow: 1, borderRadius: 20, borderWidth: 1, padding: 14, gap: 5 },
   intensityRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   flex: { flex: 1 },
-  stepper: { minWidth: 44, minHeight: 44, borderWidth: 1, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  stepper: { minWidth: 48, minHeight: 48, borderWidth: 1, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   score: { minWidth: 30, textAlign: "center", fontSize: 26, fontWeight: "700" },
-  tag: { minHeight: 44, paddingHorizontal: 14, borderWidth: 1, borderRadius: 22, justifyContent: "center" },
+  tag: { minHeight: 48, paddingHorizontal: 14, borderWidth: 1, borderRadius: 22, justifyContent: "center" },
   note: { minHeight: 80, borderWidth: 1, borderRadius: 20, padding: 12, textAlignVertical: "top" },
   counter: { alignSelf: "flex-end", marginTop: -10, fontSize: 12 },
   save: { minHeight: 50, borderRadius: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },

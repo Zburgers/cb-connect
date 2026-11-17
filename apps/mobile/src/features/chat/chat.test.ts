@@ -37,13 +37,18 @@ vi.mock("react", async (importOriginal) => {
 
 vi.mock("react-native", () => ({
   Alert: { alert: (...args: unknown[]) => runtime.alert(...args) },
+  KeyboardAvoidingView: "KeyboardAvoidingView",
+  Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   StyleSheet: { create: (styles: object) => styles, hairlineWidth: 1 },
   Text: "Text",
   TextInput: "TextInput",
   View: "View",
+  useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844 }),
 }));
+
+vi.mock("../../components/bloomDockContext", () => ({ useBloomDockInset: () => 160 }));
 
 vi.mock("expo-router", () => ({ useFocusEffect: () => undefined }));
 vi.mock("convex/react", () => ({
@@ -166,13 +171,19 @@ describe("mobile private chat pagination and receipts", () => {
 
   test("chat distinguishes private ownership and uses the active theme surfaces", () => {
     const source = readFileSync(resolve(mobileRoot, "src/features/chat/CoupleChat.tsx"), "utf8");
-    expect(source).toContain('message.isMine ? "You" : message.senderName');
+    expect(source).toContain('message.isMine ? "YOU" : message.senderName');
     expect(source).toContain("backgroundColor: message.isMine ? palette.highlight : palette.surface");
-    expect(source).toContain("palette.border");
+    expect(source).toContain("borderColor: palette.outline");
+    expect(source).toContain("KeyboardAvoidingView");
+    expect(source).toContain("minHeight: 48");
   });
 });
 
 describe("mobile private chat composer interactions", () => {
+  test("snapshots empty-thread actions and keyboard-safe composer semantics", () => {
+    expect(renderChat().filter((element) => element.type === "Pressable" || element.type === "TextInput").map((element) => ({ type: element.type, role: element.props.accessibilityRole, label: element.props.accessibilityLabel, disabled: element.props.disabled, multiline: element.props.multiline, maxLength: element.props.maxLength }))).toMatchSnapshot();
+  });
+
   test("quick-compose suggestions fill the draft without sending", () => {
     let elements = renderChat();
 

@@ -1,0 +1,62 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mobile private chat composer interactions > snapshots empty-thread actions and keyboard-safe composer semantics 1`] = `
+[
+  {
+    "disabled": false,
+    "label": "Clear chat",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+  {
+    "disabled": undefined,
+    "label": "Compose Thinking of you.",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+  {
+    "disabled": undefined,
+    "label": "Compose Want me to handle dinner?",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+  {
+    "disabled": undefined,
+    "label": "Compose I am here. No pressure to explain.",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+  {
+    "disabled": undefined,
+    "label": "Write a private message",
+    "maxLength": 500,
+    "multiline": true,
+    "role": undefined,
+    "type": "TextInput",
+  },
+  {
+    "disabled": undefined,
+    "label": "Add emoji",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+  {
+    "disabled": true,
+    "label": "Send message",
+    "maxLength": undefined,
+    "multiline": undefined,
+    "role": "button",
+    "type": "Pressable",
+  },
+]
+`;

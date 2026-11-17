@@ -48,6 +48,19 @@
 .phone.dir-glass .glass-nav{border-color:var(--glass-rim);box-shadow:inset 0 1px 2px var(--shine),0 0 0 1px var(--glass-outline),0 8px 24px var(--nav-shadow)}
 .phone.dir-glass .icon-btn{box-shadow:inset 0 1px 0 var(--glass-rim)}
 
+
+/* Native dock refinement requested by owner: translucency, reflective rim, smooth thumb. */
+.phone .phone-scroll{padding-bottom:160px}
+.phone .nav-wrap{position:absolute;left:0;right:0;bottom:0;background:none;pointer-events:none}
+.phone .glass-nav{pointer-events:auto;background:rgba(255,250,247,.18);backdrop-filter:blur(22px) saturate(1.3)}
+.phone.dark .glass-nav{background:rgba(22,23,41,.18)}
+.phone .glass-nav:before{content:'';position:absolute;inset:0 0 auto;height:18px;border-radius:inherit;background:linear-gradient(125deg,rgba(255,255,255,.7),rgba(255,255,255,.02),rgba(255,255,255,.28));pointer-events:none;z-index:-1}
+.phone .nav-thumb{background:rgba(246,221,213,.48);transition:transform 320ms cubic-bezier(.16,1,.3,1)}
+.phone.dark .nav-thumb{background:rgba(255,177,163,.14)}
+.phone.solid .glass-nav{background:var(--surface)}
+.phone.mini .phone-scroll{padding-bottom:100px}
+.phone.type-max .phone-scroll{padding-bottom:290px}
+
 @media(max-width:650px){.controls{grid-template-columns:repeat(2,minmax(0,1fr))}.explorer{grid-template-columns:minmax(0,1fr)}.notes{padding-top:0}.comparison{grid-template-columns:repeat(3,260px)}.palette{gap:7px}.swatch{height:52px}.palette span{font-size:10px}.palette code{font-size:9px}.token-grid,.before-after{grid-template-columns:1fr}.intro{padding-top:14px}.phone{height:740px}.notes ul{columns:1}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(prefers-color-scheme:light){:root{--foreground:#28242b;--muted:#635b61;--card:#f7f1ed;--secondary:#eee4de;--border:#d6cbc5;--primary:#a53d30;--ring:#a53d30}.pass{color:#315b36}.blocked{color:#8a4a14}}
@@ -255,12 +268,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     <div class="eyebrow muted">CB Connect · CB-07 / NAK-149 · owner design review</div>
     <h1>A little closer<br>to Bloom.</h1>
     <p class="muted">Your web palette. A calmer native rhythm. A floating glass dock that feels at home on a phone. Owner-selected Bloom Glass with subtle sage, now refined with Bloom Liquid’s clearer glass edges. Explore the selected direction across every screen.</p>
-    <div class="meta">Selected direction v2 · 17 Nov 2026 · based on CB-06 ca01eda</div>
+    <div class="meta">Native implementation v3 · 17 Nov 2026 · based on accepted CB-06 8371af4</div>
   </div>
   <aside class="gate" aria-label="Implementation gate">
-    <strong>Design proposal only · native implementation is blocked</strong>
-    CB-01–CB-05 have stacked-development acceptance. CB-06 has green exact-head deterministic/mobile CI, but re-review still requires one P2 fix: stale-save errors must reliably expose the reload action. Native redesign waits for feature acceptance. All phone content below is illustrative, local sample data; controls never call Clerk or Convex.
-    <a href="https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5939281005">Read the current CB-06 review</a>.
+    <strong>Native redesign implemented · consolidated live QA blocked</strong>
+    CB-01–CB-06 are accepted for stacked development. The native Bloom redesign is implemented; deterministic validation is recorded in the PR. The Android Device panel failed to boot Pixel 7 with SIGSEGV after its advised recovery, so native launch and the consolidated paired-account QA remain unverified. All phone content below is illustrative, local sample data; controls never call Clerk or Convex.
+    <a href="https://github.com/Zburgers/cb-connect/pull/85#pullrequestreview-5940208482">Read CB-06 acceptance</a>.
   </aside>
 
   <section aria-labelledby="directions-heading">
@@ -302,9 +315,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     </div>
     <div class="token-grid">
       <div><strong>Editorial type, useful scale</strong><p>DM Serif Display for page and phase headings; DM Sans for controls, body and tabular dates. Native implementation bundles fonts after approval. Forms keep native input semantics and unrestricted font scaling.</p></div>
-      <div><strong>Glass where it earns its place</strong><p>One detached dock with a sliding selected thumb. Bright inner edge, warm shadow, tinted backing. Opaque controls and text surfaces keep contrast stable. Reduced transparency and older Android get a solid surface.</p></div>
+      <div><strong>Glass where it earns its place</strong><p>One detached dock with a sliding selected thumb. A low-opacity tint, native content blur, reflective rim and a shallow warm shadow. Opaque controls and text surfaces keep contrast stable. Reduced transparency and older Android get a solid surface.</p></div>
       <div><strong>Room for thumbs and text</strong><p>4-point spacing. 16–24-point gutters. At least 48-point actions. The content viewport ends above the dock; long pages keep scrolling. Large text reflows vertically and expands navigation height; at 200% the mockup uses two columns to keep full dock labels readable.</p></div>
-      <div><strong>Motion with a job</strong><p>Selected dock thumb: 260ms transform. Press feedback: 120–180ms. No decorative loops. Reduced motion removes movement. Keyboard-aware native forms keep the focused field and Save visible.</p></div>
+      <div><strong>Motion with a job</strong><p>Native dock thumb: spring motion on the UI thread. Press feedback: 120–180ms. No decorative loops. Reduced motion removes movement. Keyboard-aware native forms keep the focused field and Save visible.</p></div>
     </div>
     <p class="fineprint">Existing web artwork is reused. The sage tone is selected; native contrast remains to be qualified. Browser scaling is a layout stress preview; it does not prove Android font scaling, TalkBack, performance or native keyboard behavior.</p>
   </section>
@@ -321,20 +334,20 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <tr><td>Inbox</td><td>Action-heavy cards → quiet rows, explicit unread labels and separated actions.</td><td>Default-off availability guard before subscription, unsupported templates, read/dismiss failure, safe destinations and pagination. No push delivery claims.</td></tr>
         <tr><td>Settings</td><td>Long equal-weight cards → clear groups with local Save/error placement and discoverable appearance.</td><td>Primary-only 21–40/2–8 lengths, profile enums, name, timezone, pause/private context, sharing, reminder, pending/failure/conflict, account identity reset, sign-out.</td></tr>
       </tbody></table></div>
-      <p class="fineprint">The explorer covers representative visual states, not every Cartesian combination. Source-reconstructed “before” descriptions are not captured runtime evidence. All inventory changes remain proposed.</p>
+      <p class="fineprint">The explorer covers representative visual states, not every Cartesian combination. Source-reconstructed “before” descriptions are not captured runtime evidence. The inventory now describes the native implementation; live behavior remains unqualified.</p>
     </details>
     <details>
       <summary>Stack evidence and implementation entry gate</summary>
-      <p>Snapshot at 17 Nov 2026. CB-01–CB-05 have passing deterministic qualification and isolated mobile CI. CB-06 changed to ca01eda during this report: deterministic and mobile CI passed; focused re-review requires one stale-error recovery fix at this snapshot. Acceptance below is review evidence, not a release claim.</p>
+      <p>Snapshot at 17 Nov 2026. CB-01–CB-05 have passing deterministic qualification and isolated mobile CI. CB-06 is accepted at 8371af4 with passing deterministic/mobile checks. Native source is now implemented; this browser report remains a design specimen rather than native runtime evidence. Acceptance below is review evidence, not a release claim.</p>
       <div class="table-wrap"><table><thead><tr><th>Ticket / PR</th><th>Exact head</th><th>Focused review</th></tr></thead><tbody>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/79">CB-01 #79</a></td><td><code>8e1faa457e54efc7c82d53b5c284846aaaf87fc2</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/81">CB-02 #81</a></td><td><code>0d324a15defcd0404b7cbf990d65e47b025e9db9</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/82">CB-03 #82</a></td><td><code>7f09aebde8854910775c0d029ea839816f2c01c2</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/83">CB-04 #83</a></td><td><code>a9c3355317f281f5022ffc7638aafb762478ed53</code></td><td class="pass">Accepted for stacked development</td></tr>
         <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/84">CB-05 #84</a></td><td><code>a322ba73f1c363d2ed9af1bdbc9fd6b881a76dfb</code></td><td class="pass">Accepted; outdated inbox thread remains open</td></tr>
-        <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/85">CB-06 #85</a></td><td><code>ca01eda57e7305766c7960ec3ab948087d6e7206</code></td><td class="blocked">BLOCKED · changes required · stale-error recovery</td></tr>
+        <tr><td><a href="https://github.com/Zburgers/cb-connect/pull/85">CB-06 #85</a></td><td><code>8371af42b50e0b046bbdd148844cc9891c317ae4</code></td><td class="blocked">Accepted for downstream stacked development</td></tr>
       </tbody></table></div>
-      <ul><li>CB-06 adds identity-keyed drafts, protected profile editing and conditional cycle writes at 8a71780. Exact-head re-review verifies these remediations, but requires a reliable stale-error discriminator and realistic client-wrapped error test so the reload action appears.</li><li>After remediation, refresh all stack heads, rebase this branch onto accepted CB-06, and verify review/check evidence on the new exact head.</li><li>Keep #67 draft. Base this PR on CB-06, never main. This design report does not accept CB-06 or authorize merge, production flags, release or deployment.</li></ul>
+      <ul><li>CB-06 adds identity-keyed drafts, protected profile editing and conditional cycle writes at 8a71780. Final exact-head review verifies typed stale-error handling and accepts all CB-06 fixes. Native CB-07 work is authorized by the owner; no production deployment or merge is authorized.</li><li>CB-07 is rebased onto accepted CB-06 8371af4. Review the native diff and final consolidated QA results before accepting the stack.</li><li>Keep #67 draft. Base this PR on CB-06, never main. CB-06 acceptance is independent of this report. Merge, production flags, release and deployment remain outside this implementation task.</li></ul>
     </details>
     <details>
       <summary>Single consolidated final Android QA checklist</summary>
@@ -366,7 +379,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     <button type="button" class="report-button" id="download-choice">Download viewing note</button>
     <p class="fineprint">This exports a local viewing note. The approved direction remains Bloom Glass + subtle sage with clearer glass borders; exploring another reference does not replace that selection.</p>
   </section>
-  <footer class="footer">Owner selection is recorded. NAK-149 stays incomplete until CB-06 acceptance, native implementation and required qualification are complete.</footer>
+  <footer class="footer">Owner selection and native implementation are recorded. Final acceptance awaits exact-head CI/review and consolidated native qualification; emulator startup currently blocks live QA.</footer>
 </main>
 <script>
 'use strict';

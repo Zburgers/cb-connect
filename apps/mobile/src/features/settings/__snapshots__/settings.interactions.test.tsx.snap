@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`native settings presentation > snapshots a recoverable save failure with the draft retained 1`] = `
+{
+  "alert": "Unable to update settings. Try again.",
+  "enumSelections": [
+    "Gender: Prefer not to say",
+  ],
+  "headings": [
+    "Settings",
+    "Appearance",
+    "Profile",
+    "Time zone",
+    "In-app notifications",
+    "Cycle settings",
+    "Private prediction controls",
+    "Private context",
+    "Sharing",
+    "Account",
+  ],
+  "profileDraft": "Draft name",
+  "profileInputEditable": true,
+  "profileSaveDisabled": false,
+  "selectedAppearance": "System appearance",
+}
+`;
+
+exports[`native settings presentation > snapshots partner dark settings hierarchy and selected options 1`] = `
+{
+  "alert": undefined,
+  "enumSelections": [
+    "Gender: Prefer not to say",
+  ],
+  "headings": [
+    "Settings",
+    "Appearance",
+    "Profile",
+    "Time zone",
+    "In-app notifications",
+    "Account",
+  ],
+  "profileDraft": "",
+  "profileInputEditable": true,
+  "profileSaveDisabled": true,
+  "selectedAppearance": "System appearance",
+}
+`;
+
+exports[`native settings presentation > snapshots pending profile save locking 1`] = `
+{
+  "alert": undefined,
+  "enumSelections": [
+    "Gender: Prefer not to say",
+  ],
+  "headings": [
+    "Settings",
+    "Appearance",
+    "Profile",
+    "Time zone",
+    "In-app notifications",
+    "Cycle settings",
+    "Private prediction controls",
+    "Private context",
+    "Sharing",
+    "Account",
+  ],
+  "profileDraft": "Draft name",
+  "profileInputEditable": false,
+  "profileSaveDisabled": true,
+  "selectedAppearance": "System appearance",
+}
+`;
+
+exports[`native settings presentation > snapshots primary light settings hierarchy and selected options 1`] = `
+{
+  "alert": undefined,
+  "enumSelections": [
+    "Gender: Prefer not to say",
+  ],
+  "headings": [
+    "Settings",
+    "Appearance",
+    "Profile",
+    "Time zone",
+    "In-app notifications",
+    "Cycle settings",
+    "Private prediction controls",
+    "Private context",
+    "Sharing",
+    "Account",
+  ],
+  "profileDraft": "",
+  "profileInputEditable": true,
+  "profileSaveDisabled": true,
+  "selectedAppearance": "System appearance",
+}
+`;

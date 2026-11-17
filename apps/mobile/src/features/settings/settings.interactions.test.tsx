@@ -26,6 +26,7 @@ const runtime = vi.hoisted(() => ({
   cycleSaveCalls: [] as unknown[],
   cycleSaveFails: false,
   cycleSaveStale: false,
+  colorScheme: "light" as "light" | "dark",
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -84,11 +85,14 @@ vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
+  KeyboardAvoidingView: "KeyboardAvoidingView",
+  Platform: { OS: "ios" },
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1, scale: 1 }),
   StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   Switch: "Switch",
   Text: "Text",
   TextInput: "TextInput",
-  useColorScheme: () => "light",
+  useColorScheme: () => runtime.colorScheme,
   View: "View",
 }));
 vi.mock("../../theme/ThemePreferenceProvider", () => ({
@@ -136,6 +140,19 @@ function textContent(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
+function presentationDigest(elements: Element[]) {
+  const label = (element: Element) => textContent(element.props.children);
+  return {
+    headings: elements.filter((element) => element.type === "Text" && element.props.accessibilityRole === "header").map(label),
+    selectedAppearance: elements.find((element) => element.type === "Pressable" && element.props.accessibilityState && (element.props.accessibilityState as { checked?: boolean }).checked)?.props.accessibilityLabel,
+    enumSelections: elements.filter((element) => element.type === "Pressable" && String(element.props.accessibilityLabel).startsWith("Gender:") && (element.props.accessibilityState as { checked?: boolean } | undefined)?.checked).map((element) => element.props.accessibilityLabel),
+    profileSaveDisabled: pressable(elements, "Save profile preferences").props.disabled,
+    profileInputEditable: elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name")?.props.editable,
+    profileDraft: elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name")?.props.value,
+    alert: elements.find((element) => element.type === "Text" && element.props.accessibilityRole === "alert")?.props.children,
+  };
+}
+
 function cycleWindowSwitch(elements: Element[]): Element {
   const found = elements.find((element) => element.type === "Switch" && element.props.accessibilityLabel === "Period window reminder");
   if (!found) throw new Error(`Missing cycle-window switch; found ${elements.filter((element) => element.type === "Switch").map((element) => String(element.props.accessibilityLabel)).join(", ")}`);
@@ -176,6 +193,61 @@ beforeEach(() => {
   runtime.cycleSaveCalls = [];
   runtime.cycleSaveFails = false;
   runtime.cycleSaveStale = false;
+  runtime.colorScheme = "light";
+});
+
+describe("native settings presentation", () => {
+  it("snapshots primary light settings hierarchy and selected options", () => {
+    expect(presentationDigest(renderSettings())).toMatchSnapshot();
+  });
+
+  it("snapshots partner dark settings hierarchy and selected options", () => {
+    runtime.profile = { ...runtime.profile, _id: "partner-dark", role: "partner" };
+    runtime.colorScheme = "dark";
+    expect(presentationDigest(renderSettings())).toMatchSnapshot();
+  });
+
+  it("snapshots a recoverable save failure with the draft retained", async () => {
+    runtime.saveFails = true;
+    let elements = renderSettings();
+    const input = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    (input?.props.onChangeText as (value: string) => void)("Draft name");
+    elements = renderSettings();
+    (pressable(elements, "Save profile preferences").props.onPress as () => void)();
+    await flushSave();
+    expect(presentationDigest(renderSettings())).toMatchSnapshot();
+  });
+
+  it("snapshots pending profile save locking", () => {
+    runtime.profileSavePending = true;
+    let elements = renderSettings();
+    const input = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    (input?.props.onChangeText as (value: string) => void)("Draft name");
+    elements = renderSettings();
+    (pressable(elements, "Save profile preferences").props.onPress as () => void)();
+    expect(presentationDigest(renderSettings())).toMatchSnapshot();
+    runtime.resolveProfileSave?.();
+  });
+
+  it("uses the shared responsive Bloom screen and bordered panels", () => {
+    const elements = renderSettings();
+    expect(elements.some((element) => element.type === "KeyboardAvoidingView")).toBe(true);
+    expect(elements.some((element) => element.type === "ScrollView")).toBe(true);
+    expect(elements.filter((element) => element.type === "View" && element.props.accessible === false).length).toBeGreaterThan(0);
+    expect(elements.some((element) => element.type === "Pressable" && element.props.accessibilityLabel === "Dark appearance")).toBe(true);
+    expect(pressable(elements, "Save profile preferences").props.disabled).toBe(true);
+  });
+
+  it("keeps profile controls and enum choices available for partner accounts in dark appearance", () => {
+    runtime.profile = { ...runtime.profile, _id: "partner-one", role: "partner" };
+    runtime.renderedProfileId = "";
+    runtime.colorScheme = "dark";
+    const elements = renderSettings();
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Appearance")).toBe(true);
+    expect(pressable(elements, "Gender: Prefer not to say").props.accessibilityState).toMatchObject({ checked: true });
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Cycle settings")).toBe(false);
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Sharing")).toBe(false);
+  });
 });
 
 describe("native reminder-time settings interactions", () => {

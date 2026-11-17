@@ -1,0 +1,36 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LoggingScreen actions > groups logging into period, private pain, and history panels with a scrollable header 1`] = `
+{
+  "actions": [
+    {
+      "disabled": false,
+      "label": "Save period",
+    },
+    {
+      "disabled": false,
+      "label": "Save pain log",
+    },
+  ],
+  "fields": [
+    {
+      "disabled": false,
+      "label": "Period start date",
+    },
+    {
+      "disabled": false,
+      "label": "Optional period end date",
+    },
+    {
+      "disabled": false,
+      "label": "Pain log date",
+    },
+  ],
+  "panels": [
+    "Period entry",
+    "Private pain log",
+    "Cycle history",
+  ],
+  "title": "Log and history",
+}
+`;

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import type { GenericId } from "convex/values";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { api } from "../../convex/api";
 import type { CycleDashboardData } from "../cycle/CycleDashboardModel";
 import { getHomeSupportPresentation } from "./HomeModel";
 import { HomePainCheckIn } from "./HomePainCheckIn";
 import { mobileColors } from "../../theme/tokens";
+import { BloomPanel } from "../../components/BloomPanel";
+import { BloomText as Text } from "../../components/BloomText";
+import { bloomType } from "../../theme/typography";
 
 export function HomeSupport({
   data,
@@ -24,11 +27,11 @@ export function HomeSupport({
   if (support.role === "partner") {
     return (
       <View style={styles.stack}>
-        <View
+        <BloomPanel palette={palette}
           accessibilityLabel={support.pain ? "Shared pain signal" : "Pain signal is private"}
           style={[
             styles.card,
-            { backgroundColor: palette.glass, borderColor: palette.border },
+            { backgroundColor: palette.surface, borderColor: palette.outline },
           ]}
         >
           <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>
@@ -43,9 +46,9 @@ export function HomeSupport({
               No pain data is shared today. That may mean nothing was logged, or that your partner chose not to share it.
             </Text>
           )}
-        </View>
+        </BloomPanel>
         {support.painTip ? (
-          <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+          <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
             <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>
               How to help without making it weird
             </Text>
@@ -55,7 +58,7 @@ export function HomeSupport({
                 <Text style={[styles.body, { color: palette.foreground }]}>{suggestion}</Text>
               </View>
             ))}
-          </View>
+          </BloomPanel>
         ) : null}
       </View>
     );
@@ -68,7 +71,7 @@ export function HomeSupport({
       <HomePainCheckIn dark={dark} />
 
       {support.painTip ? (
-        <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
           <Text style={[styles.eyebrow, { color: palette.muted }]}>Support for today</Text>
           <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>
             {support.painTip.title}
@@ -82,11 +85,11 @@ export function HomeSupport({
           <Text style={[styles.note, { color: palette.muted }]}>
             {support.painTip.safetyNote}
           </Text>
-        </View>
+        </BloomPanel>
       ) : null}
 
       {support.nutritionTipsPhase && support.nutritionTips.length > 0 ? (
-        <View style={[styles.card, { backgroundColor: palette.glass, borderColor: palette.border }]}>
+        <BloomPanel palette={palette} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
           <Text style={[styles.eyebrow, { color: palette.muted }]}>Cycle-informed support</Text>
           <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>
             Gentle nourishment ideas
@@ -126,7 +129,7 @@ export function HomeSupport({
               This suggestion was not dismissed. Try again.
             </Text>
           ) : null}
-        </View>
+        </BloomPanel>
       ) : null}
     </View>
   );
@@ -135,14 +138,14 @@ export function HomeSupport({
 const styles = StyleSheet.create({
   stack: { gap: 16 },
   card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 12 },
-  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase" },
-  heading: { fontSize: 20, lineHeight: 28, fontWeight: "700" },
-  body: { fontSize: 14, lineHeight: 21 },
+  eyebrow: { ...bloomType.label, fontSize: 12, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase" },
+  heading: { ...bloomType.heading, fontSize: 24, lineHeight: 32 },
+  body: { ...bloomType.body, fontSize: 16, lineHeight: 24 },
   suggestion: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   number: { fontWeight: "800" },
   note: { borderRadius: 16, padding: 12, fontSize: 13, lineHeight: 20, backgroundColor: "rgba(127, 127, 127, 0.12)" },
   tip: { borderWidth: 1, borderRadius: 18, padding: 14, flexDirection: "row", alignItems: "center", gap: 8 },
   tipText: { flex: 1, gap: 4 },
   tipTitle: { fontSize: 17, fontWeight: "700" },
-  dismissTip: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  dismissTip: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
 });

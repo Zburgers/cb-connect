@@ -79,10 +79,10 @@ proceed behind its default-off feature flag.
 
 The [CB-07 mobile UI redesign proposal](2026-11-17-cb-07-mobile-ui-redesign.md)
 and [interactive owner design report](../design/cb-07-mobile-design-review.html)
-cover the final presentation pass above CB-06. Native implementation waits
-for CB-01–CB-06 focused acceptance/checks; the owner selected Bloom Glass
-with subtle sage and clearer borders from Bloom Liquid. The proposal
-does not qualify or complete the mobile stack.
+cover the final presentation pass above accepted CB-06. The selected Bloom
+Glass + sage redesign with reflective translucent dock is implemented; final
+native qualification is blocked by emulator startup. The design report is
+illustrative and does not qualify the mobile stack.
 
 - Numbered gate documents are work-package plans, not permission to edit code.
 - A gate becomes implementation-ready only when its blocking decisions are resolved and a dated task-sized execution plan is approved.
