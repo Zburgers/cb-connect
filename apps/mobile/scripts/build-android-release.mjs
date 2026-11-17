@@ -30,6 +30,7 @@ const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=a
 if (dirty) throw new Error("Commit mobile source before building an identified release");
 const env = { ...process.env, EXPO_NO_DOTENV: "1", EXPO_PUBLIC_MOBILE_ENVIRONMENT: profile };
 const run = (file, args, cwd = mobileRoot) => execFileSync(file, args, { cwd, env, stdio: "inherit" });
+run(process.execPath, ["scripts/patch-picker-dialog-security.mjs"]);
 // Prebuild updates the ignored native project; do not remove an active QA install.
 run("npx", ["expo", "prebuild", "--platform", "android", "--no-install"]);
 run("./gradlew", ["assembleRelease", "-PreactNativeArchitectures=arm64-v8a,x86_64", "--no-daemon", "--console=plain"], resolve(mobileRoot, "android"));
