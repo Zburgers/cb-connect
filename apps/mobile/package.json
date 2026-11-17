@@ -4,6 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
+    "postinstall": "node scripts/patch-picker-dialog-security.mjs",
     "start": "expo start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

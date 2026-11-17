@@ -116,3 +116,26 @@ Validation: CB-02 mobile TypeScript PASS; 29 files / 198 mobile tests PASS,
 including selection retention across a parent render and cancel/unmount
 coverage. Targeted signed-APK retest remains in the same consolidated CB-07
 run; these deterministic results do not establish native acceptance.
+
+
+## Final-stack picker-window capture remediation — 2026-11-18
+
+A saved emulator capture showed the native date picker while the protected
+Activity behind it was black. Expo's shield sets FLAG_SECURE on the Activity;
+the pinned picker creates separate date/time dialog windows without inheriting
+that flag. This is an observed modal-capture gap, not physical-device evidence.
+
+The project-local postinstall patch makes both default picker dialogs inherit
+FLAG_SECURE from a protected owner before display. It uses public Android
+window APIs, preserves the upstream license, and changes neither picker values
+nor date/time/authorization contracts. Original/protected source hashes and
+exact dependency version 9.1.0 are checked before either file is written;
+unexpected source/version drift fails installation. Repeated installs are
+idempotent. The lockfile changes only the root install-script marker; no
+dependency version is changed.
+
+Validation: actual postinstall patches both fragments; apply/idempotence and
+version/source-drift regressions pass; CB-02 mobile TypeScript and 30 files /
+201 mobile tests pass. Native compilation and signed date/time picker capture
+retests remain required in the same consolidated CB-07 run. The earlier
+8828193 date-selection candidate does not contain this later native fix.
