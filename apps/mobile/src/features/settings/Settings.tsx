@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/expo";
 import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useColorScheme, View } from "react-native";
 import type { NotificationPurpose } from "@cb-connect/contracts";
@@ -165,7 +166,13 @@ function ProfileSettings({
       setMessage(successMessage ?? "Settings updated.");
       return true;
     } catch (error) {
-      if (error instanceof Error && error.message === "STALE_CYCLE_SETTINGS") {
+      if (
+        error instanceof ConvexError &&
+        typeof error.data === "object" &&
+        error.data !== null &&
+        "code" in error.data &&
+        error.data.code === "STALE_CYCLE_SETTINGS"
+      ) {
         setCycleConflict(true);
         setError("These cycle settings changed elsewhere. Reload before saving.");
       } else {

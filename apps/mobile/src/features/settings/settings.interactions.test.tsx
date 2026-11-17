@@ -1,4 +1,5 @@
 import React from "react";
+import { ConvexError } from "convex/values";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => ({
@@ -61,7 +62,7 @@ vi.mock("convex/react", () => ({
     };
     if (index === 3) return async (args: unknown) => {
       runtime.cycleSaveCalls.push(args);
-      if (runtime.cycleSaveStale) throw new Error("STALE_CYCLE_SETTINGS");
+      if (runtime.cycleSaveStale) throw new ConvexError({ code: "STALE_CYCLE_SETTINGS" });
       if (runtime.cycleSaveFails) throw new Error("cycle save failed");
       if (runtime.cycleSettings) runtime.cycleSettings = { ...runtime.cycleSettings, ...(args as object) };
       return null;
