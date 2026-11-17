@@ -84,3 +84,16 @@
 - Deletion uses the existing authorized mutation only. CSV exports are removed from cache after sharing on a best-effort basis. This plan adds no bulk deletion, purge, or retention behavior.
 - No production flag changes, deployment, merge to `main`, emulator/device live-QA cycle, or real-user fixture changes.
 - The PR base is `feat/NAK-143-mobile-onboarding`, itself stacked on `gate5/atlas-foundation`.
+
+## Final-stack QA remediation — 2026-11-17
+
+The flag-off legacy backend discards date certainty. Logging now waits for the
+server's period capabilities and offers certainty/promotion controls only
+when that contract is enabled. Legacy start/end/correction writes omit
+certainty claims; pending promotion state is ignored if the capability turns
+off. Private pain logging remains independent of this period-only dependency.
+No backend flag, validator, mutation implementation or production data changes.
+The companion onboarding fix is in CB-01, inherited here.
+
+Focused logging regressions and mobile TypeScript/strict public parity pass.
+Flag-off and enabled-mode native retests remain in the consolidated CB-07 run.

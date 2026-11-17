@@ -8,6 +8,7 @@ const runtime = vi.hoisted(() => ({
   periods: [] as unknown[] | undefined,
   pain: [] as unknown[] | undefined,
   timeline: undefined as unknown[] | undefined,
+  capabilities: { cycleFactsV1: true } as { cycleFactsV1: boolean } | undefined,
   writeFile: vi.fn(),
   deleteFile: vi.fn(),
   shareFile: vi.fn().mockResolvedValue(undefined),
@@ -82,7 +83,7 @@ function render() {
     const item = period as { _id?: string; startDate: string; endDate?: string; certainty: string; source: string; confirmationStatus: string; authorityVersion?: number; createdByName: string; updatedByName: string; canCorrect: boolean };
     return { date: item.startDate, phase: "menstruation", type: "period", isOngoing: !item.endDate, period: { id: item._id, startDate: item.startDate, endDate: item.endDate, certainty: item.certainty, source: item.source, confirmationStatus: item.confirmationStatus, authorityVersion: item.authorityVersion, createdByName: item.createdByName, updatedByName: item.updatedByName, createdByViewer: true, updatedByViewer: true, canCorrect: item.canCorrect } };
   });
-  runtime.queries = [runtime.account, runtime.periods, runtime.pain, timeline];
+  runtime.queries = [runtime.account, runtime.periods, runtime.pain, timeline, runtime.capabilities];
   runtime.mutations = [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain, deletePeriod];
   return LoggingScreen();
 }
@@ -166,6 +167,7 @@ describe("LoggingScreen actions", () => {
     runtime.periods = [];
     runtime.pain = [];
     runtime.timeline = undefined;
+    runtime.capabilities = { cycleFactsV1: true };
     runtime.queries = [runtime.account, runtime.periods, runtime.pain, runtime.timeline];
     runtime.state = [];
     runtime.cursor = 0;
@@ -188,6 +190,33 @@ describe("LoggingScreen actions", () => {
     tree = render();
     expect(find(tree, (element) => element.type === "Pressable" && (element.props as { accessibilityLabel?: string }).accessibilityLabel === "Yesterday")).toBeUndefined();
     expect(textContent(tree)).not.toContain("Loading pain history");
+  });
+
+  it("does not offer or submit certainty that the legacy backend cannot retain", async () => {
+    runtime.capabilities = { cycleFactsV1: false };
+    const tree = render();
+    expect(textContent(tree)).toContain("Dates are saved without certainty labels");
+    expect(() => button(tree, "Approximate date")).toThrow("Missing button");
+    await button(tree, "Save period")();
+    expect(startSelf).toHaveBeenCalledWith({ startDate: expect.any(String) });
+  });
+
+  it("waits for period capabilities without blocking independent pain logging", () => {
+    runtime.capabilities = undefined;
+    const tree = render();
+    expect(buttonIsDisabled(tree, "Save period")).toBe(true);
+    expect(buttonIsDisabled(tree, "Save pain log")).toBe(false);
+  });
+
+  it("drops pending certainty promotion when the server capability turns off", async () => {
+    runtime.periods = [{ ...openPeriod[0], certainty: "legacy_unknown" }];
+    await button(render(), "Correct period")();
+    checkbox(render(), "Confirm this start date is exact").onPress();
+    runtime.capabilities = { cycleFactsV1: false };
+    const tree = render();
+    expect(() => checkbox(tree, "Confirm this start date is exact")).toThrow("Missing checkbox");
+    await button(tree, "Save correction")();
+    expect(updateSelf).toHaveBeenCalledWith({ periodEventId: "event-open", startDate: "2026-10-20", expectedAuthorityVersion: 1 });
   });
 
   it("steps pain within the valid range", async () => {

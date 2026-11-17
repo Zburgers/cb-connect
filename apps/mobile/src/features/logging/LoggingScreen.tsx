@@ -55,6 +55,8 @@ export function LoggingScreen() {
   const timelineHistory = useQuery(loggingApi.history.getTimelineHistory, online && today && timeZone
     ? { startDate: dateDaysAgo(90, now, timeZone), endDate: today }
     : "skip");
+  const capabilities = useQuery(api.queries.capabilities.getCapabilities, online ? {} : "skip");
+  const factsEnabled = capabilities?.cycleFactsV1 === true;
   const startSelf = useMutation(loggingApi.periods.logPeriodStart);
   const endSelf = useMutation(loggingApi.periods.logPeriodEnd);
   const startAssist = useMutation(loggingApi.periods.assistLogPeriodStart);
@@ -81,7 +83,7 @@ export function LoggingScreen() {
   const [deleteConfirming, setDeleteConfirming] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
-  const periodWritesReady = dateContextReady && periodHistory !== undefined;
+  const periodWritesReady = dateContextReady && periodHistory !== undefined && capabilities !== undefined;
   const disabledPeriod = !periodWritesReady || busy;
   const selectedStartDate = startDate ?? (role === "partner" ? "" : today ?? "");
   const selectedPainDate = painDate ?? today ?? "";
@@ -129,16 +131,16 @@ export function LoggingScreen() {
     if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (!selectedStartDate.trim()) throw new Error("DATE_SELECTION_REQUIRED");
     if (openPeriod?._id) {
-      const args = { endDate: selectedStartDate, endCertainty: certainty, periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
+      const args = { endDate: selectedStartDate, ...(factsEnabled ? { endCertainty: certainty } : {}), periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
       await (role === "partner" ? endAssist(args) : endSelf(args));
       return;
     }
     const started = await (role === "partner"
-      ? startAssist({ startDate: selectedStartDate, startCertainty: certainty })
-      : startSelf({ startDate: selectedStartDate, startCertainty: certainty }));
+      ? startAssist({ startDate: selectedStartDate, ...(factsEnabled ? { startCertainty: certainty } : {}) })
+      : startSelf({ startDate: selectedStartDate, ...(factsEnabled ? { startCertainty: certainty } : {}) }));
     if (endDate) {
       try {
-        const args = { endDate, endCertainty: certainty, periodEventId: started.eventId, expectedAuthorityVersion: 1 };
+        const args = { endDate, ...(factsEnabled ? { endCertainty: certainty } : {}), periodEventId: started.eventId, expectedAuthorityVersion: 1 };
         await (role === "partner" ? endAssist(args) : endSelf(args));
       } catch {
         throw new Error("START_SAVED_END_FAILED");
@@ -165,10 +167,10 @@ export function LoggingScreen() {
       startDate: editStartDate,
       ...(editEndDate ? {
         endDate: editEndDate,
-        endCertainty: promoteEndCertainty ? "exact" as const : editEndCertainty,
-        ...(promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+        ...(factsEnabled ? { endCertainty: promoteEndCertainty ? "exact" as const : editEndCertainty } : {}),
+        ...(factsEnabled && promoteEndCertainty ? { promoteEndCertainty: true } : {}),
       } : {}),
-      ...(promoteStartCertainty ? { promoteStartCertainty: true } : {}),
+      ...(factsEnabled && promoteStartCertainty ? { promoteStartCertainty: true } : {}),
       expectedAuthorityVersion: editAuthorityVersion,
     };
     if (role === "partner") await updateAssist(args);
@@ -223,8 +225,8 @@ export function LoggingScreen() {
     <DateField label={openPeriod ? "Period end date" : "Period start date"} value={selectedStartDate} onChange={setStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={openPeriod?.startDate} />
     {role === "primary" && today && timeZone ? <View style={styles.row}><Action label="Today" disabled={disabledPeriod} onPress={() => setStartDate(today)} /><Action label="Yesterday" disabled={disabledPeriod} onPress={() => setStartDate(dateDaysAgo(1, now, timeZone))} /></View> : null}
     {!openPeriod ? <><Text style={{ color: palette.foreground }}>End date (optional)</Text><DateField label="Optional period end date" value={endDate} onChange={setEndDate} palette={palette} disabled={disabledPeriod} placeholder="Leave blank to keep it open" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={selectedStartDate || undefined} clearable /></> : null}
-    <View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
-    <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text>
+    {factsEnabled ? <><View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
+    <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text></> : <Text style={{ color: palette.muted }}>{capabilities === undefined ? "Checking date options…" : "Dates are saved without certainty labels for this account. You can review them in history."}</Text>}
     <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabledPeriod || !selectedStartDate.trim()} onPress={savePeriod} />
 
     {role === "primary" ? <>
@@ -274,7 +276,7 @@ export function LoggingScreen() {
           if (period) return correct(period);
         }} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
-        {entry.period.startCertainty !== "exact" ? <Confirmation
+        {factsEnabled && entry.period.startCertainty !== "exact" ? <Confirmation
           label="Confirm this start date is exact"
           checked={promoteStartCertainty}
           hint="Leave unchecked to preserve the existing uncertainty."
@@ -282,7 +284,7 @@ export function LoggingScreen() {
           palette={palette}
           onPress={() => setPromoteStartCertainty((checked) => !checked)}
         /> : null}
-        {editEndDate && entry.period.endCertainty !== "exact" ? <Confirmation
+        {factsEnabled && editEndDate && entry.period.endCertainty !== "exact" ? <Confirmation
           label="Confirm this end date is exact"
           checked={promoteEndCertainty}
           hint="Leave unchecked to save this end as approximate."
