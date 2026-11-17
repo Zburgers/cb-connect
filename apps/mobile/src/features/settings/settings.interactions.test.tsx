@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({
   hookIndex: 0,
   states: [] as unknown[],
+  renderedProfileId: "" as string,
   queryIndex: 0,
   mutationIndex: 0,
   profile: {
+    _id: "primary-one",
     role: "primary",
     timeZone: "Asia/Kolkata",
     preferredName: "Naki",
@@ -17,8 +19,11 @@ const runtime = vi.hoisted(() => ({
   preferences: [] as Array<{ purpose: string; inAppEnabled: boolean; localReminderTime?: string }>,
   saveCalls: [] as unknown[],
   saveFails: false,
+  profileSavePending: false,
+  resolveProfileSave: undefined as (() => void) | undefined,
   cycleSaveCalls: [] as unknown[],
   cycleSaveFails: false,
+  cycleSaveStale: false,
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -47,11 +52,16 @@ vi.mock("convex/react", () => ({
     const index = runtime.mutationIndex++;
     if (index === 2) return async (args: unknown) => {
       runtime.saveCalls.push(args);
+      if (runtime.profileSavePending) {
+        await new Promise<void>((resolve) => { runtime.resolveProfileSave = resolve; });
+      }
+      if (runtime.saveFails) throw new Error("profile save failed");
       runtime.profile = { ...runtime.profile, ...(args as object) };
       return null;
     };
     if (index === 3) return async (args: unknown) => {
       runtime.cycleSaveCalls.push(args);
+      if (runtime.cycleSaveStale) throw new Error("STALE_CYCLE_SETTINGS");
       if (runtime.cycleSaveFails) throw new Error("cycle save failed");
       if (runtime.cycleSettings) runtime.cycleSettings = { ...runtime.cycleSettings, ...(args as object) };
       return null;
@@ -88,6 +98,10 @@ import { formatReminderTime, parseReminderTime } from "./reminderTime";
 type Element = React.ReactElement<Record<string, unknown>>;
 
 function renderSettings(): Element[] {
+  if (runtime.renderedProfileId !== runtime.profile._id) {
+    runtime.states = [];
+    runtime.renderedProfileId = runtime.profile._id;
+  }
   runtime.hookIndex = 0;
   runtime.queryIndex = 0;
   runtime.mutationIndex = 0;
@@ -147,13 +161,17 @@ beforeEach(() => {
   runtime.states = [];
   runtime.queryIndex = 0;
   runtime.mutationIndex = 0;
-  runtime.profile = { role: "primary", timeZone: "Asia/Kolkata", preferredName: "Naki", gender: undefined, partnerType: undefined };
+  runtime.profile = { _id: "primary-one", role: "primary", timeZone: "Asia/Kolkata", preferredName: "Naki", gender: undefined, partnerType: undefined };
+  runtime.renderedProfileId = "";
   runtime.cycleSettings = { cycleLength: 28, periodLength: 5, predictionPaused: false };
   runtime.preferences = [{ purpose: "period_window_approaching", inAppEnabled: false }];
   runtime.saveCalls = [];
   runtime.saveFails = false;
+  runtime.profileSavePending = false;
+  runtime.resolveProfileSave = undefined;
   runtime.cycleSaveCalls = [];
   runtime.cycleSaveFails = false;
+  runtime.cycleSaveStale = false;
 });
 
 describe("native reminder-time settings interactions", () => {
@@ -221,7 +239,11 @@ describe("native reminder-time settings interactions", () => {
     expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Period length: 4 days")).toBe(true);
     (pressable(elements, "Save cycle settings").props.onPress as () => void)();
     await flushSave();
-    expect(runtime.cycleSaveCalls).toEqual([{ cycleLength: 29, periodLength: 4 }]);
+    expect(runtime.cycleSaveCalls).toEqual([{
+      cycleLength: 29,
+      periodLength: 4,
+      expectedCurrent: { cycleLength: 28, periodLength: 5 },
+    }]);
     elements = renderSettings();
     expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Cycle length: 29 days")).toBe(true);
   });
@@ -291,6 +313,19 @@ describe("native reminder-time settings interactions", () => {
     expect(pressable(elements, "Save cycle settings").props.disabled).toBe(true);
   });
 
+  it("recovers when the server rejects a cycle save that raced with another client", async () => {
+    runtime.cycleSaveStale = true;
+    let elements = renderSettings();
+    (pressable(elements, "Increase cycle length").props.onPress as () => void)();
+    (pressable(renderSettings(), "Save cycle settings").props.onPress as () => void)();
+    await flushSave();
+
+    elements = renderSettings();
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "These cycle settings changed elsewhere. Reload before saving.")).toBe(true);
+    expect(pressable(elements, "Save cycle settings").props.disabled).toBe(true);
+    expect(pressable(elements, "Reload cycle settings").props.disabled).toBe(false);
+  });
+
   it("offers reload recovery when profile preferences changed on another client", () => {
     let elements = renderSettings();
     (pressable(elements, "Relationship term: Girlfriend").props.onPress as () => void)();
@@ -303,5 +338,48 @@ describe("native reminder-time settings interactions", () => {
     elements = renderSettings();
     expect(pressable(elements, "Save profile preferences").props.disabled).toBe(true);
     expect(pressable(elements, "Relationship term: Partner").props.accessibilityState).toMatchObject({ checked: true });
+  });
+
+  it("isolates profile and cycle drafts when the authenticated profile changes", () => {
+    let elements = renderSettings();
+    const nameInput = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    (nameInput?.props.onChangeText as (value: string) => void)("First account draft");
+    (pressable(renderSettings(), "Increase cycle length").props.onPress as () => void)();
+
+    runtime.profile = {
+      ...runtime.profile,
+      _id: "primary-two",
+      preferredName: "Second account",
+      gender: "female",
+      partnerType: "spouse",
+    };
+    runtime.cycleSettings = { cycleLength: 28, periodLength: 5, predictionPaused: false };
+    elements = renderSettings();
+    elements = renderSettings();
+
+    expect(elements.some((element) => element.type === "TextInput" && element.props.value === "Second account")).toBe(true);
+    expect(pressable(elements, "Save profile preferences").props.disabled).toBe(true);
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Cycle length: 28 days")).toBe(true);
+    expect(pressable(elements, "Save cycle settings").props.disabled).toBe(true);
+  });
+
+  it("locks profile edits during a pending failed save and retains the draft", async () => {
+    runtime.profileSavePending = true;
+    runtime.saveFails = true;
+    let elements = renderSettings();
+    let input = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    (input?.props.onChangeText as (value: string) => void)("Draft to keep");
+    elements = renderSettings();
+    (pressable(elements, "Save profile preferences").props.onPress as () => void)();
+    elements = renderSettings();
+    input = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    expect(input?.props.editable).toBe(false);
+
+    runtime.resolveProfileSave?.();
+    await flushSave();
+    elements = renderSettings();
+    input = elements.find((element) => element.type === "TextInput" && element.props.accessibilityLabel === "Preferred name");
+    expect(input?.props.value).toBe("Draft to keep");
+    expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "Unable to update settings. Try again.")).toBe(true);
   });
 });

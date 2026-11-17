@@ -278,6 +278,7 @@ export declare const api: {
         cycleLength?: number;
         periodLength?: number;
         predictionPaused?: boolean;
+        expectedCurrent?: { cycleLength: number; periodLength: number };
       }, null>;
       readonly logPeriodStart: FunctionReference<"mutation", "public", PeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly assistLogPeriodStart: FunctionReference<"mutation", "public", AssistedPeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;

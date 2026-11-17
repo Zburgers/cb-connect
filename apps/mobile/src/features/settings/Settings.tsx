@@ -52,9 +52,33 @@ function deviceTimeZone(): string | null {
 
 export function Settings() {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
+  const profile = useQuery(api.queries.users.getMe, {});
+
+  if (profile === undefined) {
+    return <View style={[styles.loading, { backgroundColor: palette.background }]}><ActivityIndicator accessibilityLabel="Loading settings" /></View>;
+  }
+  if (!profile) {
+    return <View accessibilityRole="alert" style={[styles.loading, { backgroundColor: palette.background }]}><Text style={{ color: palette.foreground }}>Settings are unavailable for this account.</Text></View>;
+  }
+
+  return <ProfileSettings key={profile._id} profile={profile} />;
+}
+
+function ProfileSettings({
+  profile,
+}: {
+  profile: {
+    _id: string;
+    role?: "primary" | "partner";
+    preferredName?: string;
+    gender?: Gender;
+    partnerType?: PartnerType;
+    timeZone?: string;
+  };
+}) {
+  const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
   const { mode: themeMode, ready: themeReady, setMode: setThemeMode } = useThemePreference();
   const { signOut } = useAuth();
-  const profile = useQuery(api.queries.users.getMe, {});
   const isPrimary = profile?.role === "primary";
   const couple = useQuery(api.queries.couples.getCoupleStatus, isPrimary ? {} : "skip");
   const preferences = useQuery(api.queries.notifications.getMyPreferences, {});
@@ -140,8 +164,13 @@ export function Settings() {
       await action();
       setMessage(successMessage ?? "Settings updated.");
       return true;
-    } catch {
-      setError("Unable to update settings. Try again.");
+    } catch (error) {
+      if (error instanceof Error && error.message === "STALE_CYCLE_SETTINGS") {
+        setCycleConflict(true);
+        setError("These cycle settings changed elsewhere. Reload before saving.");
+      } else {
+        setError("Unable to update settings. Try again.");
+      }
       return false;
     } finally {
       setBusy(false);
@@ -165,7 +194,7 @@ export function Settings() {
       setError("These cycle settings changed elsewhere. Reload before saving.");
       return Promise.resolve(false);
     }
-    return run(() => updateCycleSettings(cycleDraft), "Cycle settings updated.").then((saved) => {
+    return run(() => updateCycleSettings({ ...cycleDraft, expectedCurrent: cycleBaseline }), "Cycle settings updated.").then((saved) => {
       if (saved) {
         setCycleBaseline(cycleDraft);
         setCycleDraftDirty(false);
@@ -234,11 +263,8 @@ export function Settings() {
     setMessage(null);
   };
 
-  if (profile === undefined || preferences === undefined || (isPrimary && couple === undefined)) {
+  if (preferences === undefined || (isPrimary && couple === undefined)) {
     return <View style={[styles.loading, { backgroundColor: palette.background }]}><ActivityIndicator accessibilityLabel="Loading settings" /></View>;
-  }
-  if (!profile) {
-    return <View accessibilityRole="alert" style={[styles.loading, { backgroundColor: palette.background }]}><Text style={{ color: palette.foreground }}>Settings are unavailable for this account.</Text></View>;
   }
 
   const visiblePurposes = getVisibleNotificationPurposes(profile.role === "primary" ? "primary" : "partner");
@@ -287,6 +313,7 @@ export function Settings() {
         <TextInput
           accessibilityLabel="Preferred name"
           maxLength={40}
+          editable={!busy}
           onChangeText={(value) => {
             setNameDraft(value);
             setProfileDraftDirty(true);
