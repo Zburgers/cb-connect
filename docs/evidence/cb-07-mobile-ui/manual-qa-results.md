@@ -95,3 +95,18 @@ independent pain readiness, conditional certainty writes, explicit dock rows,
 profile validation, signing guard or backup/permission configuration. Unusual
 horizontal safe-area layouts remain unqualified. Source review does not provide
 native runtime or physical-device evidence.
+
+
+## Resume checkpoint — 2026-11-18
+
+The owner restarted the same Pixel 7 without wiping its data. Fresh Device
+inventory and ADB inventory independently confirmed `emulator-5554` online,
+Android 17, emulator rather than physical hardware. The existing Luna operator
+was resumed; no replacement agent was created. Both of its `device_open`
+attempts returned `user cancelled MCP tool call`, before a pinned UI session
+could be obtained. It stopped without UI interaction or APK installation.
+The signed candidate hash still matches the recorded `312f48c1…` artifact.
+
+Current continuation blocker is device access, not emulator startup. The owner
+was asked to allow the device-access request or report that no prompt appeared.
+No new native case passed, no app/AVD data was reset and no APK was emailed.

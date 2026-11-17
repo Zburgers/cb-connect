@@ -1,6 +1,6 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL — device continuation blocked; no production APK qualified or delivered.**
+**Current verdict: PARTIAL — Pixel 7 is online again; device-access requests were cancelled, preventing QA continuation. No production APK qualified or delivered.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
