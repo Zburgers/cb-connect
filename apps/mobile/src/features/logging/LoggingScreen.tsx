@@ -180,6 +180,7 @@ export function LoggingScreen() {
 
   const removePeriod = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
     if (!online) throw new Error("offline");
+    if (!factsEnabled) throw new Error("PERIOD_DELETION_UNAVAILABLE");
     if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (role !== "primary" || !period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
     await deletePeriod({ periodEventId: period._id, expectedAuthorityVersion: period.authorityVersion });
@@ -255,6 +256,7 @@ export function LoggingScreen() {
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>{role === "partner" ? "Shared history" : "Cycle history"}</Text>
       <Action label="Export CSV" disabled={!today || periodHistory === undefined || timelineHistory === undefined || exporting} onPress={exportHistory} />
     </View>
+    {role === "primary" && capabilities?.cycleFactsV1 === false ? <Text style={{ color: palette.muted }}>Deletion is unavailable for this account. You can still correct period dates.</Text> : null}
     {timelineHistory === undefined ? <Text style={{ color: palette.muted }}>Loading history…</Text> : null}
     {timelineHistory?.length === 0 ? <Text style={{ color: palette.muted }}>No shared history recorded in this range.</Text> : null}
     {timelineHistory?.map((entry, index) => <View key={`${entry.type}-${entry.date}-${entry.period?.id ?? index}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -304,12 +306,12 @@ export function LoggingScreen() {
         }} />
         {role === "primary" ? deleteConfirming === entry.period.id ? <>
           <Text style={{ color: palette.noticeForeground }} accessibilityRole="alert">Delete this period entry? This changes cycle history.</Text>
-          <Action label="Confirm delete period" disabled={disabledPeriod} onPress={() => {
+          <Action label="Confirm delete period" disabled={disabledPeriod || !factsEnabled} onPress={() => {
             const period = periodHistory?.find((item) => item._id === entry.period?.id);
             if (period) return removePeriod(period);
           }} />
           <Action label="Cancel delete period" disabled={busy} onPress={() => setDeleteConfirming(null)} />
-        </> : <Action label="Delete period" disabled={disabledPeriod} onPress={() => setDeleteConfirming(entry.period!.id!)} /> : null}
+        </> : <Action label="Delete period" disabled={disabledPeriod || !factsEnabled} onPress={() => setDeleteConfirming(entry.period!.id!)} /> : null}
       </> : null}
     </View>)}
   </ScrollView>;

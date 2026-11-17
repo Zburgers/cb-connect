@@ -335,6 +335,28 @@ describe("LoggingScreen actions", () => {
     expect(deletePeriod).toHaveBeenCalledWith({ periodEventId: "event-open", expectedAuthorityVersion: 1 });
   });
 
+  it("disables legacy deletion while retaining date correction", async () => {
+    runtime.periods = openPeriod;
+    runtime.capabilities = { cycleFactsV1: false };
+    const tree = render();
+    expect(buttonIsDisabled(tree, "Delete period")).toBe(true);
+    expect(buttonIsDisabled(tree, "Correct period")).toBe(false);
+    expect(textContent(tree)).toContain("Deletion is unavailable for this account");
+    expect(deletePeriod).not.toHaveBeenCalled();
+  });
+
+  it("blocks a pending deletion when cycle-facts capability turns off", async () => {
+    runtime.periods = openPeriod;
+    await button(render(), "Delete period")();
+    runtime.capabilities = { cycleFactsV1: false };
+    const tree = render();
+    expect(buttonIsDisabled(tree, "Confirm delete period")).toBe(true);
+    // Exercise the handler directly as well as its disabled UI affordance.
+    await button(tree, "Confirm delete period")();
+    expect(deletePeriod).not.toHaveBeenCalled();
+    expect(textContent(render())).not.toContain("Period entry removed.");
+  });
+
   it("renders partner-shared pain score and tags without exposing a private note", () => {
     runtime.timeline = [{
       date: "2026-10-19", phase: "unknown", type: "pain",
