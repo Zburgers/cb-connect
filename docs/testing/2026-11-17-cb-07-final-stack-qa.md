@@ -1,6 +1,6 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. Pixel 7 is booted. The operator could not obtain device access for the remaining checks. Production delivery is blocked by the deployed API and Clerk configuration.**
+**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. Direct Pixel 7 access succeeded and additional Settings and sharing checks ran. Production delivery is blocked by the deployed API and Clerk configuration.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
@@ -157,8 +157,8 @@ consolidated run. The manual log records the APK used for each result.
 
 | Status | Count | Checklist IDs |
 |---|---:|---|
-| Verified | 9/38 | ENV-01, AUTH-01–03, LOG-01, PAIR-02, INBOX-01, REM-01, WEB-01 |
-| Synthetic coverage still open | 24/38 | ONB-01–02, LOG-02–03, PAIR-01/03, CHAT-01–03, INBOX-02, SET-01–05, UI-01–04, A11Y-01–02, PRIV-01–02, APK-03 |
+| Verified | 10/38 | ENV-01, AUTH-01–03, LOG-01, PAIR-02–03, INBOX-01, REM-01, WEB-01 |
+| Synthetic coverage still open | 23/38 | ONB-01–02, LOG-02–03, PAIR-01, CHAT-01–03, INBOX-02, SET-01–05, UI-01–04, A11Y-01–02, PRIV-01–02, APK-03 |
 | Production dependent | 5/38 | PROD-01–02, APK-01–02, DEL-01 |
 
 The signed synthetic build has passed install, cold launch, session restoration
@@ -620,3 +620,12 @@ requested new Luna operators. Device operation and independent evidence review
 are assigned separately, with a single operator authorized to drive Pixel 7.
 
 The continuation operator could not boot Pixel 7. The device tool reported that the emulator process exited with code 1 before coming online, and follow-up inventory remained offline. Remaining Settings enum, pause, sharing, keyboard and accessibility checks are blocked pending recovery of the same AVD.
+
+The root operator subsequently opened the available Pixel 7 directly. Native
+profile selections persisted for each role and were restored. Native primary
+pause and pain sharing saved and were restored. Partner API denied private
+notes and raw identity fields while sharing was enabled and returned no pain
+entries after it was switched off. Partner Home confirmed the private state.
+This closes PAIR-03 in combination with the prior live revoke and relink
+evidence. The manual log records the remaining Settings, keyboard and offline
+limits and the Save tap intercepted near the dock.

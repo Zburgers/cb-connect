@@ -174,3 +174,22 @@ open. Its screenshot showed the Android launcher, not CB Connect. Two
 launching the app, changing fixtures, or writing app data. Primary Settings
 enum, pause/sharing, partner role-gate, keyboard and accessibility checks remain
 NOT RUN in this pass; the previously reported baseline was not reread.
+
+## Direct Pixel 7 continuation
+
+The root operator obtained its own T3 device session on the same booted
+Pixel 7. The installed signed synthetic APK was `384762e`. No rebuild,
+reinstall, or fixture provisioning was needed.
+
+| Case | Result | Evidence |
+|---|---|---|
+| SET-01 profile choices and partner roles | PASS for these subchecks | Saved Other and Spouse separately for each account, using native Settings. API readback showed the target account's choices changed and the other account's choices stayed at baseline. Restored Prefer not to say and Partner on both accounts and confirmed by API. Partner Settings showed no primary prediction or sharing controls. Partner Log showed Shared history, disabled period entry and the primary-calendar instruction. Invalid input coverage remains open. |
+| SET-03 private pause and context | PASS for pause, context unavailable | Enabled Pause predictions on primary. API returned primary paused and partner unpaused. Restored primary to unpaused. The app reported private context unavailable while disabled or history is incomplete. No segment was created. |
+| PAIR-03 reversible sharing and partner projection | PASS | Enabled Share pain details on primary. Primary retained two pain entries with notes. Partner API exposed two entries with only projected fields, no private notes or raw identity fields. Restored sharing off. Partner readback returned zero pain entries, and native partner Home showed Pain signal is private. This supplements the prior live revoke and same-account relink pass. |
+| UI-03 keyboard | PARTIAL | Preferred name and Chat composer focused through native UI, but the device helper reported Keyboard visible: no for each field. Android Physical keyboards exposed no on-screen keyboard toggle. No keyboard settings changed. |
+| APK-03 offline cold launch and recovery | PARTIAL | Airplane mode followed by cold launch showed Loading, with no protected screen exposed. Airplane mode was restored off and Wi-Fi on. Partner Home recovered and showed the private-pain state. No offline write was attempted. |
+| UI-03 Save near dock | PARTIAL | During primary profile restoration, one Save tap near the bottom selected Log instead. API confirmed the edit had not saved. Scrolling Save above the dock then tapping saved successfully. This records the overlap observation without claiming all form actions are affected. |
+
+Final readback confirmed 28/5, unpaused, blank names, default profile choices,
+pain sharing off, period assistance off, phase sharing on and the same linked
+pair. The emulator ended online on partner Home.
