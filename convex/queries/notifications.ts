@@ -208,6 +208,15 @@ export const getMyPreferences = query({
   },
 });
 
+export const getMyInboxAvailability = query({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    await getCurrentUser(ctx);
+    return process.env.CB_CONNECT_NOTIFICATION_INBOX_V1 === "true";
+  },
+});
+
 export const getMyInbox = query({
   args: { paginationOpts: inboxPaginationOptsValidator },
   returns: paginationResultValidator(inboxItemResultValidator),

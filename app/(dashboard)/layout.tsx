@@ -132,10 +132,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </main>
 
-      {coupleStatus?.isLinked && (
+      {coupleStatus?.isLinked && coupleStatus.relationshipGeneration && (
         <PartnerChat
           partnerName={coupleStatus.partner?.displayName ?? coupleStatus.partner?.name}
           partnerImageUrl={coupleStatus.partner?.imageUrl}
+          relationshipGeneration={coupleStatus.relationshipGeneration}
           showLauncher
         />
       )}
