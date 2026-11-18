@@ -1,6 +1,6 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. Direct Pixel 7 access succeeded and additional Settings and sharing checks ran. Production delivery is blocked by the deployed API and Clerk configuration.**
+**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. Direct Pixel 7 testing verified Settings, sharing, in-app notification arrival and chat. Production delivery is blocked by the deployed API and Clerk configuration.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
@@ -157,8 +157,9 @@ consolidated run. The manual log records the APK used for each result.
 
 | Status | Count | Checklist IDs |
 |---|---:|---|
-| Verified | 10/38 | ENV-01, AUTH-01–03, LOG-01, PAIR-02–03, INBOX-01, REM-01, WEB-01 |
-| Synthetic coverage still open | 23/38 | ONB-01–02, LOG-02–03, PAIR-01, CHAT-01–03, INBOX-02, SET-01–05, UI-01–04, A11Y-01–02, PRIV-01–02, APK-03 |
+| Verified | 12/38 | ENV-01, AUTH-01–03, LOG-01, PAIR-02–03, CHAT-01, INBOX-01, REM-01, WEB-01, APK-03 |
+| Synthetic coverage still open | 20/38 | ONB-01–02, LOG-02–03, PAIR-01, CHAT-02–03, INBOX-02, SET-01–05, UI-01–02/04, A11Y-01–02, PRIV-01–02 |
+| Deferred by owner | 1/38 | UI-03 on-screen keyboard matrix |
 | Production dependent | 5/38 | PROD-01–02, APK-01–02, DEL-01 |
 
 The signed synthetic build has passed install, cold launch, session restoration
@@ -629,3 +630,11 @@ entries after it was switched off. Partner Home confirmed the private state.
 This closes PAIR-03 in combination with the prior live revoke and relink
 evidence. The manual log records the remaining Settings, keyboard and offline
 limits and the Save tap intercepted near the dock.
+
+The final signed synthetic APK received a fresh in-app Message activity
+notification with synthetic delivery enabled and partner consent on. Mark as
+read, opening the matching Chat and dismissing passed. Default-off behavior,
+restored preferences and an empty test conversation were verified afterward.
+Android system push is unsupported in this build. The owner deferred the
+on-screen keyboard matrix. The manual evidence records the separate dock hit
+observation and outstanding full native inbox pagination.

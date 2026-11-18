@@ -193,3 +193,20 @@ reinstall, or fixture provisioning was needed.
 Final readback confirmed 28/5, unpaused, blank names, default profile choices,
 pain sharing off, period assistance off, phase sharing on and the same linked
 pair. The emulator ended online on partner Home.
+
+## Final signed APK notification and chat smoke
+
+| Case | Result | Evidence |
+|---|---|---|
+| INBOX-01 default configuration | PASS | On final signed `384762e`, with the original synthetic switches off, native Inbox displayed that in-app access was unavailable. The same unavailable state returned after restoration. |
+| INBOX-02 new message arrival and actions | PASS for delivery and actions | Temporarily enabled the synthetic inbox/outbox/projection/delivery switches and partner Message activity consent. Both inboxes started empty. With native partner Inbox open, sent one labelled message via the approved synthetic backend. The local web server was unavailable for this attempt. An unread Message activity item appeared without refresh. Mark as read changed it to READ. Open messages opened the matching thread. Dismiss returned the inbox to its empty state. Existing three-page API evidence remains separate from full native pagination. |
+| Android system push | NOT SUPPORTED | The final APK declares neither Android POST_NOTIFICATIONS nor a Cloud Messaging receiver permission. The mobile dependency manifest has no notification client. Native Inbox explicitly says push is unavailable. This smoke exercised in-app delivery. |
+| CHAT-01 quick compose and emoji | PASS | On the partner device, selected Thinking of you, inserted a heart via the native emoji picker, and sent. The message displayed Sent, the composer cleared, and the primary API read back the exact emoji message. The sender API also reported a read timestamp on the original incoming message. |
+| CHAT-03 / APK-03 active offline guard and reconnect | PASS for offline guard and recovery | With a sendable draft open, enabled airplane mode and turned off Wi-Fi. Protected features disappeared and the offline guard replaced Send. Restored airplane off and Wi-Fi on. App reached partner Home after relaunch, with empty Chat and disabled Send. No message was emitted during the offline interval. A mid-flight mutation failure remains a separate subcase. |
+| UI-03 keyboard | DEFERRED BY OWNER | On-screen keyboard testing removed from this pass. The prior Save-tap observation remains recorded separately. |
+
+The synthetic smoke began with an empty conversation. Cleanup required exactly
+the two smoke messages and the same relationship generation, then verified the
+conversation was empty. The five recorded flags and partner Message activity
+consent were restored to false. Final API readback confirmed both chats empty
+and both Message activity preferences off. No production configuration changed.
