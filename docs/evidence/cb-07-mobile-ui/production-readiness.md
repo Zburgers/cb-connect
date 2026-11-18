@@ -63,3 +63,30 @@ three mobile entries; conditional cycle and generation-bound clear arguments
 remain absent. Public Clerk native API remains false. No production setting,
 data, account, function or registration was changed. The new synthetic APK
 cannot satisfy production interoperability against that deployed contract.
+
+## Production verification and delivery
+
+On 2026-11-18, production Clerk Native API was enabled and the public Android
+asset links were verified for package `tech.builtbynaki.cbconnect` and the owner
+signing certificate. Passkey authentication remains NOT RUN.
+
+Backend PR #87 merged at `6fe588a88f764a479b2ff5780b8ac571ad722ee5`.
+CI run 44330311673 passed deterministic qualification, authenticated release
+smoke and production-configured immutable release. Deployment run 44334882334
+succeeded, and production readiness confirmed the same frontend commit and
+`prod:festive-malamute-715` backend. Read-only function metadata matched all
+50 mobile inventory names, kinds and public visibility, including the previously
+missing functions and conditional-write arguments.
+
+The owner-signed production APK was built from mobile source
+`8fcded70f49b2e308abbb161b0a7270088ff2386`, with SHA-256
+`d9f5a87baf908e38fe1b9de7bab6d901adb3c0e91e38dd53c301937070cc3920`.
+Static inspection verified its package, version 0.1.0 and registered signer.
+The APK installed and launched on Pixel 7. The owner signed in through production
+Clerk, returned to the app, and confirmed that Home's cycle information matches
+the production website. Other production write and cross-client journeys remain
+unverified.
+
+The APK was shared privately with the requested recipient. Drive readback
+confirmed reader access, and an email containing the download link was sent.
+Android system push remains unsupported and the in-app inbox is default-off.
