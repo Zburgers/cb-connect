@@ -1,10 +1,28 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL — signed standalone synthetic APK installed and cold launch passed; consolidated manual QA resumed. No production APK qualified or delivered.**
+**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. The emulator is offline and the remaining device checks are blocked. Production delivery is blocked by the deployed API and Clerk configuration.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
 then privately deliver it to the named recipient. Issue: NAK-149; PR: #86.
+
+The final signed synthetic APK installed on the Pixel 7 and restored the primary
+session on cold launch without Metro. Native correction and Approximate-date
+persistence agreed with authenticated web and API readback. The final build
+disables legacy period deletion and still permits correction. Android date and
+time windows blocked capture while retaining accessible controls.
+
+The synthetic fixture was restored to its original five flag values, cycle
+settings 28/5, predictions unpaused, and a Nov 18 open period. The supplied
+test pair and primary private notes were preserved. Remaining acceptance and
+each artifact identity are tracked below and in the
+[manual results](../evidence/cb-07-mobile-ui/manual-qa-results.md).
+
+Production delivery is **BLOCKED**. The live Convex deployment lacks three
+mobile entry points and two required mutation arguments. Production Clerk
+reports Native API disabled. The exact dependencies and observed production
+identity are recorded in the
+[production preflight](../evidence/cb-07-mobile-ui/production-readiness.md).
 
 ## Run identity and responsibilities
 
@@ -13,17 +31,33 @@ then privately deliver it to the named recipient. Issue: NAK-149; PR: #86.
 | Checkout | `worktrees/cb connect/naki-8d3ef4e1-4fae137bcb8c4d75` |
 | Branch | `feat/NAK-149-mobile-ui-redesign` |
 | Starting source | `026249a773a9599a322e2f0d082a4f0b4c6ffa07` |
-| Integrated source | `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33` |
-| Current CB-06 base | `a12cb3a625d4b7341e86370c57ee1c6d69d5663b` |
+| Current app source | `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9` |
+| Current CB-06 base | `7b07bf2f6dc41c9e845c76356789c5cbf20631c8` |
 | Accepted CB-06 base | `8371af42b50e0b046bbdd148844cc9891c317ae4` |
 | Device | local `emulator-5554`, Pixel 7, Android 17, emulator (not physical) |
-| Manual operator | One resumed GPT-6 Luna agent; reuse this agent for retests |
+| Manual operator | GPT-6 Luna device operator; one operator controls the emulator at a time |
 | Supervisor | Root agent: fixes, source checks, build/signing, target verification, delivery |
 | Initial debug artifact | x86_64 debug; SHA-256 `8c7a5773df3953a3b8160bcd8bfa08a4daa7a711885dd63efc546623154f9499` |
 | Initial runtime | Approved synthetic Clerk and Convex; persistent preview primary/partner pair |
-| Internal standalone artifact | Signed `1662a3e` installed; static checks and cold launch without Metro PASS; remaining runtime cases in progress |
+| Internal standalone artifact | Signed `384762e` installed by data-preserving upgrade; exact artifact below; targeted retests passed, remaining manual matrix partial |
 | Final production artifact | NOT BUILT / NOT QUALIFIED — production runtime prerequisites below remain unresolved |
 | Production interoperability | NOT RUN — separate from synthetic mutation QA |
+
+### Remediated stack app snapshots
+
+These are the app snapshots qualified before evidence-only closeout commits.
+The final APK embeds the CB-07 source below; later documentation commits do not
+change that APK or inherit unrun native evidence.
+
+| Lane | PR | App snapshot |
+|---|---|---|
+| CB-01 | #79 | `1c48a371931c57b5c2aeb2e575c46f411181eb94` |
+| CB-02 | #81 | `66ca3239286c8e73cf725ebb02d6e3b07722ae8b` |
+| CB-03 | #82 | `8337321635621a57fadeec305b44db6f11a4a559` |
+| CB-04 | #83 | `2e2f00d9cab8850f85bbb63d78e1e4db2ef31174` |
+| CB-05 | #84 | `69f4cc04b79f1320031f52bcfe4076be8a119a40` |
+| CB-06 | #85 | `7b07bf2f6dc41c9e845c76356789c5cbf20631c8` |
+| CB-07 | #86 | `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9` |
 
 Record every source/build/runtime change in the run log. A later documentation
 commit does not alter app source; a changed app source invalidates affected
@@ -86,7 +120,7 @@ actions apply only to dedicated synthetic records created during this run.
 | LOG-02 | Correct history, end entry; inspect overlap/invalid ranges; cancel then confirm deletion of run-created record | Bounds, confirmation, permissions and visible history remain accurate | NOT RUN |
 | LOG-03 | Preview/export CSV; background/sign out after export | Correct synthetic data and sharing affordance; temporary export cleanup; no other account's file | NOT RUN |
 | PAIR-01 | Inspect/copy/share pairing code; test invalid/expired inputs and valid pair only if fixture supports reversible pairing | Clear validation; no unauthorized relationship; clipboard cleanup | NOT RUN |
-| PAIR-02 | Edit nickname and partner date; cancel; test conflict/explicit choice | Cancel preserves state; authoritative primary calendar or explicit date choice; role permissions | NOT RUN |
+| PAIR-02 | Edit/save/clear permitted nickname and relationship date; cancel native picker; inspect server updates | Cancel preserves state; viewer-private nickname and shared relationship date follow server truth; role permissions | NOT RUN |
 | PAIR-03 | Toggle synthetic sharing, inspect partner, revoke and restore authorized sharing | Live revocation; no stale sensitive data; private data remains private | NOT RUN |
 | CHAT-01 | Both accounts: send run-labelled text/quick compose/emoji, add/remove reaction; read on web | Correct sender and relationship, realtime sync; no false offline send | NOT RUN |
 | CHAT-02 | Scroll history/load older pages; change focus and inspect unread/read receipt | Stable order/no missing or duplicated pages; focused receipts; generation fencing | NOT RUN |
@@ -174,7 +208,7 @@ off-host backup is NOT VERIFIED. This candidate predates the live QA fixes and
 is not a delivery artifact. No email or Drive upload has been performed.
 
 
-### Current internal candidate — build checkpoint before owner restart
+### Historical internal candidate — build checkpoint before owner restart
 
 `cb-connect-synthetic-1662a3e8e405.apk`, source
 `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`; SHA-256
@@ -410,3 +444,163 @@ owner certificate, embedded Hermes, synthetic key, both ABIs, non-debuggable /
 backup-disabled manifest and source-map/password/blocked-permission exclusions
 pass. It does NOT contain the later native modal privacy fix. It is internal
 and has not been uploaded or emailed.
+
+
+### Latest integrated source and review remediation — 2026-11-18
+
+Current app source `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9`, CB-06 base
+`7b07bf2f6dc41c9e845c76356789c5cbf20631c8`. A fresh CB-02 review correctly
+identified that legacy Delete invoked irreversible backend deletion while
+cycle-facts was disabled. Owning CB-02 `66ca323` disables Delete/Confirm and
+independently rejects the handler under that capability. An already-open
+confirmation cannot submit after capability loss; date corrections remain
+available. No backend change. Two interaction regressions pass. CB-03–CB-06
+lane patches remain identical by range-diff after restacking.
+
+Integrated validation: **35 files / 300 mobile tests PASS**, native TypeScript,
+strict public contract parity and root TypeScript PASS. Updated stack refs were
+pushed atomically with exact leases and linked. Exact-head CI must be checked
+separately. Production release jobs remain outside this synthetic qualification.
+
+Signed `c0dc24d` build completed in 16m48s (1016s including packaging). File:
+`build/mobile/synthetic/c0dc24d99059/cb-connect-synthetic-c0dc24d99059.apk`;
+SHA-256 `918f1d368d105ab6fcd820af66ceb22f128353a67d424fbd1c873e8e0979020c`;
+69,956,981 bytes. Owner certificate, embedded Hermes, both ABIs, synthetic public
+key / production-key absence, non-debuggable / backup-disabled manifest and
+blocked-permission/source-map/signing-password exclusions pass. ADB `install -r`
+succeeded on the same Pixel 7 with no app-data or AVD wipe; no Metro reverse
+mapping is present. Luna's upgrade/modal/correction results retain this artifact
+identity. Its successor `384762e` is building and requires targeted legacy-delete
+and final-upgrade acceptance before it can replace this candidate.
+
+This is still synthetic internal qualification. No production APK, upload,
+email, merge or production deployment has occurred.
+
+
+Supervisor verified installed c0dc24d base-APK bytes match its recorded hash.
+Crash-buffer review found an earlier app-process Fabric `addViewAt`
+`IndexOutOfBoundsException` at 04:50, before the current APK's 04:59 install;
+it is a historical intermediate-build incident with trigger unverified. No
+current-install crash appears in that inspected buffer. Do not erase the old
+incident or infer that the current app is crash-free from the bounded check.
+The new time-picker capture is fully black except system chrome/shield, while
+the operator can read/interact with its controls through accessibility. Cancel
+left reminder unset with Save disabled. Date-picker acceptance remains separate.
+
+
+Current-head CI refresh: PR81–86 all match the pushed remediated heads and have
+successful deterministic qualification and mobile probe. PR82–86 also have
+older duplicate cancelled deterministic runs, superseded by the successful
+runs. Skipped authenticated-release/production-artifact jobs remain skipped,
+not production acceptance. PR67 was rechecked OPEN/DRAFT.
+
+
+Primary correction-save acceptance on signed `c0dc24d`: native changed only the
+run-created open period from Nov18 to Nov17 and saved. Supplemental API readback
+for both linked accounts returned Nov17/open/legacy_unknown; the separate actual
+authenticated primary web Log displayed “Period in progress since Nov17,2026”
+and an active Nov17 timeline entry. Native date-picker capture is fully black
+except system bars/shield while selection/bounds remain accessible. This proves
+the date-selection/save and modal-protection subcases; it does not qualify the
+later legacy-delete guard or composited glass. The operator is restoring Nov18.
+
+
+Correction restoration: Luna used the same native correction control to return
+the run-created open period to Nov18, without deletion. The mounted actual
+primary web Log independently updated to “Period in progress since Nov18,2026”
+and no longer showed the previous Nov17 progress status. No historical Fabric
+crash trigger could be tied to a visible operator action; the earlier bounded
+crash-buffer finding remains an unresolved historical incident, not a reproduced
+current-build defect.
+
+
+### Final synthetic candidate — 384762e
+
+Signed build PASS: 15m48s Gradle build, 955s including packaging. File
+`build/mobile/synthetic/384762ecf8d2/cb-connect-synthetic-384762ecf8d2.apk`,
+source `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9`, 69,957,209 bytes;
+SHA-256 `6f9f2505b5c18f5693b28873c55ea130e442029151f2e6ba890f95afb1feb765`.
+Android beta app/version `tech.builtbynaki.cbconnect.beta` / `0.0.1` / code1;
+arm64-v8a + x86_64; owner certificate unchanged. All static inspection assertions
+pass: manifest hash, owner cert, non-debuggable, backup disabled, embedded
+Hermes, exact synthetic public key, production-key absence, no source maps or
+keystore, no signing passwords in JS and blocked storage/overlay permissions
+absent. This is an internal synthetic APK; it is not a qualified production
+release and has not been uploaded or emailed. Install/targeted acceptance follows
+only after the operator reaches a clean form state.
+
+
+Final384 data-preserving `adb install -r` completed successfully after the
+operator confirmed clean primary Settings/28/5 with Save disabled. No AVD data,
+app data or account was cleared. Prior c0dc bounds check reached cycle minimum21
+and restored28; maximum40 and period bounds remain NOT RUN for that attempt.
+Pause was not changed. Final upgrade/session and capability-guard results are
+recorded separately by the same Luna operator.
+
+
+Final384 runtime retests: primary session restored on cold relaunch; legacy
+history showed enabled Correct, disabled Delete and the deletion-unavailable
+notice. Installed bytes independently match the final SHA and reverse-port
+mapping is empty. Root then enabled ONLY test `CB_CONNECT_CYCLE_FACTS_V1` and
+read back true. On the same sole run-created Nov18 record, native enabled Delete;
+Cancel preserved the entry, then confirmed Delete removed it. Supplemental
+public history readback is empty for both linked accounts. This uses the
+cycle-facts-enabled deletion path; no production flag or notification flag was
+enabled. Approximate same-role setup/persistence is being tested before cleanup
+and exact original flag restoration.
+
+
+Enabled certainty acceptance PASS on exact final384 APK: same primary setup
+selected Nov18 Approximate, retained28/5 and completed Start tracking/Continue.
+Independent API readback for both accounts returns one Nov18/open period with
+`startCertainty: approximate` and aggregate `certainty: approximate`, no legacy
+period. Actual authenticated primary web Log displays “Approximate observation.”
+This resolves the positive enabled-capability persistence subcase, separately
+from the previous flag-off UI acceptance. Only test cycle-facts is temporarily
+true; cleanup of this run-created record and flag restoration are in progress.
+
+
+Final384 Approximate cleanup completed while the test cycle-facts flag was
+still true; both accounts' public histories were empty. The target-bound
+restoration script then completed and independently read back ALL FIVE original
+flags false, including cycle-facts and inbox/outbox/projection/delivery. No
+scheduler or production setting changed. The same primary account is replacing
+its run-created baseline period at Nov18/28/5 under legacy-mode copy.
+
+
+Scope alignment: NAK-145 requires viewer-private nickname and shared
+relationship-date edit/save/clear, server validation, anniversary information,
+pair-code actions and revocation/generation guards. It does not introduce an
+atomic relationship-field conflict or CAS contract. PAIR-02 tests those actual
+contracts; CB-06 cycle CAS/profile best-effort warning remains separately tested.
+No new relationship-field conflict feature is added by this QA run.
+
+
+Final384 settings acceptance: native cycle maximum40 and period minimum2 /
+maximum8 reached their disabled edge controls. The earlier minimum21 test is
+attributed to c0dc24d; these unchanged control paths belong to one consolidated
+run. Native then saved temporary29/6. Root independently reloaded the actual
+primary web Settings, whose labels and range input values both show29/6, and
+API readback agrees. Partner's own cycle settings remain28/5. Native restoration
+to28/5 and separate enum/pause/sharing checks follow; do not call temporary test
+values final restored state before independent readback.
+
+
+Runtime identity follow-up: the default shell resolves Node22. The supervisor
+explicitly selected Node20.19.1/npm10.8.2 with nvm and reran root TypeScript and
+strict contract parity: PASS. Native TypeScript was separately rerun with
+absolute Node22.23.1: PASS. The 300-test integrated mobile run already used
+absolute Node22. Native build helper also pins its PATH to Node22/JDK17.
+No app source changed during these checks.
+
+
+Continuation readback confirmed the legacy replacement persisted as Nov18/open
+with legacy-unknown certainty, sharing phase on, pain and period assistance off,
+both profile names blank, default profile choices, reminder unset and chat empty.
+Both existing synthetic accounts remain linked. The primary has two pain entries
+in the checked window, with notes. The partner has no pain entries in that window.
+The original operator reported the device stopped after the run. The owner
+requested new Luna operators. Device operation and independent evidence review
+are assigned separately, with a single operator authorized to drive Pixel 7.
+
+The continuation operator could not boot Pixel 7. The device tool reported that the emulator process exited with code 1 before coming online, and follow-up inventory remained offline. Remaining Settings enum, pause, sharing, keyboard and accessibility checks are blocked pending recovery of the same AVD.

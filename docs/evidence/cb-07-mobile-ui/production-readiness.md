@@ -53,3 +53,13 @@ Native-app registration must be verified in Clerk's Native applications page;
 an empty SSO redirect list alone does not establish that registration state.
 See https://clerk.com/docs/guides/account-portal/hosted-auth. No production auth
 setting or registration was changed by this preflight.
+
+
+Fresh supervisor recheck during the final signed-build run on 2026-11-18:
+public health/readiness remain HTTP 200 at frontend `a7756d8`, build
+`run-38642524156-1`, compatibility `v1`, backend `prod:festive-malamute-715`.
+The explicitly read-only production metadata selector still lacks the same
+three mobile entries; conditional cycle and generation-bound clear arguments
+remain absent. Public Clerk native API remains false. No production setting,
+data, account, function or registration was changed. The new synthetic APK
+cannot satisfy production interoperability against that deployed contract.

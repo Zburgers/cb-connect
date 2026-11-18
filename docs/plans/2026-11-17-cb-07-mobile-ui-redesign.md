@@ -283,3 +283,17 @@ performance, actual composited contrast, keyboard, TalkBack, privacy and
 paired-account cross-client journeys are recorded only when actually exercised
 in the resumed QA runbook. Secure native capture prevents pixel inspection;
 source/mockup evidence does not establish composited native glass quality.
+
+
+## Current stack after consolidated QA remediation
+
+The accepted CB-06 identity above is historical acceptance evidence. Current
+CB-06 base is `7b07bf2f6dc41c9e845c76356789c5cbf20631c8`; current CB-07 app
+source is `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9`. CB-01 capability handling
+and CB-02 selected-date retention, native modal protection and legacy-delete
+guards are inherited from their owning lanes. CB-03–CB-06 patches are unchanged
+by range-diff; all target branches retain the original stack. PR #67 stays draft.
+The integrated suite now passes 35 files / 300 tests, native/strict-contract and
+root TypeScript. Signed final-stack manual qualification remains partial;
+production delivery is blocked by the separately recorded deployed contracts
+and native-auth prerequisites. No production deployment is included in CB-07.

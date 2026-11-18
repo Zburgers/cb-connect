@@ -27,7 +27,8 @@ its Chat inset. Enlarged labels reflow instead of truncating.
 Existing role/sharing/health copy, auth and account-switch isolation, server
 projections, mutation arguments, offline truth, chat pagination/receipts,
 reminder timezone and feature flags are retained. No backend, public API,
-dependency/lockfile, production flag or deployment change is introduced here.
+dependency-version, production flag or deployment change is introduced here.
+The inherited CB-02 postinstall records only the lockfile install-script marker.
 
 ## Local deterministic qualification
 
@@ -123,11 +124,13 @@ deterministic/build results alone.
 
 ## Current integrated QA checkpoint
 
-Integrated app source: `1662a3e8e4052bbda16fb314aac7e1d0a9c1cb33`, stacked on
-CB-06 `a12cb3a625d4b7341e86370c57ee1c6d69d5663b`. Mobile tests **33 files / 293
-PASS**, native TypeScript/strict parity PASS and exact-head deterministic/mobile
-CI PASS. Source review by the same GPT-6 Luna agent found no actionable P0/P1/P2
-regressions; it did not substitute source review for device acceptance.
+Integrated app source: `384762ecf8d2861e9cdb8c013b3efe3e1eec5cc9`, stacked on
+CB-06 `7b07bf2f6dc41c9e845c76356789c5cbf20631c8`. Mobile tests **35 files / 300
+PASS**, native TypeScript/strict parity and root TypeScript PASS. The current
+pushed head has successful deterministic and mobile CI; older duplicate cancelled
+runs are superseded. Luna's source review at historical `1662a3e` found no
+actionable P0/P1/P2 regressions in that bounded diff. It did not cover the later
+picker/deletion fixes or substitute for device acceptance.
 
 The resumed [manual results](manual-qa-results.md) contain actual primary and
 partner Clerk journeys, initial period/pain writes with independent web readback,
@@ -149,3 +152,16 @@ The earlier offline/device-access blockers are historical attempts, retained
 in the runbook. No AVD/user data was wiped. Production remains unchanged; its
 missing deployed contracts and native auth prerequisites prevent production
 acceptance/delivery. No APK has been emailed or uploaded.
+
+
+The latest CB-02 remediation `66ca323` gates legacy deletion in both controls and
+handler while cycle-facts is unavailable; it preserves date correction and
+prevents the native path to hard deletion under D-012. Its two regressions pass.
+The preceding native-picker fixes retain selected Android dates and protect
+separate native date/time windows. Signed `c0dc24d` static inspection/install
+passes. The final `384762e` build passed static inspection and installed by
+upgrade. Its first cold launch restored the primary session. In legacy mode
+Delete is disabled and Correct remains available. On the approved synthetic
+backend, Approximate persisted and appeared in the authenticated web timeline.
+The operator restored the original flag and visible fixture baseline. Results from different APKs are not combined into
+an exact-final-build runtime PASS.
