@@ -96,7 +96,7 @@ export default function PartnerChat({
     if (!confirm("Clear this couple chat for both partners?")) return;
     setError("");
     try {
-      await clearChat();
+      await clearChat({});
       setMenuOpen(false);
     } catch (err: any) {
       setError(err?.message ?? "Could not clear chat.");

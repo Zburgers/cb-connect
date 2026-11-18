@@ -333,7 +333,10 @@ describe("couple message state", () => {
       "Current relationship message",
     ]);
 
-    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {});
+    const activeCouple = await asPrimary.query(api.queries.couples.getCoupleStatus, {});
+    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {
+      relationshipGeneration: activeCouple.relationshipGeneration!,
+    });
     expect(clearResult.clearedAt).toBeGreaterThan(0);
     expect(await t.run(async (ctx) => ctx.db.get(oldMessageId))).not.toBeNull();
     expect(
@@ -518,16 +521,52 @@ describe("couple message state", () => {
     expect(messages.every((message) => message.readAt !== null)).toBe(true);
   });
 
-  test("clear advances an existing cursor before the next message", async () => {
+  test("clear resets chat and unread state before the next message", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, asPartner } = await seedActiveCouple(t);
     await asPrimary.mutation(api.mutations.messages.send, { body: "Unread before clear" });
-    await asPartner.mutation(api.mutations.messages.clear, {});
+    await expect(asPartner.query(api.queries.messages.unreadSummary, {})).resolves.toMatchObject({ unreadCount: 1 });
+    const activeCouple = await asPartner.query(api.queries.couples.getCoupleStatus, {});
+    await asPartner.mutation(api.mutations.messages.clear, {
+      relationshipGeneration: activeCouple.relationshipGeneration!,
+    });
+    await expect(asPartner.query(api.queries.messages.unreadSummary, {})).resolves.toMatchObject({ unreadCount: 0 });
+    await expect(asPartner.query(api.queries.messages.listForCouple, {})).resolves.toEqual([]);
     await asPrimary.mutation(api.mutations.messages.send, { body: "Unread after clear" });
 
     expect(await asPartner.query(api.queries.messages.unreadSummary, {})).toMatchObject({
       unreadCount: 1,
     });
+  });
+
+  test("legacy callers can still clear without a generation argument", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.messages.send, { body: "Legacy client message" });
+
+    await asPrimary.mutation(api.mutations.messages.clear, {});
+
+    await expect(asPrimary.query(api.queries.messages.listForCouple, {})).resolves.toEqual([]);
+  });
+
+  test("a stale generation cannot clear the active conversation or unread state", async () => {
+    vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId } = await seedActiveCouple(t);
+    const messageId = await asPrimary.mutation(api.mutations.messages.send, { body: "Keep this message" });
+
+    await expect(asPrimary.mutation(api.mutations.messages.clear, {
+      relationshipGeneration: "stale-generation",
+    })).rejects.toThrow("Relationship changed; refresh chat");
+
+    await expect(asPartner.query(api.queries.messages.listForCouple, {})).resolves.toMatchObject([
+      { _id: messageId, body: "Keep this message" },
+    ]);
+    await expect(asPartner.query(api.queries.messages.unreadSummary, {})).resolves.toMatchObject({ unreadCount: 1 });
+    await expect(asPrimary.query(api.queries.messages.unreadSummary, {})).resolves.toMatchObject({ unreadCount: 0 });
+    await expect(t.run(async (ctx) => (await ctx.db.get(coupleId))?.chatClearedAt)).resolves.toBeNull();
+    const events = await t.run(async (ctx) => ctx.db.query("notificationEvents").collect());
+    expect(events.filter((event) => event.eventType === "partner_chat_cleared.v1")).toHaveLength(0);
   });
 
   test("concurrent send and older acknowledgement retain the newer unread", async () => {
@@ -865,7 +904,10 @@ describe("couple message state", () => {
       body: "Clear preserves history",
     });
 
-    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {});
+    const activeCouple = await asPrimary.query(api.queries.couples.getCoupleStatus, {});
+    const clearResult = await asPrimary.mutation(api.mutations.messages.clear, {
+      relationshipGeneration: activeCouple.relationshipGeneration!,
+    });
 
     const message = await t.run(async (ctx) => ctx.db.get(messageId));
     const events = await t.run(async (ctx) =>

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
 import {
   mutation,
@@ -1010,6 +1010,10 @@ export const updateCycleSettings = mutation({
     cycleLength: v.optional(v.number()),
     periodLength: v.optional(v.number()),
     predictionPaused: v.optional(v.boolean()),
+    expectedCurrent: v.optional(v.object({
+      cycleLength: v.number(),
+      periodLength: v.number(),
+    })),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -1035,6 +1039,12 @@ export const updateCycleSettings = mutation({
       .query("cycleSettings")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
+    if (args.expectedCurrent && (
+      args.expectedCurrent.cycleLength !== (existing?.cycleLength ?? 28) ||
+      args.expectedCurrent.periodLength !== (existing?.periodLength ?? 5)
+    )) {
+      throw new ConvexError({ code: "STALE_CYCLE_SETTINGS" });
+    }
     const sourceChanged =
       (args.cycleLength !== undefined &&
         args.cycleLength !== (existing?.cycleLength ?? 28)) ||
