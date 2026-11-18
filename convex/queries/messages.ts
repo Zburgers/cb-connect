@@ -154,14 +154,17 @@ export const listPageForMobile = query({
       .withIndex("by_couple_created", (q) =>
         q
           .eq("coupleId", membership.coupleId)
-          .gt("createdAt", Math.max(relationshipStartedAt, couple.chatClearedAt ?? 0))
+          .gt("createdAt", couple.chatClearedAt ?? 0)
       )
       .filter((q) =>
         q.and(
           q.eq(q.field("clearedAt"), undefined),
           q.or(
             q.eq(q.field("relationshipMembershipId"), relationshipMembershipId),
-            q.eq(q.field("relationshipMembershipId"), undefined),
+            q.and(
+              q.eq(q.field("relationshipMembershipId"), undefined),
+              q.gt(q.field("createdAt"), relationshipStartedAt),
+            ),
           ),
         )
       )

@@ -48,6 +48,34 @@ describe("mobile couple chat pagination", () => {
     expect(new Set([...first.page, ...second.page].map(({ _id }) => _id)).size).toBe(4);
   });
 
+  test("includes current-generation messages sent when the relationship starts", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, coupleId, primaryId } = await seedActiveCouple(t);
+    const { relationshipGeneration } = await asPrimary.query(api.queries.couples.getCoupleStatus, {});
+    await t.run(async (ctx) => {
+      const partner = await ctx.db.query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "partner").eq("revokedAt", undefined)
+        )
+        .unique();
+      const linkedAt = Date.now();
+      await ctx.db.patch(coupleId, { linkedAt });
+      await ctx.db.insert("coupleMessages", {
+        coupleId, senderId: primaryId, body: "legacy-at-link", createdAt: linkedAt,
+      });
+      await ctx.db.insert("coupleMessages", {
+        coupleId, senderId: primaryId, body: "sent-at-link", createdAt: linkedAt,
+        relationshipMembershipId: partner!._id,
+      });
+    });
+
+    const page = await asPrimary.query(api.queries.messages.listPageForMobile, {
+      paginationOpts: { numItems: 40, cursor: null },
+      relationshipGeneration: relationshipGeneration!,
+    });
+    expect(page.page.map(({ body }) => body)).toEqual(["sent-at-link"]);
+  });
+
   test("caps client page requests at forty messages", async () => {
     const t = convexTest(schema, modules);
     const { asPrimary, coupleId, primaryId } = await seedActiveCouple(t);
