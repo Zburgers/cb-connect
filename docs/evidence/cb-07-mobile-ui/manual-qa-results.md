@@ -164,3 +164,13 @@ At that checkpoint continuation was blocked by device access, not startup;
 the later root connection and signed-run rows supersede this blocker. The owner
 was asked to allow the device-access request or report that no prompt appeared.
 No new native case passed, no app/AVD data was reset and no APK was emailed.
+
+## Resume access checkpoint — 2026-11-18
+
+Fresh T3 inventory showed the same `emulator-5554` Pixel 7 booted and already
+open. Its screenshot showed the Android launcher, not CB Connect. Two
+`device_open` attempts returned `user cancelled MCP tool call`; the pinned
+`agent-device` driver was therefore unavailable. The operator stopped without
+launching the app, changing fixtures, or writing app data. Primary Settings
+enum, pause/sharing, partner role-gate, keyboard and accessibility checks remain
+NOT RUN in this pass; the previously reported baseline was not reread.

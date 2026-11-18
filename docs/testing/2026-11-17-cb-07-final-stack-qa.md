@@ -1,6 +1,6 @@
 # CB-07 final-stack Android QA and APK delivery
 
-**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. The emulator is offline and the remaining device checks are blocked. Production delivery is blocked by the deployed API and Clerk configuration.**
+**Current verdict: PARTIAL. Final signed synthetic APK passed targeted Pixel 7 retests. Pixel 7 is booted. The operator could not obtain device access for the remaining checks. Production delivery is blocked by the deployed API and Clerk configuration.**
 
 Owner request: manually qualify the complete CB-01–CB-07 stack on Pixel 7,
 prepare a standalone APK that interoperates with the deployed web service,
@@ -148,6 +148,22 @@ actions apply only to dedicated synthetic records created during this run.
 | APK-02 | Install exact release on Pixel 7, stop Metro/reverse, cold launch, auth/readback; inspect crash logs | Works without developer server; no dev menu/cleartext dependency; correct runtime | NOT RUN |
 | APK-03 | Reinstall/upgrade same signing lineage; offline launch and reconnect | Installation succeeds; account state/privacy safe; offline writes fail truthfully | NOT RUN |
 | DEL-01 | Hash qualified APK; private recipient-specific upload/email; verify sent message/download access | Exact qualified file delivered only to authorized recipient; user receives file/link and SHA-256 | NOT RUN |
+
+## Progress by checklist row
+
+Each of the 38 rows counts once. A passing subcheck does not close a row
+with open scenarios. These counts include evidence gathered across the
+consolidated run. The manual log records the APK used for each result.
+
+| Status | Count | Checklist IDs |
+|---|---:|---|
+| Verified | 9/38 | ENV-01, AUTH-01–03, LOG-01, PAIR-02, INBOX-01, REM-01, WEB-01 |
+| Synthetic coverage still open | 24/38 | ONB-01–02, LOG-02–03, PAIR-01/03, CHAT-01–03, INBOX-02, SET-01–05, UI-01–04, A11Y-01–02, PRIV-01–02, APK-03 |
+| Production dependent | 5/38 | PROD-01–02, APK-01–02, DEL-01 |
+
+The signed synthetic build has passed install, cold launch, session restoration
+and targeted fixes. APK-01 and APK-02 above track the production build. The
+300 passing mobile tests are reported separately from the live checklist.
 
 ## Deterministic checks and coverage limits
 
