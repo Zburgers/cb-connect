@@ -166,15 +166,18 @@ function ProfileSettings({
       setMessage(successMessage ?? "Settings updated.");
       return true;
     } catch (error) {
-      if (
-        error instanceof ConvexError &&
+      const code = error instanceof ConvexError &&
         typeof error.data === "object" &&
         error.data !== null &&
-        "code" in error.data &&
-        error.data.code === "STALE_CYCLE_SETTINGS"
-      ) {
+        "code" in error.data
+        ? error.data.code
+        : undefined;
+      if (code === "STALE_CYCLE_SETTINGS") {
         setCycleConflict(true);
         setError("These cycle settings changed elsewhere. Reload before saving.");
+      } else if (code === "STALE_PROFILE_PREFERENCES") {
+        setProfileConflict(true);
+        setError("Profile preferences changed elsewhere. Reload before saving.");
       } else {
         setError("Unable to update settings. Try again.");
       }
@@ -227,6 +230,7 @@ function ProfileSettings({
       preferredName: nameDraft,
       gender: genderDraft,
       partnerType: partnerTypeDraft,
+      expectedCurrent: profileBaseline,
     }), "Profile updated.").then((saved) => {
       if (saved) {
         setProfileBaseline({ preferredName: nameDraft, gender: genderDraft, partnerType: partnerTypeDraft });

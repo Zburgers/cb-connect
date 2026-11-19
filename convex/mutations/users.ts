@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation } from "../_generated/server";
 import { getCurrentUser, getLegacyClerkSubject } from "../_helpers/auth";
 import {
@@ -34,31 +34,36 @@ export const updateUserRole = mutation({
   },
 });
 
+const profileGender = v.union(
+  v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"),
+);
+const profilePartnerType = v.union(
+  v.literal("boyfriend"), v.literal("girlfriend"), v.literal("spouse"), v.literal("partner"), v.literal("other"),
+);
+
 export const updateUserPreferences = mutation({
   args: {
     preferredName: v.optional(v.string()),
-    gender: v.optional(
-      v.union(
-        v.literal("male"),
-        v.literal("female"),
-        v.literal("other"),
-        v.literal("prefer_not_to_say")
-      )
-    ),
-    partnerType: v.optional(
-      v.union(
-        v.literal("boyfriend"),
-        v.literal("girlfriend"),
-        v.literal("spouse"),
-        v.literal("partner"),
-        v.literal("other")
-      )
-    ),
+    gender: v.optional(profileGender),
+    partnerType: v.optional(profilePartnerType),
+    expectedCurrent: v.optional(v.object({
+      preferredName: v.string(),
+      gender: profileGender,
+      partnerType: profilePartnerType,
+    })),
     externalNotificationConsent: v.optional(v.boolean()),
     timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
+    const expected = args.expectedCurrent;
+    if (expected && (
+      expected.preferredName !== (user.preferredName ?? "") ||
+      expected.gender !== (user.gender ?? "prefer_not_to_say") ||
+      expected.partnerType !== (user.partnerType ?? "partner")
+    )) {
+      throw new ConvexError({ code: "STALE_PROFILE_PREFERENCES" });
+    }
 
     const timeZone =
       args.timeZone === undefined

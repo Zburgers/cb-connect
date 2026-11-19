@@ -271,6 +271,11 @@ export declare const api: {
         preferredName?: string;
         gender?: "male" | "female" | "other" | "prefer_not_to_say";
         partnerType?: "boyfriend" | "girlfriend" | "spouse" | "partner" | "other";
+        expectedCurrent?: {
+          preferredName: string;
+          gender: "male" | "female" | "other" | "prefer_not_to_say";
+          partnerType: "boyfriend" | "girlfriend" | "spouse" | "partner" | "other";
+        };
       }, string>;
     };
     readonly periods: {

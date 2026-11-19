@@ -20,6 +20,7 @@ const runtime = vi.hoisted(() => ({
   preferences: [] as Array<{ purpose: string; inAppEnabled: boolean; localReminderTime?: string }>,
   saveCalls: [] as unknown[],
   saveFails: false,
+  profileSaveStale: false,
   profileSavePending: false,
   resolveProfileSave: undefined as (() => void) | undefined,
   cycleSaveCalls: [] as unknown[],
@@ -56,6 +57,7 @@ vi.mock("convex/react", () => ({
       if (runtime.profileSavePending) {
         await new Promise<void>((resolve) => { runtime.resolveProfileSave = resolve; });
       }
+      if (runtime.profileSaveStale) throw new ConvexError({ code: "STALE_PROFILE_PREFERENCES" });
       if (runtime.saveFails) throw new Error("profile save failed");
       runtime.profile = { ...runtime.profile, ...(args as object) };
       return null;
@@ -168,6 +170,7 @@ beforeEach(() => {
   runtime.preferences = [{ purpose: "period_window_approaching", inAppEnabled: false }];
   runtime.saveCalls = [];
   runtime.saveFails = false;
+  runtime.profileSaveStale = false;
   runtime.profileSavePending = false;
   runtime.resolveProfileSave = undefined;
   runtime.cycleSaveCalls = [];
@@ -296,7 +299,10 @@ describe("native reminder-time settings interactions", () => {
     const saveProfile = pressable(renderSettings(), "Save profile preferences");
     (saveProfile.props.onPress as () => void)();
     await flushSave();
-    expect(runtime.saveCalls.at(-1)).toEqual({ preferredName: "Naki", gender: "prefer_not_to_say", partnerType: "girlfriend" });
+    expect(runtime.saveCalls.at(-1)).toEqual({
+      preferredName: "Naki", gender: "prefer_not_to_say", partnerType: "girlfriend",
+      expectedCurrent: { preferredName: "Naki", gender: "prefer_not_to_say", partnerType: "partner" },
+    });
   });
 
   it("rejects a stale cycle draft when another client changes the saved record", async () => {
@@ -325,6 +331,18 @@ describe("native reminder-time settings interactions", () => {
     expect(elements.some((element) => element.type === "Text" && textContent(element.props.children) === "These cycle settings changed elsewhere. Reload before saving.")).toBe(true);
     expect(pressable(elements, "Save cycle settings").props.disabled).toBe(true);
     expect(pressable(elements, "Reload cycle settings").props.disabled).toBe(false);
+  });
+
+  it("preserves the profile draft and offers reload on a server-side conflict", async () => {
+    runtime.profileSaveStale = true;
+    (pressable(renderSettings(), "Relationship term: Girlfriend").props.onPress as () => void)();
+    (pressable(renderSettings(), "Save profile preferences").props.onPress as () => void)();
+    await flushSave();
+
+    const elements = renderSettings();
+    expect(pressable(elements, "Relationship term: Girlfriend").props.accessibilityState).toMatchObject({ checked: true });
+    expect(pressable(elements, "Save profile preferences").props.disabled).toBe(true);
+    expect(pressable(elements, "Reload profile preferences").props.disabled).toBe(false);
   });
 
   it("offers reload recovery when profile preferences changed on another client", () => {
