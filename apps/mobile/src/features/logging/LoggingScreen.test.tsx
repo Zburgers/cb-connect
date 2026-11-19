@@ -87,7 +87,7 @@ function render() {
     const item = period as { _id?: string; startDate: string; endDate?: string; certainty: string; source: string; confirmationStatus: string; authorityVersion?: number; createdByName: string; updatedByName: string; canCorrect: boolean };
     return { date: item.startDate, phase: "menstruation", type: "period", isOngoing: !item.endDate, period: { id: item._id, startDate: item.startDate, endDate: item.endDate, certainty: item.certainty, source: item.source, confirmationStatus: item.confirmationStatus, authorityVersion: item.authorityVersion, createdByName: item.createdByName, updatedByName: item.updatedByName, createdByViewer: true, updatedByViewer: true, canCorrect: item.canCorrect } };
   });
-  runtime.queries = [runtime.account, runtime.periods, runtime.pain, timeline, runtime.capabilities];
+  runtime.queries = [runtime.account, runtime.periods, runtime.pain, timeline, runtime.capabilities, runtime.pain];
   runtime.mutations = [startSelf, endSelf, startAssist, endAssist, updateSelf, updateAssist, savePain, deletePeriod];
   return LoggingScreen();
 }
@@ -221,6 +221,19 @@ describe("LoggingScreen actions", () => {
     expect(() => checkbox(tree, "Confirm this start date is exact")).toThrow("Missing checkbox");
     await button(tree, "Save correction")();
     expect(updateSelf).toHaveBeenCalledWith({ periodEventId: "event-open", startDate: "2026-10-20", expectedAuthorityVersion: 1 });
+  });
+
+  it("keeps an existing note and tags when only the score changes", async () => {
+    const date = localDate(new Date(), "UTC");
+    runtime.pain = [{ _id: "pain-existing", date, painScore: 4, tags: ["cramps"], note: "existing private note" }];
+    const tree = render();
+    expect(inputValue(tree, "Pain score from 0 to 10")).toBe("4");
+    expect(inputValue(tree, "Private pain note, optional")).toBe("existing private note");
+    input(tree, "Pain score from 0 to 10")("6");
+    await button(render(), "Save pain log")();
+    expect(savePain).toHaveBeenCalledWith({
+      date, painScore: 6, tags: ["cramps"], note: "existing private note",
+    });
   });
 
   it("steps pain within the valid range", async () => {
