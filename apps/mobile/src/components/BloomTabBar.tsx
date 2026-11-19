@@ -9,7 +9,6 @@ import { mobileColors, type MobilePalette } from "../theme/tokens";
 import { bloomFonts } from "../theme/typography";
 import { BloomText } from "./BloomText";
 import { canUseBloomBlur, getBloomDockGeometry, isBloomDockRoute } from "./bloomDockModel";
-import { BloomDockInsetContext } from "./bloomDockContext";
 
 type NavigatorLayoutProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>["layout"]>>[0];
 type LayoutProps = NavigatorLayoutProps & {
@@ -18,11 +17,10 @@ type LayoutProps = NavigatorLayoutProps & {
   showDock: boolean;
 };
 
-/** Navigator scenes are the blur target; the dock is its sibling, never its child. */
+/** The dock and scene occupy separate rows so their touch areas cannot overlap. */
 export function BloomTabLayout({ children, dark, showDock, ...navigationProps }: LayoutProps): React.JSX.Element {
   const blurTarget = useRef<View>(null);
   const palette = dark ? mobileColors.dark : mobileColors.light;
-  const { width, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
   useEffect(() => {
@@ -30,16 +28,17 @@ export function BloomTabLayout({ children, dark, showDock, ...navigationProps }:
     const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
     return () => { show.remove(); hide.remove(); };
   }, []);
-  const count = navigationProps.state.routes.filter((route) => isBloomDockRoute(route.name)).length;
-  const geometry = getBloomDockGeometry(width - insets.left - insets.right, fontScale, count);
-  const bottomInset = showDock && !keyboardVisible ? geometry.height + insets.bottom + 24 : 0;
-  return <BloomDockInsetContext.Provider value={bottomInset}><View style={styles.fill}>
-    <BlurTargetView ref={blurTarget} style={styles.fill}>
-      <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} pointerEvents="none" />
-      {children}
+  const dockVisible = showDock && !keyboardVisible &&
+    navigationProps.state.routes.some((route) => isBloomDockRoute(route.name));
+  return <View style={styles.fill}>
+    <BlurTargetView ref={blurTarget} style={StyleSheet.absoluteFill} pointerEvents="none">
+      <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
     </BlurTargetView>
-    {showDock ? <BloomTabBar {...navigationProps} dark={dark} palette={palette} blurTarget={blurTarget} keyboardVisible={keyboardVisible} /> : null}
-  </View></BloomDockInsetContext.Provider>;
+    <View style={[styles.scene, { paddingBottom: dockVisible || keyboardVisible ? 0 : insets.bottom }]}>
+      {children}
+    </View>
+    {dockVisible ? <BloomTabBar {...navigationProps} dark={dark} palette={palette} blurTarget={blurTarget} /> : null}
+  </View>;
 }
 
 function useMaterialPreferences() {
@@ -86,7 +85,7 @@ export function BloomTabBar({ state, descriptors, navigation, dark, palette, blu
 
   if (keyboardVisible || routes.length === 0) return null;
 
-  return <View pointerEvents="box-none" style={[styles.overlay, { bottom: insets.bottom + 12, left: insets.left, right: insets.right }]}>
+  return <View style={[styles.dockRow, { paddingBottom: insets.bottom + 12, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <View style={[styles.shadow, { width: geometry.width, borderRadius: geometry.largeText ? 26 : 40, shadowColor: palette.foreground }]}>
       <View testID="bloom-glass-dock" style={[styles.dock, { minHeight: geometry.height, borderRadius: geometry.largeText ? 26 : 40, borderColor: palette.rim, backgroundColor: blur ? palette.dockTint : palette.surface }]}>
         {blur ? <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={40} blurReductionFactor={2} tint={dark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} pointerEvents="none" style={StyleSheet.absoluteFill} /> : null}
@@ -120,7 +119,8 @@ export function BloomTabBar({ state, descriptors, navigation, dark, palette, blu
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  overlay: { position: "absolute", alignItems: "center" },
+  scene: { flex: 1, minHeight: 0, overflow: "hidden" },
+  dockRow: { flexShrink: 0, alignItems: "center", paddingTop: 8 },
   shadow: { shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 6 },
   dock: { padding: 6, borderWidth: 1, overflow: "hidden" },
   tint: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },

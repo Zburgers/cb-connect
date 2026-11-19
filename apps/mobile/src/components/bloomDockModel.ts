@@ -9,11 +9,6 @@ export function getBloomDockGeometry(width: number, fontScale: number, count: nu
   return { largeText, columns, width: dockWidth, itemWidth: Math.max(0, (dockWidth - 14) / columns), itemHeight, height: Math.ceil(count / columns) * itemHeight + 14 };
 }
 
-export function getBloomScrollBottomPadding(fontScale: number, width = 390): number {
-  // Room for the largest guarded dock, safe area and a final reachable action.
-  return getBloomDockGeometry(width, fontScale, 5).height + 80;
-}
-
 export function canUseBloomBlur(os: string, version: string | number, reduceTransparency: boolean): boolean {
   if (reduceTransparency) return false;
   return os !== "android" || Number(version) >= 31;

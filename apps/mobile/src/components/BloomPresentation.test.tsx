@@ -43,7 +43,7 @@ import { BloomTabBar, BloomTabLayout } from "./BloomTabBar";
 import { BloomScreen } from "./BloomScreen";
 import { BloomText } from "./BloomText";
 import { mobileColors } from "../theme/tokens";
-import { getBloomDockGeometry, getBloomScrollBottomPadding, isBloomDockRoute } from "./bloomDockModel";
+import { getBloomDockGeometry, isBloomDockRoute } from "./bloomDockModel";
 import { CycleCardView, CycleDashboardView } from "../features/cycle/CycleDashboard";
 import type { CycleDashboardData } from "../features/cycle/CycleDashboardModel";
 
@@ -91,14 +91,25 @@ describe("Bloom dock navigation and materials", () => {
     tabs[1].props.onPress();
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
-  it("captures scene content below a sibling dock, and removes the dock immediately for guarded states", () => {
+  it.each([1, 2, 3])("gives scene controls and the dock separate layout space at font scale %s", (scale) => {
+    runtime.scale = scale;
     const { props } = fixture();
     const tree = BloomTabLayout({ ...props, children: <ViewFixture />, showDock: true }) as Element;
-    const children = React.Children.toArray((tree.props.children as Element).props.children) as Element[];
-    expect(children[0].type).toBe("BlurTargetView");
-    expect(children[1].type).toBe(BloomTabBar);
-    expect(children[1].props.blurTarget).toBe(children[0].props.ref);
+    const [background, scene, dock] = React.Children.toArray(tree.props.children) as Element[];
+    expect(background.type).toBe("BlurTargetView");
+    expect(background.props.pointerEvents).toBe("none");
+    expect(scene.props.style[0]).toMatchObject({ flex: 1, overflow: "hidden" });
+    expect(dock.type).toBe(BloomTabBar);
+    expect(dock.props.blurTarget).toBe(background.props.ref);
+    const dockRow = BloomTabBar(dock.props as React.ComponentProps<typeof BloomTabBar>) as Element;
+    const dockStyle = Object.assign({}, ...dockRow.props.style);
+    expect(dockStyle).toMatchObject({ flexShrink: 0, paddingBottom: 36 });
+    expect(dockStyle.position).toBeUndefined();
+    runtime.cursor = 0;
     expect(elements(BloomTabLayout({ ...props, children: <ViewFixture />, showDock: false })).some((el) => el.props.testID === "bloom-glass-dock")).toBe(false);
+    runtime.cursor = 0;
+    runtime.states[0] = true;
+    expect(elements(BloomTabLayout({ ...props, children: <ViewFixture />, showDock: true })).some((el) => el.props.testID === "bloom-glass-dock")).toBe(false);
   });
   it("uses a translucent native blur and native-driver spring in normal mode", () => {
     const tree = elements(BloomTabBar(fixture().props));
@@ -124,11 +135,10 @@ describe("Bloom dock navigation and materials", () => {
     runtime.cursor = 0;
     expect(BloomTabBar({ ...fixture().props, keyboardVisible: true })).toBeNull();
   });
-  it.each([320, 390, 430])("reserves reachable content space at width %s and all qualified font scales", (width) => {
+  it.each([320, 390, 430])("preserves minimum tab targets at width %s and all qualified font scales", (width) => {
     for (const scale of [1, 1.3, 2, 3]) {
       const dock = getBloomDockGeometry(width, scale, 5);
       expect(dock.itemWidth).toBeGreaterThanOrEqual(48);
-      expect(getBloomScrollBottomPadding(scale, width)).toBeGreaterThan(dock.height + 50);
     }
     expect(isBloomDockRoute("notifications")).toBe(false);
     expect(isBloomDockRoute("status")).toBe(false);
@@ -141,7 +151,7 @@ describe("Bloom dock navigation and materials", () => {
     expect(tabs.at(-1)!.props.accessibilityState).toEqual({ selected: true });
     expect(tree.filter((el) => el.type === "Text").every((el) => el.props.allowFontScaling && !el.props.numberOfLines)).toBe(true);
     const screen = elements(BloomScreen({ palette: mobileColors.light, title: "Settings", children: "Last action" }));
-    expect(screen.find((el) => el.type === "ScrollView")!.props.contentContainerStyle[1].paddingBottom).toBe(getBloomScrollBottomPadding(2));
+    expect(screen.find((el) => el.type === "ScrollView")!.props.contentContainerStyle[0].paddingBottom).toBe(24);
   });
   it.each([[1, 1, 5], [2, 3, 2]])("keeps declared dock rows at fractional Pixel 7 width and font scale %s", (scale, rowCount, firstRowCount) => {
     runtime.width = 411.428571;

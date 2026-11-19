@@ -48,7 +48,6 @@ vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844 }),
 }));
 
-vi.mock("../../components/bloomDockContext", () => ({ useBloomDockInset: () => 160 }));
 
 vi.mock("expo-router", () => ({ useFocusEffect: () => undefined }));
 vi.mock("convex/react", () => ({

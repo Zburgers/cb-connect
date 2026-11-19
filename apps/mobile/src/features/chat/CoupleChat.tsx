@@ -5,7 +5,6 @@ import { useFocusEffect } from "expo-router";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import { bloomType } from "../../theme/typography";
-import { useBloomDockInset } from "../../components/bloomDockContext";
 import { BloomPanel, BloomNotice } from "../../components/BloomPanel";
 import { BloomText as Text } from "../../components/BloomText";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
@@ -14,7 +13,6 @@ const REACTIONS = ["💗", "✨", "🫶", "😂", "🥺", "🌙"];
 const QUICK_COMPOSE = ["Thinking of you.", "Want me to handle dinner?", "I am here. No pressure to explain."];
 
 export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: boolean; relationshipGeneration: string }): React.JSX.Element {
-  const dockInset = useBloomDockInset();
   const palette = dark ? mobileColors.dark : mobileColors.light;
   const connection = useConvexConnectionState();
   const connected = connection.isWebSocketConnected;
@@ -120,7 +118,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
 
   return (
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
-    <View style={[styles.container, { backgroundColor: "transparent", paddingBottom: dockInset + 12 }]}>
+    <View style={[styles.container, { backgroundColor: "transparent", paddingBottom: 12 }]}>
       <View style={styles.header}>
         <View style={styles.titleGroup}>
           <Text accessibilityRole="header" style={[bloomType.display, { color: palette.foreground }]}>Chat</Text>
