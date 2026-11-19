@@ -279,7 +279,7 @@ export declare const api: {
       readonly assistLogPeriodEnd: FunctionReference<"mutation", "public", AssistedPeriodEndArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly updatePeriodEvent: FunctionReference<"mutation", "public", PeriodCorrectionArgs, { success: boolean }>;
       readonly correctAssistedPeriodEvent: FunctionReference<"mutation", "public", AssistedPeriodCorrectionArgs, { eventId: GenericId<"periodEvents"> }>;
-      readonly deletePeriodEvent: FunctionReference<"mutation", "public", { periodEventId: GenericId<"periodEvents">; expectedAuthorityVersion?: number }, { success: boolean }>;
+      readonly deletePeriodEvent: FunctionReference<"mutation", "public", { periodEventId: GenericId<"periodEvents">; expectedAuthorityVersion?: number; requireTombstone?: true }, { success: boolean }>;
     };
     readonly cycleContext: {
       readonly createPredictionSegment: FunctionReference<"mutation", "public", { startDate: string }, { segmentId: string }>;

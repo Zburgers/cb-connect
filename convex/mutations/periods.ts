@@ -901,6 +901,7 @@ export const deletePeriodEvent = mutation({
   args: {
     periodEventId: v.id("periodEvents"),
     expectedAuthorityVersion: v.optional(v.number()),
+    requireTombstone: v.optional(v.literal(true)),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -916,7 +917,7 @@ export const deletePeriodEvent = mutation({
     if (!isCycleFactsV1Enabled()) {
       // Versioned callers asked for a tombstone. A stale flag must never turn
       // that request into a physical delete.
-      if (args.expectedAuthorityVersion !== undefined) {
+      if (args.requireTombstone) {
         throw new Error("PERIOD_DELETION_UNAVAILABLE");
       }
       await ctx.db.delete("periodEvents", args.periodEventId);

@@ -345,7 +345,7 @@ describe("LoggingScreen actions", () => {
     expect(deletePeriod).not.toHaveBeenCalled();
     await button(confirmation, "Confirm delete period")();
 
-    expect(deletePeriod).toHaveBeenCalledWith({ periodEventId: "event-open", expectedAuthorityVersion: 1 });
+    expect(deletePeriod).toHaveBeenCalledWith({ periodEventId: "event-open", expectedAuthorityVersion: 1, requireTombstone: true });
   });
 
   it("disables legacy deletion while retaining date correction", async () => {

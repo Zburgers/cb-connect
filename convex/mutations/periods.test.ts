@@ -1929,6 +1929,7 @@ describe("derived period endings", () => {
     await expect(asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
       periodEventId: second.eventId,
       expectedAuthorityVersion: 1,
+      requireTombstone: true,
     })).rejects.toThrow("PERIOD_DELETION_UNAVAILABLE");
     expect(await t.run((ctx) => ctx.db.get(second.eventId))).not.toBeNull();
 

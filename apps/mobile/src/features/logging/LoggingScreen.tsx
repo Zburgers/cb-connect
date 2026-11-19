@@ -183,7 +183,7 @@ export function LoggingScreen() {
     if (!factsEnabled) throw new Error("PERIOD_DELETION_UNAVAILABLE");
     if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (role !== "primary" || !period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
-    await deletePeriod({ periodEventId: period._id, expectedAuthorityVersion: period.authorityVersion });
+    await deletePeriod({ periodEventId: period._id, expectedAuthorityVersion: period.authorityVersion, requireTombstone: true });
     setDeleteConfirming(null);
   }, "Period entry removed.");
 
