@@ -10,6 +10,9 @@ export function loggingErrorMessage(error: unknown): string {
   if (/STALE_AUTHORITY_VERSION|AUTHORITY_VERSION_REQUIRED/.test(message)) {
     return "This entry changed. Refresh history before correcting it.";
   }
+  if (/PERIOD_DELETION_UNAVAILABLE/.test(message)) {
+    return "Deletion is unavailable for this account. The entry was kept.";
+  }
   if (/END_CERTAINTY_REQUIRED/.test(message)) return "Choose whether the end date is exact or approximate.";
   if (/offline|network|websocket/i.test(message)) return "You’re offline. Nothing was saved; reconnect and try again.";
   if (/sharing|permission|authorized|allowed|role|partner/i.test(message)) {

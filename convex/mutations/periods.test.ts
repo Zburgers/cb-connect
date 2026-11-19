@@ -1926,6 +1926,12 @@ describe("derived period endings", () => {
       await t.run(async (ctx) => ctx.db.get("periodEvents", first.eventId))
     ).not.toHaveProperty("startCertainty");
 
+    await expect(asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
+      periodEventId: second.eventId,
+      expectedAuthorityVersion: 1,
+    })).rejects.toThrow("PERIOD_DELETION_UNAVAILABLE");
+    expect(await t.run((ctx) => ctx.db.get(second.eventId))).not.toBeNull();
+
     await asPrimary.mutation(api.mutations.periods.deletePeriodEvent, {
       periodEventId: second.eventId,
     });

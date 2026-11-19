@@ -914,6 +914,11 @@ export const deletePeriodEvent = mutation({
     }
 
     if (!isCycleFactsV1Enabled()) {
+      // Versioned callers asked for a tombstone. A stale flag must never turn
+      // that request into a physical delete.
+      if (args.expectedAuthorityVersion !== undefined) {
+        throw new Error("PERIOD_DELETION_UNAVAILABLE");
+      }
       await ctx.db.delete("periodEvents", args.periodEventId);
       await cancelSource(ctx, `period:${period._id}`, "authority_revoked");
       await advanceAndInvalidateLateStatus(ctx, user._id);
