@@ -46,7 +46,10 @@ vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePic
 
 vi.mock("convex/react", () => ({
   useConvexConnectionState: () => ({ isWebSocketConnected: runtime.connection }),
-  useQuery: () => runtime.queries.shift(),
+  useQuery: (_reference: unknown, args?: { startDate?: string; endDate?: string } | "skip") =>
+    args && args !== "skip" && args.startDate && args.startDate === args.endDate
+      ? runtime.pain
+      : runtime.queries.shift(),
   useMutation: () => runtime.mutations.shift(),
 }));
 
