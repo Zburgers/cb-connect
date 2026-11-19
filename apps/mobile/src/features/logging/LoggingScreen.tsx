@@ -12,6 +12,9 @@ function Action({ label, onPress, disabled }: { label: string; onPress: () => vo
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
 }
 
+type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
+type PainDraft = { score: string; tags: PainTag[]; note: string };
+
 export function LoggingScreen() {
   const access = useContext(AccessContext);
   const role = access === "partner" ? "partner" : "primary";
@@ -35,11 +38,9 @@ export function LoggingScreen() {
   const savePain = useMutation(loggingApi.painLog.createOrUpdatePainLog);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState("");
-  const [painDate, setPainDate] = useState<string | null>(null);
+  const [painDate, selectPainDate] = useState<string | null>(null);
+  const [painDraft, setPainDraft] = useState<{ key: string; changes: Partial<PainDraft> } | null>(null);
   const [certainty, setCertainty] = useState<"exact" | "approximate">("exact");
-  const [painScore, setPainScore] = useState("0");
-  const [painTags, setPainTags] = useState<Array<"cramps" | "headache" | "back" | "fatigue" | "other">>([]);
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -48,11 +49,40 @@ export function LoggingScreen() {
   const [editEndDate, setEditEndDate] = useState("");
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
   const periodWritesReady = dateContextReady && periodHistory !== undefined;
-  const painWritesReady = dateContextReady && painHistory !== undefined;
   const disabledPeriod = !periodWritesReady || busy;
-  const disabledPain = !painWritesReady || busy;
   const selectedStartDate = startDate ?? (role === "partner" ? "" : today ?? "");
   const selectedPainDate = painDate ?? today ?? "";
+  const selectedPain = useQuery(loggingApi.history.getPainHistory,
+    dateContextReady && role === "primary" && selectedPainDate
+      ? { startDate: selectedPainDate, endDate: selectedPainDate }
+      : "skip",
+  );
+  const painWritesReady = dateContextReady && selectedPain !== undefined;
+  const disabledPain = !painWritesReady || busy;
+  const existingPain = selectedPain?.find((entry) => entry.date === selectedPainDate);
+  const painDraftKey = `${account?._id ?? ""}:${selectedPainDate}`;
+  const painChanges = painDraft?.key === painDraftKey ? painDraft.changes : undefined;
+  const painScore = painChanges?.score ?? String(existingPain?.painScore ?? 0);
+  const painTags = painChanges?.tags ?? existingPain?.tags ?? [];
+  const note = painChanges?.note ?? existingPain?.note ?? "";
+
+  const changePain = (changes: Partial<PainDraft>) => {
+    if (disabledPain) return;
+    setPainDraft((current) => ({
+      key: painDraftKey,
+      changes: { ...(current?.key === painDraftKey ? current.changes : {}), ...changes },
+    }));
+  };
+  const setPainDate = (date: string) => {
+    if (date === selectedPainDate) return;
+    setPainDraft(null);
+    selectPainDate(date);
+  };
+  const setPainScore = (score: string) => changePain({ score });
+  const setNote = (value: string) => changePain({ note: value });
+  const togglePainTag = (tag: PainTag) => changePain({
+    tags: painTags.includes(tag) ? painTags.filter((item) => item !== tag) : [...painTags, tag],
+  });
 
   const run = async (work: () => Promise<unknown>, success: string) => {
     setError(""); setSaved(""); setBusy(true);
@@ -88,7 +118,7 @@ export function LoggingScreen() {
     if (!painWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     const score = Number(painScore);
     if (!Number.isInteger(score) || score < 0 || score > 10) throw new Error("invalid pain score");
-    await savePain({ date: selectedPainDate, painScore: score, tags: painTags, ...(note ? { note } : {}) });
+    await savePain({ date: selectedPainDate, painScore: score, tags: [...painTags], ...(note ? { note } : {}) });
   }, "Pain entry saved.");
 
   const correct = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
@@ -120,17 +150,18 @@ export function LoggingScreen() {
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Pain log</Text>
       <Text style={{ color: palette.muted }}>Rate your pain from 0 (none) to 10 (worst).</Text>
       <Text style={{ color: palette.foreground }}>Date</Text>
-      <DateField label="Pain log date" value={selectedPainDate} onChange={setPainDate} palette={palette} disabled={disabledPain} maximumDate={today ?? undefined} />
+      <DateField label="Pain log date" value={selectedPainDate} onChange={setPainDate} palette={palette} disabled={!dateContextReady || busy} maximumDate={today ?? undefined} />
+      {selectedPain === undefined && dateContextReady ? <Text style={{ color: palette.muted }}>Loading pain entry…</Text> : null}
       <Text style={{ color: palette.foreground }}>Pain score</Text>
-      <TextInput accessibilityLabel="Pain score from 0 to 10" keyboardType="number-pad" value={painScore} onChangeText={setPainScore} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+      <TextInput accessibilityLabel="Pain score from 0 to 10" keyboardType="number-pad" value={painScore} editable={!disabledPain} onChangeText={setPainScore} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
       <View style={styles.row}>
         <Action label="Less pain" disabled={disabledPain || !/^\d+$/.test(painScore) || Number(painScore) <= 0 || Number(painScore) > 10} onPress={() => setPainScore(String(Number(painScore) - 1))} />
         <Action label="More pain" disabled={disabledPain || !/^\d+$/.test(painScore) || Number(painScore) >= 10} onPress={() => setPainScore(String(Number(painScore) + 1))} />
       </View>
       <Text style={{ color: palette.muted }}>Pain tags</Text>
-      <View style={styles.row}>{(["cramps", "headache", "back", "fatigue", "other"] as const).map((tag) => <Pressable key={tag} accessibilityRole="button" accessibilityLabel={`${painTags.includes(tag) ? "Remove" : "Add"} ${tag} pain tag`} accessibilityState={{ selected: painTags.includes(tag) }} onPress={() => setPainTags((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag])} style={[styles.button, { backgroundColor: painTags.includes(tag) ? palette.accent : palette.surface, borderColor: palette.border, borderWidth: 1 }]}><Text style={[styles.buttonText, { color: painTags.includes(tag) ? palette.surface : palette.foreground }]}>{tag}</Text></Pressable>)}</View>
+      <View style={styles.row}>{(["cramps", "headache", "back", "fatigue", "other"] as const).map((tag) => <Pressable key={tag} accessibilityRole="button" accessibilityLabel={`${painTags.includes(tag) ? "Remove" : "Add"} ${tag} pain tag`} accessibilityState={{ selected: painTags.includes(tag), disabled: disabledPain }} disabled={disabledPain} onPress={() => togglePainTag(tag)} style={[styles.button, { backgroundColor: painTags.includes(tag) ? palette.accent : palette.surface, borderColor: palette.border, borderWidth: 1 }]}><Text style={[styles.buttonText, { color: painTags.includes(tag) ? palette.surface : palette.foreground }]}>{tag}</Text></Pressable>)}</View>
       <Text style={{ color: palette.foreground }}>Private note (optional)</Text>
-      <TextInput accessibilityLabel="Private pain note, optional" maxLength={140} value={note} onChangeText={setNote} placeholder="Up to 140 characters" placeholderTextColor={palette.muted} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+      <TextInput accessibilityLabel="Private pain note, optional" maxLength={140} value={note} editable={!disabledPain} onChangeText={setNote} placeholder="Up to 140 characters" placeholderTextColor={palette.muted} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
       <Action label="Save pain log" disabled={disabledPain || !selectedPainDate.trim()} onPress={savePainEntry} />
     </> : null}
 
