@@ -40,6 +40,7 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("react-native", () => ({
+  KeyboardAvoidingView: "KeyboardAvoidingView",
   Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
@@ -47,6 +48,7 @@ vi.mock("react-native", () => ({
   Text: "Text",
   TextInput: "TextInput",
   View: "View",
+  useWindowDimensions: () => ({ fontScale: 1 }),
   useColorScheme: () => runtime.scheme,
 }));
 
@@ -72,6 +74,8 @@ vi.mock("convex/react", () => ({
 import React from "react";
 import { DateField } from "./DateField";
 import { LoggingScreen } from "./LoggingScreen";
+import { BloomScreen } from "../../components/BloomScreen";
+import { BloomPanel } from "../../components/BloomPanel";
 import { localDate } from "./logging";
 
 const startSelf = vi.fn().mockResolvedValue({ eventId: "event-new" });
@@ -141,7 +145,7 @@ function inputValue(tree: React.ReactNode, label: string) {
 function dateField(tree: React.ReactNode, label: string) {
   const found = find(tree, (element) => element.type === DateField && (element.props as { label?: string }).label === label);
   if (!found) throw new Error(`Missing date field: ${label}`);
-  return found.props as { value: string; onChange: (value: string) => void; palette: { surface: string; foreground: string }; maximumDate?: string };
+  return found.props as { value: string; onChange: (value: string) => void; palette: { surface: string; foreground: string }; maximumDate?: string; disabled?: boolean };
 }
 
 function textContent(node: React.ReactNode): string {
@@ -255,11 +259,23 @@ describe("LoggingScreen actions", () => {
       runtime.periods = openPeriod;
       const tree = render();
       const date = dateField(tree, "Period end date");
-      const historyCard = find(tree, (element) => element.type === "View" && Array.isArray((element.props as { style?: unknown }).style) && ((element.props as { style: unknown[] }).style).some((style) => Boolean(style && typeof style === "object" && "backgroundColor" in style)));
+      const historyCard = find(tree, (element) => element.type === "View" && Array.isArray((element.props as { style?: unknown }).style) && ((element.props as { style: unknown[] }).style).some((style) => Boolean(style && typeof style === "object" && (style as { backgroundColor?: string }).backgroundColor === background)));
       expect(date.palette.surface).toBe(background);
       expect(date.palette.foreground).toBe(foreground);
       expect((historyCard?.props as { style: unknown[] }).style).toContainEqual(expect.objectContaining({ backgroundColor: background }));
     }
+  });
+
+  it("groups logging into period, private pain, and history panels with a scrollable header", () => {
+    const tree = render();
+    const screen = tree as React.ReactElement;
+    expect(screen.type).toBe(BloomScreen);
+    expect(screen?.props).toMatchObject({ title: "Log and history", eyebrow: "YOUR PRIVATE RECORD" });
+    const labels = ["Period entry", "Private pain log", "Cycle history"];
+    for (const label of labels) {
+      expect(find(tree, (element) => element.type === BloomPanel && (element.props as { accessibilityLabel?: string }).accessibilityLabel === label)).toBeDefined();
+    }
+    expect({ title: (screen.props as { title: string }).title, panels: labels, fields: ["Period start date", "Optional period end date", "Pain log date"].map((label) => ({ label, disabled: dateField(tree, label).disabled ?? false })), actions: ["Save period", "Save pain log"].map((label) => ({ label, disabled: buttonIsDisabled(tree, label) })) }).toMatchSnapshot();
   });
 
   it("reports end confirmation and omits timezone changes when closing a saved open period", async () => {

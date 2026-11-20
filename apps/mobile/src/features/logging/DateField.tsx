@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { mobileColors } from "../../theme/tokens";
+import { bloomType } from "../../theme/typography";
+import { BloomText as Text } from "../../components/BloomText";
 import { formatLocalDateOnly, parseDateOnly } from "./dateOnly";
 
 type DateFieldProps = {
@@ -61,25 +63,26 @@ export function DateField({
 
   return (
     <View style={styles.container}>
+      <Text allowFontScaling accessibilityRole="text" style={[bloomType.label, { color: palette.muted }]}>{label}</Text>
       <View style={styles.row}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${label}: ${value || placeholder}`}
           disabled={disabled}
           onPress={openPicker}
-          style={[styles.control, { backgroundColor: palette.surface, borderColor: palette.border }]}
+          style={[styles.control, { backgroundColor: palette.surface, borderColor: palette.controlBorder }]}
         >
-          <Text style={{ color: palette.foreground, fontSize: 16 }}>{value || placeholder}</Text>
-          <Text style={{ color: palette.muted, fontSize: 14 }}>Choose date</Text>
+          <Text allowFontScaling style={[bloomType.body, { color: palette.foreground }]}>{value || placeholder}</Text>
+          <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>Choose date</Text>
         </Pressable>
         {clearable && value ? (
           <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${label}`} disabled={disabled} onPress={() => onChange("")} style={styles.clear}>
-            <Text style={{ color: palette.accent, fontWeight: "600" }}>Clear</Text>
+            <Text allowFontScaling style={[bloomType.button, { color: palette.accent }]}>Clear</Text>
           </Pressable>
         ) : null}
       </View>
       {open && !disabled && Platform.OS !== "android" ? (
-        <View style={Platform.OS === "ios" ? [styles.iosPicker, { backgroundColor: palette.glass, borderColor: palette.border }] : undefined}>
+        <View style={Platform.OS === "ios" ? [styles.iosPicker, { backgroundColor: palette.glass, borderColor: palette.controlBorder }] : undefined}>
           <DateTimePicker
             mode="date"
             display={Platform.OS === "ios" ? "spinner" : "default"}
@@ -93,7 +96,7 @@ export function DateField({
               if (!current.current.disabled) current.current.onChange(formatLocalDateOnly(pickerValue));
               setOpen(false);
             }} style={styles.done}>
-              <Text style={{ color: palette.accent, fontWeight: "700" }}>Done</Text>
+              <Text allowFontScaling style={[bloomType.button, { color: palette.accent }]}>Done</Text>
             </Pressable>
           ) : null}
         </View>
@@ -105,7 +108,7 @@ export function DateField({
 const styles = StyleSheet.create({
   container: { gap: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  control: { minHeight: 56, flex: 1, justifyContent: "center", gap: 2, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16 },
+  control: { minHeight: 56, flex: 1, justifyContent: "center", gap: 2, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
   clear: { minHeight: 48, justifyContent: "center", paddingHorizontal: 8 },
   iosPicker: { borderWidth: 1, borderRadius: 18, overflow: "hidden", paddingBottom: 8 },
   done: { minHeight: 48, alignItems: "flex-end", justifyContent: "center", paddingHorizontal: 16 },

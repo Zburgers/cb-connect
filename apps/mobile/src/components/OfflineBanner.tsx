@@ -1,6 +1,8 @@
 import React from "react";
-import { StyleSheet, Text, useColorScheme, View } from "react-native";
+import { StyleSheet, useColorScheme, View } from "react-native";
 import { mobileColors } from "../theme/tokens";
+import { BloomText as Text } from "./BloomText";
+import { bloomType } from "../theme/typography";
 
 export function OfflineBanner({ isOffline }: { isOffline: boolean }): React.JSX.Element | null {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
@@ -23,7 +25,7 @@ export function OfflineBanner({ isOffline }: { isOffline: boolean }): React.JSX.
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: 18,
     padding: 12,
   },
   text: {

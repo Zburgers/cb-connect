@@ -41,6 +41,8 @@ vi.mock("react-native", async () => {
   return {
     ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) =>
       createElement("span", { "aria-label": accessibilityLabel }),
+    KeyboardAvoidingView: native("section"),
+    Platform: { OS: "android" },
     Pressable: ({ children, accessibilityLabel, onPress }: {
       children?: React.ReactNode;
       accessibilityLabel?: string;
@@ -54,6 +56,7 @@ vi.mock("react-native", async () => {
     Text: native("span"),
     useColorScheme: () => "light",
     View: native("div"),
+    useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844 }),
   };
 });
 
@@ -83,6 +86,8 @@ describe("mobile notification inbox contract", () => {
     expect(inboxMocks.paginationArgs).toEqual({});
     expect(markup).toContain("Message activity");
     expect(markup).toContain("Open messages");
+    expect(markup).toContain("Unread");
+    expect(markup).toContain("PRIVATE UPDATES");
 
     inboxMocks.available = false;
     markup = renderToStaticMarkup(<Inbox />);
@@ -159,6 +164,17 @@ describe("mobile notification inbox contract", () => {
     inboxMocks.pressables.find(({ label }) => label === "Open partner for A nudge is ready")?.onPress?.();
     inboxMocks.pressables.find(({ label }) => label === "Open settings for Connection update")?.onPress?.();
     expect(inboxMocks.routes).toEqual(["/(app)/chat", "/(app)/partner", "/(app)/settings"]);
+  });
+
+  it("keeps read state explicit and action controls reachable in large-text layouts", () => {
+    inboxMocks.available = true;
+    inboxMocks.results = [{ itemId: "read-item", eventType: "partner_message.v1", templateVersion: "g4-static-v1", route: "messages", state: "current", createdAt: 1, readAt: 2 }];
+    const markup = renderToStaticMarkup(<Inbox />);
+    expect(markup).toContain("Read");
+    expect(markup).toContain("aria-label=\"Dismiss Message activity\"");
+    expect(markup).toMatchSnapshot();
+    expect(source).toContain("allowFontScaling");
+    expect(source).toContain("minHeight: 48");
   });
 
   it("does not query inbox content unless the server-derived active role is available", () => {

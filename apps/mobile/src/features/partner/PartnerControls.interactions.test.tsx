@@ -42,6 +42,7 @@ vi.mock("react", async (importOriginal) => {
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
+  KeyboardAvoidingView: "KeyboardAvoidingView",
   Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
@@ -50,6 +51,7 @@ vi.mock("react-native", () => ({
   Text: "Text",
   TextInput: "TextInput",
   View: "View",
+  useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844 }),
   useColorScheme: () => runtime.scheme,
 }));
 
@@ -62,6 +64,7 @@ vi.mock("convex/react", () => ({
   useQuery: () => runtime.queries.shift(),
 }));
 vi.mock("../home/HomeNudges", () => ({ HomeNudges: () => null }));
+vi.mock("../../components/BloomLocket", () => ({ BloomLocket: () => null }));
 
 import React from "react";
 import { PartnerControls } from "./PartnerControls";
@@ -82,6 +85,7 @@ function render(
   couple: Record<string, unknown> = activeCouple,
   role: "primary" | "partner" = "primary",
   mutationOverrides: Partial<Record<number, (...args: unknown[]) => unknown>> = {},
+  queryValues: unknown[] = [null, null],
 ) {
   runtime.mutations = [
     vi.fn().mockResolvedValue({}),
@@ -92,7 +96,7 @@ function render(
   for (const [index, mutation] of Object.entries(mutationOverrides)) {
     if (mutation) runtime.mutations[Number(index)] = mutation;
   }
-  runtime.queries = [null, null];
+  runtime.queries = queryValues;
   let elements: Element[] = [];
   for (let pass = 0; pass < 2; pass += 1) {
     runtime.cursor = 0;
@@ -194,6 +198,17 @@ describe("PartnerControls interactions", () => {
     await Promise.resolve();
     elements = render();
     expect(textInput(elements, "Private partner nickname").editable).toBe(true);
+  });
+
+  it("presents primary sharing controls separately from the partner shared-cycle view", () => {
+    const primary = render(activeCouple, "primary");
+    expect(primary.some((element) => element.type === "Pressable" && element.props.accessibilityRole === "switch" && element.props.accessibilityLabel === "Cycle phase")).toBe(true);
+    expect(primary.some((element) => element.type === "Text" && String(element.props.children).includes("Private to your account"))).toBe(true);
+
+    const partner = render(activeCouple, "partner", {}, [null, undefined]);
+    expect(partner.some((element) => element.type === "Text" && element.props.children === "Shared cycle update")).toBe(true);
+    expect(partner.some((element) => element.type === "Pressable" && element.props.accessibilityRole === "switch")).toBe(false);
+    expect({ primaryControls: primary.filter((element) => ["Pressable", "TextInput", "Text"].includes(String(element.type))).map((element) => ({ type: element.type, role: element.props.accessibilityRole, label: element.props.accessibilityLabel })).filter((item) => item.role || item.label), partnerControls: partner.filter((element) => ["Pressable", "TextInput", "Text"].includes(String(element.type))).map((element) => ({ type: element.type, role: element.props.accessibilityRole, label: element.props.accessibilityLabel })).filter((item) => item.role || item.label) }).toMatchSnapshot();
   });
 
   it("does not copy or share a cached pairing code after its expiry time", async () => {

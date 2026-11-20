@@ -1,0 +1,318 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Calendar estimates are paused 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Calendar estimates are paused",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Follicular 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Follicular",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": undefined,
+      "phase": "Follicular",
+      "role": undefined,
+      "type": "PhaseArtwork",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Luteal 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Luteal",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": undefined,
+      "phase": "Luteal",
+      "role": undefined,
+      "type": "PhaseArtwork",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Menstruation 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Recorded",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Menstruation",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": undefined,
+      "phase": "Menstruation",
+      "role": undefined,
+      "type": "PhaseArtwork",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Not enough information 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Not enough information",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Ovulation 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Ovulation",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": undefined,
+      "phase": "Ovulation",
+      "role": undefined,
+      "type": "PhaseArtwork",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Calendar timing is an estimate and does not confirm ovulation.",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
+
+exports[`Bloom Home presentation > retains public state copy and health caveats for Timing is uncertain 1`] = `
+{
+  "darkSurface": {
+    "backgroundColor": "#503635",
+    "borderColor": "#795D62",
+  },
+  "light": [
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": "summary",
+      "type": "View",
+    },
+    {
+      "copy": undefined,
+      "phase": undefined,
+      "role": undefined,
+      "type": "View",
+    },
+    {
+      "copy": "Calendar estimate",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "copy": "Timing is uncertain",
+      "phase": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "copy": "Server-provided detail",
+      "phase": undefined,
+      "role": undefined,
+      "type": "Text",
+    },
+  ],
+}
+`;
