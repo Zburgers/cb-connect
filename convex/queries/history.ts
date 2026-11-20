@@ -113,7 +113,18 @@ export const getPainHistory = query({
       )
       .take(MAX_PAIN_HISTORY_ROWS);
 
-    return logs.filter((log) => log.date <= args.endDate);
+    const visibleLogs = logs.filter((log) => log.date <= args.endDate);
+    if (user.role !== "partner") {
+      return visibleLogs;
+    }
+
+    return visibleLogs.map(({ date, painScore, tags, createdAt, updatedAt }) => ({
+      date,
+      painScore,
+      tags,
+      createdAt,
+      updatedAt,
+    }));
   },
 });
 
@@ -486,7 +497,13 @@ export const getTimelineHistory = query({
             }
           : {}),
         type: "pain",
-        pain: { score: pain.painScore, tags: pain.tags, note: pain.note },
+        pain: {
+          score: pain.painScore,
+          tags: pain.tags,
+          ...(user.role === "primary" && pain.note !== undefined
+            ? { note: pain.note }
+            : {}),
+        },
       });
     }
 

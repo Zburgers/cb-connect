@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 
 const source = readFileSync(new URL("./LoggingScreen.tsx", import.meta.url), "utf8");
+const exportSource = readFileSync(new URL("./historyExport.ts", import.meta.url), "utf8");
 const dateFieldSource = readFileSync(new URL("./DateField.tsx", import.meta.url), "utf8");
 
 describe("mobile logging safety", () => {
@@ -16,13 +17,14 @@ describe("mobile logging safety", () => {
     expect(loggingErrorMessage(new Error("FUTURE_DATE"))).toContain("today or an earlier date");
   });
 
-  it("leaves write authorization and correction eligibility with Convex", () => {
+  it("leaves write authorization, correction, and deletion eligibility with Convex", () => {
     expect(source).toContain("loggingApi.periods.logPeriodStart");
     expect(source).toContain("loggingApi.periods.assistLogPeriodStart");
     expect(source).toContain("loggingApi.periods.updatePeriodEvent");
     expect(source).toContain("!period.canCorrect");
-    expect(source).toContain("period.canCorrect && period._id");
-    expect(source).not.toContain("deletePeriodEvent");
+    expect(source).toContain("entry.period?.canCorrect");
+    expect(source).toContain("loggingApi.periods.deletePeriodEvent");
+    expect(source).toContain("expectedAuthorityVersion: period.authorityVersion");
   });
 
   it("reports offline writes truthfully and labels controls for assistive technology", () => {
@@ -43,7 +45,7 @@ describe("mobile logging safety", () => {
     expect(isValidTimeZone(undefined)).toBe(false);
     expect(isValidTimeZone("not-a-timezone")).toBe(false);
     expect(isValidTimeZone("Asia/Kolkata")).toBe(true);
-    expect(source).not.toContain("pain.note");
+    expect(exportSource).toContain("isPartner ? \"\" : entry.pain!.note");
     expect(source).toContain("account?.timeZone");
     expect(source).not.toContain('account?.timeZone ?? "UTC"');
     expect(source).not.toContain("timeZone:");

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { mobileColors } from "../../theme/tokens";
 import { formatLocalDateOnly, parseDateOnly } from "./dateOnly";
 
@@ -28,10 +28,29 @@ export function DateField({
   clearable = false,
 }: DateFieldProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open || Platform.OS !== "android") return;
+    return () => { void DateTimePickerAndroid.dismiss("date").catch(() => {}); };
+  }, [open]);
   const pickerValue = parseDateOnly(value) ?? parseDateOnly(maximumDate ?? "") ?? new Date();
   const handleChange = (event: DateTimePickerEvent, date?: Date) => {
     if (event.type === "set" && date) onChange(formatLocalDateOnly(date));
     if (Platform.OS === "android" || event.type !== "set") setOpen(false);
+  };
+  const openPicker = () => {
+    setOpen(true);
+    if (Platform.OS === "android") {
+      // Open once per press. The declarative Android bridge reopens on callback
+      // changes, which can reset an unconfirmed selection during a parent render.
+      DateTimePickerAndroid.open({
+        mode: "date",
+        value: pickerValue,
+        maximumDate: parseDateOnly(maximumDate ?? "") ?? undefined,
+        minimumDate: parseDateOnly(minimumDate ?? "") ?? undefined,
+        onChange: handleChange,
+        onError: () => setOpen(false),
+      });
+    }
   };
 
   return (
@@ -41,7 +60,7 @@ export function DateField({
           accessibilityRole="button"
           accessibilityLabel={`${label}: ${value || placeholder}`}
           disabled={disabled}
-          onPress={() => setOpen(true)}
+          onPress={openPicker}
           style={[styles.control, { backgroundColor: palette.surface, borderColor: palette.border }]}
         >
           <Text style={{ color: palette.foreground, fontSize: 16 }}>{value || placeholder}</Text>
@@ -53,7 +72,7 @@ export function DateField({
           </Pressable>
         ) : null}
       </View>
-      {open ? (
+      {open && Platform.OS !== "android" ? (
         <View style={Platform.OS === "ios" ? [styles.iosPicker, { backgroundColor: palette.glass, borderColor: palette.border }] : undefined}>
           <DateTimePicker
             mode="date"

@@ -1,7 +1,7 @@
 import type { api } from "../../convex/api";
 
 export declare const loggingApi: {
-  readonly history: Pick<typeof api["queries"]["history"], "getPeriodHistory" | "getPainHistory">;
+  readonly history: Pick<typeof api["queries"]["history"], "getPeriodHistory" | "getPainHistory" | "getTimelineHistory">;
   readonly periods: Pick<typeof api["mutations"]["periods"],
     | "logPeriodStart"
     | "assistLogPeriodStart"
@@ -9,6 +9,7 @@ export declare const loggingApi: {
     | "assistLogPeriodEnd"
     | "updatePeriodEvent"
     | "correctAssistedPeriodEvent"
+    | "deletePeriodEvent"
   >;
   readonly painLog: Pick<typeof api["mutations"]["painLog"], "createOrUpdatePainLog">;
 };
