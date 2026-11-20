@@ -662,6 +662,7 @@ export const correctAssistedPeriodEvent = mutation({
       throw new Error("PRIMARY_AUTHORITY_REQUIRED");
     }
 
+    const cycleFactsEnabled = isCycleFactsV1Enabled();
     const timeZone = resolveCalendarTimeZone(primaryUser.timeZone);
     requirePastOrTodayCalendarDate(args.startDate, "Start date", timeZone);
     if (args.endDate !== undefined) {
@@ -670,6 +671,7 @@ export const correctAssistedPeriodEvent = mutation({
         throw new Error("End date cannot be before start date");
       }
       if (
+        cycleFactsEnabled &&
         period.endDate === undefined &&
         args.endCertainty === undefined &&
         args.promoteEndCertainty !== true
@@ -685,7 +687,7 @@ export const correctAssistedPeriodEvent = mutation({
         existingEndDate: period.endDate,
         existingLegacyReason: period.legacyReason,
         correctedEndDate: args.endDate,
-        correctedEndCertainty: args.endCertainty,
+        correctedEndCertainty: args.endCertainty ?? (cycleFactsEnabled ? undefined : "legacy_unknown"),
         promoteStartCertainty: args.promoteStartCertainty === true,
         promoteEndCertainty: args.promoteEndCertainty === true,
       });

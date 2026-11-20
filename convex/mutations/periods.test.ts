@@ -826,6 +826,30 @@ describe("prediction pause cycle settings", () => {
 });
 
 describe("partner-assisted period correction", () => {
+  test("allows a legacy partner correction to add an end date without claiming certainty", async () => {
+    vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
+    const t = convexTest(schema, modules);
+    const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
+      sharingPhase: true,
+      sharingPeriodWrite: true,
+    });
+    await setPrimaryTimeZone(t);
+    const eventId = await seedAssistedPeriodEvent(t, primaryId, partnerId);
+
+    await asPartner.mutation(api.mutations.periods.correctAssistedPeriodEvent, {
+      periodEventId: eventId,
+      expectedAuthorityVersion: 1,
+      startDate: "2026-06-21",
+      endDate: "2026-06-25",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get(eventId))).toMatchObject({
+      endDate: "2026-06-25",
+      endCertainty: "legacy_unknown",
+      authorityVersion: 2,
+    });
+  });
+
   test("partner can correct only their own assisted fact", async () => {
     const t = convexTest(schema, modules);
     const { asPartner, primaryId, partnerId } = await seedActiveCouple(t, {
