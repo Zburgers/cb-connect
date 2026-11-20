@@ -211,7 +211,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         ) : null}
       </ScrollView>
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
         {QUICK_COMPOSE.map((suggestion) => (
           <Pressable
             key={suggestion}

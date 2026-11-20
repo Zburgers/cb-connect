@@ -176,6 +176,10 @@ describe("mobile private chat composer interactions", () => {
   test("quick-compose suggestions fill the draft without sending", () => {
     let elements = renderChat();
 
+    const suggestions = elements.find((element) => element.type === "ScrollView" &&
+      (element.props as { horizontal?: boolean }).horizontal);
+    expect(suggestions?.props).toMatchObject({ keyboardShouldPersistTaps: "handled" });
+
     button(elements, "Compose Thinking of you.").onPress();
     elements = renderChat();
 
