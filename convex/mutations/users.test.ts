@@ -90,6 +90,31 @@ async function allScheduleRows(t: TestBackend, userId: Id<"users">) {
   );
 }
 
+test("rejects stale profile preferences without overwriting a newer save", async () => {
+  const t = convexTest(schema, modules);
+  const userId = await seedUser(t, { clerkId: "profile-writer", name: "Profile Writer", role: "primary" });
+  const mobile = t.withIdentity({ subject: "profile-writer" });
+  const web = t.withIdentity({ subject: "profile-writer" });
+  const expectedCurrent = {
+    preferredName: "",
+    gender: "prefer_not_to_say" as const,
+    partnerType: "partner" as const,
+  };
+
+  await web.mutation(api.mutations.users.updateUserPreferences, { preferredName: "Web edit" });
+  await expect(mobile.mutation(api.mutations.users.updateUserPreferences, {
+    preferredName: "Stale edit",
+    expectedCurrent,
+  })).rejects.toMatchObject({ data: { code: "STALE_PROFILE_PREFERENCES" } });
+  expect(await t.run((ctx) => ctx.db.get(userId))).toMatchObject({ preferredName: "Web edit" });
+
+  await mobile.mutation(api.mutations.users.updateUserPreferences, {
+    preferredName: "Mobile edit",
+    expectedCurrent: { ...expectedCurrent, preferredName: "Web edit" },
+  });
+  expect(await t.run((ctx) => ctx.db.get(userId))).toMatchObject({ preferredName: "Mobile edit" });
+});
+
 describe("user role onboarding", () => {
   test("allows the first role selection for an unlinked user", async () => {
     const t = convexTest(schema, modules);

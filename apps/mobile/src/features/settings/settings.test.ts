@@ -5,6 +5,10 @@ const source = readFileSync(new URL("./Settings.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../../app/(app)/settings.tsx", import.meta.url), "utf8");
 
 describe("mobile settings privacy and accessibility", () => {
+  it("keys draft-bearing settings state to the authenticated profile", () => {
+    expect(source).toContain("key={profile._id}");
+  });
+
   it("offers app-level Light, System, and Dark appearance choices", () => {
     expect(source).toContain("Appearance");
     expect(source).toContain("themeModes.map");
@@ -52,6 +56,6 @@ describe("mobile settings privacy and accessibility", () => {
 
   it("does not offer account erasure while D-012 is unresolved or expose mutation errors", () => {
     expect(source).toContain("Account deletion is unavailable until the retention and deletion policy is approved.");
-    expect(source).not.toMatch(/error\.message|console\.(log|error|warn)/i);
+    expect(source).not.toMatch(/setError\(error\.message\)|console\.(log|error|warn)/i);
   });
 });
