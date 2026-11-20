@@ -301,6 +301,7 @@ export declare const api: {
       readonly markReadThrough: FunctionReference<"mutation", "public", { messageId: GenericId<"coupleMessages"> }, { readAt: number }>;
       readonly react: FunctionReference<"mutation", "public", { messageId: GenericId<"coupleMessages">; emoji: string },
         { removed?: boolean; updated?: boolean; created?: boolean }>;
+      readonly clear: FunctionReference<"mutation", "public", { relationshipGeneration?: string }, { clearedAt: number }>;
     };
     readonly nudges: {
       readonly send: FunctionReference<"mutation", "public", { emoji: string }, string>;

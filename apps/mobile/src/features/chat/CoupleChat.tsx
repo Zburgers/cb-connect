@@ -1,12 +1,13 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePaginatedQuery, useMutation, useConvexConnectionState } from "convex/react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
 
 const REACTIONS = ["💗", "✨", "🫶", "😂", "🥺", "🌙"];
+const QUICK_COMPOSE = ["Thinking of you.", "Want me to handle dinner?", "I am here. No pressure to explain."];
 
 export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: boolean; relationshipGeneration: string }): React.JSX.Element {
   const palette = dark ? mobileColors.dark : mobileColors.light;
@@ -19,12 +20,18 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
   );
   const sendMessage = useMutation(api.mutations.messages.send);
   const reactToMessage = useMutation(api.mutations.messages.react);
+  const clearThread = useMutation(api.mutations.messages.clear);
   const markDelivered = useMutation(api.mutations.messages.markDelivered);
   const markReadThrough = useMutation(api.mutations.messages.markReadThrough);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [isAtBottom, setIsAtBottom] = useState(false);
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
   const isAtBottomRef = useRef(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const contentHeight = useRef(0);
@@ -76,8 +83,48 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
     }
   }
 
+  function insertEmoji(emoji: string) {
+    const { start, end } = selection;
+    const next = draft.slice(0, start) + emoji + draft.slice(end);
+    if (next.length > 500) return;
+    setDraft(next);
+    setSelection({ start: start + emoji.length, end: start + emoji.length });
+  }
+
+  function confirmClearThread() {
+    if (!connected || clearing) return;
+    Alert.alert("Clear this chat?", "This clears the conversation for both of you. It cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear chat",
+        style: "destructive",
+        onPress: () => {
+          if (!connectedRef.current) {
+            setError("Reconnect before clearing chat.");
+            return;
+          }
+          setError(null);
+          setClearing(true);
+          void clearThread({ relationshipGeneration })
+            .catch(() => setError("Chat not cleared. Refresh and try again."))
+            .finally(() => setClearing(false));
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: "transparent" }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={clearing ? "Clearing chat" : "Clear chat"}
+        accessibilityState={{ disabled: !connected || clearing }}
+        disabled={!connected || clearing}
+        onPress={confirmClearThread}
+        style={styles.clearButton}
+      >
+        <Text style={{ color: palette.muted }}>{clearing ? "Clearing…" : "Clear chat"}</Text>
+      </Pressable>
       {!connected ? (
         <Text accessibilityRole="alert" style={{ color: palette.foreground }}>
           Reconnect before sending. Messages are not queued offline.
@@ -164,15 +211,50 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         ) : null}
       </ScrollView>
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      <TextInput
-        accessibilityLabel="Write a private message"
-        maxLength={500}
-        multiline
-        onChangeText={setDraft}
-        placeholder="Write a message"
-        style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
-        value={draft}
-      />
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" style={styles.quickScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
+        {QUICK_COMPOSE.map((suggestion) => (
+          <Pressable
+            key={suggestion}
+            accessibilityRole="button"
+            accessibilityLabel={`Compose ${suggestion}`}
+            onPress={() => { setDraft(suggestion); setSelection({ start: suggestion.length, end: suggestion.length }); }}
+            style={[styles.quickChip, { borderColor: palette.border, backgroundColor: palette.glass }]}
+          >
+            <Text style={{ color: palette.foreground }}>{suggestion}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View style={styles.composer}>
+        <TextInput
+          accessibilityLabel="Write a private message"
+          maxLength={500}
+          multiline
+          onChangeText={setDraft}
+          onSelectionChange={({ nativeEvent }) => setSelection(nativeEvent.selection)}
+          placeholder="Write a message"
+          selection={selection}
+          style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
+          value={draft}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={showEmojiPicker ? "Hide emoji picker" : "Add emoji"}
+          accessibilityState={{ expanded: showEmojiPicker }}
+          onPress={() => setShowEmojiPicker((visible) => !visible)}
+          style={styles.emojiToggle}
+        >
+          <Text style={{ color: palette.foreground }}>😊</Text>
+        </Pressable>
+      </View>
+      {showEmojiPicker ? (
+        <View accessibilityLabel="Emoji input" style={styles.emojiPicker}>
+          {REACTIONS.map((emoji) => (
+            <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={`Insert ${emoji}`} onPress={() => insertEmoji(emoji)} style={styles.reactionButton}>
+              <Text style={{ color: palette.foreground }}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={sending ? "Sending message" : "Send message"}
@@ -194,8 +276,15 @@ const styles = StyleSheet.create({
   message: { gap: 4, padding: 12, borderRadius: 16, borderWidth: 1, maxWidth: "88%" },
   sender: { fontWeight: "700" },
   reactions: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  quickScroll: { flexGrow: 0, flexShrink: 0 },
+  quickCompose: { flexDirection: "row", gap: 8, alignItems: "center" },
+  quickChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   reactionButton: { minHeight: 40, minWidth: 40, alignItems: "center", justifyContent: "center", padding: 4 },
-  input: { minHeight: 48, maxHeight: 120, borderWidth: 1, borderRadius: 8, padding: 12 },
+  input: { flex: 1, minHeight: 48, maxHeight: 120, borderWidth: 1, borderRadius: 8, padding: 12 },
+  emojiToggle: { minHeight: 48, minWidth: 44, alignItems: "center", justifyContent: "center" },
+  emojiPicker: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" },
+  clearButton: { minHeight: 40, alignSelf: "flex-end", justifyContent: "center", paddingHorizontal: 8 },
   secondaryButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
   sendButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 8, borderWidth: 1 },
 });
