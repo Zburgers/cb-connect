@@ -5,6 +5,7 @@ type PickerProps = { value: Date; onChange?: (event: DateTimePickerEvent, date?:
 
 const runtime = vi.hoisted(() => ({
   state: [] as unknown[],
+  os: "android",
   cursor: 0,
   effects: [] as Array<{ deps?: readonly unknown[]; cleanup?: () => void }>,
   nativeValue: undefined as Date | undefined,
@@ -24,6 +25,12 @@ vi.mock("react", async (original) => {
       if (!(index in runtime.state)) runtime.state[index] = initial;
       return [runtime.state[index], (value: unknown) => { runtime.state[index] = value; }];
     },
+    useRef: (initial: unknown) => {
+      const index = runtime.cursor++;
+      if (!(index in runtime.state)) runtime.state[index] = { current: initial };
+      return runtime.state[index];
+    },
+    useLayoutEffect: (effect: () => void) => effect(),
     useEffect: (effect: () => void | (() => void), deps?: readonly unknown[]) => {
       const index = runtime.cursor++;
       const old = runtime.effects[index];
@@ -35,7 +42,7 @@ vi.mock("react", async (original) => {
 });
 
 vi.mock("react-native", () => ({
-  Platform: { OS: "android" }, Pressable: "Pressable", Text: "Text", View: "View",
+  Platform: { get OS() { return runtime.os; } }, Pressable: "Pressable", Text: "Text", View: "View",
   StyleSheet: { create: (styles: object) => styles },
 }));
 
@@ -44,6 +51,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
   // onChange identity or value timestamp changes. Model that bridge behavior.
   default: (props: PickerProps) => {
     const old = runtime.declarative;
+    if (runtime.os === "ios") return React.createElement("DateTimePicker", props);
     if (!old || old.onChange !== props.onChange || old.value.getTime() !== props.value.getTime()) runtime.open(props);
     runtime.declarative = props;
     runtime.declarativeCleanup = () => { runtime.dismiss(); };
@@ -68,9 +76,9 @@ function visit(node: React.ReactNode): React.ReactElement[] {
   });
 }
 
-function render(onChange: (value: string) => void) {
+function render(onChange: (value: string) => void, disabled = false) {
   runtime.cursor = 0;
-  return visit(DateField({ label: "Corrected period start date", value: "2026-11-18", maximumDate: "2026-11-18", onChange, palette: mobileColors.light }));
+  return visit(DateField({ label: "Corrected period start date", value: "2026-11-18", maximumDate: "2026-11-18", onChange, disabled, palette: mobileColors.light }));
 }
 
 function open(onChange: (value: string) => void) {
@@ -81,7 +89,7 @@ function open(onChange: (value: string) => void) {
 
 describe("Android DateField selection", () => {
   beforeEach(() => {
-    runtime.state = []; runtime.cursor = 0; runtime.effects = [];
+    runtime.state = []; runtime.cursor = 0; runtime.effects = []; runtime.os = "android";
     runtime.active = undefined; runtime.nativeValue = undefined; runtime.declarative = undefined; runtime.declarativeCleanup = undefined;
     runtime.dismiss.mockClear();
     runtime.open.mockReset().mockImplementation((props: PickerProps) => {
@@ -99,6 +107,21 @@ describe("Android DateField selection", () => {
     expect(runtime.open).toHaveBeenCalledTimes(1);
     runtime.active!.onChange!({ type: "set", nativeEvent: { timestamp: runtime.nativeValue!.getTime(), utcOffset: 0 } }, runtime.nativeValue);
     expect(changed).toHaveBeenCalledExactlyOnceWith("2026-11-17");
+  });
+
+  it("closes an open iOS spinner and ignores late events when the field becomes disabled", () => {
+    runtime.os = "ios";
+    const changed = vi.fn();
+    open(changed);
+    const spinner = render(changed).find((node) => node.type === "DateTimePicker");
+    expect(spinner).toBeDefined();
+    expect(render(changed, true).some((node) => node.type === "DateTimePicker")).toBe(false);
+    (spinner!.props as PickerProps).onChange!(
+      { type: "set", nativeEvent: { timestamp: 0, utcOffset: 0 } },
+      parseDateOnly("2026-11-17")!,
+    );
+    expect(changed).not.toHaveBeenCalled();
+    expect(render(changed).some((node) => node.type === "DateTimePicker")).toBe(false);
   });
 
   it("does not apply a cancelled selection and dismisses on unmount", () => {

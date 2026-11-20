@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { mobileColors } from "../../theme/tokens";
@@ -28,16 +28,22 @@ export function DateField({
   clearable = false,
 }: DateFieldProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const current = useRef({ disabled, onChange });
+  useLayoutEffect(() => {
+    current.current = { disabled, onChange };
+    if (disabled) setOpen(false);
+  }, [disabled, onChange]);
   useEffect(() => {
     if (!open || Platform.OS !== "android") return;
     return () => { void DateTimePickerAndroid.dismiss("date").catch(() => {}); };
   }, [open]);
   const pickerValue = parseDateOnly(value) ?? parseDateOnly(maximumDate ?? "") ?? new Date();
   const handleChange = (event: DateTimePickerEvent, date?: Date) => {
-    if (event.type === "set" && date) onChange(formatLocalDateOnly(date));
+    if (!current.current.disabled && event.type === "set" && date) current.current.onChange(formatLocalDateOnly(date));
     if (Platform.OS === "android" || event.type !== "set") setOpen(false);
   };
   const openPicker = () => {
+    if (current.current.disabled) return;
     setOpen(true);
     if (Platform.OS === "android") {
       // Open once per press. The declarative Android bridge reopens on callback
@@ -72,7 +78,7 @@ export function DateField({
           </Pressable>
         ) : null}
       </View>
-      {open && Platform.OS !== "android" ? (
+      {open && !disabled && Platform.OS !== "android" ? (
         <View style={Platform.OS === "ios" ? [styles.iosPicker, { backgroundColor: palette.glass, borderColor: palette.border }] : undefined}>
           <DateTimePicker
             mode="date"
@@ -83,7 +89,7 @@ export function DateField({
             onChange={handleChange}
           />
           {Platform.OS === "ios" ? (
-            <Pressable accessibilityRole="button" onPress={() => { onChange(formatLocalDateOnly(pickerValue)); setOpen(false); }} style={styles.done}>
+            <Pressable accessibilityRole="button" onPress={() => setOpen(false)} style={styles.done}>
               <Text style={{ color: palette.accent, fontWeight: "700" }}>Done</Text>
             </Pressable>
           ) : null}
