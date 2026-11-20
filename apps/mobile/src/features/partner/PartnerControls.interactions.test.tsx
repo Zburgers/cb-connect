@@ -26,6 +26,8 @@ vi.mock("react", async (importOriginal) => {
           : value;
       }];
     },
+    useRef: (initial: unknown) => ({ current: initial }),
+    useLayoutEffect: (effect: () => void) => effect(),
     useEffect: (effect: () => void | (() => void), dependencies?: unknown[]) => {
       const index = runtime.cursor++;
       const previous = runtime.dependencies[index];
