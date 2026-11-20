@@ -24,6 +24,17 @@ describe("notification presentation privacy", () => {
     expect(getInboxPresentation({ ...item("partner_message.v1", "messages"), templateVersion: "g4-static-v3" })).toBeNull();
   });
 
+  it("keeps the server route contract and maps messages and nudges to native destinations", () => {
+    const message = getInboxPresentation(item("partner_message.v1", "messages"));
+    const nudge = getInboxPresentation(item("partner_nudge.v1", "messages"));
+    const chatCleared = getInboxPresentation(item("partner_chat_cleared.v1", "messages"));
+    expect(getInboxPresentation(item("partner_linked.v1", "settings"))?.destination).toBe("settings");
+    expect(getInboxPresentation(item("connected_since_updated.v1", "settings"))?.destination).toBe("settings");
+    expect(message).toMatchObject({ route: "messages", destination: "chat" });
+    expect(nudge).toMatchObject({ route: "messages", destination: "partner" });
+    expect(chatCleared).toMatchObject({ route: "messages", destination: "chat" });
+  });
+
   it("presents unread only until the server receipt has a read timestamp", () => {
     const message = item("partner_message.v1", "messages");
     expect(isInboxItemUnread(message)).toBe(true);

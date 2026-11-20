@@ -4,33 +4,43 @@ import type {
   NotificationPurpose,
 } from "@cb-connect/contracts";
 
-type EventPresentation = Readonly<{ title: string; body: string; route: "messages" | "settings" }>;
+type EventPresentation = Readonly<{
+  title: string;
+  body: string;
+  route: "messages" | "settings";
+  destination: "chat" | "partner" | "settings";
+}>;
 
 const eventPresentations: Partial<Record<NotificationEventType, EventPresentation>> = {
   "partner_linked.v1": {
     title: "Connection update",
     body: "Review your connection settings.",
     route: "settings",
+    destination: "settings",
   },
   "partner_message.v1": {
     title: "Message activity",
     body: "Open your partner space to view your messages.",
     route: "messages",
+    destination: "chat",
   },
   "partner_nudge.v1": {
     title: "A nudge is ready",
     body: "Open your partner space to see your nudge.",
     route: "messages",
+    destination: "partner",
   },
   "partner_chat_cleared.v1": {
     title: "Chat updated",
     body: "Open your partner space to view your chat.",
     route: "messages",
+    destination: "chat",
   },
   "connected_since_updated.v1": {
     title: "Connection setting updated",
     body: "Review settings for the current details.",
     route: "settings",
+    destination: "settings",
   },
 };
 

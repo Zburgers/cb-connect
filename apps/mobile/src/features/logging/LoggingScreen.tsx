@@ -45,6 +45,7 @@ export function LoggingScreen() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [editAuthorityVersion, setEditAuthorityVersion] = useState<number | null>(null);
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
@@ -124,8 +125,11 @@ export function LoggingScreen() {
   const correct = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
     if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (!period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
-    const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: period.authorityVersion };
-    if (role === "partner") await updateAssist({ ...args, expectedAuthorityVersion: period.authorityVersion! });
+    if (editing !== period._id || editAuthorityVersion === null || period.authorityVersion !== editAuthorityVersion) {
+      throw new Error("STALE_AUTHORITY_VERSION");
+    }
+    const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: editAuthorityVersion };
+    if (role === "partner") await updateAssist(args);
     else await updateSelf(args);
     setEditing(null);
   }, "Period correction saved.");
@@ -179,7 +183,7 @@ export function LoggingScreen() {
         <DateField label="Corrected period end date" value={editEndDate} onChange={setEditEndDate} palette={palette} disabled={disabledPeriod} placeholder="End date (blank means open)" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={editStartDate || undefined} clearable />
         <Action label="Save correction" disabled={disabledPeriod} onPress={() => correct(period)} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
-      </> : <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(period._id!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}
+      </> : <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(period._id!); setEditAuthorityVersion(period.authorityVersion!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}
     </View>)}
     {role === "primary" ? <>
     <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Pain history</Text>

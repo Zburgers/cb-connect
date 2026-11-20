@@ -63,19 +63,23 @@ export function Inbox() {
             <View style={[styles.unreadDot, { backgroundColor: unread ? palette.accent : palette.border }]} />
             <Text allowFontScaling accessibilityRole="header" style={[styles.itemTitle, { color: palette.foreground }]}>{presentation.title}</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>{presentation.body}</Text>
-            <Text allowFontScaling accessibilityLabel={`Notification section: ${presentation.route}`} style={{ color: palette.muted }}>
-              Section: {presentation.route === "settings" ? "Settings" : "Partner"}
+            <Text allowFontScaling accessibilityLabel={`Notification section: ${presentation.destination}`} style={{ color: palette.muted }}>
+              Section: {presentation.destination === "settings" ? "Settings" : presentation.destination === "chat" ? "Chat" : "Partner"}
             </Text>
             <Text allowFontScaling accessibilityLabel={unread ? "Unread notification" : "Read notification"} style={{ color: palette.muted }}>
               {unread ? "Unread" : "Read"}
             </Text>
             <View style={styles.actions}>
-              {presentation.route === "settings" ? (
+              {presentation.destination === "settings" ? (
                 <Pressable accessibilityRole="button" accessibilityLabel={`Open settings for ${presentation.title}`} onPress={() => router.push("/(app)/settings")} style={styles.action}>
                   <Text allowFontScaling style={{ color: palette.foreground }}>Open settings</Text>
                 </Pressable>
+              ) : presentation.destination === "chat" ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`Open messages for ${presentation.title}`} onPress={() => router.push("/(app)/chat")} style={[styles.action, { borderColor: palette.border }]}>
+                  <Text allowFontScaling style={{ color: palette.foreground }}>Open messages</Text>
+                </Pressable>
               ) : (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Open partner space for ${presentation.title}`} onPress={() => router.push("/(app)/partner")} style={[styles.action, { borderColor: palette.border }]}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Open partner for ${presentation.title}`} onPress={() => router.push("/(app)/partner")} style={[styles.action, { borderColor: palette.border }]}>
                   <Text allowFontScaling style={{ color: palette.foreground }}>Open partner</Text>
                 </Pressable>
               )}

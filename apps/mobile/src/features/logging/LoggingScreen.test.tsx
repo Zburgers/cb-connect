@@ -238,6 +238,16 @@ describe("LoggingScreen actions", () => {
     }
   });
 
+  it("does not submit an old correction draft after history gets a newer version", async () => {
+    runtime.periods = openPeriod;
+    await button(render(), "Correct period")();
+    runtime.periods = openPeriod.map((period) => ({ ...period, authorityVersion: period.authorityVersion + 1 }));
+    await button(render(), "Save correction")();
+
+    expect(updateSelf).not.toHaveBeenCalled();
+    expect(textContent(render())).toContain("This entry changed. Refresh history before correcting it.");
+  });
+
   it("shows the stale correction failure and does not replace it with success", async () => {
     runtime.periods = openPeriod;
     updateSelf.mockRejectedValueOnce(new Error("STALE_AUTHORITY_VERSION"));

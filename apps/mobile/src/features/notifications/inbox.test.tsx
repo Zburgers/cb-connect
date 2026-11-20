@@ -8,6 +8,9 @@ const inboxMocks = vi.hoisted(() => ({
   available: false as boolean | undefined,
   paginationArgs: undefined as unknown,
   results: [] as unknown[],
+  mutationCalls: [] as unknown[],
+  pressables: [] as Array<{ label?: string; onPress?: () => void }>,
+  routes: [] as string[],
 }));
 
 vi.mock("convex/react", () => ({
@@ -16,10 +19,13 @@ vi.mock("convex/react", () => ({
     inboxMocks.paginationArgs = args;
     return { results: inboxMocks.results, status: "Exhausted", loadMore: () => undefined };
   },
-  useMutation: () => async () => null,
+  useMutation: () => async (args: unknown) => {
+    inboxMocks.mutationCalls.push(args);
+    return null;
+  },
 }));
 
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: () => undefined }) }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: (route: string) => inboxMocks.routes.push(route) }) }));
 
 vi.mock("react-native", async () => {
   const { createElement } = await import("react");
@@ -35,7 +41,14 @@ vi.mock("react-native", async () => {
   return {
     ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) =>
       createElement("span", { "aria-label": accessibilityLabel }),
-    Pressable: native("button"),
+    Pressable: ({ children, accessibilityLabel, onPress }: {
+      children?: React.ReactNode;
+      accessibilityLabel?: string;
+      onPress?: () => void;
+    }) => {
+      inboxMocks.pressables.push({ label: accessibilityLabel, onPress });
+      return createElement("button", { "aria-label": accessibilityLabel }, children);
+    },
     ScrollView: native("main"),
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
     Text: native("span"),
@@ -69,7 +82,7 @@ describe("mobile notification inbox contract", () => {
     markup = renderToStaticMarkup(<Inbox />);
     expect(inboxMocks.paginationArgs).toEqual({});
     expect(markup).toContain("Message activity");
-    expect(markup).toContain("Open partner");
+    expect(markup).toContain("Open messages");
 
     inboxMocks.available = false;
     markup = renderToStaticMarkup(<Inbox />);
@@ -87,11 +100,65 @@ describe("mobile notification inbox contract", () => {
     expect(source).toContain("items.loadMore(20)");
     expect(source).toContain('router.push("/(app)/settings")');
     expect(source).toContain('router.push("/(app)/partner")');
+    expect(source).toContain('router.push("/(app)/chat")');
     expect(source).toContain("You’re all caught up.");
     expect(source).toContain("Saving…");
     expect(source).not.toContain("Gate 6");
     expect(source).toContain('accessibilityLabel={`Mark ${presentation.title} as read`}');
     expect(source).toContain('accessibilityLabel={`Dismiss ${presentation.title}`}');
+    expect(source).toContain('() => markRead({ itemId: item.itemId })');
+    expect(source).toContain('() => dismiss({ itemId: item.itemId })');
+    expect(source).toContain('presentation.destination === "settings"');
+    expect(source).toContain('router.push("/(app)/settings")');
+    expect(source).toContain('router.push("/(app)/partner")');
+    expect(source).toContain('accessibilityLabel={`Open messages for ${presentation.title}`}');
+    expect(source).toContain(">Open messages</Text>");
+    expect(source).toContain('available === true && items.status !== "LoadingFirstPage" && visibleItems.length === 0');
+  });
+
+  it("calls the existing read and dismiss mutations and opens the matching destinations", () => {
+    inboxMocks.available = true;
+    inboxMocks.results = [
+      {
+        itemId: "message-item",
+        eventType: "partner_message.v1",
+        templateVersion: "g4-static-v1",
+        route: "messages",
+        state: "current",
+        createdAt: 1,
+      },
+      {
+        itemId: "nudge-item",
+        eventType: "partner_nudge.v1",
+        templateVersion: "g4-static-v1",
+        route: "messages",
+        state: "current",
+        createdAt: 2,
+      },
+      {
+        itemId: "connection-item",
+        eventType: "partner_linked.v1",
+        templateVersion: "g4-static-v1",
+        route: "settings",
+        state: "current",
+        createdAt: 3,
+      },
+    ];
+    inboxMocks.mutationCalls = [];
+    inboxMocks.pressables = [];
+    inboxMocks.routes = [];
+    renderToStaticMarkup(<Inbox />);
+
+    inboxMocks.pressables.find(({ label }) => label === "Mark Message activity as read")?.onPress?.();
+    expect(inboxMocks.mutationCalls[0]).toEqual({ itemId: "message-item" });
+
+    inboxMocks.pressables.find(({ label }) => label === "Dismiss Message activity")?.onPress?.();
+    expect(inboxMocks.mutationCalls[1]).toEqual({ itemId: "message-item" });
+
+    inboxMocks.pressables.find(({ label }) => label === "Open messages for Message activity")?.onPress?.();
+    inboxMocks.pressables.find(({ label }) => label === "Open partner for A nudge is ready")?.onPress?.();
+    inboxMocks.pressables.find(({ label }) => label === "Open settings for Connection update")?.onPress?.();
+    expect(inboxMocks.routes).toEqual(["/(app)/chat", "/(app)/partner", "/(app)/settings"]);
   });
 
   it("does not query inbox content unless the server-derived active role is available", () => {
