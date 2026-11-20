@@ -45,6 +45,15 @@ export function accessStatusRedirect(state: AccessState): "/onboarding" | "/(app
   return null;
 }
 
+export function resolvePrimaryCycleSetupRoute(
+  role: MobileGuardRole | undefined,
+  periodHistory: readonly unknown[] | undefined,
+): "pending" | "onboarding" | "app" {
+  if (role !== "primary") return "app";
+  if (periodHistory === undefined) return "pending";
+  return periodHistory.length === 0 ? "onboarding" : "app";
+}
+
 /** Resolve route access using only authenticated, current Convex query results. */
 export function resolveAccessState(inputs: AccessStateInputs): AccessResolution {
   if (inputs.auth === "pending" || inputs.auth === "convex_pending") {
