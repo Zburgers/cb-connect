@@ -211,7 +211,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         ) : null}
       </ScrollView>
       {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
-      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" style={styles.quickScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
         {QUICK_COMPOSE.map((suggestion) => (
           <Pressable
             key={suggestion}
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
   message: { gap: 4, padding: 12, borderRadius: 16, borderWidth: 1, maxWidth: "88%" },
   sender: { fontWeight: "700" },
   reactions: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  quickScroll: { flexGrow: 0, flexShrink: 0 },
   quickCompose: { flexDirection: "row", gap: 8, alignItems: "center" },
   quickChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
