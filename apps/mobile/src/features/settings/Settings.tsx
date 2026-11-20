@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/expo";
 import { useMutation, useQuery } from "convex/react";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useColorScheme, View } from "react-native";
 import type { NotificationPurpose } from "@cb-connect/contracts";
 import { api } from "../../convex/api";
@@ -8,6 +9,7 @@ import { mobileColors } from "../../theme/tokens";
 import { useThemePreference } from "../../theme/ThemePreferenceProvider";
 import { themeModes } from "../../theme/themePreference";
 import { getNotificationPurposeLabel, getVisibleNotificationPurposes } from "../notifications/presentation";
+import { formatReminderTime, parseReminderTime } from "./reminderTime";
 
 type SharingKey = "sharingPain" | "sharingPhase" | "sharingPeriodWrite";
 
@@ -40,6 +42,8 @@ export function Settings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [reminderTimeDraft, setReminderTimeDraft] = useState<string | undefined>();
+  const [reminderPickerOpen, setReminderPickerOpen] = useState(false);
   const zone = deviceTimeZone();
 
   useEffect(() => setNameDraft(profile?.preferredName ?? ""), [profile?.preferredName]);
@@ -51,8 +55,10 @@ export function Settings() {
     try {
       await action();
       setMessage(successMessage ?? "Settings updated.");
+      return true;
     } catch {
       setError("Unable to update settings. Try again.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -76,6 +82,18 @@ export function Settings() {
 
   const visiblePurposes = getVisibleNotificationPurposes(profile.role === "primary" ? "primary" : "partner");
   const preferenceMap = new Map(preferences.map((preference) => [preference.purpose, preference]));
+  const cycleWindowPreference = isPrimary ? preferenceMap.get("period_window_approaching") : undefined;
+  const savedReminderTime = cycleWindowPreference?.localReminderTime ?? "";
+  const reminderTime = reminderTimeDraft ?? savedReminderTime;
+  const reminderPickerValue = profile.timeZone
+    ? parseReminderTime(reminderTime, profile.timeZone) ?? new Date()
+    : new Date();
+  const handleReminderPickerChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (event.type === "set" && selected && profile.timeZone) {
+      setReminderTimeDraft(formatReminderTime(selected, profile.timeZone));
+    }
+    setReminderPickerOpen(false);
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: "transparent" }}>
@@ -134,13 +152,16 @@ export function Settings() {
         {visiblePurposes.map((purpose: NotificationPurpose) => {
           const preference = preferenceMap.get(purpose);
           if (!preference) return null;
+          const scheduledTimeNeedsSave = purpose === "period_window_approaching" &&
+            !preference.inAppEnabled &&
+            (reminderTime !== savedReminderTime || !savedReminderTime);
           return (
             <View key={purpose} style={styles.switchRow}>
               <Text allowFontScaling style={[styles.switchLabel, { color: palette.foreground }]}>{getNotificationPurposeLabel(purpose)}</Text>
               <Switch
                 accessibilityLabel={getNotificationPurposeLabel(purpose)}
                 accessibilityRole="switch"
-                disabled={busy}
+                disabled={busy || scheduledTimeNeedsSave}
                 onValueChange={(value) => void run(() => updatePreference({
                   purpose,
                   inAppEnabled: value,
@@ -151,6 +172,45 @@ export function Settings() {
             </View>
           );
         })}
+        {cycleWindowPreference ? (
+          <View style={styles.reminderTime}>
+            <Text allowFontScaling style={{ color: palette.foreground, fontWeight: "600" }}>Upcoming cycle window reminder time</Text>
+            <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>This clock time follows your saved account time zone: {profile.timeZone ?? "Not set"}. Changing your time zone keeps this clock time.</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Reminder time for cycle window: ${reminderTime || "Choose a time"}`}
+              accessibilityState={{ disabled: busy || !profile.timeZone }}
+              disabled={busy || !profile.timeZone}
+              onPress={() => setReminderPickerOpen(true)}
+              style={[styles.button, { borderColor: palette.muted }]}
+            >
+              <Text allowFontScaling style={{ color: palette.foreground }}>{reminderTime || "Choose a time"}</Text>
+            </Pressable>
+            {!profile.timeZone ? <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>Set an account time zone before choosing a reminder time.</Text> : null}
+            {reminderPickerOpen ? (
+              <DateTimePicker
+                accessibilityLabel="Cycle window reminder time"
+                mode="time"
+                display="default"
+                timeZoneName={profile.timeZone}
+                value={reminderPickerValue}
+                onChange={handleReminderPickerChange}
+              />
+            ) : null}
+            <ActionButton
+              label="Save reminder time"
+              disabled={busy || !profile.timeZone || !reminderTime || reminderTime === savedReminderTime}
+              onPress={() => void run(() => updatePreference({
+                purpose: "period_window_approaching",
+                inAppEnabled: cycleWindowPreference.inAppEnabled,
+                localReminderTime: reminderTime,
+              }), "Reminder time saved.").then((saved) => {
+                if (saved) setReminderTimeDraft(undefined);
+              })}
+              palette={palette}
+            />
+          </View>
+        ) : null}
       </View>
 
       {isPrimary ? (
@@ -250,6 +310,7 @@ const styles = StyleSheet.create({
   notice: { borderRadius: 14, padding: 12, fontSize: 14, lineHeight: 20 },
   input: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12 },
   switchRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
+  reminderTime: { gap: 10, paddingTop: 8 },
   switchLabel: { flex: 1, fontSize: 15 },
   themeChoices: { flexDirection: "row", gap: 8 },
   themeChoice: { flex: 1, justifyContent: "center", minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 8 },

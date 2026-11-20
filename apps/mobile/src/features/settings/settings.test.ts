@@ -30,6 +30,26 @@ describe("mobile settings privacy and accessibility", () => {
     expect(source).not.toContain("Gate 6");
   });
 
+  it("lets primary users edit the cycle-window reminder in their saved account timezone", () => {
+    expect(source).toContain('api.mutations.notifications.setMyPreference');
+    expect(source).toContain('isPrimary ? preferenceMap.get("period_window_approaching")');
+    expect(source).toContain("DateTimePicker");
+    expect(source).toContain('mode="time"');
+    expect(source).toContain("profile.timeZone");
+    expect(source).toContain("formatReminderTime(selected, profile.timeZone)");
+    expect(source).toContain("Save reminder time");
+    expect(source).toContain("inAppEnabled: cycleWindowPreference.inAppEnabled");
+    expect(source).toContain("localReminderTime: reminderTime");
+    expect(source).toContain("Set an account time zone before choosing a reminder time.");
+    expect(source).toContain('const scheduledTimeNeedsSave = purpose === "period_window_approaching"');
+    expect(source).toContain("cycleWindowPreference ? (");
+    expect(source).toContain("Changing your time zone keeps this clock time.");
+    expect(source).toContain("timeZoneName={profile.timeZone}");
+    expect(source).toContain("Reminder time saved.");
+    expect(source).toContain("Unable to update settings. Try again.");
+    expect(source).toContain('accessibilityLabel="Loading settings"');
+  });
+
   it("does not offer account erasure while D-012 is unresolved or expose mutation errors", () => {
     expect(source).toContain("Account deletion is unavailable until the retention and deletion policy is approved.");
     expect(source).not.toMatch(/error\.message|console\.(log|error|warn)/i);
