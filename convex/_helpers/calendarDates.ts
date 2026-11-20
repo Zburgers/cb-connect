@@ -38,6 +38,31 @@ export function toCalendarDateInTimeZone(
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+/** Returns the first instant at which the account-local calendar date changes. */
+export function nextCalendarDayBoundary(
+  now: Date,
+  timeZone = DEFAULT_TIME_ZONE,
+): number {
+  const currentDate = toCalendarDateInTimeZone(now, timeZone);
+  let low = now.getTime();
+  let high = low + 48 * 60 * 60 * 1000;
+
+  if (toCalendarDateInTimeZone(new Date(high), timeZone) <= currentDate) {
+    throw new Error("Could not find the next calendar-day boundary");
+  }
+
+  while (high - low > 1) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (toCalendarDateInTimeZone(new Date(middle), timeZone) > currentDate) {
+      high = middle;
+    } else {
+      low = middle;
+    }
+  }
+
+  return high;
+}
+
 export function requireValidCalendarDate(date: string, label: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error(`${label} must be a valid date`);

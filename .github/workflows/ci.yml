@@ -53,6 +53,9 @@ jobs:
       - name: Post-build typecheck
         run: npm run typecheck
 
+      - name: Mobile public contract parity
+        run: npm run mobile:contracts:parity
+
       - name: Unit tests
         run: npm run test:unit -- --run
 

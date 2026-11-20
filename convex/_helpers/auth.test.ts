@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { api } from "../_generated/api";
 import schema from "../schema";
@@ -7,8 +7,12 @@ import { modules } from "../test.setup";
 import { seedUser } from "../test.fixtures";
 
 const legacyIssuer = "https://clerk.cb.builtbynaki.tech";
+const syntheticIssuer = "https://holy-clam-29.clerk.accounts.dev";
+
+afterEach(() => vi.unstubAllEnvs());
 
 test("legacy user subjects resolve only under the approved Clerk issuer", async () => {
+  vi.stubEnv("CLERK_FRONTEND_API_URL", legacyIssuer);
   const t = convexTest(schema, modules);
   const userId = await seedUser(t, {
     clerkId: "shared-clerk-subject",
@@ -48,6 +52,22 @@ test("legacy user subjects resolve only under the approved Clerk issuer", async 
   expect(preferences).toHaveLength(0);
 });
 
+test("legacy production issuer is rejected when absent from deployment providers", async () => {
+  vi.stubEnv("CLERK_FRONTEND_API_URL", syntheticIssuer);
+  const t = convexTest(schema, modules);
+  await seedUser(t, {
+    clerkId: "shared-clerk-subject",
+    name: "Legacy Clerk User",
+    role: "primary",
+  });
+
+  const user = await t
+    .withIdentity({ subject: "shared-clerk-subject", issuer: legacyIssuer })
+    .query(api.queries.users.getMe, {});
+
+  expect(user).toBeNull();
+});
+
 test("synthetic Clerk identities are trusted only on the approved fixture deployment", async () => {
   const t = convexTest(schema, modules);
   const userId = await seedUser(t, {
@@ -59,6 +79,7 @@ test("synthetic Clerk identities are trusted only on the approved fixture deploy
   const previousCleanup = process.env.CB_CONNECT_FIXTURE_CLEANUP_ENABLED;
 
   try {
+    vi.stubEnv("CLERK_FRONTEND_API_URL", syntheticIssuer);
     process.env.CB_CONNECT_BACKEND_DEPLOYMENT = "dev:hallowed-hummingbird-284";
     process.env.CB_CONNECT_FIXTURE_CLEANUP_ENABLED = "true";
     const approved = await t
