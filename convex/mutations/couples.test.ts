@@ -216,6 +216,73 @@ describe("assisted period sharing settings", () => {
   });
 });
 
+test("clearing the relationship date removes its anniversary source and is retry-safe", async () => {
+  vi.stubEnv("CB_CONNECT_NOTIFICATION_OUTBOX_V1", "true");
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-16T12:00:00.000Z"));
+  try {
+    const t = convexTest(schema, modules);
+    const { asPrimary, partnerId, coupleId } = await seedActiveCouple(t);
+    await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, {
+      connectedSinceDate: "2020-04-18",
+    });
+    const versionBeforeClear = await t.run(async (ctx) => (await ctx.db.get(coupleId))?.connectedSinceUpdatedAt);
+    const projectionIds = await t.run(async (ctx) => {
+      const event = await ctx.db.query("notificationEvents").unique();
+      if (!event) throw new Error("Expected the connected-since source event");
+      const now = Date.now();
+      const deliveryId = await ctx.db.insert("notificationDeliveries", {
+        eventId: event._id,
+        recipientUserId: partnerId,
+        channel: "in_app",
+        stableDestinationId: String(partnerId),
+        logicalKey: `clear-connected-since:${event._id}`,
+        notBefore: now,
+        state: "pending",
+        eligibility: "eligible",
+        providerOutcome: "none",
+        attemptCount: 0,
+        claimGeneration: 0,
+        renderIdentity: { templateVersion: "g4-static-v1", locale: "en", variableSchemaVersion: "g4-v1", payloadHash: "static-connected-since-v1" },
+        createdAt: now,
+        updatedAt: now,
+      });
+      const inboxItemId = await ctx.db.insert("notificationInboxItems", {
+        eventId: event._id,
+        recipientUserId: partnerId,
+        idempotencyKey: `clear-connected-since:${event._id}`,
+        templateVersion: "g4-static-v1",
+        route: "settings",
+        state: "current",
+        createdAt: now,
+      });
+      return { deliveryId, inboxItemId };
+    });
+
+    await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, { connectedSinceDate: "" });
+    const clearedStatus = await asPrimary.query(api.queries.couples.getCoupleStatus, {});
+    const clearedCouple = await t.run(async (ctx) => ctx.db.get(coupleId));
+    expect(clearedStatus.connectedSinceDate).toBeNull();
+    expect(clearedStatus.anniversary).toBeNull();
+    expect(clearedCouple?.connectedSinceDate).toBeUndefined();
+    expect(clearedCouple?.connectedSinceUpdatedAt).toBeGreaterThan(versionBeforeClear ?? 0);
+
+    const clearedVersion = clearedCouple?.connectedSinceUpdatedAt;
+    await asPrimary.mutation(api.mutations.couples.updateConnectedSinceDate, { connectedSinceDate: "" });
+    expect(await t.run(async (ctx) => (await ctx.db.get(coupleId))?.connectedSinceUpdatedAt)).toBe(clearedVersion);
+    const events = await t.run(async (ctx) => ctx.db.query("notificationEvents").collect());
+    expect(events).toHaveLength(1);
+    const projection = await t.run(async (ctx) => ({
+      delivery: await ctx.db.get(projectionIds.deliveryId),
+      inboxItem: await ctx.db.get(projectionIds.inboxItemId),
+    }));
+    expect(projection.delivery).toMatchObject({ state: "cancelled", eligibility: "cancelled", cancellationReason: "source_changed" });
+    expect(projection.inboxItem).toMatchObject({ state: "hidden" });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("updating connected-since date does not write sensitive legacy notification data", async () => {
   vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.example.test/webhook");
   const t = convexTest(schema, modules);

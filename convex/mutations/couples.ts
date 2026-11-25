@@ -817,13 +817,16 @@ export const updateConnectedSinceDate = mutation({
     }
 
     const connectedSinceDate = args.connectedSinceDate.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(connectedSinceDate)) {
+    const clearingDate = connectedSinceDate.length === 0;
+    if (!clearingDate && !/^\d{4}-\d{2}-\d{2}$/.test(connectedSinceDate)) {
       throw new Error("Use a valid date");
     }
 
-    const parsed = new Date(`${connectedSinceDate}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== connectedSinceDate) {
-      throw new Error("Use a valid date");
+    if (!clearingDate) {
+      const parsed = new Date(`${connectedSinceDate}T00:00:00.000Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== connectedSinceDate) {
+        throw new Error("Use a valid date");
+      }
     }
 
     const otherRole = coupleData.membership.role === "primary" ? "partner" : "primary";
@@ -845,7 +848,7 @@ export const updateConnectedSinceDate = mutation({
         ? coupleData.membership._id
         : otherMemberships[0]._id;
 
-    if (coupleData.couple.connectedSinceDate === connectedSinceDate) {
+    if ((coupleData.couple.connectedSinceDate ?? "") === connectedSinceDate) {
       return { success: true };
     }
 
@@ -878,18 +881,20 @@ export const updateConnectedSinceDate = mutation({
     }
 
     await ctx.db.patch(coupleData.membership.coupleId, {
-      connectedSinceDate,
+      connectedSinceDate: clearingDate ? undefined : connectedSinceDate,
       connectedSinceUpdatedAt: settingVersion,
       connectedSinceUpdatedBy: user._id,
     });
-    await ensureConnectedSinceEvent(ctx, {
-      coupleId: coupleData.couple._id,
-      linkGeneration: partnerMembershipId,
-      settingVersion,
-      ownerUserId: user._id,
-      recipientUserId: otherMemberships[0].userId,
-      createdAt: now,
-    });
+    if (!clearingDate) {
+      await ensureConnectedSinceEvent(ctx, {
+        coupleId: coupleData.couple._id,
+        linkGeneration: partnerMembershipId,
+        settingVersion,
+        ownerUserId: user._id,
+        recipientUserId: otherMemberships[0].userId,
+        createdAt: now,
+      });
+    }
     return { success: true };
   },
 });

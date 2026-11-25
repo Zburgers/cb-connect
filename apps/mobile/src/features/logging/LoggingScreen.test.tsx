@@ -24,6 +24,8 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useContext: () => runtime.access,
     useMemo: (factory: () => unknown) => factory(),
+    useRef: (initial: unknown) => ({ current: initial }),
+    useLayoutEffect: (effect: () => void) => effect(),
     useEffect: () => {},
     useState: (initial: unknown) => {
       const index = runtime.cursor++;
