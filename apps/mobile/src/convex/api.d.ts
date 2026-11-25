@@ -232,6 +232,8 @@ export declare const api: {
         _id: string;
         role?: "primary" | "partner";
         preferredName?: string;
+        gender?: "male" | "female" | "other" | "prefer_not_to_say";
+        partnerType?: "boyfriend" | "girlfriend" | "spouse" | "partner" | "other";
         timeZone?: string;
       } | null>;
     };
@@ -265,13 +267,23 @@ export declare const api: {
       readonly ensureUser: FunctionReference<"mutation", "public", Record<string, never>, string>;
       readonly updateUserRole: FunctionReference<"mutation", "public", { role: "primary" | "partner" }, string>;
       readonly updateUserTimeZone: FunctionReference<"mutation", "public", { timeZone: string }, string>;
-      readonly updateUserPreferences: FunctionReference<"mutation", "public", { preferredName?: string }, string>;
+      readonly updateUserPreferences: FunctionReference<"mutation", "public", {
+        preferredName?: string;
+        gender?: "male" | "female" | "other" | "prefer_not_to_say";
+        partnerType?: "boyfriend" | "girlfriend" | "spouse" | "partner" | "other";
+        expectedCurrent?: {
+          preferredName: string;
+          gender: "male" | "female" | "other" | "prefer_not_to_say";
+          partnerType: "boyfriend" | "girlfriend" | "spouse" | "partner" | "other";
+        };
+      }, string>;
     };
     readonly periods: {
       readonly updateCycleSettings: FunctionReference<"mutation", "public", {
         cycleLength?: number;
         periodLength?: number;
         predictionPaused?: boolean;
+        expectedCurrent?: { cycleLength: number; periodLength: number };
       }, null>;
       readonly logPeriodStart: FunctionReference<"mutation", "public", PeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
       readonly assistLogPeriodStart: FunctionReference<"mutation", "public", AssistedPeriodStartArgs, { eventId: GenericId<"periodEvents"> }>;
