@@ -42,6 +42,7 @@ export const mobilePublicApiInventory = {
   "mutations.messages.markDelivered": true,
   "mutations.messages.markReadThrough": true,
   "mutations.messages.react": true,
+  "mutations.messages.clear": true,
   "mutations.nudges.send": true,
   "mutations.nudges.markSeen": true,
   "mutations.presence.heartbeat": true,
