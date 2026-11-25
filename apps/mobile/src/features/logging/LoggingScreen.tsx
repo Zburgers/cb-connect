@@ -1,12 +1,15 @@
 import { useContext, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { api } from "../../convex/api";
 import { loggingApi } from "./loggingApi";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
 import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 import { DateField } from "./DateField";
+import { buildHistoryCsv, historyCsvFilename } from "./historyExport";
 
 function Action({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
@@ -14,6 +17,26 @@ function Action({ label, onPress, disabled }: { label: string; onPress: () => vo
 
 type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
 type PainDraft = { score: string; tags: PainTag[]; note: string };
+function Confirmation({ label, checked, hint, onPress, disabled, palette }: { label: string; checked: boolean; hint: string; onPress: () => void; disabled: boolean; palette: (typeof mobileColors)["light"] | (typeof mobileColors)["dark"] }) {
+  return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={[styles.confirmation, disabled && styles.disabled]}>
+    <Text style={{ color: palette.foreground }}>{checked ? "☑" : "☐"} {label}</Text>
+    <Text style={{ color: palette.muted }}>{hint}</Text>
+  </Pressable>;
+}
+
+const painTagLabels: Record<string, string> = {
+  cramps: "Cramps",
+  headache: "Head pressure",
+  back: "Back ache",
+  fatigue: "Low energy",
+  other: "Something else",
+};
+
+function certaintyLabel(certainty: "exact" | "approximate" | "legacy_unknown") {
+  if (certainty === "exact") return "Exact observation";
+  if (certainty === "approximate") return "Approximate observation";
+  return "Legacy fact needs review";
+}
 
 export function LoggingScreen() {
   const access = useContext(AccessContext);
@@ -29,6 +52,11 @@ export function LoggingScreen() {
   const painHistory = useQuery(loggingApi.history.getPainHistory, online && role === "primary" && today && timeZone
     ? { startDate: dateDaysAgo(365, now, timeZone), endDate: today }
     : "skip");
+  const timelineHistory = useQuery(loggingApi.history.getTimelineHistory, online && today && timeZone
+    ? { startDate: dateDaysAgo(90, now, timeZone), endDate: today }
+    : "skip");
+  const capabilities = useQuery(api.queries.capabilities.getCapabilities, online ? {} : "skip");
+  const factsEnabled = capabilities?.cycleFactsV1 === true;
   const startSelf = useMutation(loggingApi.periods.logPeriodStart);
   const endSelf = useMutation(loggingApi.periods.logPeriodEnd);
   const startAssist = useMutation(loggingApi.periods.assistLogPeriodStart);
@@ -36,6 +64,7 @@ export function LoggingScreen() {
   const updateSelf = useMutation(loggingApi.periods.updatePeriodEvent);
   const updateAssist = useMutation(loggingApi.periods.correctAssistedPeriodEvent);
   const savePain = useMutation(loggingApi.painLog.createOrUpdatePainLog);
+  const deletePeriod = useMutation(loggingApi.periods.deletePeriodEvent);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState("");
   const [painDate, selectPainDate] = useState<string | null>(null);
@@ -48,8 +77,13 @@ export function LoggingScreen() {
   const [editAuthorityVersion, setEditAuthorityVersion] = useState<number | null>(null);
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
+  const [promoteStartCertainty, setPromoteStartCertainty] = useState(false);
+  const [promoteEndCertainty, setPromoteEndCertainty] = useState(false);
+  const [editEndCertainty, setEditEndCertainty] = useState<"exact" | "approximate">("approximate");
+  const [deleteConfirming, setDeleteConfirming] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const openPeriod = useMemo(() => periodHistory?.find((item) => !item.endDate && item._id), [periodHistory]);
-  const periodWritesReady = dateContextReady && periodHistory !== undefined;
+  const periodWritesReady = dateContextReady && periodHistory !== undefined && capabilities !== undefined;
   const disabledPeriod = !periodWritesReady || busy;
   const selectedStartDate = startDate ?? (role === "partner" ? "" : today ?? "");
   const selectedPainDate = painDate ?? today ?? "";
@@ -97,16 +131,16 @@ export function LoggingScreen() {
     if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
     if (!selectedStartDate.trim()) throw new Error("DATE_SELECTION_REQUIRED");
     if (openPeriod?._id) {
-      const args = { endDate: selectedStartDate, endCertainty: certainty, periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
+      const args = { endDate: selectedStartDate, ...(factsEnabled ? { endCertainty: certainty } : {}), periodEventId: openPeriod._id, ...(openPeriod.authorityVersion !== undefined ? { expectedAuthorityVersion: openPeriod.authorityVersion } : {}) };
       await (role === "partner" ? endAssist(args) : endSelf(args));
       return;
     }
     const started = await (role === "partner"
-      ? startAssist({ startDate: selectedStartDate, startCertainty: certainty })
-      : startSelf({ startDate: selectedStartDate, startCertainty: certainty }));
+      ? startAssist({ startDate: selectedStartDate, ...(factsEnabled ? { startCertainty: certainty } : {}) })
+      : startSelf({ startDate: selectedStartDate, ...(factsEnabled ? { startCertainty: certainty } : {}) }));
     if (endDate) {
       try {
-        const args = { endDate, endCertainty: certainty, periodEventId: started.eventId, expectedAuthorityVersion: 1 };
+        const args = { endDate, ...(factsEnabled ? { endCertainty: certainty } : {}), periodEventId: started.eventId, expectedAuthorityVersion: 1 };
         await (role === "partner" ? endAssist(args) : endSelf(args));
       } catch {
         throw new Error("START_SAVED_END_FAILED");
@@ -128,11 +162,57 @@ export function LoggingScreen() {
     if (editing !== period._id || editAuthorityVersion === null || period.authorityVersion !== editAuthorityVersion) {
       throw new Error("STALE_AUTHORITY_VERSION");
     }
-    const args = { periodEventId: period._id, startDate: editStartDate, ...(editEndDate ? { endDate: editEndDate, endCertainty: certainty } : {}), expectedAuthorityVersion: editAuthorityVersion };
+    const args = {
+      periodEventId: period._id,
+      startDate: editStartDate,
+      ...(editEndDate ? {
+        endDate: editEndDate,
+        ...(factsEnabled ? { endCertainty: promoteEndCertainty ? "exact" as const : editEndCertainty } : {}),
+        ...(factsEnabled && promoteEndCertainty ? { promoteEndCertainty: true } : {}),
+      } : {}),
+      ...(factsEnabled && promoteStartCertainty ? { promoteStartCertainty: true } : {}),
+      expectedAuthorityVersion: editAuthorityVersion,
+    };
     if (role === "partner") await updateAssist(args);
     else await updateSelf(args);
     setEditing(null);
   }, "Period correction saved.");
+
+  const removePeriod = (period: NonNullable<typeof periodHistory>[number]) => run(async () => {
+    if (!online) throw new Error("offline");
+    if (!factsEnabled) throw new Error("PERIOD_DELETION_UNAVAILABLE");
+    if (!periodWritesReady) throw new Error("DATE_CONTEXT_UNAVAILABLE");
+    if (role !== "primary" || !period._id || !period.canCorrect || period.authorityVersion === undefined) throw new Error("not authorized");
+    await deletePeriod({ periodEventId: period._id, expectedAuthorityVersion: period.authorityVersion, requireTombstone: true });
+    setDeleteConfirming(null);
+  }, "Period entry removed.");
+
+  const exportHistory = async () => {
+    if (!today || periodHistory === undefined || timelineHistory === undefined) return;
+    setError(""); setSaved(""); setExporting(true);
+    let file: File | null = null;
+    try {
+      const csv = buildHistoryCsv({
+        periods: periodHistory,
+        timeline: timelineHistory,
+        isPartner: role === "partner",
+      });
+      file = new File(Paths.cache, `${Date.now()}-${historyCsvFilename(today)}`);
+      file.create();
+      file.write(csv);
+      await Sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: "Share cycle history" });
+      setSaved("History is ready to share.");
+    } catch {
+      setError("Could not prepare or share history. Try again when your device is available.");
+    } finally {
+      try {
+        if (file?.exists) file.delete();
+      } catch {
+        // A temporary export is best-effort cleanup; cleanup failures don't hide the share result.
+      }
+      setExporting(false);
+    }
+  };
 
   return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: "transparent" }}>
     <Text accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Log and history</Text>
@@ -146,8 +226,8 @@ export function LoggingScreen() {
     <DateField label={openPeriod ? "Period end date" : "Period start date"} value={selectedStartDate} onChange={setStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={openPeriod?.startDate} />
     {role === "primary" && today && timeZone ? <View style={styles.row}><Action label="Today" disabled={disabledPeriod} onPress={() => setStartDate(today)} /><Action label="Yesterday" disabled={disabledPeriod} onPress={() => setStartDate(dateDaysAgo(1, now, timeZone))} /></View> : null}
     {!openPeriod ? <><Text style={{ color: palette.foreground }}>End date (optional)</Text><DateField label="Optional period end date" value={endDate} onChange={setEndDate} palette={palette} disabled={disabledPeriod} placeholder="Leave blank to keep it open" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={selectedStartDate || undefined} clearable /></> : null}
-    <View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
-    <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text>
+    {factsEnabled ? <><View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
+    <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text></> : <Text style={{ color: palette.muted }}>{capabilities === undefined ? "Checking date options…" : "Dates are saved without certainty labels for this account. You can review them in history."}</Text>}
     <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabledPeriod || !selectedStartDate.trim()} onPress={savePeriod} />
 
     {role === "primary" ? <>
@@ -172,26 +252,69 @@ export function LoggingScreen() {
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.foreground }]}>{error}</Text> : null}
     {saved ? <Text accessibilityRole="alert" style={[styles.success, { color: palette.foreground }]}>{saved}</Text> : null}
 
-    <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Period history</Text>
-    {periodHistory === undefined ? <Text style={{ color: palette.muted }}>Loading period history…</Text> : null}
-    {periodHistory?.length === 0 ? <Text style={{ color: palette.muted }}>No period history recorded yet.</Text> : null}
-    {periodHistory?.map((period) => <View key={period._id ?? period.startDate} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-      <Text style={{ color: palette.foreground }}>{period.startDate}{period.endDate ? ` – ${period.endDate}` : " – ongoing"}</Text>
-      <Text style={{ color: palette.muted }}>{period.certainty} · {period.source === "partner_assist" ? `assisted by ${period.createdByName}` : period.source === "self" ? "self logged" : "legacy record"}{period.confirmationStatus === "unreviewed" ? " · needs review" : " · accepted"}</Text>
-      {period.canCorrect && period._id && period.authorityVersion !== undefined ? editing === period._id ? <>
+    <View style={styles.row}>
+      <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>{role === "partner" ? "Shared history" : "Cycle history"}</Text>
+      <Action label="Export CSV" disabled={!today || periodHistory === undefined || timelineHistory === undefined || exporting} onPress={exportHistory} />
+    </View>
+    {role === "primary" && capabilities?.cycleFactsV1 === false ? <Text style={{ color: palette.muted }}>Deletion is unavailable for this account. You can still correct period dates.</Text> : null}
+    {timelineHistory === undefined ? <Text style={{ color: palette.muted }}>Loading history…</Text> : null}
+    {timelineHistory?.length === 0 ? <Text style={{ color: palette.muted }}>No shared history recorded in this range.</Text> : null}
+    {timelineHistory?.map((entry, index) => <View key={`${entry.type}-${entry.date}-${entry.period?.id ?? index}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+      <Text style={{ color: palette.foreground }}>{entry.date}{entry.isOngoing ? " · ongoing" : ""}</Text>
+      <Text style={{ color: palette.muted }}>{entry.phase}{entry.status ? ` · ${entry.status.replaceAll("_", " ")}` : ""}{entry.period ? entry.isOngoing ? " · current period" : " · past period" : ""}</Text>
+      {entry.period ? <>
+        <Text style={{ color: palette.muted }}>{entry.period.startDate}{entry.period.endDate ? ` – ${entry.period.endDate}` : " – open"}</Text>
+        <Text style={{ color: palette.muted }}>{certaintyLabel(entry.period.certainty)} · {entry.period.source === "system" ? "auto-ended by CB Connect" : entry.period.source === "partner_assist" ? entry.period.updatedByViewer && !entry.period.createdByViewer ? `added by ${entry.period.createdByName} · corrected by you` : role === "partner" && entry.period.createdByViewer ? "added by you for your partner" : `added by ${entry.period.createdByName}` : role === "partner" ? `logged by ${entry.period.createdByName}` : "logged by you"}{entry.period.confirmationStatus === "unreviewed" ? " · needs review" : " · accepted"}</Text>
+      </> : null}
+      {entry.pain ? <>
+        <Text style={{ color: palette.foreground }}>Pain {entry.pain.score}/10 · {entry.pain.tags?.map((tag) => painTagLabels[tag] ?? tag).join(", ") || "No tags"}</Text>
+        {role === "primary" && entry.pain.note ? <Text style={{ color: palette.muted }}>{entry.pain.note}</Text> : null}
+      </> : null}
+      {entry.period?.canCorrect && entry.period.id && entry.period.authorityVersion !== undefined ? editing === entry.period.id ? <>
         <DateField label="Corrected period start date" value={editStartDate} onChange={setEditStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} />
         <DateField label="Corrected period end date" value={editEndDate} onChange={setEditEndDate} palette={palette} disabled={disabledPeriod} placeholder="End date (blank means open)" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={editStartDate || undefined} clearable />
-        <Action label="Save correction" disabled={disabledPeriod} onPress={() => correct(period)} />
+        <Action label="Save correction" disabled={disabledPeriod || !editStartDate.trim()} onPress={() => {
+          const period = periodHistory?.find((item) => item._id === entry.period?.id);
+          if (period) return correct(period);
+        }} />
         <Action label="Cancel correction" disabled={busy} onPress={() => setEditing(null)} />
-      </> : <Action label="Correct period" disabled={disabledPeriod} onPress={() => { setEditing(period._id!); setEditAuthorityVersion(period.authorityVersion!); setEditStartDate(period.startDate); setEditEndDate(period.endDate ?? ""); }} /> : null}
+        {factsEnabled && entry.period.startCertainty !== "exact" ? <Confirmation
+          label="Confirm this start date is exact"
+          checked={promoteStartCertainty}
+          hint="Leave unchecked to preserve the existing uncertainty."
+          disabled={disabledPeriod}
+          palette={palette}
+          onPress={() => setPromoteStartCertainty((checked) => !checked)}
+        /> : null}
+        {factsEnabled && editEndDate && entry.period.endCertainty !== "exact" ? <Confirmation
+          label="Confirm this end date is exact"
+          checked={promoteEndCertainty}
+          hint="Leave unchecked to save this end as approximate."
+          disabled={disabledPeriod}
+          palette={palette}
+          onPress={() => setPromoteEndCertainty((checked) => !checked)}
+        /> : null}
+      </> : <>
+        <Action label="Correct period" disabled={disabledPeriod} onPress={() => {
+          setEditing(entry.period!.id!);
+          setEditAuthorityVersion(entry.period!.authorityVersion!);
+          setEditStartDate(entry.period!.startDate);
+          setEditEndDate(entry.period!.endDate ?? "");
+          setPromoteStartCertainty(false);
+          setPromoteEndCertainty(false);
+          setEditEndCertainty(entry.period!.endCertainty === "exact" ? "exact" : "approximate");
+        }} />
+        {role === "primary" ? deleteConfirming === entry.period.id ? <>
+          <Text style={{ color: palette.noticeForeground }} accessibilityRole="alert">Delete this period entry? This changes cycle history.</Text>
+          <Action label="Confirm delete period" disabled={disabledPeriod || !factsEnabled} onPress={() => {
+            const period = periodHistory?.find((item) => item._id === entry.period?.id);
+            if (period) return removePeriod(period);
+          }} />
+          <Action label="Cancel delete period" disabled={busy} onPress={() => setDeleteConfirming(null)} />
+        </> : <Action label="Delete period" disabled={disabledPeriod || !factsEnabled} onPress={() => setDeleteConfirming(entry.period!.id!)} /> : null}
+      </> : null}
     </View>)}
-    {role === "primary" ? <>
-    <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Pain history</Text>
-    {painHistory === undefined ? <Text style={{ color: palette.muted }}>Loading pain history…</Text> : null}
-    {painHistory?.length === 0 ? <Text style={{ color: palette.muted }}>No pain history recorded in this range.</Text> : null}
-    {painHistory?.slice(-30).reverse().map((pain) => <View key={pain._id} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}><Text style={{ color: palette.foreground }}>{pain.date} · pain {pain.painScore}/10</Text><Text style={{ color: palette.muted }}>{pain.tags.join(", ") || "No tags"}</Text></View>)}
-    </> : null}
   </ScrollView>;
 }
 
-const styles = StyleSheet.create({ content: { padding: 20, gap: 12 }, title: { fontSize: 24, fontWeight: "700" }, heading: { fontSize: 18, fontWeight: "700", marginTop: 16 }, input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "#374151", borderRadius: 8 }, unselected: { backgroundColor: "transparent" }, buttonText: { color: "#FFFFFF", fontWeight: "600" }, disabled: { opacity: 0.45 }, notice: { padding: 12, backgroundColor: "#713F12", color: "#FFFFFF", borderRadius: 8 }, error: { color: "#991B1B", fontWeight: "600" }, success: { color: "#166534", fontWeight: "600" }, card: { borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 12, gap: 8 } });
+const styles = StyleSheet.create({ content: { padding: 20, gap: 12 }, title: { fontSize: 24, fontWeight: "700" }, heading: { fontSize: 18, fontWeight: "700", marginTop: 16 }, input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "#374151", borderRadius: 8 }, confirmation: { minHeight: 48, padding: 12, justifyContent: "center", gap: 4, borderRadius: 8, borderWidth: 1, borderColor: "#9CA3AF" }, unselected: { backgroundColor: "transparent" }, buttonText: { color: "#FFFFFF", fontWeight: "600" }, disabled: { opacity: 0.45 }, notice: { padding: 12, backgroundColor: "#713F12", color: "#FFFFFF", borderRadius: 8 }, error: { color: "#991B1B", fontWeight: "600" }, success: { color: "#166534", fontWeight: "600" }, card: { borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 12, gap: 8 } });

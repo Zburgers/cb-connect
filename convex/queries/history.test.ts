@@ -15,6 +15,54 @@ beforeEach(() => {
   vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "true");
 });
 
+describe("pain history privacy", () => {
+  test("shares pain scores and tags with partners without returning private notes", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary").eq("revokedAt", undefined)
+        )
+        .unique();
+      if (!primaryMembership) throw new Error("Missing primary membership");
+      await ctx.db.patch(primaryMembership._id, { sharingPain: true });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-06-15",
+        painScore: 4,
+        tags: ["cramps"],
+        note: "private health detail",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const [primaryHistory, partnerHistory] = await Promise.all([
+      asPrimary.query(api.queries.history.getPainHistory, {
+        startDate: "2026-06-15",
+        endDate: "2026-06-15",
+      }),
+      asPartner.query(api.queries.history.getPainHistory, {
+        startDate: "2026-06-15",
+        endDate: "2026-06-15",
+      }),
+    ]);
+
+    expect(primaryHistory[0]).toMatchObject({ note: "private health detail" });
+    expect(partnerHistory[0]).toMatchObject({
+      date: "2026-06-15",
+      painScore: 4,
+      tags: ["cramps"],
+    });
+    expect(partnerHistory[0]).not.toHaveProperty("note");
+    expect(partnerHistory[0]).not.toHaveProperty("_id");
+    expect(partnerHistory[0]).not.toHaveProperty("_creationTime");
+    expect(partnerHistory[0]).not.toHaveProperty("userId");
+  });
+});
+
 describe("period history attribution", () => {
   test("fails closed when prediction history exceeds its bounded read", async () => {
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "true");
@@ -288,6 +336,47 @@ describe("period history attribution", () => {
 });
 
 describe("fact-aware history and prediction reads", () => {
+  test("partner pain sharing never includes private notes in the timeline projection", async () => {
+    const t = convexTest(schema, modules);
+    const { asPrimary, asPartner, coupleId, primaryId } = await seedActiveCouple(t);
+    await t.run(async (ctx) => {
+      const primaryMembership = await ctx.db
+        .query("coupleMembers")
+        .withIndex("by_couple_and_role_and_revoked_at", (q) =>
+          q.eq("coupleId", coupleId).eq("role", "primary").eq("revokedAt", undefined)
+        )
+        .unique();
+      if (!primaryMembership) throw new Error("Missing primary membership");
+      await ctx.db.patch(primaryMembership._id, { sharingPain: true });
+      await ctx.db.insert("painLogs", {
+        userId: primaryId,
+        date: "2026-06-15",
+        painScore: 4,
+        tags: ["cramps"],
+        note: "private health detail",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const [primaryTimeline, partnerTimeline] = await Promise.all([
+      asPrimary.query(api.queries.history.getTimelineHistory, {
+        startDate: "2026-06-15",
+        endDate: "2026-06-15",
+      }),
+      asPartner.query(api.queries.history.getTimelineHistory, {
+        startDate: "2026-06-15",
+        endDate: "2026-06-15",
+      }),
+    ]);
+    const primaryPain = primaryTimeline.find((entry) => entry.type === "pain");
+    const partnerPain = partnerTimeline.find((entry) => entry.type === "pain");
+
+    expect(primaryPain?.pain).toMatchObject({ score: 4, tags: ["cramps"], note: "private health detail" });
+    expect(partnerPain?.pain).toMatchObject({ score: 4, tags: ["cramps"] });
+    expect(partnerPain?.pain).not.toHaveProperty("note");
+  });
+
   test("flag-off prediction keeps the newest legacy row without certainty", async () => {
     vi.stubEnv("CB_CONNECT_CYCLE_FACTS_V1", "false");
     vi.stubEnv("CB_CONNECT_PERIOD_PREDICTION_V2", "false");
