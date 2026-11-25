@@ -1,5 +1,5 @@
 import { useContext, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, useColorScheme, View } from "react-native";
 import { useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -7,18 +7,23 @@ import { api } from "../../convex/api";
 import { loggingApi } from "./loggingApi";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { BloomNotice, BloomPanel } from "../../components/BloomPanel";
+import { BloomScreen } from "../../components/BloomScreen";
+import { bloomType } from "../../theme/typography";
+import { BloomText as Text } from "../../components/BloomText";
 import { dateDaysAgo, isValidTimeZone, localDate, loggingErrorMessage, periodSuccessMessage } from "./logging";
 import { DateField } from "./DateField";
 import { buildHistoryCsv, historyCsvFilename } from "./historyExport";
 
-function Action({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
+function Action({ label, onPress, disabled, selected = false }: { label: string; onPress: () => void; disabled: boolean; selected?: boolean }) {
+  const palette = mobileColors[useColorScheme() === "dark" ? "dark" : "light"];
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={[styles.button, { backgroundColor: selected ? palette.accent : palette.surface, borderColor: selected ? palette.accent : palette.outline }, disabled && styles.disabled]}><Text allowFontScaling style={[styles.buttonText, { color: selected ? palette.onAccent : palette.foreground }]}>{label}</Text></Pressable>;
 }
 
 type PainTag = "cramps" | "headache" | "back" | "fatigue" | "other";
 type PainDraft = { score: string; tags: PainTag[]; note: string };
 function Confirmation({ label, checked, hint, onPress, disabled, palette }: { label: string; checked: boolean; hint: string; onPress: () => void; disabled: boolean; palette: (typeof mobileColors)["light"] | (typeof mobileColors)["dark"] }) {
-  return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={[styles.confirmation, disabled && styles.disabled]}>
+  return <Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={[styles.confirmation, { borderColor: palette.outline }, disabled && styles.disabled]}>
     <Text style={{ color: palette.foreground }}>{checked ? "☑" : "☐"} {label}</Text>
     <Text style={{ color: palette.muted }}>{hint}</Text>
   </Pressable>;
@@ -214,52 +219,57 @@ export function LoggingScreen() {
     }
   };
 
-  return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: "transparent" }}>
-    <Text accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Log and history</Text>
-    {!online ? <Text accessibilityRole="alert" style={[styles.notice, { color: palette.noticeForeground, backgroundColor: palette.noticeBackground }]}>Offline. Nothing can be saved until your connection returns.</Text> : null}
-    {online && account === undefined ? <Text style={{ color: palette.muted }}>Loading account timezone…</Text> : null}
-    {online && account !== undefined && !isValidTimeZone(timeZone) ? <Text accessibilityRole="alert" style={[styles.notice, { color: palette.noticeForeground, backgroundColor: palette.noticeBackground }]}>Account timezone is unavailable. Update it in Settings before logging.</Text> : null}
+  return <BloomScreen palette={palette} eyebrow="YOUR PRIVATE RECORD" title="Log and history">
+    {!online ? <BloomNotice palette={palette} alert>Offline. Nothing can be saved until your connection returns.</BloomNotice> : null}
+    {online && account === undefined ? <BloomNotice palette={palette}>Loading account timezone…</BloomNotice> : null}
+    {online && account !== undefined && !isValidTimeZone(timeZone) ? <BloomNotice palette={palette} alert>Account timezone is unavailable. Update it in Settings before logging.</BloomNotice> : null}
+    <BloomPanel palette={palette} variant="warm" accessibilityLabel="Period entry">
     <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>{openPeriod ? "Confirm period end" : "Period start"}</Text>
     <Text style={{ color: palette.muted }}>{openPeriod ? "Choose when your period ended." : "Add the first day of bleeding. Leave the end date blank if it has not ended."}</Text>
     {role === "partner" ? <Text style={{ color: palette.muted }}>Select the date in the primary user’s calendar.</Text> : null}
-    <Text style={{ color: palette.foreground }}>{openPeriod ? "End date" : "Start date"}</Text>
+    <Text accessibilityRole="text" style={[bloomType.label, { color: palette.muted }]}>{openPeriod ? "END DATE" : "START DATE"}</Text>
     <DateField label={openPeriod ? "Period end date" : "Period start date"} value={selectedStartDate} onChange={setStartDate} palette={palette} disabled={disabledPeriod} maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={openPeriod?.startDate} />
     {role === "primary" && today && timeZone ? <View style={styles.row}><Action label="Today" disabled={disabledPeriod} onPress={() => setStartDate(today)} /><Action label="Yesterday" disabled={disabledPeriod} onPress={() => setStartDate(dateDaysAgo(1, now, timeZone))} /></View> : null}
     {!openPeriod ? <><Text style={{ color: palette.foreground }}>End date (optional)</Text><DateField label="Optional period end date" value={endDate} onChange={setEndDate} palette={palette} disabled={disabledPeriod} placeholder="Leave blank to keep it open" maximumDate={role === "primary" ? today ?? undefined : undefined} minimumDate={selectedStartDate || undefined} clearable /></> : null}
-    {factsEnabled ? <><View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} onPress={() => setCertainty("approximate")} /></View>
+    {factsEnabled ? <><View style={styles.row}><Action label="Exact date" disabled={disabledPeriod} selected={certainty === "exact"} onPress={() => setCertainty("exact")} /><Action label="Approximate date" disabled={disabledPeriod} selected={certainty === "approximate"} onPress={() => setCertainty("approximate")} /></View>
     <Text accessibilityLabel={`Selected certainty: ${certainty}`} style={{ color: palette.muted }}>Selected: {certainty}</Text></> : <Text style={{ color: palette.muted }}>{capabilities === undefined ? "Checking date options…" : "Dates are saved without certainty labels for this account. You can review them in history."}</Text>}
     <Action label={openPeriod ? "Confirm end" : "Save period"} disabled={disabledPeriod || !selectedStartDate.trim()} onPress={savePeriod} />
+    </BloomPanel>
 
     {role === "primary" ? <>
+      <BloomPanel palette={palette} variant="sage" accessibilityLabel="Private pain log">
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>Pain log</Text>
       <Text style={{ color: palette.muted }}>Rate your pain from 0 (none) to 10 (worst).</Text>
       <Text style={{ color: palette.foreground }}>Date</Text>
       <DateField label="Pain log date" value={selectedPainDate} onChange={setPainDate} palette={palette} disabled={!dateContextReady || busy} maximumDate={today ?? undefined} />
       {selectedPain === undefined && dateContextReady ? <Text style={{ color: palette.muted }}>Loading pain entry…</Text> : null}
       <Text style={{ color: palette.foreground }}>Pain score</Text>
-      <TextInput accessibilityLabel="Pain score from 0 to 10" keyboardType="number-pad" value={painScore} editable={!disabledPain} onChangeText={setPainScore} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+      <TextInput accessibilityLabel="Pain score from 0 to 10" keyboardType="number-pad" value={painScore} editable={!disabledPain} onChangeText={setPainScore} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.controlBorder }]} />
       <View style={styles.row}>
         <Action label="Less pain" disabled={disabledPain || !/^\d+$/.test(painScore) || Number(painScore) <= 0 || Number(painScore) > 10} onPress={() => setPainScore(String(Number(painScore) - 1))} />
         <Action label="More pain" disabled={disabledPain || !/^\d+$/.test(painScore) || Number(painScore) >= 10} onPress={() => setPainScore(String(Number(painScore) + 1))} />
       </View>
       <Text style={{ color: palette.muted }}>Pain tags</Text>
-      <View style={styles.row}>{(["cramps", "headache", "back", "fatigue", "other"] as const).map((tag) => <Pressable key={tag} accessibilityRole="button" accessibilityLabel={`${painTags.includes(tag) ? "Remove" : "Add"} ${tag} pain tag`} accessibilityState={{ selected: painTags.includes(tag), disabled: disabledPain }} disabled={disabledPain} onPress={() => togglePainTag(tag)} style={[styles.button, { backgroundColor: painTags.includes(tag) ? palette.accent : palette.surface, borderColor: palette.border, borderWidth: 1 }]}><Text style={[styles.buttonText, { color: painTags.includes(tag) ? palette.surface : palette.foreground }]}>{tag}</Text></Pressable>)}</View>
+      <View style={styles.row}>{(["cramps", "headache", "back", "fatigue", "other"] as const).map((tag) => <Pressable key={tag} accessibilityRole="button" accessibilityLabel={`${painTags.includes(tag) ? "Remove" : "Add"} ${tag} pain tag`} accessibilityState={{ selected: painTags.includes(tag), disabled: disabledPain }} disabled={disabledPain} onPress={() => togglePainTag(tag)} style={[styles.button, { minHeight: 48, backgroundColor: painTags.includes(tag) ? palette.accent : palette.surface, borderColor: palette.outline, borderWidth: 1 }]}><Text allowFontScaling style={[styles.buttonText, { color: painTags.includes(tag) ? palette.onAccent : palette.foreground }]}>{painTagLabels[tag]}</Text></Pressable>)}</View>
       <Text style={{ color: palette.foreground }}>Private note (optional)</Text>
-      <TextInput accessibilityLabel="Private pain note, optional" maxLength={140} value={note} editable={!disabledPain} onChangeText={setNote} placeholder="Up to 140 characters" placeholderTextColor={palette.muted} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.border }]} />
+      <TextInput accessibilityLabel="Private pain note, optional" maxLength={140} value={note} editable={!disabledPain} onChangeText={setNote} placeholder="Up to 140 characters" placeholderTextColor={palette.muted} style={[styles.input, { color: palette.foreground, backgroundColor: palette.surface, borderColor: palette.controlBorder }]} />
       <Action label="Save pain log" disabled={disabledPain || !selectedPainDate.trim()} onPress={savePainEntry} />
+      </BloomPanel>
     </> : null}
 
-    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.foreground }]}>{error}</Text> : null}
-    {saved ? <Text accessibilityRole="alert" style={[styles.success, { color: palette.foreground }]}>{saved}</Text> : null}
+    {error ? <BloomNotice palette={palette} alert>{error}</BloomNotice> : null}
+    {saved ? <BloomNotice palette={palette} tone="sage" alert>{saved}</BloomNotice> : null}
 
+    <BloomPanel palette={palette} variant="quiet" accessibilityLabel={role === "partner" ? "Shared history" : "Cycle history"}>
     <View style={styles.row}>
       <Text accessibilityRole="header" style={[styles.heading, { color: palette.foreground }]}>{role === "partner" ? "Shared history" : "Cycle history"}</Text>
       <Action label="Export CSV" disabled={!today || periodHistory === undefined || timelineHistory === undefined || exporting} onPress={exportHistory} />
     </View>
     {role === "primary" && capabilities?.cycleFactsV1 === false ? <Text style={{ color: palette.muted }}>Deletion is unavailable for this account. You can still correct period dates.</Text> : null}
-    {timelineHistory === undefined ? <Text style={{ color: palette.muted }}>Loading history…</Text> : null}
-    {timelineHistory?.length === 0 ? <Text style={{ color: palette.muted }}>No shared history recorded in this range.</Text> : null}
-    {timelineHistory?.map((entry, index) => <View key={`${entry.type}-${entry.date}-${entry.period?.id ?? index}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+    {timelineHistory === undefined ? <BloomNotice palette={palette}>Loading history…</BloomNotice> : null}
+    {timelineHistory?.length === 0 ? <BloomNotice palette={palette}>No shared history recorded in this range.</BloomNotice> : null}
+    {timelineHistory?.length ? <Text style={[bloomType.caption, { color: palette.muted }]}>Recent entries · last 90 days</Text> : null}
+    {timelineHistory?.map((entry, index) => <View key={`${entry.type}-${entry.date}-${entry.period?.id ?? index}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.outline }]}>
       <Text style={{ color: palette.foreground }}>{entry.date}{entry.isOngoing ? " · ongoing" : ""}</Text>
       <Text style={{ color: palette.muted }}>{entry.phase}{entry.status ? ` · ${entry.status.replaceAll("_", " ")}` : ""}{entry.period ? entry.isOngoing ? " · current period" : " · past period" : ""}</Text>
       {entry.period ? <>
@@ -314,7 +324,8 @@ export function LoggingScreen() {
         </> : <Action label="Delete period" disabled={disabledPeriod || !factsEnabled} onPress={() => setDeleteConfirming(entry.period!.id!)} /> : null}
       </> : null}
     </View>)}
-  </ScrollView>;
+    </BloomPanel>
+  </BloomScreen>;
 }
 
-const styles = StyleSheet.create({ content: { padding: 20, gap: 12 }, title: { fontSize: 24, fontWeight: "700" }, heading: { fontSize: 18, fontWeight: "700", marginTop: 16 }, input: { minHeight: 48, borderWidth: 1, borderRadius: 8, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "#374151", borderRadius: 8 }, confirmation: { minHeight: 48, padding: 12, justifyContent: "center", gap: 4, borderRadius: 8, borderWidth: 1, borderColor: "#9CA3AF" }, unselected: { backgroundColor: "transparent" }, buttonText: { color: "#FFFFFF", fontWeight: "600" }, disabled: { opacity: 0.45 }, notice: { padding: 12, backgroundColor: "#713F12", color: "#FFFFFF", borderRadius: 8 }, error: { color: "#991B1B", fontWeight: "600" }, success: { color: "#166534", fontWeight: "600" }, card: { borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 12, gap: 8 } });
+const styles = StyleSheet.create({ heading: { ...bloomType.section, marginTop: 4 }, input: { ...bloomType.body, minHeight: 52, borderWidth: 1, borderRadius: 16, padding: 12 }, row: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }, button: { minHeight: 48, paddingHorizontal: 14, justifyContent: "center", backgroundColor: "transparent", borderColor: "#9CA3AF", borderWidth: 1, borderRadius: 16 }, confirmation: { minHeight: 48, padding: 12, justifyContent: "center", gap: 4, borderRadius: 16, borderWidth: 1, borderColor: "#9CA3AF" }, buttonText: { ...bloomType.button, flexShrink: 1 }, disabled: { opacity: 0.45 }, card: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 8 } });

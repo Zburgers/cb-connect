@@ -3,15 +3,17 @@ import { useRouter } from "expo-router";
 import { useConvexAuth, useConvexConnectionState, useMutation, useQuery } from "convex/react";
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
-  Text,
   useColorScheme,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { mobileColors } from "../../theme/tokens";
+import { BloomPanel } from "../../components/BloomPanel";
+import { BloomScreen } from "../../components/BloomScreen";
+import { bloomType } from "../../theme/typography";
+import { BloomText as Text } from "../../components/BloomText";
 import { api } from "../../convex/api";
 import { DateField } from "../logging/DateField";
 import {
@@ -148,18 +150,8 @@ export function OnboardingScreen({
       style={[styles.safeArea, { backgroundColor: palette.background }]}
     >
       <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
-      <ScrollView
-        contentContainerStyle={styles.screen}
-        keyboardShouldPersistTaps="handled"
-      >
+      <BloomScreen palette={palette} eyebrow="YOUR CYCLE, YOUR WAY" title="Welcome to CB Connect" subtitle={complete === "primary" ? "Let’s set up your cycle tracking." : undefined}>
         <View style={styles.content}>
-          <Text
-            allowFontScaling
-            accessibilityRole="header"
-            style={[styles.title, textStyle]}
-          >
-            Welcome to CB Connect
-          </Text>
           {loading ? (
             <Text
               allowFontScaling
@@ -182,7 +174,7 @@ export function OnboardingScreen({
                   styles.button,
                   {
                     backgroundColor: palette.glass,
-                    borderColor: palette.border,
+                    borderColor: palette.outline,
                   },
                 ]}
               >
@@ -193,9 +185,8 @@ export function OnboardingScreen({
             </>
           ) : complete === "primary" ? (
             <>
-              <Text allowFontScaling style={[styles.body, { color: palette.muted }]}>
-                Let’s set up your cycle tracking.
-              </Text>
+              <BloomPanel palette={palette} variant="warm" accessibilityLabel="Cycle setup">
+              <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, textStyle]}>Cycle setup</Text>
               {!online ? (
                 <Text allowFontScaling accessibilityRole="alert" style={[styles.error, textStyle]}>
                   Offline. Reconnect before saving your cycle setup.
@@ -251,15 +242,17 @@ export function OnboardingScreen({
                 accessibilityState={{ disabled: saving || !startDate || !online }}
                 disabled={saving || !startDate || !online}
                 onPress={() => void saveCycleSetup()}
-                style={[styles.button, { backgroundColor: palette.glass, borderColor: palette.border }]}
+                style={[styles.button, { backgroundColor: palette.glass, borderColor: palette.outline }]}
               >
                 <Text allowFontScaling style={[styles.buttonText, textStyle]}>
                   {saving ? "Saving…" : "Start Tracking"}
                 </Text>
               </Pressable>
+              </BloomPanel>
             </>
           ) : (
             <>
+              <BloomPanel palette={palette} variant="quiet" accessibilityLabel="Choose your role">
               <Text
                 allowFontScaling
                 style={[styles.body, { color: palette.muted }]}
@@ -292,7 +285,7 @@ export function OnboardingScreen({
                     styles.button,
                     {
                       backgroundColor: palette.glass,
-                      borderColor: palette.border,
+                      borderColor: palette.outline,
                     },
                   ]}
                 >
@@ -305,22 +298,21 @@ export function OnboardingScreen({
                   </Text>
                 </Pressable>
               ))}
+              </BloomPanel>
             </>
           )}
         </View>
-      </ScrollView>
+      </BloomScreen>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  screen: { flexGrow: 1, justifyContent: "center", padding: 20 },
   content: { width: "100%", maxWidth: 480, alignSelf: "center", gap: 16 },
   row: { flexDirection: "row", gap: 12 },
   choice: { minHeight: 52, flex: 1, justifyContent: "center", alignItems: "center", padding: 12, borderWidth: 1, borderRadius: 16 },
-  title: { fontFamily: "serif", fontSize: 34, lineHeight: 42, flexShrink: 1 },
-  body: { fontSize: 16, lineHeight: 24, flexShrink: 1 },
+  body: { ...bloomType.body, flexShrink: 1 },
   button: {
     minHeight: 52,
     justifyContent: "center",
@@ -331,8 +323,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   buttonText: {
-    fontSize: 16,
-    fontWeight: "600",
+    ...bloomType.button,
     textAlign: "center",
     flexShrink: 1,
   },
@@ -367,7 +358,7 @@ function LengthButton({
       accessibilityState={{ disabled: disabled || atLimit }}
       disabled={disabled || atLimit}
       onPress={() => onChange(next)}
-      style={[styles.choice, { backgroundColor: palette.glass, borderColor: palette.border }]}
+      style={[styles.choice, { backgroundColor: palette.glass, borderColor: palette.controlBorder }]}
     >
       <Text allowFontScaling style={[styles.buttonText, { color: palette.foreground }]}>
         {delta < 0 ? "−" : "+"} 1 day

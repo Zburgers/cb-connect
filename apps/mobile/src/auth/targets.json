@@ -1,0 +1,10 @@
+{
+  "synthetic": {
+    "issuer": "holy-clam-29.clerk.accounts.dev",
+    "convexUrl": "https://hallowed-hummingbird-284.convex.cloud"
+  },
+  "production": {
+    "issuer": "clerk.cb.builtbynaki.tech",
+    "convexUrl": "https://festive-malamute-715.convex.cloud"
+  }
+}

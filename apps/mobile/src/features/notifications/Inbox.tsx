@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
 import { usePaginatedQuery, useMutation, useQuery } from "convex/react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import { api } from "../../convex/api";
 import type { NotificationInboxItemDTO } from "@cb-connect/contracts";
 import { mobileColors } from "../../theme/tokens";
+import { bloomType } from "../../theme/typography";
+import { BloomNotice, BloomPanel } from "../../components/BloomPanel";
+import { BloomScreen } from "../../components/BloomScreen";
+import { BloomText as Text } from "../../components/BloomText";
 import { getInboxPresentation, isInboxItemUnread } from "./presentation";
 
 export function Inbox() {
@@ -37,37 +41,30 @@ export function Inbox() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} style={{ backgroundColor: "transparent" }}>
-      <Text allowFontScaling accessibilityRole="header" style={[styles.title, { color: palette.foreground }]}>Inbox</Text>
-      <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>
-        Private in-app updates appear here. Push delivery is not available in this build.
-      </Text>
+    <BloomScreen palette={palette} eyebrow="PRIVATE UPDATES" title="Inbox" subtitle="Private in-app updates appear here. Push delivery is not available in this build.">
       {available === undefined || (available && items.status === "LoadingFirstPage") ? (
         <ActivityIndicator accessibilityLabel="Loading notifications" />
       ) : null}
       {available === false ? (
-        <Text allowFontScaling accessibilityRole="alert" style={[styles.description, { color: palette.muted }]}>
-          In-app inbox access is unavailable for this account right now. This does not reflect device notification permission or push channel availability.
-        </Text>
+        <BloomNotice palette={palette} alert>In-app inbox access is unavailable for this account right now. This does not reflect device notification permission or push channel availability.</BloomNotice>
       ) : null}
-      {actionFailed ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>Unable to update this notification. Try again.</Text> : null}
+      {actionFailed ? <BloomNotice palette={palette} alert>Unable to update this notification. Try again.</BloomNotice> : null}
       {available === true && items.status !== "LoadingFirstPage" && visibleItems.length === 0 ? (
-        <Text allowFontScaling style={[styles.empty, { color: palette.foreground, backgroundColor: palette.glass, borderColor: palette.border }]}>You’re all caught up.</Text>
+        <BloomPanel palette={palette} variant="sage"><Text allowFontScaling style={[bloomType.body, { color: palette.foreground }]}>You’re all caught up.</Text></BloomPanel>
       ) : null}
       {visibleItems.map((item) => {
         const presentation = getInboxPresentation(item as NotificationInboxItemDTO);
         if (!presentation) return null;
         const unread = isInboxItemUnread(item as NotificationInboxItemDTO);
         return (
-          <View key={item.itemId} style={[styles.card, { borderColor: palette.border, backgroundColor: palette.glass }]}>
-            <View style={[styles.unreadDot, { backgroundColor: unread ? palette.accent : palette.border }]} />
-            <Text allowFontScaling accessibilityRole="header" style={[styles.itemTitle, { color: palette.foreground }]}>{presentation.title}</Text>
+          <BloomPanel key={item.itemId} palette={palette} variant={unread ? "warm" : "quiet"} style={styles.card}>
+            <View style={[styles.status, { backgroundColor: unread ? palette.accent : palette.sageSurface }]}>
+              <Text allowFontScaling accessibilityLabel={unread ? "Unread notification" : "Read notification"} style={[bloomType.label, { color: unread ? palette.onAccent : palette.sage }]}>{unread ? "UNREAD" : "READ"}</Text>
+            </View>
+            <Text allowFontScaling accessibilityRole="header" style={[bloomType.section, { color: palette.foreground }]}>{presentation.title}</Text>
             <Text allowFontScaling style={[styles.description, { color: palette.muted }]}>{presentation.body}</Text>
-            <Text allowFontScaling accessibilityLabel={`Notification section: ${presentation.destination}`} style={{ color: palette.muted }}>
+            <Text allowFontScaling accessibilityLabel={`Notification section: ${presentation.destination}`} style={[bloomType.caption, { color: palette.muted }]}>
               Section: {presentation.destination === "settings" ? "Settings" : presentation.destination === "chat" ? "Chat" : "Partner"}
-            </Text>
-            <Text allowFontScaling accessibilityLabel={unread ? "Unread notification" : "Read notification"} style={{ color: palette.muted }}>
-              {unread ? "Unread" : "Read"}
             </Text>
             <View style={styles.actions}>
               {presentation.destination === "settings" ? (
@@ -92,7 +89,7 @@ export function Inbox() {
                 <Text allowFontScaling style={{ color: palette.foreground }}>Dismiss</Text>
               </Pressable>
             </View>
-          </View>
+          </BloomPanel>
         );
       })}
       {available === true && items.status === "CanLoadMore" ? (
@@ -101,18 +98,14 @@ export function Inbox() {
         </Pressable>
       ) : null}
       {available === true && items.status === "LoadingMore" ? <ActivityIndicator accessibilityLabel="Loading more notifications" /> : null}
-    </ScrollView>
+    </BloomScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 36, gap: 16 },
-  title: { fontSize: 30, fontWeight: "600", letterSpacing: -0.5 },
-  itemTitle: { fontSize: 18, fontWeight: "600" },
   description: { fontSize: 15, lineHeight: 22 },
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, padding: 16, gap: 10 },
-  unreadDot: { width: 9, height: 9, borderRadius: 5 },
-  empty: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 18, fontSize: 14 },
+  card: { padding: 18, gap: 12 },
+  status: { alignSelf: "flex-start", minHeight: 30, justifyContent: "center", borderRadius: 999, paddingHorizontal: 12 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  action: { minHeight: 44, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 14 },
+  action: { minHeight: 48, justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 16 },
 });

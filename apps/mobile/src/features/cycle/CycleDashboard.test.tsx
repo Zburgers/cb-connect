@@ -465,15 +465,18 @@ describe("mobile cycle dashboard", () => {
       new URL("./CycleDashboard.tsx", import.meta.url),
       "utf8",
     );
-    expect(screen).toContain("<ScrollView");
-    expect(screen).toContain("<SafeAreaView");
+    expect(screen).toContain("<BloomScreen");
+    const sharedScreen = readFileSync(new URL("../../components/BloomScreen.tsx", import.meta.url), "utf8");
+    expect(sharedScreen).toContain("<ScrollView");
+    const navigator = readFileSync(new URL("../../app/(app)/_layout.tsx", import.meta.url), "utf8");
+    expect(navigator).toContain("<SafeAreaView");
     expect(screen).toContain("allowFontScaling");
     expect(screen).toContain('accessibilityRole="header"');
     expect(screen).toContain('accessibilityRole="summary"');
     expect(screen).toContain("StyleSheet.flatten([styles.quickAction");
     expect(screen).toContain("StyleSheet.flatten([styles.secondaryAction");
     expect(screen).not.toContain("style={[styles.secondaryAction");
-    expect(screen).toContain("maxWidth: 560");
+    expect(sharedScreen).toContain("maxWidth: 560");
     expect(screen).toContain("useColorScheme");
     expect(screen).not.toMatch(/\bheight:\s*\d/);
   });

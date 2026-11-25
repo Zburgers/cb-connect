@@ -1,0 +1,145 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`PartnerControls interactions > presents primary sharing controls separately from the partner shared-cycle view 1`] = `
+{
+  "partnerControls": [
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": "Partner activity: Checking recent activity…",
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": undefined,
+      "role": "text",
+      "type": "Text",
+    },
+    {
+      "label": "Relationship date: 2020-01-01",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": "Clear Relationship date",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": "Save relationship date",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": "Private partner nickname",
+      "role": undefined,
+      "type": "TextInput",
+    },
+    {
+      "label": "Save nickname",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": undefined,
+      "role": "progressbar",
+      "type": "Text",
+    },
+  ],
+  "primaryControls": [
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": "Partner activity: No recent activity",
+      "role": undefined,
+      "type": "Text",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": undefined,
+      "role": "text",
+      "type": "Text",
+    },
+    {
+      "label": "Relationship date: 2020-01-01",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": "Clear Relationship date",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": "Save relationship date",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": "Private partner nickname",
+      "role": undefined,
+      "type": "TextInput",
+    },
+    {
+      "label": "Save nickname",
+      "role": "button",
+      "type": "Pressable",
+    },
+    {
+      "label": undefined,
+      "role": "header",
+      "type": "Text",
+    },
+    {
+      "label": "Cycle phase",
+      "role": "switch",
+      "type": "Pressable",
+    },
+    {
+      "label": "Pain details",
+      "role": "switch",
+      "type": "Pressable",
+    },
+    {
+      "label": "Partner period logging",
+      "role": "switch",
+      "type": "Pressable",
+    },
+    {
+      "label": "Revoke partner access",
+      "role": "button",
+      "type": "Pressable",
+    },
+  ],
+}
+`;

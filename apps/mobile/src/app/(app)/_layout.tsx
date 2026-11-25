@@ -1,21 +1,18 @@
 import { Redirect, Tabs } from "expo-router";
 import { useConvexConnectionState, useQuery } from "convex/react";
-import { useRef } from "react";
-import { ActivityIndicator, StyleSheet, useColorScheme, View } from "react-native";
+import { ActivityIndicator, useColorScheme } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurTargetView, BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { api } from "../../convex/api";
 import { AuthGate } from "../../auth/AuthGate";
 import { canRenderChatRoute, canRenderPartnerRoute, resolveAccessState, resolvePrimaryCycleSetupRoute } from "../../navigation/accessResolver";
 import { AccessContext } from "../../navigation/accessContext";
 import { mobileColors } from "../../theme/tokens";
+import { BloomTabLayout } from "../../components/BloomTabBar";
 import { PresenceHeartbeat } from "../../features/home/PresenceHeartbeat";
 
 function GuardedRoutes() {
   const palette = useColorScheme() === "dark" ? mobileColors.dark : mobileColors.light;
-  const blurTarget = useRef<View>(null);
   const connection = useConvexConnectionState();
   const guardState = useQuery(api.queries.mobileAccess.getGuardState, {});
   const access = resolveAccessState({
@@ -48,10 +45,7 @@ function GuardedRoutes() {
         <PresenceHeartbeat />
       ) : null}
       <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: palette.background }}>
-      <BlurTargetView ref={blurTarget} style={StyleSheet.absoluteFill}>
-        <LinearGradient colors={palette.atmosphere} style={StyleSheet.absoluteFill} />
-      </BlurTargetView>
-      <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: "transparent" }, tabBarActiveTintColor: palette.accent, tabBarInactiveTintColor: palette.muted, tabBarStyle: { backgroundColor: palette.glass, borderTopColor: palette.border }, tabBarBackground: () => <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={35} tint={palette === mobileColors.dark ? "dark" : "light"} style={StyleSheet.absoluteFill} />, tabBarLabelStyle: { fontSize: 12, fontWeight: "600" }, tabBarItemStyle: { minHeight: 48 } }}>
+      <Tabs tabBar={() => null} layout={(props) => <BloomTabLayout {...props} dark={palette === mobileColors.dark} showDock={access.canRenderProtectedContent} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: "transparent" } }}>
         <Tabs.Protected guard={access.canRenderProtectedContent}>
           <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }} />
           <Tabs.Screen name="log" options={{ title: "Log", tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }} />

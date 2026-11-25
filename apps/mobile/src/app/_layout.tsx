@@ -5,6 +5,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppPrivacyShield } from "../security/appPrivacy";
 import { StatusBar } from "expo-status-bar";
 import { ThemePreferenceProvider } from "../theme/ThemePreferenceProvider";
+import { BloomFonts } from "../theme/BloomFonts";
 
 export default function RootLayout() {
   return (
@@ -12,8 +13,10 @@ export default function RootLayout() {
       <ErrorBoundary>
         <AppPrivacyShield>
           <AppProviders>
-            <StatusBar style="auto" />
-            <AuthenticatedStack />
+            <BloomFonts>
+              <StatusBar style="auto" />
+              <AuthenticatedStack />
+            </BloomFonts>
           </AppProviders>
         </AppPrivacyShield>
       </ErrorBoundary>

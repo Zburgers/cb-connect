@@ -30,3 +30,30 @@ adb -s <serial> reverse tcp:8081 tcp:8081
 The debug app can then load JavaScript from this checkout.
 Keep Metro running while using the debug app. This is a local debug workflow,
 not native release qualification.
+
+## Standalone Android builds
+
+The owner's CB-07 delivery request adds two explicit build profiles. Default
+`synthetic` retains the approved test issuer/backend and `.beta` application.
+`production` uses the live issuer/backend and `tech.builtbynaki.cbconnect`.
+The public allowlist is in `src/auth/targets.json`; mixed identities fail
+closed. There is no in-app environment switch.
+
+After committing source, select the documented Node 22/JDK 17/SDK environment,
+provide `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` and `EXPO_PUBLIC_CONVEX_URL` from
+the selected environment, and supply private signing credentials through:
+`CB_ANDROID_RELEASE_KEYSTORE`, `CB_ANDROID_RELEASE_STORE_PASSWORD`,
+`CB_ANDROID_RELEASE_ALIAS`, `CB_ANDROID_RELEASE_KEY_PASSWORD`. Keep the
+owner-controlled keystore and recovery backup outside Git; never pass passwords
+on the command line or store them in Gradle source.
+
+Run `node scripts/build-android-release.mjs production` (or `synthetic`). It
+ignores dotenv files, regenerates native configuration, bundles JS/assets,
+builds arm64/x86_64 APKs with owner signing, verifies the signature and records
+the source/hash under ignored `build/mobile/`. Release tasks fail without
+owner signing; Expo's generated debug-signing default cannot qualify a release.
+
+A successful build does not establish deployed backend compatibility, Clerk
+Native API/callback readiness, standalone runtime or production acceptance.
+Follow [the final-stack checklist](../../docs/testing/2026-11-17-cb-07-final-stack-qa.md)
+before distribution. Never send the Metro-dependent debug artifact as a release.

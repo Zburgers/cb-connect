@@ -120,7 +120,9 @@ describe("mobile onboarding role setup", () => {
       new URL("../../app/(app)/_layout.tsx", import.meta.url),
       "utf8",
     );
-    expect(screen).toContain("<ScrollView");
+    expect(screen).toContain("<BloomScreen");
+    expect(screen).toContain("<BloomPanel");
+    expect(screen).toContain('eyebrow="YOUR CYCLE, YOUR WAY"');
     expect(screen).toContain("<SafeAreaView");
     expect(screen).toContain("allowFontScaling");
     expect(screen).toContain("useColorScheme");

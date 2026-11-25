@@ -1,9 +1,12 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePaginatedQuery, useMutation, useConvexConnectionState } from "convex/react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { api } from "../../convex/api";
 import { mobileColors } from "../../theme/tokens";
+import { bloomType } from "../../theme/typography";
+import { BloomPanel, BloomNotice } from "../../components/BloomPanel";
+import { BloomText as Text } from "../../components/BloomText";
 import { latestUnreadPartnerMessage, orderMessagesForDisplay } from "../partner/partnerAccess";
 
 const REACTIONS = ["💗", "✨", "🫶", "😂", "🥺", "🌙"];
@@ -114,21 +117,25 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: "transparent" }]}>
+    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
+    <View style={[styles.container, { backgroundColor: "transparent", paddingBottom: 12 }]}>
+      <View style={styles.header}>
+        <View style={styles.titleGroup}>
+          <Text accessibilityRole="header" style={[bloomType.display, { color: palette.foreground }]}>Chat</Text>
+        </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={clearing ? "Clearing chat" : "Clear chat"}
         accessibilityState={{ disabled: !connected || clearing }}
         disabled={!connected || clearing}
         onPress={confirmClearThread}
-        style={styles.clearButton}
+        style={[styles.clearButton, { borderColor: palette.outline }]}
       >
-        <Text style={{ color: palette.muted }}>{clearing ? "Clearing…" : "Clear chat"}</Text>
+        <Text style={[bloomType.caption, { color: palette.muted }]}>{clearing ? "Clearing…" : "Clear chat"}</Text>
       </Pressable>
+      </View>
       {!connected ? (
-        <Text accessibilityRole="alert" style={{ color: palette.foreground }}>
-          Reconnect before sending. Messages are not queued offline.
-        </Text>
+        <BloomNotice palette={palette} alert>Reconnect before sending. Messages are not queued offline.</BloomNotice>
       ) : null}
       {status === "CanLoadMore" ? (
         <Pressable
@@ -176,11 +183,12 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         }}
         scrollEventThrottle={16}
       >
+        <Text style={[bloomType.caption, { color: palette.muted }]}>A private conversation between you and your partner</Text>
         {messages.map((message) => (
-          <View key={message._id} style={[styles.message, { backgroundColor: message.isMine ? palette.highlight : palette.surface, borderColor: palette.border, alignSelf: message.isMine ? "flex-end" : "flex-start" }]}>
-            <Text style={[styles.sender, { color: message.isMine ? palette.accent : palette.foreground }]}>{message.isMine ? "You" : message.senderName}</Text>
-            <Text style={{ color: palette.foreground }}>{message.body}</Text>
-            <Text style={{ color: palette.muted }}>
+          <View key={message._id} style={[styles.message, { backgroundColor: message.isMine ? palette.highlight : palette.surface, borderColor: palette.outline, alignSelf: message.isMine ? "flex-end" : "flex-start" }]}>
+            <Text style={[bloomType.label, { color: message.isMine ? palette.accent : palette.foreground }]}>{message.isMine ? "YOU" : message.senderName}</Text>
+            <Text allowFontScaling style={[bloomType.body, { color: palette.foreground }]}>{message.body}</Text>
+            <Text allowFontScaling style={[bloomType.caption, { color: palette.muted }]}>
               {message.readAt ? "Read" : message.deliveredAt ? "Delivered" : "Sent"}
             </Text>
             <View style={styles.reactions}>
@@ -207,10 +215,11 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
           </View>
         ))}
         {messages.length === 0 && status !== "LoadingFirstPage" ? (
-          <Text style={{ color: palette.muted }}>Start a private conversation.</Text>
+          <BloomPanel palette={palette} variant="sage"><Text style={[bloomType.body, { color: palette.foreground }]}>Start a private conversation. Messages stay between you and your partner.</Text></BloomPanel>
         ) : null}
       </ScrollView>
-      {error ? <Text accessibilityRole="alert" style={{ color: palette.foreground }}>{error}</Text> : null}
+      <ScrollView accessibilityLabel="Message controls" style={styles.controls} contentContainerStyle={styles.controlContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
+      {error ? <BloomNotice palette={palette} alert>{error}</BloomNotice> : null}
       <ScrollView horizontal keyboardShouldPersistTaps="handled" style={styles.quickScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickCompose}>
         {QUICK_COMPOSE.map((suggestion) => (
           <Pressable
@@ -218,7 +227,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
             accessibilityRole="button"
             accessibilityLabel={`Compose ${suggestion}`}
             onPress={() => { setDraft(suggestion); setSelection({ start: suggestion.length, end: suggestion.length }); }}
-            style={[styles.quickChip, { borderColor: palette.border, backgroundColor: palette.glass }]}
+            style={[styles.quickChip, { borderColor: palette.outline, backgroundColor: palette.surface }]}
           >
             <Text style={{ color: palette.foreground }}>{suggestion}</Text>
           </Pressable>
@@ -233,7 +242,7 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
           onSelectionChange={({ nativeEvent }) => setSelection(nativeEvent.selection)}
           placeholder="Write a message"
           selection={selection}
-          style={[styles.input, { color: palette.foreground, borderColor: palette.muted }]}
+          style={[styles.input, bloomType.body, { color: palette.foreground, borderColor: palette.controlBorder, backgroundColor: palette.surface }]}
           value={draft}
         />
         <Pressable
@@ -261,30 +270,36 @@ export function CoupleChat({ dark = false, relationshipGeneration }: { dark?: bo
         accessibilityState={{ disabled: !connected || !draft.trim() || sending }}
         disabled={!connected || !draft.trim() || sending}
         onPress={() => void handleSend()}
-        style={[styles.sendButton, { opacity: connected && draft.trim() && !sending ? 1 : 0.5 }]}
+        style={[styles.sendButton, { backgroundColor: palette.accent, borderColor: palette.accent, opacity: connected && draft.trim() && !sending ? 1 : 0.5 }]}
       >
-        <Text style={{ color: palette.foreground }}>{sending ? "Sending…" : "Send"}</Text>
+        <Text style={[bloomType.button, { color: palette.onAccent }]}>{sending ? "Sending…" : "Send"}</Text>
       </Pressable>
+      </ScrollView>
     </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1 },
   container: { flex: 1, gap: 10, padding: 16, minHeight: 0 },
-  messages: { flex: 1, minHeight: 0 },
-  messageList: { gap: 12, paddingVertical: 8 },
-  message: { gap: 4, padding: 12, borderRadius: 16, borderWidth: 1, maxWidth: "88%" },
-  sender: { fontWeight: "700" },
-  reactions: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  titleGroup: { flex: 1, gap: 2 },
+  messages: { flex: 1, minHeight: 96 },
+  controls: { flexGrow: 0, flexShrink: 1, maxHeight: "55%" },
+  controlContent: { gap: 10, paddingBottom: 4 },
   quickScroll: { flexGrow: 0, flexShrink: 0 },
+  messageList: { gap: 12, paddingVertical: 8 },
+  message: { gap: 6, padding: 14, borderRadius: 22, borderWidth: 1, maxWidth: "88%" },
+  reactions: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   quickCompose: { flexDirection: "row", gap: 8, alignItems: "center" },
-  quickChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  quickChip: { minHeight: 48, borderWidth: 1, borderRadius: 20, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 9 },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
-  reactionButton: { minHeight: 40, minWidth: 40, alignItems: "center", justifyContent: "center", padding: 4 },
-  input: { flex: 1, minHeight: 48, maxHeight: 120, borderWidth: 1, borderRadius: 8, padding: 12 },
+  reactionButton: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", padding: 4 },
+  input: { flex: 1, minHeight: 48, maxHeight: 200, borderWidth: 1, borderRadius: 18, padding: 12 },
   emojiToggle: { minHeight: 48, minWidth: 44, alignItems: "center", justifyContent: "center" },
   emojiPicker: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" },
-  clearButton: { minHeight: 40, alignSelf: "flex-end", justifyContent: "center", paddingHorizontal: 8 },
-  secondaryButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-  sendButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 8, borderWidth: 1 },
+  clearButton: { minHeight: 48, alignSelf: "flex-end", justifyContent: "center", borderWidth: 1, borderRadius: 999, paddingHorizontal: 14 },
+  secondaryButton: { minHeight: 48, alignItems: "center", justifyContent: "center" },
+  sendButton: { minHeight: 52, minWidth: 92, alignItems: "center", justifyContent: "center", borderRadius: 18, borderWidth: 1 },
 });
